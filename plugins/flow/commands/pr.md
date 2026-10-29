@@ -626,7 +626,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    its `chore(decisions):` subject is skipped by `log-commits.sh` Guard 1 (no re-append):
    ```bash
    "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
-   git push -u origin $BRANCH
+   git push -u origin HEAD
    ```
 10. **Create PR** (Tier 2):
     ```bash

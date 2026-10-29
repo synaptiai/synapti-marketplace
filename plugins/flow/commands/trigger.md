@@ -69,7 +69,7 @@ Execute the target command ONCE. Does NOT schedule future execution. Sequence:
 
 ### `/flow:trigger delete <id>`
 
-Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 2 — irreversible removal of a possibly-enabled trigger).
+Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 3 — irreversible removal of a possibly-enabled trigger).
 
 ## Architectural notes
 
@@ -93,4 +93,4 @@ Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 2 — irreversib
 | `/flow:trigger list` / `inspect <id>` — read `.flow/triggers/` | 1 | Autonomous, read-only |
 | `/flow:trigger enable <id>` / `disable <id>` — toggle `metadata.enabled` after validation | 2 | Journal-and-proceed — `Skill(trigger-policy)` validates before write; atomic via `_journal_atomic.py` |
 | `/flow:trigger run <id>` — single-shot execution of target | 2 | Journal-and-proceed — delegates to `/flow:run trigger <id>`; tier3-forbidden actions remain blocked by `trigger-policy` |
-| `/flow:trigger delete <id>` — irreversible removal of trigger YAML | 2 | **Confirm** via AskUserQuestion (deletes a possibly-enabled trigger) |
+| `/flow:trigger delete <id>` — irreversible removal of trigger YAML | 3 | **Confirm** via AskUserQuestion (deletes a possibly-enabled trigger) |

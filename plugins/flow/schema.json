@@ -21,9 +21,10 @@
     },
     "tiers": {
       "type": "object",
-      "description": "Safety tier classification for actions",
+      "description": "Safety tier for each action that leaves the machine, applied by the tier-gate.sh PreToolUse hook to the Bash command that runs it. autonomous: run it. journal: run it and write one breadcrumb to the git-ignored auto-log trail (only where the repository has a journal directory; the tracked journal is not touched). confirm: ask first (a permission prompt; in claude -p, which has no one to ask, a refusal).",
       "properties": {
         "push": {
+          "description": "git push of branches. A push that sends a tag is the release tier.",
           "enum": [
             "autonomous",
             "journal",
@@ -32,6 +33,7 @@
           "default": "journal"
         },
         "prCreate": {
+          "description": "gh pr create (or gh pr new), gh api POST to .../pulls, and the GraphQL mutation createPullRequest.",
           "enum": [
             "autonomous",
             "journal",
@@ -40,6 +42,7 @@
           "default": "journal"
         },
         "issueAssign": {
+          "description": "gh issue edit --add-assignee, gh api POST to .../issues/{n}/assignees or PATCH/PUT on .../issues/{n} with an assignee field, and the GraphQL mutation addAssigneesToAssignable.",
           "enum": [
             "autonomous",
             "journal",
@@ -48,6 +51,7 @@
           "default": "journal"
         },
         "issueCreate": {
+          "description": "gh issue create (or gh issue new), gh api POST to .../issues, and the GraphQL mutation createIssue.",
           "enum": [
             "autonomous",
             "journal",
@@ -56,6 +60,7 @@
           "default": "journal"
         },
         "merge": {
+          "description": "gh pr merge, gh api PUT or POST to .../pulls/{n}/merge or .../merges, and the GraphQL mutations mergePullRequest and enablePullRequestAutoMerge. Floor: confirm. A lower value is ignored with one warning naming this setting, and the merge still asks.",
           "enum": [
             "autonomous",
             "journal",
@@ -64,6 +69,7 @@
           "default": "confirm"
         },
         "release": {
+          "description": "gh release create (or gh release new; journaled instead with --verify-tag when the tag is already on the remote), gh api POST to .../releases or PATCH on .../releases/{id}, the GraphQL mutations createRelease and updateRelease, and pushing a tag (git push --tags, --follow-tags, push.followTags, a refs/tags/ refspec, a tag's name, or gh api POST to .../git/refs with a refs/tags/ ref), and deleting a tag (git push :<tag>, --delete <tag>, gh api DELETE on .../git/refs/tags/<tag>). Floor: confirm. A lower value is ignored with one warning naming this setting, and the release still asks.",
           "enum": [
             "autonomous",
             "journal",

@@ -7,7 +7,7 @@ Reference for the journal file format used by flow's audit trail and learning lo
 | Pattern | When Used |
 |---------|-----------|
 | `issue-{N}.md` | Branch matches `issue-{N}` pattern |
-| `session-{YYYY-MM-DD}.md` | No issue number in branch name |
+| `session-{YYYY-MM-DD}.md` | No issue number in branch name, or a goal with no linked issue. Dated by the local calendar day. Written by `bin/journal-record.sh --session` and `bin/journal-append.sh --session` |
 
 Journal files are stored in the journal directory (default: `.decisions/`, configurable via `journal.dir` setting).
 
@@ -40,6 +40,14 @@ is not journal content.
 
 ```
 <!-- auto-log: YYYY-MM-DD HH:MM Edit|Write path/relative/to/repo/root -->
+```
+
+### Tier Entry
+
+Written by the `tier-gate.sh` PreToolUse hook before a Bash command runs an action whose tier is `journal` (`references/three-tier-safety.md`), or a `gh release create --verify-tag` whose tag is already on the remote. The time is UTC; the quoted text is the command from its command word on (quoted words keep their quotes, at most 160 characters). Not written when the same command also needed asking, nor in a repository with no journal directory.
+
+```
+<!-- auto-log: 2026-10-29T14:48:04Z tiers.push (journal) "git push -u origin HEAD" -->
 ```
 
 ### Commit Entry
@@ -124,6 +132,7 @@ The manifest is **append-only via `bin/journal-record.sh`**. Direct manual edits
 ```yaml
 ---
 issue: <integer>                 # the issue number (matches the file name)
+                                 # a session journal has `session: <YYYY-MM-DD>` here instead
 created: <ISO-8601 UTC>          # first timestamp the manifest was written
 branch: <string>                 # optional — set by /flow:start when the branch is created
 artifacts:

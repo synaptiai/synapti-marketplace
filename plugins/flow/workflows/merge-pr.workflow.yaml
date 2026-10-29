@@ -5,7 +5,7 @@ metadata:
   id: merge-pr
   command: /flow:merge
   version: 1
-  description: Merge an approved PR — verify approval, CI green, goal achieved; require AskUserQuestion.
+  description: Merge an approved PR — verify approval, CI green, goal achieved; the tier hook's prompt confirms the merge.
 
 inputs:
   pr_number:

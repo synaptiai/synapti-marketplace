@@ -1,12 +1,12 @@
 ---
-description: "Merge an approved pull request. Verifies prerequisites (approval, checks, conversations), displays assessment, and requires explicit human confirmation. Tier 3 — never autonomous."
+description: "Merge an approved pull request. Verifies prerequisites (approval, checks, conversations), displays assessment, and runs the merge behind the tier hook's confirmation prompt. Tier 3 — never autonomous."
 argument-hint: <pr-number> [free-form context]
 allowed-tools: Bash, Read, AskUserQuestion, Skill
 ---
 
 # Merge PR #$ARGUMENTS
 
-Tier 3 operation — **always requires human confirmation**. This is non-negotiable even in autonomous mode.
+Tier 3 operation — **always requires human confirmation**, even in autonomous mode. The confirmation is the permission prompt the `tier-gate.sh` hook raises when the merge command runs (`tiers.merge` cannot be set below `confirm`), and it shows the exact command. This command does not ask a separate yes/no question before it.
 
 ## Required Skills
 
@@ -27,7 +27,7 @@ true
 
 ## References
 
-- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 2's conflict-resolution escalation and Phase 3's merge-confirm prompt
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 2's conflict-resolution escalation
 
 ## Phase 1: Verify Prerequisites
 
@@ -565,7 +565,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`merge-pr`, goal=`null` — the merge reads the linked FlowGoal for the gate below but the run itself is not goal-owned), initial phase `preflight`. Phase order: `preflight → verify → confirm → merge`. Write a FlowActivity at each boundary (verify, confirm, merge).
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`merge-pr`, goal=`null` — the merge reads the linked FlowGoal for the gate below but the run itself is not goal-owned), initial phase `preflight`. Phase order: `preflight → verify → confirm → merge`. Write a FlowActivity at each boundary (verify, confirm, merge). The confirm boundary is the tier hook's prompt on the merge command, so the confirm and merge activities are both written once that command returns.
 
 **Linked-run completion check** (Phase 2 / verify): before allowing merge, verify that every FlowRun linked to this PR's branch (the `start-issue` run and any `address-pr` / `review-pr` runs) has reached `state.status: completed`. If any linked run is still `active`, refuse the merge — this is Tier 3, so there is **no override** beyond the standard merge confirmation. Surface the still-active run id and point to `/flow:resume`.
 
@@ -749,14 +749,15 @@ means there was no origin remote to verify against. In each case the merge
 below would have to name a repository nobody verified. Report the state and
 what the user can do about it.
 
-Use the AskUserQuestion tool with contextual options to confirm, naming what
-will actually run: "PR #{PR_NUMBER} in {OWNER/NAME} is ready to merge. Proceed
-with a {strategy} merge{, deleting the branch}?" — the strategy and the branch
-clause come from `MERGE_STRATEGY` and `DELETE_BRANCH` in Merge Settings, so the
-user approves the same merge that runs.
+Show the assessment as text and end it with the merge that will run: "PR
+#{PR_NUMBER} in {OWNER/NAME} is ready to merge: a {strategy} merge{, deleting
+the branch}." The strategy and the branch clause come from `MERGE_STRATEGY` and
+`DELETE_BRANCH` in Merge Settings. Do not ask a yes/no question here: the
+`tier-gate.sh` hook asks when the merge command below runs, and its prompt
+shows that command, so the user approves the same merge that runs.
 
-Only after the user confirms via the tool, run the merge with every value
-written literally. Replace each `{…}` below before running:
+Run the merge with every value written literally. Replace each `{…}` below
+before running:
 
 - `{PR_NUMBER}` — the PR number from the report
 - `{OWNER/NAME}` — the report's Repository row
@@ -764,9 +765,9 @@ written literally. Replace each `{…}` below before running:
 - `{DELETE_BRANCH}` — `--delete-branch` when `DELETE_BRANCH=true`; remove it
   when false
 
-If the merge is refused — by the hook, or by GitHub — stop and report the
-refusal as it was printed. Do not run Phase 4, and do not retry the merge in
-another form.
+If the merge is refused — declined at the prompt, refused by a hook, or
+refused by GitHub — stop and report the refusal as it was printed. Do not run
+Phase 4, and do not retry the merge in another form.
 
 ```bash
 # Literal values, not $PR_NUM or $REPO. block-unchecked-merge.sh reads this
@@ -866,6 +867,6 @@ Suggest: `/flow:release {type}` if this completes a milestone.
 | FlowGoal gate check (v3 opt-in; reads `.flow/goals/*.goal.yaml`) | 1 | Autonomous; blocks on `lifecycle.status != achieved` |
 | Stale-approval check | 1 | Autonomous; warns on stale |
 | Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Journal-and-proceed if user accepts; otherwise blocked |
-| `gh pr merge` | 3 | **Confirm** — always asks via `AskUserQuestion` |
-| Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — bundled into the merge prompt |
+| `gh pr merge` | 3 | **Confirm** — the `tier-gate.sh` permission prompt, raised when the merge command runs (`tiers.merge`, floor `confirm`) |
+| Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — `--delete-branch` is part of the merge command the prompt shows |
 | `git checkout <default-branch> && git pull` (post-merge cleanup) | 1 | Autonomous |

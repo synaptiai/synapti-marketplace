@@ -480,11 +480,16 @@ def parse_frontmatter(content, loader=None):
 # Public API: three write shapes.
 
 def record_artifact(journal_path, lockfile_path, issue, artifact_type,
-                    metadata_pairs, now_iso):
+                    metadata_pairs, now_iso, *, session=None):
     """Append an artifact to the journal manifest.
+
+    `session` (a YYYY-MM-DD string) marks a session journal, the one for work
+    with no issue number: its manifest is keyed `session` instead of `issue`,
+    and `issue` is None.
 
     Preserves journal-record.sh semantics verbatim:
       - If journal does not exist: create with {issue, created, artifacts:[]}
+        ({session, created, artifacts:[]} for a session journal)
       - If journal exists with frontmatter: parse, append to artifacts[]
       - If journal exists without frontmatter: prepend a manifest, preserve body
       - Atomicity via lockfile + temp+rename + fsync
@@ -496,17 +501,18 @@ def record_artifact(journal_path, lockfile_path, issue, artifact_type,
     try:
         meta_dict = coerce_metadata(metadata_pairs)
 
+        key, value = ("session", session) if session is not None else ("issue", issue)
         content = _read_with_no_follow(journal_path)
         if content:
             manifest, body = parse_frontmatter(content)
             if manifest is None:
                 # File exists but has no frontmatter — legacy entry. Seed a
                 # manifest and preserve the body verbatim.
-                manifest = {"issue": issue, "created": now_iso, "artifacts": []}
+                manifest = {key: value, "created": now_iso, "artifacts": []}
         else:
-            manifest, body = {"issue": issue, "created": now_iso, "artifacts": []}, ""
+            manifest, body = {key: value, "created": now_iso, "artifacts": []}, ""
 
-        manifest.setdefault("issue", issue)
+        manifest.setdefault(key, value)
         manifest.setdefault("created", now_iso)
         manifest.setdefault("artifacts", [])
 
