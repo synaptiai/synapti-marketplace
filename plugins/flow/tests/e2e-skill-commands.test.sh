@@ -39,6 +39,11 @@
 #      so every project that ships one reports a secret
 #   E2 a template holding a value that looks like a real secret is not a hit
 #   E3 .env.<environment> is not a hit
+#   E4 a template value that is a lower-case hex token of 32 or more
+#      characters, or starts with sk_live_, sk_test_, AIza, glpat-, xoxb- or
+#      -----BEGIN, or a PGP private key block, is not a hit
+#   E5 a placeholder (all zeros, x's, <...>) or a hex string one character
+#      under the bound is a hit
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -327,3 +332,47 @@ e2e_expect_line "ENV_FILE=.env.template (template holding a value that looks lik
 e2e_expect_no_out "ENV_FILE=.env.example"
 e2e_expect_line "SECRETS_STATE=ok"
 e2e_expect_clean_edges
+
+_flow_test_begin "security-reviewer: template values that look like real keys are hits; placeholders and a 31-character hex string are not (E4, E5)"
+e2e_new security-reviewer-env-wide
+e2e_describe "the branch adds one template per secret shape in its own directory, each value too short or too uniform in case for the 20-character mixed-case rule, and templates holding only placeholders; origin/main is the commit before"
+e2e_repo feature/e2e
+e2e_gh_fixture repo '{"nameWithOwner":"o/r","defaultBranchRef":{"name":"main"}}'
+HEX32=0123456789abcdef0123456789abcdef
+(
+  _e2e_git_env
+  cd "$E2E_REPO" || exit 1
+  git update-ref refs/remotes/origin/main HEAD
+  mkdir -p hex32 hex31 live test aiza glpat xoxb begin pgp holders
+  printf 'API_TOKEN=%s\n' "$HEX32" > hex32/.env.example
+  printf 'API_TOKEN=%s\n' "${HEX32%f}" > hex31/.env.example
+  printf 'STRIPE_KEY=sk_live_abc123def456\n' > live/.env.example
+  printf 'STRIPE_KEY=sk_test_abc123def456\n' > test/.env.sample
+  printf 'MAPS_KEY=AIzaabc123\n' > aiza/.env.template
+  printf 'GITLAB_TOKEN=glpat-xxxxyyyyzzzz12345678\n' > glpat/.env.example
+  printf 'SLACK_TOKEN=xoxb-1234-5678-abcdefgh\n' > xoxb/.env.example
+  printf 'CERT="-----BEGIN EC PARAMETERS-----"\n' > begin/.env.example
+  printf '%s\n' '-----BEGIN PGP PRIVATE KEY BLOCK-----' 'lQOYBF...' '-----END PGP PRIVATE KEY BLOCK-----' > pgp/.env.example
+  printf 'HASH=0000000000000000000000000000000000000000\nTOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nSECRET=<your-secret>\nSHORT=abc123\n' > holders/.env.example
+  git add .
+  git commit -q -m env
+) || _flow_assert_fail "security-reviewer-env-wide: could not commit the .env files"
+e2e_run_fence "$E2E_PLUGIN_DIR/agents/security-reviewer.md" '.env files in diff'
+for d in hex32/.env.example live/.env.example test/.env.sample aiza/.env.template glpat/.env.example xoxb/.env.example begin/.env.example pgp/.env.example; do
+  e2e_expect_line "ENV_FILE=$d (template holding a value that looks like a real secret)"
+done
+e2e_expect_no_out "ENV_FILE=hex31/"
+e2e_expect_no_out "ENV_FILE=holders/"
+e2e_expect_clean_edges
+
+# The commit-time rule the security reviewer's hit stands for: a template
+# holding a real-looking value is blocked, not warned about, in the skill
+# /flow:commit classifies with and in the table it points to.
+_flow_test_begin "change-classification: a template holding a real-looking value is BLOCK in the skill and in classification-signals (E4)"
+CC_ROW=$(grep -F '| Red flag | `.env.example`, `.env.sample`, `.env.template`' "$SKILLS_DIR/change-classification/SKILL.md")
+assert_contains "| BLOCK — replace the value with a placeholder" "$CC_ROW" "the skill's template row blocks"
+SIG_ROW=$(grep -F '| `.env.example`, `.env.sample`, `.env.template` |' "$REPO_ROOT/plugins/flow/references/classification-signals.md")
+assert_contains "| BLOCK when a value looks like a real secret;" "$SIG_ROW" "the signals table's template row blocks"
+for w in sk_live_ sk_test_ glpat- AIza -----BEGIN "hex string of 32 or more characters"; do
+  assert_contains "$w" "$SIG_ROW" "the signals table names $w"
+done

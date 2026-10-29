@@ -14,7 +14,7 @@ Complete reference for the change-classification skill's signal evaluation.
 | Pattern | Action | Rationale |
 |---------|--------|-----------|
 | `.env`, `.env.<environment>` (`.env.local`, `.env.production`, ...) | BLOCK | Environment secrets |
-| `.env.example`, `.env.sample`, `.env.template` | WARN when a value looks like a real secret; otherwise classify as usual | Committable templates. A value looks real when it is neither empty nor a placeholder (`changeme`, `your-key-here`, `<...>`, `xxx`): a known key prefix (`sk-`, `ghp_`, `github_pat_`, `AKIA`, `xox`), a private-key block, or a string of 20 or more letters and digits that mixes upper case, lower case and digits |
+| `.env.example`, `.env.sample`, `.env.template` | BLOCK when a value looks like a real secret; otherwise classify as usual | Committable templates, once each value is a placeholder. A value looks real when it is neither empty nor a placeholder (`changeme`, `your-key-here`, `<...>`, `xxx`, all zeros): a known key prefix (`sk-`, `sk_live_`, `sk_test_`, `ghp_`, `github_pat_`, `glpat-`, `AKIA`, `AIza`, `xox`), a value starting `-----BEGIN` or a private-key block, a hex string of 32 or more characters holding both a digit and a letter (upper or lower case), or a string of 20 or more letters and digits that mixes upper case, lower case and digits. Replace the value with a placeholder and the template commits |
 | `credentials*`, `*secret*`, `*password*` | BLOCK | Sensitive data |
 | `*.pem`, `*.key`, `*.p12` | BLOCK | Cryptographic keys |
 | `id_rsa*`, `*.pub` (SSH keys) | BLOCK | SSH credentials |
