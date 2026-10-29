@@ -99,6 +99,8 @@ if command -v jq >/dev/null 2>&1; then
     _feed "$HOOKS/block-secrets.sh" "$BENIGN" 0 "block-secrets allows an ordinary command"
   [ -f "$HOOKS/block-unchecked-merge.sh" ] && \
     _feed "$HOOKS/block-unchecked-merge.sh" "$BENIGN" 0 "block-unchecked-merge allows a command that is not a merge"
+  [ -f "$HOOKS/tier-gate.sh" ] && \
+    _feed "$HOOKS/tier-gate.sh" "$BENIGN" 0 "tier-gate allows a command that runs no tiered action"
 else
   _bad "jq missing — cannot build a hook payload to feed"
 fi
@@ -151,6 +153,21 @@ if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
       _feed "$HOOKS/log-file-changes.sh" "$EDIT_PAYLOAD" 0 "log-file-changes answers an edit payload"
     [ -f "$HOOKS/log-commits.sh" ] && \
       _feed "$HOOKS/log-commits.sh" "$COMMIT_PAYLOAD" 0 "log-commits answers a commit payload"
+    # tier-gate's journal line goes through the same helper, into the tracked
+    # journal: with the plugin default (tiers.push journal) a push on the
+    # issue-1 branch must add one line to .decisions/issue-1.md.
+    PUSH_PAYLOAD=$(jq -nc --arg cwd "$SMOKE_REPO" \
+      '{session_id:"smoke", cwd:$cwd, tool_name:"Bash", tool_input:{command:"git push origin HEAD"}}')
+    if [ -f "$HOOKS/tier-gate.sh" ]; then
+      _feed "$HOOKS/tier-gate.sh" "$PUSH_PAYLOAD" 0 "tier-gate answers a push payload"
+      if grep -q 'tiers.push (journal): git push origin HEAD' "$SMOKE_REPO/.decisions/issue-1.md" 2>/dev/null; then
+        _ok "tier-gate wrote the push to the payload cwd's issue journal"
+      else
+        _bad "tier-gate wrote no journal line to $SMOKE_REPO/.decisions/issue-1.md"
+        _out=$(printf '%s' "$PUSH_PAYLOAD" | bash "$HOOKS/tier-gate.sh" 2>&1 >/dev/null)
+        printf 'DIAG: tier-gate stderr=%s\n' "$(printf '%s' "$_out" | tr '\n' '|' | cut -c1-400)"
+      fi
+    fi
     # The trail directory must exist and ignore itself. Both are written by the
     # shell, so they hold on every platform.
     if [ -s "$SMOKE_REPO/.decisions/auto-log/.gitignore" ]; then
