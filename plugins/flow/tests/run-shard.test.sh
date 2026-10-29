@@ -77,10 +77,12 @@ assert_equal 0 "$RS_RC" "1/1 exits 0"
 # A part of a list given as arguments comes from that list, not the glob.
 _rs_run args 1/3 "$RS_TMP/b.test.sh" "$RS_TMP/d.test.sh" "$RS_TMP/e.test.sh"
 assert_equal "b" "$RS_RAN" "1/3 of b, d, e runs b only"
+assert_equal 0 "$RS_RC" "1/3 of three arguments exits 0"
 assert_contains "run.sh: shard 1/3 runs 1 of 3 files" "$RS_OUT" "1/3 of three arguments says 1 of 3"
 
 # The suites never see the variable.
 _rs_run inherit 1/2 "${RS_ALL[@]}"
+assert_equal 0 "$RS_RC" "the inheritance run exits 0"
 assert_contains "SHARD_SEEN=unset" "$RS_OUT" "a suite run in a part sees FLOW_TEST_SHARD unset"
 assert_not_contains "SHARD_SEEN=1/2" "$RS_OUT" "a suite run in a part does not see 1/2"
 
