@@ -359,6 +359,62 @@ if _want verdict-agent-absent; then
   _edges called
 fi
 
+EXIT4_ERROR="VERDICT_JUDGE_ERROR=the verdict judge could not start (exit 4): the claude CLI or timeout(1)/gtimeout is missing (on macOS: brew install coreutils), or its working directory could not be created; the flow-judge line on stderr says which"
+
+if _want verdict-judge-dir-file; then
+  _flow_test_begin "start.md step 6: a judge directory that cannot be created stops the judge (exit 4), never a run in /tmp (V10)"
+  _setup verdict-judge-dir-file "<home>/.claude/flow-goal-judge is a regular file, so mkdir -p fails"
+  mkdir -p "$E2E_HOME/.claude"
+  printf 'not a directory\n' > "$E2E_HOME/.claude/flow-goal-judge"
+  _run
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "VERDICT_JUDGE_STATE=unavailable"
+  e2e_expect_line "$EXIT4_ERROR"
+  e2e_expect_err "flow-judge: cannot create the judge's working directory $E2E_HOME/.claude/flow-goal-judge; the judge is not run anywhere else"
+  e2e_expect_equal '(not passed)' "$(_got env.txt)" "the judge's environment (it must not run, in /tmp or anywhere)"
+  _edges not-called
+fi
+
+if _want verdict-judge-dir-chmod; then
+  _flow_test_begin "start.md step 6: a judge directory that cannot be made private stops the judge (exit 4) (V10)"
+  _setup verdict-judge-dir-chmod "chmod 0700 on the judge directory fails (a chmod stub that refuses it)"
+  cat > "$E2E_BIN/chmod" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in *flow-goal-judge*) echo "chmod: refused by the test" >&2; exit 1 ;; esac
+exec /bin/chmod "$@"
+STUB
+  /bin/chmod +x "$E2E_BIN/chmod"
+  _run
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "VERDICT_JUDGE_STATE=unavailable"
+  e2e_expect_line "$EXIT4_ERROR"
+  e2e_expect_err "flow-judge: cannot make the judge's working directory $E2E_HOME/.claude/flow-goal-judge private (chmod 0700); the judge is not run"
+  _edges not-called
+fi
+
+if _want verdict-no-timeout; then
+  _flow_test_begin "start.md step 6: with neither timeout nor gtimeout the block names exit 4 and the coreutils install"
+  _setup verdict-no-timeout "PATH holds every command but timeout and gtimeout"
+  rm -f "$E2E_BIN/timeout"
+  _run PATH="$(e2e_path_without timeout gtimeout)"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "VERDICT_JUDGE_STATE=unavailable"
+  e2e_expect_line "$EXIT4_ERROR"
+  e2e_expect_err "flow-judge: neither timeout(1) nor gtimeout is installed (install GNU coreutils; on macOS: brew install coreutils); a judge is never run without a time limit"
+  _edges not-called
+fi
+
+if _want setup-timeout-probe; then
+  _flow_test_begin "/flow:setup Phase 1 says whether timeout(1) or gtimeout is installed, which the judges need"
+  _setup setup-timeout-probe "the Phase 1 detection fence, once with a timeout on PATH and once with neither timeout nor gtimeout"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" 'TIMEOUT_BIN='
+  e2e_expect_line "TIMEOUT_BIN=found"
+  rm -f "$E2E_BIN/timeout"
+  e2e_run_fence PATH="$(e2e_path_without timeout gtimeout)" "$E2E_ACTIVE_PLUGIN/commands/setup.md" 'TIMEOUT_BIN='
+  e2e_expect_line "TIMEOUT_BIN=missing — the verdict judge and the goal judge need timeout(1) or gtimeout (install GNU coreutils; on macOS: brew install coreutils)"
+  e2e_expect_no_line "TIMEOUT_BIN=found"
+fi
+
 # ------------------------------------------------- hooks in a judge's session
 
 # _pair <hook> <payload> — run the hook without and then with the guard

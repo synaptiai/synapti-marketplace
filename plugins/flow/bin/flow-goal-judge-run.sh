@@ -18,7 +18,10 @@
 #   JUDGE_STATE=blocked     then JUDGE_ERROR=<why>: a bad id, no goal file, a
 #                           symlink on the way, checks or bundle that did not run
 #   JUDGE_STATE=unavailable then JUDGE_ERROR=<why>: the judge gave no verdict
-#                           (time limit, CLI failure, reply outside the schema)
+#                           (time limit, CLI failure, reply outside the schema),
+#                           or could not start (bin/flow-judge.sh exit 4: claude
+#                           or timeout(1)/gtimeout missing, or no working
+#                           directory)
 #
 # Never reads through a symlink: a goal or run reached through a link belongs
 # to its target, not to this repository.
@@ -87,6 +90,10 @@ JUDGE_RC=$?
 rm -f "$BUNDLE_FILE"
 VERDICT_JSON=""
 [ "$JUDGE_RC" -ne 0 ] || VERDICT_JSON=$(printf '%s' "$REPLY" | jq -c '.structured_output | select(type == "object" and (.verdict | IN("achieved", "not_achieved", "blocked", "needs_human_review")))' 2>/dev/null)
+if [ "$JUDGE_RC" -eq 4 ]; then
+  printf '%s\n' "JUDGE_STATE=unavailable" "JUDGE_ERROR=the judge could not start (exit 4): the claude CLI or timeout(1)/gtimeout is missing (on macOS: brew install coreutils), or its working directory could not be created; the flow-judge line on stderr says which"
+  exit 1
+fi
 if [ -z "$VERDICT_JSON" ]; then
   printf '%s\n' "JUDGE_STATE=unavailable" "JUDGE_ERROR=the judge gave no verdict (exit $JUDGE_RC; 124 is its time limit)"
   exit 1

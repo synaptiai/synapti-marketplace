@@ -571,3 +571,34 @@ sys.exit(1)'
   e2e_expect_line "JUDGE_ERROR=the evidence bundle could not be assembled (python3 or PyYAML missing, or a goal or sidecar the assembler refused)"
   _edges skill not-called
 fi
+
+GOAL_EXIT4_ERROR="JUDGE_ERROR=the judge could not start (exit 4): the claude CLI or timeout(1)/gtimeout is missing (on macOS: brew install coreutils), or its working directory could not be created; the flow-judge line on stderr says which"
+
+if _want skill-judge-dir; then
+  _flow_test_begin "goal-evaluator skill: a judge directory that cannot be created stops the judge (exit 4), never a run in /tmp (P9)"
+  _setup skill-judge-dir "<home>/.claude/flow-goal-judge is a regular file, so mkdir -p fails"
+  _goal
+  _evidence
+  mkdir -p "$E2E_HOME/.claude"
+  printf 'not a directory\n' > "$E2E_HOME/.claude/flow-goal-judge"
+  _skill
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "JUDGE_STATE=unavailable"
+  e2e_expect_line "$GOAL_EXIT4_ERROR"
+  e2e_expect_err "flow-judge: cannot create the judge's working directory $E2E_HOME/.claude/flow-goal-judge; the judge is not run anywhere else"
+  _edges skill not-called
+fi
+
+if _want skill-no-timeout; then
+  _flow_test_begin "goal-evaluator skill: with neither timeout nor gtimeout the block names exit 4 and the coreutils install"
+  _setup skill-no-timeout "PATH holds every command but timeout and gtimeout"
+  _goal
+  _evidence
+  rm -f "$E2E_BIN/timeout"
+  _skill PATH="$(e2e_path_without timeout gtimeout)"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "JUDGE_STATE=unavailable"
+  e2e_expect_line "$GOAL_EXIT4_ERROR"
+  e2e_expect_err "flow-judge: neither timeout(1) nor gtimeout is installed (install GNU coreutils; on macOS: brew install coreutils)"
+  _edges skill not-called
+fi

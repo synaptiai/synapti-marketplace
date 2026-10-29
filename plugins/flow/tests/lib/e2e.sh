@@ -408,6 +408,26 @@ e2e_user_settings() {
   printf 'user settings: %s\n' "$(_e2e_mask "$1")" | _e2e_art
 }
 
+# e2e_path_without <command>... — a directory holding a link to every command
+# on the scenario's PATH ($E2E_BIN first) except the named ones, so a command
+# installed on this machine cannot be found. Prints the directory, to pass as
+# PATH=<dir> to e2e_run_block, e2e_run_fence or e2e_run_bin.
+e2e_path_without() {
+  local tools="$E2E_DIR/path-without-$(printf '%s' "$*" | tr -c 'A-Za-z0-9' '-')" d f n skip x
+  mkdir -p "$tools"
+  local IFS=:
+  for d in $E2E_BIN:$PATH; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      n="${f##*/}"; skip=""
+      for x in "$@"; do [ "$n" = "$x" ] && skip=1; done
+      [ -z "$skip" ] && [ -x "$f" ] && [ ! -d "$f" ] && [ ! -e "$tools/$n" ] && ln -s "$f" "$tools/$n"
+    done
+  done
+  printf 'PATH without: %s\n' "$*" | _e2e_art
+  printf '%s' "$tools"
+}
+
 # e2e_run_bin [NAME=value ...] <script under the plugin> [arguments] — run a
 # plugin script in the scratch repository, with the given environment
 # variables set for it alone. Sets E2E_OUT, E2E_ERR, E2E_RC.
