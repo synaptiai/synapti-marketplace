@@ -89,9 +89,64 @@ if [ -z "$SHARD_BAD" ] && printf '%s\n' "$SHARD_ROWS" | grep -q '^ubuntu-latest 
 else
   _flow_assert_fail "the matrix parts do not cover 1 to N for each OS (${SHARD_BAD# }); rows: $(printf '%s\n' "$SHARD_ROWS" | tr '\n' ';')"
 fi
-if grep -qF 'FLOW_TEST_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}' "$WF" \
-   && grep -qF 'name: flow-e2e-${{ matrix.os }}-${{ matrix.shard }}-of-${{ matrix.shards }}' "$WF"; then
-  _flow_assert_pass "the test step passes its part to run.sh and names its artifact after it"
+# _wf_step <name> — the text of one step of the test job, from its `- name:`
+# line to the next step or job, so a line elsewhere in the file does not count.
+_wf_step() {
+  awk -v want="      - name: $1" '
+    /^  [A-Za-z_][A-Za-z0-9_-]*:[[:space:]]*$/ { job = $1 }
+    job == "test:" && $0 == want { on = 1; print; next }
+    on && (/^      - name: / || /^  [A-Za-z_]/) { on = 0 }
+    on { print }' "$WF"
+}
+WF_RUN=$(_wf_step "Run flow tests")
+WF_UPLOAD=$(_wf_step "Upload end-to-end artifacts")
+if printf '%s\n' "$WF_RUN" | grep -qF 'FLOW_TEST_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}' \
+   && printf '%s\n' "$WF_UPLOAD" | grep -qF 'name: flow-e2e-${{ matrix.os }}-${{ matrix.shard }}-of-${{ matrix.shards }}'; then
+  _flow_assert_pass "the test step passes its part to run.sh and the upload step names its artifact after it"
 else
-  _flow_assert_fail "the test step does not set FLOW_TEST_SHARD from the matrix, or the artifact name is not unique per part"
+  _flow_assert_fail "the Run flow tests step does not set FLOW_TEST_SHARD from the matrix, or the upload step's artifact name is not unique per part"
+fi
+
+_flow_test_begin "each part's time limit comes from its matrix row and is long enough for its OS"
+# Linux parts take about 6 to 14 minutes (2026-10-29) and macOS 15 to 24
+# minutes in one job. A fixed limit in the job, or a row below these floors,
+# cancels runs that are still passing.
+WF_TEST_JOB=$(awk '/^  [A-Za-z_][A-Za-z0-9_-]*:[[:space:]]*$/ { job = $1 } job == "test:"' "$WF")
+if printf '%s\n' "$WF_TEST_JOB" | grep -qE '^    timeout-minutes: \$\{\{ matrix\.timeout \}\}[[:space:]]*$'; then
+  _flow_assert_pass "the test job takes timeout-minutes from matrix.timeout"
+else
+  _flow_assert_fail "the test job does not take timeout-minutes from matrix.timeout"
+fi
+LOW_TIMEOUTS=$(sed -nE 's/^[[:space:]]*- \{ os: ([a-z0-9.-]+), shard: [0-9]+, shards: [0-9]+, timeout: ([0-9]+) \}[[:space:]]*$/\1 \2/p' "$WF" \
+  | awk '($1 == "ubuntu-latest" && $2 < 20) || ($1 == "macos-latest" && $2 < 45) || ($1 != "ubuntu-latest" && $1 != "macos-latest") { print }' | tr '\n' ';')
+if [ -z "$LOW_TIMEOUTS" ]; then
+  _flow_assert_pass "every Linux part has at least 20 minutes and macOS at least 45"
+else
+  _flow_assert_fail "matrix rows with too short a limit, or an unknown OS: $LOW_TIMEOUTS"
+fi
+
+_flow_test_begin "every Linux part runs a suite that writes end-to-end artifacts"
+# The upload step fails when a part wrote no artifact. The suites that source
+# tests/lib/e2e.sh write one file per scenario; each of the four parts, taken
+# as run.sh takes them, must hold one.
+WF_LINUX_N=$(sed -nE 's/^[[:space:]]*- \{ os: ubuntu-latest, shard: [0-9]+, shards: ([0-9]+), timeout: [0-9]+ \}[[:space:]]*$/\1/p' "$WF" | head -n 1)
+WF_EMPTY=""
+if [ -n "$WF_LINUX_N" ]; then
+  _wf_k=1
+  while [ "$_wf_k" -le "$WF_LINUX_N" ]; do
+    _wf_i=0 _wf_hit=0
+    for _wf_f in "$REPO_ROOT"/plugins/flow/tests/*.test.sh; do
+      if [ $((_wf_i % WF_LINUX_N)) -eq $((_wf_k - 1)) ] && grep -q 'tests/lib/e2e\.sh"' "$_wf_f"; then
+        _wf_hit=1
+      fi
+      _wf_i=$((_wf_i + 1))
+    done
+    [ "$_wf_hit" = 1 ] || WF_EMPTY="$WF_EMPTY $_wf_k/$WF_LINUX_N"
+    _wf_k=$((_wf_k + 1))
+  done
+fi
+if [ -n "$WF_LINUX_N" ] && [ -z "$WF_EMPTY" ]; then
+  _flow_assert_pass "each of the $WF_LINUX_N Linux parts holds a suite that sources tests/lib/e2e.sh"
+else
+  _flow_assert_fail "Linux parts with no end-to-end suite, whose artifact upload would fail:${WF_EMPTY:- no Linux rows}"
 fi

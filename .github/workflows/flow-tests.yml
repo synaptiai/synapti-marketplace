@@ -39,9 +39,10 @@ jobs:
     # Linux runs the suite in four parts, one job each: run.sh takes every
     # fourth file (FLOW_TEST_SHARD=K/N). In one piece it took 31 to 41 minutes
     # (2026-10) against a 45-minute limit, and slower runners were cancelled
-    # while still passing. On main (2026-10-29) the parts took about 9, 12, 5
-    # and 12 minutes. macOS skips the System One suites and takes 15 to 24
-    # minutes in one job.
+    # while still passing. Per-file times from one run of the whole suite on
+    # main (2026-10-29) put the parts at about 9, 12, 5 and 12 minutes of
+    # tests, plus a minute or two of setup per job. macOS skips the System One
+    # suites and takes 15 to 24 minutes in one job.
     strategy:
       fail-fast: false
       matrix:
@@ -174,8 +175,9 @@ jobs:
     # The repository-root tests/ tree holds standalone checks that live outside
     # the plugin suites; tests/run-all.sh discovers and runs them.
     #
-    # Same two-OS matrix as the flow suite: these scripts are bash, and the
-    # macOS runner pins bash 3.2, which is the floor the plugins claim.
+    # Both OSes, as for the flow suite (which splits Linux into parts): these
+    # scripts are bash, and the macOS runner pins bash 3.2, which is the floor
+    # the plugins claim.
     strategy:
       fail-fast: false
       matrix:
