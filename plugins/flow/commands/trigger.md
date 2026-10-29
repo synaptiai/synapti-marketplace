@@ -27,10 +27,10 @@ true
 
 ```bash
 ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" \
-  --default "false" '.flow.triggers.enabled')
+  --default "true" '.flow.triggers.enabled')
 if [ "$ENABLED" != "true" ]; then
-  printf '%s\n' "flow.triggers.enabled is false — /flow:trigger is opt-in." >&2
-  printf '%s\n' "Enable in .claude/settings.flow.local.json: { \"flow\": { \"triggers\": { \"enabled\": true } } }"
+  printf '%s\n' "flow.triggers.enabled is false — /flow:trigger is turned off in your settings." >&2
+  printf '%s\n' "Turn it back on in .claude/settings.flow.local.json: { \"flow\": { \"triggers\": { \"enabled\": true } } }"
   exit 0
 fi
 

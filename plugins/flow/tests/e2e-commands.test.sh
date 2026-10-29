@@ -29,6 +29,12 @@
 #      instead of being migrated with a WARN
 #   W2 a workflow with both requires and documented_requirements fails
 #      validation instead of dropping the legacy field with a WARN
+#
+# trigger.md and workflow.md pre-flights (triggers and workflows are on by
+# default)
+#   P1 with the setting absent from every source, the command is turned off,
+#      because the pre-flight's fallback is false instead of true
+#   P2 a user who sets the switch to false still gets the command
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -226,3 +232,63 @@ e2e_expect_line "WARN=learning.proposalDir could not be read from the user setti
 # Nothing outside the repository answers, not even for the home, so the
 # default is under the fallback home /nonexistent, never the shipped answer.
 e2e_expect_equal "PROPOSAL_DIR=/nonexistent/.claude/flow-proposals" "$(printf '%s\n' "$E2E_OUT" | grep '^PROPOSAL_DIR=')" "PROPOSAL_DIR is the default, not the shipped script's answer"
+
+# _plugin_without <jq path> — this scenario runs a copy of the plugin whose
+# settings.json lacks that key, so no settings source names it and the
+# pre-flight's own fallback decides.
+_plugin_without() {
+  e2e_plugin_copy settings.json "$(jq "del($1)" "$E2E_PLUGIN_DIR/settings.json")"
+}
+
+# _off_in_repo <kind> — the repository's .claude/settings.flow.local.json sets
+# flow.<kind>.enabled to false.
+_off_in_repo() {
+  mkdir -p "$E2E_REPO/.claude"
+  printf '{"flow":{"%s":{"enabled":false}}}\n' "$1" > "$E2E_REPO/.claude/settings.flow.local.json"
+}
+
+_flow_test_begin "/flow:trigger pre-flight: with flow.triggers.enabled set nowhere, triggers are on (P1)"
+e2e_new trigger-preflight-default-on
+e2e_describe "no settings source names flow.triggers.enabled, so the pre-flight falls back to its default, which is on"
+e2e_repo feature/e2e
+_plugin_without '.flow.triggers.enabled'
+e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/trigger.md" '.flow.triggers.enabled'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_no_out "Turn it back on"
+e2e_expect_err_lacks "turned off"
+e2e_expect_equal yes "$([ -d "$E2E_REPO/.flow/triggers" ] && echo yes || echo no)" "whether .flow/triggers was created"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:trigger pre-flight: flow.triggers.enabled false turns the command off (P2)"
+e2e_new trigger-preflight-off
+e2e_describe "the repository's .claude/settings.flow.local.json sets flow.triggers.enabled to false"
+e2e_repo feature/e2e
+_off_in_repo triggers
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/trigger.md" '.flow.triggers.enabled'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_err "flow.triggers.enabled is false — /flow:trigger is turned off in your settings."
+e2e_expect_out "Turn it back on"
+e2e_expect_equal no "$([ -d "$E2E_REPO/.flow/triggers" ] && echo yes || echo no)" "whether .flow/triggers was created"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:workflow pre-flight: with flow.workflows.enabled set nowhere, workflows are on (P1)"
+e2e_new workflow-preflight-default-on
+e2e_describe "no settings source names flow.workflows.enabled, so the pre-flight falls back to its default, which is on"
+e2e_repo feature/e2e
+_plugin_without '.flow.workflows.enabled'
+e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/workflow.md" '.flow.workflows.enabled'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_no_out "Turn it back on"
+e2e_expect_err_lacks "turned off"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:workflow pre-flight: flow.workflows.enabled false turns the command off (P2)"
+e2e_new workflow-preflight-off
+e2e_describe "the repository's .claude/settings.flow.local.json sets flow.workflows.enabled to false"
+e2e_repo feature/e2e
+_off_in_repo workflows
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" '.flow.workflows.enabled'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_err "flow.workflows.enabled is false — /flow:workflow is turned off in your settings."
+e2e_expect_out "Turn it back on"
+e2e_expect_clean_edges
