@@ -291,6 +291,9 @@ if _want skill-no-root; then
   _goal
   e2e_run_block CLAUDE_PLUGIN_ROOT="$E2E_DIR/nowhere" GOAL_ID=g-judge RUN_ID=run-e2e "$SKILL" GOAL_JUDGE_INPUT
   e2e_expect_line "JUDGE_STATE=blocked"
+  # The reason names the missing root; a later check failing for its own
+  # reason would also say blocked.
+  e2e_expect_line "JUDGE_ERROR=flow plugin root not found (cascade-resolve.sh missing) — reinstall or upgrade the flow plugin"
   e2e_expect_no_line "JUDGE_MODEL=haiku"
   e2e_expect_no_out "<<<UNTRUSTED_GOAL_CONTRACT>>>"
   e2e_expect_clean_edges
@@ -298,10 +301,13 @@ fi
 
 if _want skill-bad-id; then
   _flow_test_begin "goal-evaluator skill: a goal id with a path in it is refused"
-  _setup skill-bad-id "GOAL_ID is ../g-judge"
+  _setup skill-bad-id "GOAL_ID is ../g-judge, and a goal file sits at .flow/g-judge.goal.yaml, where that id leads"
   _goal
+  # Without the check, .flow/goals/../g-judge.goal.yaml is a readable goal.
+  cp "$E2E_REPO/.flow/goals/g-judge.goal.yaml" "$E2E_REPO/.flow/g-judge.goal.yaml"
   e2e_run_block GOAL_ID=../g-judge RUN_ID=run-e2e "$SKILL" GOAL_JUDGE_INPUT
   e2e_expect_line "JUDGE_STATE=blocked"
+  e2e_expect_line "JUDGE_ERROR=GOAL_ID must be a goal id without '/' or '..'"
   e2e_expect_no_out "<<<UNTRUSTED_GOAL_CONTRACT>>>"
   e2e_expect_clean_edges
 fi
