@@ -625,8 +625,7 @@ _git tag -a v4.17.0 -m "v4.17.0"
 _repo_gh
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
 e2e_expect_line "STATE=blocked"
-e2e_expect_out "git push origin v4.17.0"
-e2e_expect_out "git tag -d v4.17.0"
+e2e_expect_line "LOCAL_TAG=v4.17.0"
 e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 
@@ -651,7 +650,7 @@ _git tag -a v2.4.9 -m v2.4.9
 _repo_gh
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
 e2e_expect_line "STATE=blocked"
-e2e_expect_out "git tag -d v2.4.9"
+e2e_expect_line "LOCAL_TAG=v2.4.9"
 e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 
@@ -698,8 +697,7 @@ _git branch chore/release-4.18.0
 e2e_gh_fixture prs-all-chore_release-4.18.0-main '[]'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
 e2e_expect_line "STATE=blocked"
-e2e_expect_out "git push -u origin chore/release-4.18.0"
-e2e_expect_out "git branch -D chore/release-4.18.0"
+e2e_expect_line "LOCAL_BRANCH=chore/release-4.18.0"
 e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 

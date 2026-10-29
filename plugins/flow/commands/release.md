@@ -126,7 +126,7 @@ The block below works out which run this is, from the state of the repository an
 - `RELEASE_RUN=untagged` — the default branch carries a version that has no tag and no merged release pull request (a version bumped by hand, or a first release).
 - `RELEASE_RUN=publish` — the current version's tag (`TAG`) is on origin but GitHub has no release for it, as when an earlier run pushed the tag and the release was not created. This run creates only the GitHub release.
 
-The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `ERROR` names the tag, how to push it (after which the next run publishes it) and how to delete it. It stops the same way when a local release branch is left from an earlier run with no pull request, naming the branch, how to push it and open its pull request, and how to delete it. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
+The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
 
 The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`).
 
@@ -226,7 +226,8 @@ else
       printf '%s\n' "ERROR=\"git could not list the tags on origin\""
     elif [ "$TAG_WHERE" = local ]; then
       printf '%s\n' "STATE=blocked"
-      printf '%s\n' "ERROR=\"the tag $CHECK_TAG is in this clone but not on origin; push it to publish it (git push origin $CHECK_TAG) or delete it (git tag -d $CHECK_TAG), then run /flow:release again\""
+      printf '%s\n' "LOCAL_TAG=$CHECK_TAG"
+      printf '%s\n' "ERROR=\"the tag $CHECK_TAG is in this clone but not on origin; push it to publish it, or delete it, then run /flow:release again\""
     elif [ "$GH_RELEASE" = error ]; then
       printf '%s\n' "STATE=unavailable"
       printf '%s\n' "ERROR=\"gh could not say whether GitHub has a release for $CHECK_TAG\""
@@ -344,7 +345,8 @@ else
           printf '%s\n' "ERROR=\"origin already has $RELEASE_BRANCH with no open pull request; open one for it or delete the branch\""
         elif git rev-parse -q --verify "refs/heads/$RELEASE_BRANCH" >/dev/null; then
           printf '%s\n' "STATE=blocked"
-          printf '%s\n' "ERROR=\"the local branch $RELEASE_BRANCH is left from an earlier run; push it and open its pull request (git push -u origin $RELEASE_BRANCH, then gh pr create --base $DEFAULT_BRANCH --head $RELEASE_BRANCH), or delete it (git branch -D $RELEASE_BRANCH), then run /flow:release again\""
+          printf '%s\n' "LOCAL_BRANCH=$RELEASE_BRANCH"
+          printf '%s\n' "ERROR=\"the local branch $RELEASE_BRANCH is left from an earlier run; push it and open its pull request, or delete it, then run /flow:release again\""
         else
           printf '%s\n' "RELEASE_RUN=pr"
         fi
