@@ -215,6 +215,70 @@ _fls_wordcount() {
   fi
 }
 
+# --- every shipped skill: body at most 600 words, Contract at most 120
+# The budget references/skill-manifests.md states for every skill, counted the
+# way the learned-skill check below counts: frontmatter stripped, words by
+# _fls_wordcount. _fls_size_problems prints what is over, or nothing.
+FLS_MAX_BODY=600
+FLS_MAX_CONTRACT=120
+_fls_size_problems() {
+  local body bw cw p=""
+  body=$(awk 'BEGIN{fm=0} NR==1 && /^---$/ {fm=1; next} fm==1 { if (/^---$/) {fm=2}; next } {print}' "$1")
+  bw=$(printf '%s\n' "$body" | _fls_wordcount)
+  cw=$(printf '%s\n' "$body" | awk '/^## Contract[[:space:]]*$/ {on=1; next} on && /^## / {exit} on {print}' | _fls_wordcount)
+  [ "$bw" -le "$FLS_MAX_BODY" ] || p="$p; body is $bw words (max $FLS_MAX_BODY)"
+  [ "$cw" -le "$FLS_MAX_CONTRACT" ] || p="$p; Contract is $cw words (max $FLS_MAX_CONTRACT)"
+  printf '%s' "${p#; }"
+}
+
+# The check on skills built to sit exactly at and one word over each limit, so
+# a raised limit or a miscount fails here even when every shipped skill fits.
+# Each fixture body is "# T", a "## Contract" heading, the contract words, a
+# "## Body" heading and the body words: 6 words of headings.
+_flow_test_begin "the size check: 600/120 pass, 601 body or 121 Contract fail"
+SIZE_FIX="$FIX/size"
+_fls_size_fixture() {  # <name> <contract words> <other body words>
+  mkdir -p "$SIZE_FIX/$1"
+  python3 - "$SIZE_FIX/$1/SKILL.md" "$1" "$2" "$3" <<'PY'
+import sys
+path, name, c, b = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+with open(path, "w", encoding="utf-8") as f:
+    f.write("---\nname: %s\ndescription: \"fixture words that are not counted\"\nagent: Explore\n---\n\n" % name)
+    f.write("# T\n\n## Contract\n\n%s\n\n## Body\n\n%s\n" % (" ".join(["c"] * c), " ".join(["w"] * b)))
+PY
+}
+_fls_size_fixture at-limit 120 474        # 6 + 120 + 474 = 600
+_fls_size_fixture body-over 120 475       # 601
+_fls_size_fixture contract-over 121 10    # Contract 121, body 137
+assert_equal "" "$(_fls_size_problems "$SIZE_FIX/at-limit/SKILL.md")" "a 600-word body with a 120-word Contract passes"
+assert_equal "body is 601 words (max 600)" "$(_fls_size_problems "$SIZE_FIX/body-over/SKILL.md")" "a 601-word body fails"
+assert_equal "Contract is 121 words (max 120)" "$(_fls_size_problems "$SIZE_FIX/contract-over/SKILL.md")" "a 121-word Contract fails"
+
+_flow_test_begin "every shipped skill: body at most 600 words, Contract at most 120"
+SIZE_SCANNED=0
+SIZE_OVER=""
+for FILE in "$SKILLS_DIR"/*/SKILL.md; do
+  [ -f "$FILE" ] || continue
+  SIZE_SCANNED=$((SIZE_SCANNED + 1))
+  NAME=$(basename "$(dirname "$FILE")")
+  P=$(_fls_size_problems "$FILE")
+  if [ -n "$P" ]; then
+    SIZE_OVER="$SIZE_OVER $NAME"
+    _flow_assert_fail "$NAME: $P"
+  else
+    _flow_assert_pass "$NAME: within $FLS_MAX_BODY / $FLS_MAX_CONTRACT words"
+  fi
+done
+# Every skill on disk one level under skills/ was checked: a loop that skipped
+# one, or a glob that reached none, would otherwise pass.
+SIZE_FOUND=$(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -name SKILL.md -type f | wc -l | tr -d ' ')
+if [ "$SIZE_SCANNED" -eq "$SIZE_FOUND" ] && [ "$SIZE_FOUND" -gt 0 ]; then
+  _flow_assert_pass "checked $SIZE_SCANNED of $SIZE_FOUND shipped skills"
+else
+  _flow_assert_fail "checked $SIZE_SCANNED shipped skills but $SIZE_FOUND are on disk"
+fi
+[ -z "$SIZE_OVER" ] || printf 'over the limit:%s\n' "$SIZE_OVER" >&2
+
 _flow_test_begin "promoted learned skills carry skill shape, not proposal shape"
 if [ -d "$SKILLS_DIR/learned" ]; then
   _flow_assert_pass "$SKILLS_DIR/learned exists — the walk below has somewhere to go"
