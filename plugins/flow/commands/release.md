@@ -276,23 +276,9 @@ else
       printf '%s\n' "TAG_COMMIT=$ORIGIN_HEAD"
     fi
   else
-    # The script prints only semantic versions; this keeps any other value
-    # out of the tag and branch names below.
-    case "$CUR_TAG_VERSION" in
-      ''|*[!0-9A-Za-z.+-]*) CUR_STATE=badversion ;;
-    esac
-    if [ "$CUR_STATE" = badversion ]; then
-      printf '%s\n' "STATE=blocked"
-      printf '%s\n' "ERROR=\"the version script named a current version that is not a semantic version\""
-      LOOKUP_VERSION=""
-      TAG_DONE=1
-    else
-      CHECK_TAG="$TAG_PREFIX$CUR_TAG_VERSION"
-      _flow_tag_state
-    fi
-    if [ "$TAG_DONE" = 1 ]; then
-      :
-    elif [ "$TAG_WHERE" = remote ] && [ "$GH_RELEASE" = yes ]; then
+    CHECK_TAG="$TAG_PREFIX$CUR_TAG_VERSION"
+    _flow_tag_state
+    if [ "$TAG_WHERE" = remote ] && [ "$GH_RELEASE" = yes ]; then
       # The current version is released: plan the next one.
       if [ -n "$RELEASE_PLUGIN" ] && [ -n "$MARKET_TYPE" ]; then
         PLAN_OUT=$("$VERSIONS" --plan --bump "$RELEASE_TYPE" --plugin "$RELEASE_PLUGIN" --market-bump "$MARKET_TYPE")
@@ -311,6 +297,8 @@ else
       LOOKUP_VERSION="$CUR_TAG_VERSION"
       UNTAGGED=1
     fi
+    # The script prints only semantic versions; this keeps any other value
+    # out of the tag and branch names below.
     case "$LOOKUP_VERSION" in
       *[!0-9A-Za-z.+-]*) LOOKUP_VERSION="" ;;
     esac

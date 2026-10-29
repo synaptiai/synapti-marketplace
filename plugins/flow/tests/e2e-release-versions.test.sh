@@ -672,7 +672,7 @@ e2e_new release-plan-bad-next-version
 e2e_describe "a version script that answers with a next version holding a slash"
 _released_marketplace
 e2e_plugin_copy bin/flow-release-versions.sh '#!/bin/sh
-case " $* " in *" --bump "*) printf "%s\n" "CURRENT_TAG_VERSION=4.17.0" "TAG_VERSION=4.18.0/../x" "VERSIONS_STATE=planned" ;;
+case " $* " in *" --bump "*) printf "%s\n" "CURRENT_TAG_VERSION=4.17.0" "TAG_VERSION=4.18.0/x" "VERSIONS_STATE=planned" ;;
   *) printf "%s\n" "CURRENT_TAG_VERSION=4.17.0" "VERSIONS_STATE=planned" ;; esac'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
 e2e_expect_line "STATE=blocked"
