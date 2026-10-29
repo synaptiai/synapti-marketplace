@@ -671,6 +671,24 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
           addAssigneesToAssignable) _tg_emit issueAssign "$1" ;;
         esac
       done
+      # Any other mutation field whose name holds Merge, Release or Ref, in
+      # any case (mergeBranch, enqueuePullRequest, deleteRelease, createRef,
+      # updateRef, deleteRef, updateRefs): a field is a name followed by its
+      # arguments. Only in a document that has a mutation; a query that
+      # reads refs or mergeable changes nothing.
+      case "$text" in
+        *mutation*)
+          local fm=0 fr=0
+          for m in $(printf '%s' "$text" | grep -oE '[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(' | LC_ALL=C tr -d '(\t ' | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C sort -u); do
+            case "$m" in
+              mutation|mergepullrequest|enablepullrequestautomerge|createrelease|updaterelease) ;;
+              *merge*|enqueuepullrequest) fm=1 ;;
+              *release*|*ref*) fr=1 ;;
+            esac
+          done
+          [ "$fm" = 1 ] && _tg_emit merge "$1"
+          [ "$fr" = 1 ] && _tg_emit release "$1" ;;
+      esac
       [ "$unread" = 1 ] && _tg_emit unknown "$1"
       return 0 ;;
   esac

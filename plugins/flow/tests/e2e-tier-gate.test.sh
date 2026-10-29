@@ -688,7 +688,7 @@ fi
 # --- T15: gh api PATCH and GraphQL ---------------------------------------------
 if _want tg-api-patch-graphql; then
   _tg_setup tg-api-patch-graphql feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key; reads and other mutations do not (T15)"
+    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them; reads and other mutations do not (T15)"
   printf '%s\n' 'mutation { enablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }' > "$E2E_REPO/q.graphql"
   printf '%s\n' '{"query":"mutation { createRelease(input:{repositoryId:\"r\", tagName:\"v1\"}) { release { id } } }"}' > "$E2E_REPO/body.json"
   printf '%s\n' '{"query":"query { viewer { login } }"}' > "$E2E_REPO/read.json"
@@ -718,6 +718,18 @@ unknown|gh api graphql --input -
 silent|gh api graphql -f query='query { repository(owner:"o", name:"r") { pullRequest(number:1) { mergeable } } }'
 silent|gh api graphql -f query='mutation { addComment(input:{}) { clientMutationId } }'
 silent|gh api graphql -f query='mutation { createIssueType(input:{}) { clientMutationId } }'
+release|gh api graphql -f query='mutation { createRef(input:{repositoryId:"r", name:"refs/tags/v1", oid:"a"}) { ref { id } } }'
+release|gh api graphql -f query='mutation { updateRef(input:{refId:"r", oid:"a", force:true}) { ref { id } } }'
+release|gh api graphql -f query='mutation { deleteRef(input:{refId:"r"}) { clientMutationId } }'
+release|gh api graphql -f query='mutation { updateRefs(input:{repositoryId:"r", refUpdates:[]}) { clientMutationId } }'
+release|gh api graphql -f query='mutation { t: CreateRef (input:{}) { ref { id } } }'
+release|gh api graphql -f query='mutation { deleteRelease(input:{}) { clientMutationId } }'
+merge|gh api graphql -f query='mutation { mergeBranch(input:{}) { mergeCommit { oid } } }'
+merge|gh api graphql -f query='mutation { enqueuePullRequest(input:{pullRequestId:"x"}) { mergeQueueEntry { id } } }'
+merge|gh api graphql -f query='mutation { disablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }'
+silent|gh api graphql -f query='query { repository(owner:"o", name:"r") { refs(first:5, refPrefix:"refs/tags/") { nodes { name } } } }'
+silent|gh api graphql -f query='query { repository(owner:"o", name:"r") { pullRequest(number:1) { headRefName mergeable } } }'
+silent|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"merge the release ref"}) { clientMutationId } }'
 silent|gh api graphql --input read.json
 silent|gh api -X PATCH repos/o/r/issues/4 -f title=x
 silent|gh api -X PATCH repos/o/r/releases/assets/5 -f name=x
