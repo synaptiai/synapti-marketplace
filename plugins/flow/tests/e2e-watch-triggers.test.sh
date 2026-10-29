@@ -36,6 +36,10 @@
 #      the target must be the work
 #   W14 the issue loop's snapshot folder .flow/watch/ is not ignored, so the
 #      working tree turns dirty on the first iteration
+#   W15 a write that fails part way leaves a partial loop prompt or trigger
+#   W16 a trigger schema that cannot be read or is not a valid schema stops
+#      the script with a traceback, or reads as "cannot write", instead of a
+#      refusal that names the schema
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -303,3 +307,55 @@ e2e_expect_equal 1 "$E2E_RC" "the exit status"
 e2e_expect_line "WATCH_STATE=refused"
 e2e_expect_equal "" "$(ls "$E2E_DIR/elsewhere")" "files written through the link"
 e2e_expect_equal "" "$(ls "$E2E_REPO/.flow/triggers")" "files in .flow/triggers"
+
+# _create_branch [wrapper words...] — bin/flow-watch-create.sh for branch
+# feature/x, run in the scratch repository with .flow/triggers present.
+_create_branch() {
+  mkdir -p "$E2E_REPO/.flow/triggers"
+  _e2e_exec "$@" "$E2E_ACTIVE_PLUGIN/bin/flow-watch-create.sh" --kind branch --repo octo/demo \
+    --now 2026-10-29T00:00:00Z --branch feature/x --default-branch main
+  printf -- '--- expectations\n' | _e2e_art
+}
+_no_files() {
+  e2e_expect_equal "" "$(ls -A "$E2E_REPO/.flow/triggers" 2>/dev/null)" "files in .flow/triggers"
+  e2e_expect_equal "" "$(ls -A "$E2E_REPO/.claude" 2>/dev/null | grep '^flow-loop-')" "loop prompts in .claude"
+}
+
+_flow_test_begin "bin/flow-watch-create.sh: a write that fails part way leaves no partial file (W15)"
+e2e_new watch-create-write-fails
+e2e_describe "the script runs under ulimit -f 1 (1024 bytes); the branch loop prompt is longer, so its write fails part way"
+e2e_repo feature/x
+_create_branch bash -c 'ulimit -f 1; exec "$@"' _
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "WATCH_STATE=refused"
+e2e_expect_out "cannot write"
+_no_files
+
+if python3 -c 'import jsonschema' >/dev/null 2>&1; then
+  _flow_test_begin "bin/flow-watch-create.sh: a trigger schema that is not JSON is a refusal naming the schema (W16)"
+  e2e_new watch-create-schema-not-json
+  e2e_describe "the plugin copy's schemas/v1/trigger.schema.json holds '{'"
+  e2e_repo feature/x
+  e2e_plugin_copy schemas/v1/trigger.schema.json '{'
+  _create_branch
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "WATCH_STATE=refused"
+  e2e_expect_out "schemas/v1/trigger.schema.json"
+  e2e_expect_err_lacks "Traceback"
+  _no_files
+
+  _flow_test_begin "bin/flow-watch-create.sh: a trigger schema that is not a valid schema is a refusal naming the schema (W16)"
+  e2e_new watch-create-schema-invalid
+  e2e_describe "the plugin copy's schemas/v1/trigger.schema.json holds {\"type\": 12}"
+  e2e_repo feature/x
+  e2e_plugin_copy schemas/v1/trigger.schema.json '{"type": 12}'
+  _create_branch
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "WATCH_STATE=refused"
+  e2e_expect_out "schemas/v1/trigger.schema.json"
+  e2e_expect_err_lacks "Traceback"
+  _no_files
+else
+  _flow_test_begin "bin/flow-watch-create.sh: a trigger schema that cannot be used is a refusal (W16)"
+  _flow_assert_pass "SKIP: jsonschema not installed"
+fi

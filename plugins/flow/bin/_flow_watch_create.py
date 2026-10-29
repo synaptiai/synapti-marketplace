@@ -124,9 +124,22 @@ def check(doc, want_id, want_ctx):
     except ImportError:
         print("WARN=\"jsonschema is not installed; the trigger was checked without the schema\"")
         return
-    with open(os.path.join(PLUGIN, "schemas", "v1", "trigger.schema.json"), encoding="utf-8") as f:
-        schema = json.load(f)
-    errors = list(jsonschema.validators.validator_for(schema)(schema).iter_errors(doc))
+    # The schema ships with the plugin; one that cannot be read, is not JSON
+    # or is not a valid schema stops the check with a refusal that says so,
+    # not a traceback or a "cannot write".
+    where = "schemas/v1/trigger.schema.json"
+    try:
+        with open(os.path.join(PLUGIN, "schemas", "v1", "trigger.schema.json"), encoding="utf-8") as f:
+            schema = json.load(f)
+        cls = jsonschema.validators.validator_for(schema)
+        cls.check_schema(schema)
+    except OSError as e:
+        raise Refused("cannot read the trigger schema %s: %s" % (where, e.strerror))
+    except ValueError as e:
+        raise Refused("the trigger schema %s is not valid JSON: %s" % (where, str(e).splitlines()[0]))
+    except jsonschema.exceptions.SchemaError as e:
+        raise Refused("the trigger schema %s is not a valid JSON Schema: %s" % (where, e.message))
+    errors = list(cls(schema).iter_errors(doc))
     if errors:
         e = errors[0]
         raise Refused("the trigger does not match the schema at %s: %s"
@@ -134,10 +147,19 @@ def check(doc, want_id, want_ctx):
 
 
 def write_new(path, text):
-    """Create path; refuse a link and an existing file (O_EXCL)."""
+    """Create path; refuse a link and an existing file (O_EXCL). A write that
+    fails after the file was created removes it: O_EXCL means this call made
+    it, and a partial trigger or loop prompt must not be left behind."""
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+    except BaseException:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
 
 
 def main(argv):
