@@ -126,7 +126,7 @@ The block below works out which run this is, from the state of the repository an
 - `RELEASE_RUN=untagged` — the default branch carries a version that has no tag and no merged release pull request (a version bumped by hand, or a first release).
 - `RELEASE_RUN=publish` — the current version's tag (`TAG`) is on origin but GitHub has no release for it, as when an earlier run pushed the tag and the release was not created. This run creates only the GitHub release.
 
-The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
+The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. It stops the same way when GitHub has only a draft release for the tag: `DRAFT_RELEASE` names the tag, to be published with `gh release edit <tag> --draft=false` or deleted with `gh release delete <tag>` (flow's tier hook asks before either runs); deleting keeps the tag, so the next run creates the release. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
 
 The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`).
 
@@ -195,7 +195,7 @@ else
   ORIGIN_HEAD=$(git rev-parse "refs/remotes/origin/$DEFAULT_BRANCH")
   # _flow_tag_state: where the tag CHECK_TAG is. TAG_WHERE is remote (on
   # origin), local (in this clone only), absent, or error (origin did not
-  # answer); with remote, GH_RELEASE is yes, no (GitHub answers 404) or error.
+  # answer); with remote, GH_RELEASE is yes (published), draft, no or error.
   # A tag in this clone alone does not make a release: a tag push that failed
   # leaves one, and so does a GitHub release that was never created.
   _flow_tag_state() {
@@ -209,6 +209,19 @@ else
         GH_RELEASE=yes
       else
         case "$_gh_err" in *"(HTTP 404)"*) GH_RELEASE=no ;; *) GH_RELEASE=error ;; esac
+      fi
+      # The lookup by tag finds published releases only. A draft for the tag
+      # is in the release list; creating a release beside it would make two.
+      # The tag is compared in the shell, not in the jq text, so nothing in
+      # the tag prefix from settings is read as jq.
+      if [ "$GH_RELEASE" = no ]; then
+        if _drafts=$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" --jq '.[] | select(.draft) | .tag_name'); then
+          if printf '%s\n' "$_drafts" | grep -qxF -- "$CHECK_TAG"; then
+            GH_RELEASE=draft
+          fi
+        else
+          GH_RELEASE=error
+        fi
       fi
     elif [ "$_ls_rc" -ne 2 ]; then
       TAG_WHERE=error
@@ -231,6 +244,10 @@ else
     elif [ "$GH_RELEASE" = error ]; then
       printf '%s\n' "STATE=unavailable"
       printf '%s\n' "ERROR=\"gh could not say whether GitHub has a release for $CHECK_TAG\""
+    elif [ "$GH_RELEASE" = draft ]; then
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "DRAFT_RELEASE=$CHECK_TAG"
+      printf '%s\n' "ERROR=\"GitHub has a draft release for $CHECK_TAG; publish it (gh release edit $CHECK_TAG --draft=false) or delete it (gh release delete $CHECK_TAG), then run /flow:release again\""
     elif [ "$GH_RELEASE" = no ]; then
       printf '%s\n' "RELEASE_RUN=publish"
       printf '%s\n' "TAG=$CHECK_TAG"

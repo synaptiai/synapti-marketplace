@@ -57,6 +57,9 @@
 #      release", and the run re-creates one
 #   S10 the release branch name is built from a version or a branch pattern
 #      that does not make a valid branch name
+#   S11 a tag whose only release is a draft counts as having no release
+#      (GitHub's lookup by tag name returns published releases only), so the
+#      run creates a second release beside the draft
 #
 # release.md Phase 1
 #   C1 a merged pull request's title holding a quote or a line break prints
@@ -602,12 +605,53 @@ e2e_new release-plan-publish
 e2e_describe "marketplace at v4.17.0, tagged and pushed, but GitHub has no release for v4.17.0"
 _released_marketplace
 e2e_gh_not_found release-v4.17.0
+e2e_gh_fixture releases '[{"tag_name":"v4.17.0-rc.1","draft":true},{"tag_name":"v4.16.0","draft":false}]'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_line "RELEASE_RUN=publish"
 e2e_expect_line "TAG=v4.17.0"
 e2e_expect_no_out "RELEASE_BRANCH="
 e2e_expect_no_out "NEW_VERSION="
+e2e_expect_no_out "DRAFT_RELEASE="
+e2e_expect_clean_edges
+
+_flow_test_begin "Phase 2: a draft release for the tag stops the run rather than creating a second release (S11)"
+e2e_new release-plan-draft
+e2e_describe "v4.17.0 on origin; GitHub's published-release lookup says 404, and the draft for v4.17.0 is on the second page of releases"
+_released_marketplace
+e2e_gh_not_found release-v4.17.0
+e2e_gh_pages releases '[{"tag_name":"v4.16.0","draft":false}]' '[{"tag_name":"v4.17.0","draft":true}]'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "DRAFT_RELEASE=v4.17.0"
+e2e_expect_out "--draft=false"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-draft-list-fails
+e2e_describe "the same, but gh fails when listing the releases"
+_released_marketplace
+e2e_gh_not_found release-v4.17.0
+e2e_gh_fail releases
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=unavailable"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-no-files-draft
+e2e_describe "no version file; v2.4.9 on origin with only a draft release"
+e2e_repo main
+_git tag -a v2.4.9 -m v2.4.9
+_origin
+_repo_gh
+e2e_gh_not_found release-v2.4.9
+e2e_gh_fixture releases '[{"tag_name":"v2.4.9","draft":true}]'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "DRAFT_RELEASE=v2.4.9"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_no_out "TAG=v2.4.10"
 e2e_expect_clean_edges
 
 e2e_new release-plan-release-unknown
@@ -640,6 +684,7 @@ _git tag -a v2.4.9 -m v2.4.9
 _origin
 _repo_gh
 e2e_gh_not_found release-v2.4.9
+e2e_gh_fixture releases '[]'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
 e2e_expect_line "RELEASE_RUN=publish"
 e2e_expect_line "TAG=v2.4.9"
