@@ -194,7 +194,7 @@ else
     printf '%s\n' "STATE=blocked"
     printf '%s\n' "ERROR=\"the version files cannot be bumped consistently; see REFUSED\""
   elif [ "$CUR_STATE" = "none" ]; then
-    # No version file: a tag-only release of the default branch's head.
+    # No version file: a tag-only release of the head of the default branch.
     printf '%s\n' "$CUR_OUT"
     LAST=$(git describe --tags --abbrev=0 "$ORIGIN_HEAD" 2>/dev/null)
     LAST_V=${LAST#"$TAG_PREFIX"}
