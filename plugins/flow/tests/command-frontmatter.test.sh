@@ -337,3 +337,14 @@ if bad:
 sys.exit(0)
 PYRES
 assert_equal "0" "$?" "every settings-derived value is printed with printf, not echo"
+
+# --- /flow:setup's "Commands Available" table names every command the plugin
+# ships, and no command it does not ship. The table is what a new user sees
+# after setup, so a command missing from it is a command they never learn of.
+_flow_test_begin "setup.md lists every shipped command in its Commands Available table"
+SETUP_TABLE=$(awk '/^### Commands Available$/{f=1;next} f&&/^### /{exit} f' "$COMMANDS_DIR/setup.md")
+# `/flow <verb>` is commands/flow.md; `/flow:<name> ...` is commands/<name>.md.
+LISTED=$(printf '%s\n' "$SETUP_TABLE" | sed -n -e 's/^| `\/flow:\([a-z-]*\).*/\1/p' -e 's/^| `\/flow [^`]*`.*/flow/p' | sort -u)
+SHIPPED=$(for f in "$COMMANDS_DIR"/*.md; do basename "$f" .md; done | sort -u)
+assert_contains "flow:start" "$(printf '%s\n' "$SETUP_TABLE" | tr -d '/`')" "the table was found"
+assert_equal "$SHIPPED" "$LISTED" "the table's commands are exactly the files in commands/"
