@@ -69,7 +69,7 @@
           "default": "confirm"
         },
         "release": {
-          "description": "gh release create (or gh release new; journaled instead with --verify-tag when the tag is already on the remote), gh api POST to .../releases or PATCH on .../releases/{id}, the GraphQL mutations createRelease and updateRelease, and pushing a tag (git push --tags, --follow-tags, push.followTags, a refs/tags/ refspec, a tag's name, or gh api POST to .../git/refs with a refs/tags/ ref). Floor: confirm. A lower value is ignored with one warning naming this setting, and the release still asks.",
+          "description": "gh release create (or gh release new; journaled instead with --verify-tag when the tag is already on the remote), gh api POST to .../releases or PATCH on .../releases/{id}, the GraphQL mutations createRelease and updateRelease, and pushing a tag (git push --tags, --follow-tags, push.followTags, a refs/tags/ refspec, a tag's name, or gh api POST to .../git/refs with a refs/tags/ ref), and deleting a tag (git push :<tag>, --delete <tag>, gh api DELETE on .../git/refs/tags/<tag>). Floor: confirm. A lower value is ignored with one warning naming this setting, and the release still asks.",
           "enum": [
             "autonomous",
             "journal",
