@@ -51,9 +51,13 @@
 # mutation is refused outright, as is one whose whole endpoint is a variable, or
 # a GraphQL call whose query comes from a file.
 #
+# Words are read as bash passes them: quotes and backslash escapes removed, so
+# `gh pr me""rge 7` and `g\h pr mer\ge 7` are gh pr merge 7 and are checked as
+# such.
+#
 # Not covered, by design. This hook catches merges written in good faith, or
 # misdirected by a variable or a directory. It does not stop deliberate
-# evasion: a quote or backslash inside the word (`m\erge`), a command held in a
+# evasion: an ANSI-C quoted word (`$'m\x65rge'`), a whole command held in a
 # variable and run as `$CMD`, a gh alias defined in an earlier call, a script
 # piped into a shell, a gh extension, or curl to the REST API. Branch protection
 # with required checks is the mechanism for that, as #170 says.
@@ -86,7 +90,7 @@ fi
 . "$_BD_LIB"
 # Readable is not the same as loaded. A truncated or broken library defines
 # nothing, every call below fails, no merge is found, and the hook allows.
-for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_is_redirection; do
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_unescape_tok _bd_is_redirection; do
   if ! type "$_bd_fn" >/dev/null 2>&1; then
     echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so merge readiness cannot be verified." >&2
     echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
@@ -383,6 +387,8 @@ while IFS= read -r SEG; do
   case "$SEG" in __BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
   TOK=()
   _rm_tokenise "$SEG"
+  # The words as bash passes them: `g\h pr mer\ge 7` runs gh pr merge 7.
+  _bd_unescape_tok
   n=${#TOK[@]}
   [ "$n" -gt 0 ] || continue
 

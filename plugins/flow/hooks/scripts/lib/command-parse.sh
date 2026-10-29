@@ -16,6 +16,9 @@
 #   _bd_strip_noncode <command>   -> sets BD_CODE, and BD_KEPT_BODY=1 when a heredoc
 #                                    body was kept as text
 #   _rm_tokenise <simple-command> -> fills TOK
+#   _bd_unescape <word>           -> sets BD_UNESC to the word with its backslash
+#                                    escapes removed
+#   _bd_unescape_tok              -> applies _bd_unescape to every word of TOK
 #   _bd_git_parse <simple-command> -> sets GIT_SUB, GIT_ARGS, GIT_ARGN; 1 if not git
 #   _bd_is_whole_tree <pathspec>  -> 0 when the pathspec is the whole tree
 #   _bd_is_redirection <token>    -> 0 when the token is a redirection
@@ -112,6 +115,40 @@ _rm_tokenise() {
   while IFS= read -r _tok_line; do
     TOK+=("${_tok_line#T}")
   done <<< "$_tok_out"
+}
+
+# _bd_unescape <word>
+# Sets BD_UNESC to the word as the shell hands it to the program: each `\X`
+# becomes `X` (so `\\` becomes `\`). _rm_tokenise keeps backslashes, and bash
+# removes them, so `g\h pr mer\ge 1` runs `gh pr merge 1`; a rule that compares
+# the word as written misses it. The tokeniser does not record which part of a
+# word was quoted, so a backslash inside quotes (where bash keeps it) is removed
+# too: that can only make a word read as a command it does not run, which a
+# guard pays for with an extra check, never a missed one.
+#
+# Short words go through a pattern substitution, long ones through one sed:
+# bash 3.2's `${v//pattern/}` is quadratic and took thirteen seconds on a 9KB
+# word, and a PR body can be that long.
+_bd_unescape() {
+  BD_UNESC="$1"
+  case "$1" in *\\*) ;; *) return 0 ;; esac
+  if [ "${#1}" -le 64 ]; then
+    BD_UNESC="${1//\\\\/$'\001'}"
+    BD_UNESC="${BD_UNESC//\\/}"
+    BD_UNESC="${BD_UNESC//$'\001'/\\}"
+  else
+    BD_UNESC=$(printf '%s\n' "$1" | LC_ALL=C sed 's/\\\(.\)/\1/g') || BD_UNESC="$1"
+  fi
+}
+
+# _bd_unescape_tok — _bd_unescape on every word of the caller's TOK.
+_bd_unescape_tok() {
+  local _ue_i
+  for ((_ue_i = 0; _ue_i < ${#TOK[@]}; _ue_i++)); do
+    case "${TOK[_ue_i]}" in *\\*) ;; *) continue ;; esac
+    _bd_unescape "${TOK[_ue_i]}"
+    TOK[_ue_i]="$BD_UNESC"
+  done
 }
 
 # ---------------------------------------------------------------------------
@@ -526,7 +563,8 @@ _bd_expand_interpreter_args() {
     found=0
     for ((i = 0; i < n; i++)); do
       tok="${TOK[i]}"
-      if [ "${#tok}" -le 4096 ] && _bd_is_interpreter "${tok#\\}"; then found=1; continue; fi
+      # `ba\sh -c '...'` runs bash: the word is compared as the shell passes it.
+      if [ "${#tok}" -le 4096 ] && { _bd_unescape "$tok"; _bd_is_interpreter "$BD_UNESC"; }; then found=1; continue; fi
       if [ "$found" = "1" ]; then
         case "$tok" in
           *[[:space:]]*) extra="$extra

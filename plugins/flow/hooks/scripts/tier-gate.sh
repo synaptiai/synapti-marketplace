@@ -11,7 +11,13 @@
 #   tiers.issueAssign  gh issue edit --add-assignee              default journal
 #   tiers.issueCreate  gh issue create                           default journal
 #   tiers.merge        gh pr merge                               always confirm
-#   tiers.release      gh release create, and a tag push         always confirm
+#   tiers.release      gh release create, edit, delete, upload   always confirm
+#                      and delete-asset, and a tag push
+#
+# gh release edit publishes a draft (--draft=false) or moves a release's tag,
+# and delete removes a release (and its tag, with --cleanup-tag). upload and
+# delete-asset are the release tier too: on a published release they change
+# the files people download at once, and --clobber replaces one.
 #
 # `new` is gh's alias for `create` (`gh pr new`, `gh issue new`, `gh release
 # new`) and counts the same. `gh api` counts as follows. A leading `/`, a full
@@ -19,7 +25,9 @@
 # the method is -X/--method, or POST when a -f/-F/--field/--raw-field/--input
 # parameter is given (gh's own rule), or GET.
 #   POST/PUT .../pulls/{n}/merge, .../merges              merge
-#   POST .../releases; PATCH .../releases/{id}            release
+#   POST .../releases; PATCH .../releases/{id}; DELETE
+#     .../releases/{id} or .../releases/assets/{id};
+#     POST .../releases/{id}/assets                       release
 #   POST .../git/refs with a refs/tags/ ref               release
 #   DELETE or PATCH .../git/refs/tags/{tag}               release
 #   POST .../pulls                                        prCreate
@@ -32,34 +40,66 @@
 #   graphql with createPullRequest                        prCreate
 #   graphql with createIssue                              issueCreate
 #   graphql with addAssigneesToAssignable                 issueAssign
+#   graphql mutation with any other field whose name
+#     holds Merge (any case), or enqueuePullRequest       merge
+#   graphql mutation with any other field whose name
+#     holds Release or Ref (any case): createRef,
+#     updateRef, deleteRef, updateRefs, deleteRelease     release
 # The GraphQL query is read from -f/-F query=..., query=@file and --input
-# file (relative to the command's directory).
+# file (relative to the command's directory). A field is a name followed by
+# its arguments, and only a document with a mutation in it is read for the
+# Merge/Release/Ref names: a query that reads refs or mergeable changes
+# nothing.
 #
 # Pushing a tag is the release tier, not push: `git push` with --tags,
 # --follow-tags, --mirror, `-c push.followTags=true`, or push.followTags true
 # in the repository's git configuration (a -c on the command line overrides
 # it); `git push <remote> tag <name>`; a refspec with refs/tags/ on either
-# side (`HEAD:refs/tags/v1`); or a refspec whose source is a tag in this
-# repository (`git push origin v1.2.0` when v1.2.0 is a tag; a branch named
-# v1-fix is not). Deleting a tag is release too: `:<tag>`, `:refs/tags/<tag>`,
-# or --delete/-d with a tag's name; a deleted name that is neither a tag nor
-# a known branch (local, or remote-tracking on that remote) may be a tag on
-# the remote, so it asks. A command that pushes a branch and a tag is
+# side (`HEAD:refs/tags/v1`); a refspec whose source or destination is a tag
+# in this repository (`git push origin v1.2.0` when v1.2.0 is a tag; a branch
+# named v1-fix is not); or a `tags/<name>` source. Deleting a tag is release
+# too: `:<tag>`, `:refs/tags/<tag>`, or --delete/-d with a tag's name; a
+# deleted name that is neither a tag nor a known branch (local, or
+# remote-tracking on that remote) may be a tag on the remote, so it asks. Any
+# other source that is not a local branch (HEAD, @ and refs/heads/ count as
+# branches) may be a tag, so it asks too: a name that does not exist yet (`git
+# tag v7 && git push origin v7`), a glob (`refs/*:refs/*`), a commit, a
+# remote-tracking branch. A command that pushes a branch and a tag is
 # release.
 #
-# `git -C <dir>`, `--git-dir` and `--work-tree` name the repository a push
-# acts on: tags, push.followTags and the breadcrumb's trail are taken from
-# that repository, not the payload's. When it cannot be found (a missing
-# directory, a variable), the payload's repository is used and the push asks
-# if it could be a tag push (anything but HEAD or refs/heads/ refspecs with
-# push.followTags turned off by -c).
+# git push's options are read as git reads them: any unambiguous prefix of a
+# long option counts (`--tag`, `--mirr`, `--follow-tag`, `--del`,
+# `--no-fol`), and a bundle of short options is read letter by letter (`-qd`
+# deletes; `-o` takes the rest of the bundle, or the next word, as its value).
+#
+# The remote's configuration counts as well: remote.<name>.mirror makes every
+# push to that remote a tag push, and its remote.<name>.push refspecs are read
+# as if written when the command names no refspec. A push that names no
+# remote goes where git sends it (branch.<branch>.pushRemote,
+# remote.pushDefault, branch.<branch>.remote, then origin); a remote given as
+# a variable may be any of them. Setting those keys for one command (`-c
+# remote.<name>.mirror`, `-c remote.<name>.push=...`, the same through
+# --config-env, or GIT_CONFIG_* before git) asks.
+#
+# `git -C <dir>`, `--git-dir`, `--work-tree`, and GIT_DIR= or GIT_WORK_TREE=
+# before git name the repository a push acts on: tags, push.followTags, the
+# remotes' configuration and the breadcrumb's trail are taken from that
+# repository, not the payload's. When it cannot be found (a missing
+# directory, a variable), the push asks: none of that can be read.
 #
 # `gh release create <tag> --verify-tag` creates a release for a tag that
-# must already be on GitHub, and that tag's push was already confirmed. So
-# when `git ls-remote --tags` finds the tag on the remote (origin, or the
-# GitHub repository -R/--repo names), within TG_REMOTE_TIMEOUT seconds
-# (default 5), it is journaled instead of asked. Without --verify-tag, with a
-# tag absent from the remote, or when the check fails, it asks.
+# must already be on GitHub, and that tag's push was already confirmed. So it
+# is journaled instead of asked when gh creates the release in origin's
+# repository and `git ls-remote --tags origin` finds the tag there within
+# TG_REMOTE_TIMEOUT seconds (default 5). The repository gh uses is -R/--repo,
+# else GH_REPO before gh or in this hook's environment, else gh's default:
+# the remote `gh repo set-default` chose (remote.<name>.gh-resolved), or the
+# only remote. It has to be origin's: the same host/owner/name as
+# remote.origin.url, in any case, for a named repository; origin itself for
+# the default. Without --verify-tag, with a tag absent from origin, when the
+# check fails, when the repository cannot be confirmed to be origin's, with
+# GH_HOST set, after a cd or a GH_REPO/GH_HOST setting earlier in the same
+# command, or behind a program this hook does not know, it asks.
 #
 # Values: confirm asks (permissionDecision "ask", with a reason naming the
 # action, the setting and the command); journal writes one breadcrumb to the
@@ -76,9 +116,11 @@
 #     always do)                                         naming each such action; no breadcrumb is
 #                                                        written, since the person may refuse
 #   merge or release set below confirm                -> as above, plus one stderr line naming the setting
-#   gh release create --verify-tag, tag on the remote -> journaled, as below
-#   gh release create --verify-tag, tag not found or  -> "ask"
-#     the check failed or timed out
+#   gh release create --verify-tag, in origin's       -> journaled, as below
+#     repository, tag on origin
+#   gh release create --verify-tag, tag not found,    -> "ask"
+#     the check failed or timed out, or the
+#     repository is not confirmed to be origin's
 #   otherwise, journal-tier actions                   -> one breadcrumb per action in the auto-log
 #                                                        trail (<journal dir>/auto-log/issue-{N}.{YYYY-MM}.md
 #                                                        on a branch naming issue N, otherwise
@@ -98,12 +140,15 @@
 #     cannot be read (a variable, stdin, a missing
 #     file)
 #   a push whose refspec is a variable or a           -> "ask": it may push or delete a tag
-#     substitution, a deleted name that is neither
-#     tag nor branch, a push into a -C/--git-dir
-#     repository that cannot be found, or a gh api
-#     git/refs request whose ref cannot be read
-#   cannot decide: jq missing, the command parser     -> text that mentions merge or release with gh:
-#     missing or failed                                    "ask"; other text that mentions push or gh:
+#     substitution, whose source is not a local
+#     branch, a deleted name that is neither tag nor
+#     branch, a push into a -C/--git-dir repository
+#     that cannot be found, a -c/--config-env/
+#     GIT_CONFIG_* setting of a remote's mirror or
+#     push, or a gh api git/refs request whose ref
+#     cannot be read
+#   cannot decide: jq missing, a payload jq cannot    -> text that mentions merge or release with gh:
+#     parse, the command parser missing or failed        "ask"; other text that mentions push or gh:
 #                                                        exit 0, one stderr line; anything else:
 #                                                        exit 0, no output
 #
@@ -114,29 +159,54 @@
 # block-unchecked-merge.sh and block-destructive.sh use
 # (lib/command-parse.sh). `#` comments and heredoc bodies fed to cat, tee,
 # echo, printf or gh are removed; the text is split into simple commands at
-# `;`, `|`, `&`, newlines and command substitutions, outside quotes; each
-# simple command is split into words with quotes removed; and a quoted
-# argument handed to something that runs it (`bash -c '...'`, `eval`, `ssh`)
-# is read as a command too. An action counts only when its program is the
-# command word: first in its simple command, after any VAR=value
-# assignments, and after any of these, which run the rest of the line as a
-# command: command, exec, env, nohup, time, nice, timeout, sudo, doas, xargs
-# (with their options). `gh` and `git` may carry a path. So `echo gh pr merge
-# 1`, `git commit -m "then gh pr merge 1"` and `npm run git push` name no
-# action, while `make && git push`, `x=$(gh pr create ...)` and `timeout 60
-# git push` do.
+# `;`, `|`, `&`, `(`, `)`, newlines and command substitutions, outside
+# quotes; each simple command is split into words with quotes removed and
+# backslash escapes removed, as bash passes them (`g\h pr mer\ge 1` is gh pr
+# merge 1); and a quoted argument handed to something that runs it (`bash -c
+# '...'`, `eval`, `ssh`) is read as a command too.
 #
-# Not covered, by design: deliberate evasion (a command held in a variable
-# and run as `$CMD`, a gh alias, a git alias, a script file, a quote inside
-# the word), a GraphQL mutation not listed above, and gh api DELETE requests
-# other than on tag refs. Branch protection and rulesets are the mechanism
-# against evasion; this hook reads commands written in good faith. `--help` is not exempted: it costs a
+# Every action counts when its program is the command word: first in its
+# simple command, after any VAR=value assignments; after a shell keyword or
+# group opener (if, then, elif, else, while, until, do, !, {), `function
+# NAME`, or coproc (and its NAME before a body); and after any of these,
+# which run the rest of the line as a command: command, builtin, exec, env,
+# nohup, time, nice, timeout, sudo, doas, xargs (with their options). `gh`
+# and `git` may carry a path. So `make && git push`, `x=$(gh pr create ...)`
+# and `timeout 60 git push` count.
+#
+# A Tier 3 action counts anywhere after a command word that is none of
+# those, because a program this hook does not know may run the rest of its
+# line (caffeinate, stdbuf, setsid, watch, `find -exec`, parallel, `script -q
+# /dev/null`): the words after it are read for gh and git, and a merge, a
+# release, a tag push or a possible one, or an unreadable gh api call there
+# asks. A command word that is a variable or a substitution (`$GH pr merge
+# 7`) is read as possibly gh or git for the same Tier 3 actions. echo and
+# printf are exempt, since they print their arguments. So `echo gh pr merge
+# 1`, `git commit -m "then gh pr merge 1"` and `npm run git push` ask nothing.
+#
+# Not covered, by design. A Tier 2 action (push, prCreate, issueAssign,
+# issueCreate) behind a program this hook does not know, or under a command
+# word that is a variable: `caffeinate git push` is neither asked about nor
+# journaled, since a prompt for every script that
+# mentions git would cost more than the setting saves. And what text cannot
+# show: a whole command held in a variable or built at run time (`$CMD`,
+# `eval "$CMD"`), an ANSI-C quoted subcommand (`gh pr $'m\x65rge'`; as the
+# program it reads as a variable, so it asks), a gh or git alias, a
+# gh extension, a script file or a make target, another program that talks
+# to GitHub (curl, git send-pack), GIT_DIR or GIT_WORK_TREE set by export
+# rather than before git, GH_REPO or GH_HOST exported in an earlier Bash
+# call, a GraphQL mutation whose field names hold none of
+# Merge, Release or Ref (createCommitOnBranch), and gh api DELETE or PATCH
+# requests other than those above (deleting a branch ref). Branch protection,
+# rulesets and tag protection are the mechanism against those; this hook
+# reads the commands an agent writes. `--help` is not exempted: it costs a
 # prompt, while exempting a value that happens to read `--help` would cost a
 # missed confirmation. For the same reason the parser reads every quoted
 # argument with a space in it, after env, sudo, timeout, xargs, nohup and the
 # other words it treats as running a script, as a command too: so `timeout 60
-# gh pr create --body "git push later"` also counts as a push. That costs an
-# extra prompt or journal line, never a missed one.
+# gh pr create --body "git push later"` also counts as a push, and a
+# backslash inside quotes is removed as if it were outside them. That costs
+# an extra prompt or journal line, never a missed one.
 #
 # ask-issue-create.sh is a separate hook and both apply to `gh issue create`:
 # Claude Code takes the most restrictive answer, so an ask from either wins.
@@ -190,15 +260,23 @@ if ! command -v jq >/dev/null 2>&1; then
   esac
   exit 0
 fi
-COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || COMMAND=""
+# A payload jq cannot parse is judged like one read without jq: from the
+# command key on. A payload that parses and holds no command is no command.
+if ! COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null); then
+  case "$INPUT" in
+    *'"command"'*) _tg_undecidable "${INPUT#*\"command\"}" "the hook payload could not be parsed" ;;
+  esac
+  exit 0
+fi
 [ -z "$COMMAND" ] && exit 0
 
 # Cheap reject before any parsing: this hook runs before every Bash call, and
-# every action it knows needs `gh` or `push` in the text. Quotes and
+# every action it knows needs `gh` or `push` in the text, or `merge` or
+# `release` when the program is a variable (`$X pr merge 7`). Quotes and
 # backslashes are removed first, so `p""ush` still reaches the parser.
 _TG_BARE=$(printf '%s' "$COMMAND" | LC_ALL=C tr -d "'\"\\\\") || _TG_BARE=gh
 case "$_TG_BARE" in
-  *[Gg][Hh]*|*[Pp][Uu][Ss][Hh]*) ;;
+  *[Gg][Hh]*|*[Pp][Uu][Ss][Hh]*|*[Mm][Ee][Rr][Gg][Ee]*|*[Rr][Ee][Ll][Ee][Aa][Ss][Ee]*) ;;
   *) exit 0 ;;
 esac
 
@@ -206,7 +284,7 @@ _TG_LIB="$SCRIPT_DIR/lib/command-parse.sh"
 [ -r "$_TG_LIB" ] || _tg_undecidable "$COMMAND" "the command parser $(basename "$_TG_LIB") is missing"
 # shellcheck source=lib/command-parse.sh
 . "$_TG_LIB" 2>/dev/null
-for _tg_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise; do
+for _tg_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_unescape_tok _bd_is_opt; do
   type "$_tg_fn" >/dev/null 2>&1 || _tg_undecidable "$COMMAND" "the command parser did not load"
 done
 [ -n "${_BD_SEG_AWK:-}" ] || _tg_undecidable "$COMMAND" "the command parser did not load"
@@ -259,9 +337,17 @@ _tg_command_word() {
   # A reserved word or a group opener in command position starts a compound
   # command, and the command it runs is the next word: `if gh release create
   # v1; then`, `do gh pr merge 1`, `! git push`, `{ git push --tags; }`.
+  # `function NAME` is followed by the body (`function f { git push; }`), and
+  # coproc by the command it runs, or by a NAME and a body (`coproc N { ...;
+  # }`). The parser splits at `(` and `)`, so `f() { ...; }`, a subshell and a
+  # case pattern already start their own simple command.
   while [ "$i" -lt "$n" ]; do
     case "${TOK[i]}" in
       if|then|elif|else|while|until|do|'!'|'{') i=$((i + 1)) ;;
+      function) i=$((i + 2)) ;;
+      coproc)
+        i=$((i + 1))
+        [ "${TOK[i+1]:-}" = '{' ] && i=$((i + 1)) ;;
       *) _tg_is_assignment "${TOK[i]}" && i=$((i + 1)) || break ;;
     esac
   done
@@ -269,7 +355,7 @@ _tg_command_word() {
     [ "${#TOK[i]}" -le 4096 ] || break
     w=$(_tg_prog "${TOK[i]}")
     case "$w" in
-      command|exec|env|nohup|time|nice|timeout|sudo|doas|xargs) ;;
+      command|builtin|exec|env|nohup|time|nice|timeout|sudo|doas|xargs) ;;
       *) break ;;
     esac
     i=$((i + 1))
@@ -315,14 +401,38 @@ _tg_emit() {   # $1 = key, $2 = index of the command word
 # journal target are judged there (TG_GDIR and TG_GARGS, the arguments every
 # lookup runs git with). When they name a repository that cannot be found,
 # or are given as a variable, the payload's repository is used and the push
-# asks if it could be a tag push (TG_UNRES=1).
+# asks if it could be a tag push (TG_UNRES=1). GIT_DIR= and GIT_WORK_TREE=
+# before git count as --git-dir and --work-tree.
+#
+# Configuration set for this one command can make a push send tags:
+# `-c remote.<name>.mirror`, `-c remote.<name>.push=<refspec>`, the same keys
+# through --config-env, and GIT_CONFIG_* before git. Each asks as a possible
+# tag push (cfg=1); push.followTags through --config-env is unknown.
 _tg_git() {   # $1 = index of git
-  local j=$(($1 + 1)) follow="" c v o base="$CWD" gd="" wt="" explicit=0
+  local j=$(($1 + 1)) follow="" c v o base="$CWD" gd="" wt="" explicit=0 cfg=0 k
+  for ((k = 0; k < $1; k++)); do
+    case "${TOK[k]}" in
+      GIT_CONFIG*=*) cfg=1 ;;
+      GIT_DIR=*) gd="${TOK[k]#GIT_DIR=}"; explicit=1 ;;
+      GIT_WORK_TREE=*) wt="${TOK[k]#GIT_WORK_TREE=}"; explicit=1 ;;
+    esac
+  done
+  [ -n "$gd" ] && case "$gd" in /*) ;; *) gd="$base/$gd" ;; esac
+  [ -n "$wt" ] && case "$wt" in /*) ;; *) wt="$base/$wt" ;; esac
   while [ "$j" -lt "$n" ]; do
     c=""
     case "${TOK[j]}" in
       -c) c="${TOK[j+1]:-}"; j=$((j + 2)) ;;
       -c?*) c="${TOK[j]#-c}"; j=$((j + 1)) ;;
+      --config-env=*)
+        # --config-env=<key>=<variable>: the value is in the environment.
+        c="${TOK[j]#--config-env=}"; c="${c%%=*}"; j=$((j + 1))
+        c=$(printf '%s' "$c" | LC_ALL=C tr 'A-Z' 'a-z')
+        case "$c" in
+          push.followtags) follow=unknown ;;
+          remote.*.mirror|remote.*.push) cfg=1 ;;
+        esac
+        continue ;;
       -C)
         v="${TOK[j+1]:-}"; j=$((j + 2)); explicit=1
         case "$v" in /*) base="$v" ;; *) base="$base/$v" ;; esac
@@ -347,6 +457,7 @@ _tg_git() {   # $1 = index of git
     case "$c" in
       push.followtags|push.followtags=true|push.followtags=yes|push.followtags=on|push.followtags=1) follow=1 ;;
       push.followtags=*) follow=0 ;;
+      remote.*.mirror|remote.*.mirror=*|remote.*.push|remote.*.push=*) cfg=1 ;;
     esac
   done
   [ "$j" -lt "$n" ] || return 0
@@ -373,7 +484,7 @@ _tg_git() {   # $1 = index of git
     else follow=0
     fi
   fi
-  _tg_git_push "$1" $((j + 1)) "$follow"
+  _tg_git_push "$1" $((j + 1)) "$follow" "$cfg"
   TG_ADIR=""
   return 0
 }
@@ -394,35 +505,143 @@ _tg_ref_kind() {   # $1 = name, $2 = remote
   fi
 }
 
+# Is this name a local branch of the repository the push acts on? A
+# revision suffix (`main~1`, `HEAD^`) names a commit on that branch.
+_tg_is_local_branch() {   # $1 = name
+  local b="${1%%[~^]*}"
+  case "$b" in HEAD|@) return 0 ;; ''|*'*'*) return 1 ;; esac
+  [ "${TG_UNRES:-0}" = 1 ] && return 1
+  case "$b" in refs/heads/?*) b="${b#refs/heads/}" ;; esac
+  _tg_git_in rev-parse -q --verify "refs/heads/$b" >/dev/null 2>&1
+}
+
+# The remote a push that names none goes to, found as git finds it:
+# branch.<branch>.pushRemote, remote.pushDefault, branch.<branch>.remote,
+# then origin.
+_tg_push_remote() {
+  local b r=""
+  b=$(_tg_git_in symbolic-ref -q --short HEAD 2>/dev/null) || b=""
+  [ -n "$b" ] && r=$(_tg_git_in config --get "branch.$b.pushRemote" 2>/dev/null)
+  [ -n "$r" ] || r=$(_tg_git_in config --get remote.pushDefault 2>/dev/null)
+  [ -n "$b" ] && [ -z "$r" ] && r=$(_tg_git_in config --get "branch.$b.remote" 2>/dev/null)
+  printf '%s' "${r:-origin}"
+}
+
+# Does a remote's configuration push tags? Prints mirror when
+# remote.<name>.mirror is true, and otherwise its remote.<name>.push
+# refspecs, one per line. An empty name (the remote is a variable) stands for
+# every remote: mirror when any of them mirrors, and every configured push
+# refspec.
+_tg_remote_config() {   # $1 = remote name, or empty for any
+  local line
+  if [ -n "$1" ]; then
+    [ "$(_tg_git_in config --type=bool --get "remote.$1.mirror" 2>/dev/null)" = true ] && { printf 'mirror\n'; return 0; }
+    _tg_git_in config --get-all "remote.$1.push" 2>/dev/null
+    return 0
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      *.mirror\ *) [ "$(_tg_git_in config --type=bool --get "${line%% *}" 2>/dev/null)" = true ] && { printf 'mirror\n'; return 0; } ;;
+    esac
+  done <<TG_RC_EOF
+$(_tg_git_in config --get-regexp '^remote\..*\.mirror$' 2>/dev/null)
+TG_RC_EOF
+  _tg_git_in config --get-regexp '^remote\..*\.push$' 2>/dev/null | sed 's/^[^ ]* //'
+  return 0
+}
+
+# git push's long options, read the way git reads them: any unambiguous
+# prefix counts (`--tag`, `--mirr`, `--follow-tag`, `--del`). Prints the
+# option's full name, or nothing for one this hook does not need.
+_tg_push_long() {   # $1 = the word, without any =value
+  local o
+  for o in --tags:--ta --mirror:--m --follow-tags:--fol --delete:--de \
+           --repo:--rep --receive-pack:--rece --exec:--e --push-option:--pu \
+           --recurse-submodules:--recu; do
+    if _bd_is_opt "$1" "${o%%:*}" "${o#*:}"; then printf '%s' "${o%%:*}"; return 0; fi
+  done
+  case "$1" in
+    --no-?*) _bd_is_opt "--${1#--no-}" --follow-tags --fol && printf '%s' --no-follow-tags ;;
+  esac
+  return 0
+}
+
 # git push: a tag push is the release tier, a branch push the push tier.
 # A tag is pushed by --tags, --follow-tags, --mirror, push.followTags,
-# `tag <name>`, a refspec naming refs/tags/ on either side, or a refspec whose
-# source is the name of a tag in the repository (a branch named v1-fix is
-# not a tag). A tag is deleted by `:<tag>` or --delete/-d <tag>; a name
-# deleted that is neither a tag nor a known branch may be a tag on the
-# remote. A refspec this hook cannot read or resolve may be a tag, so it
-# asks too.
-_tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags (1, 0, unknown)
-  local j k t tag=0 unread=0 del=0 nofollow=0 words=() r src dst w name kind
+# `tag <name>`, a refspec naming refs/tags/ on either side, a source or a
+# destination that is the name of a tag in the repository (a branch named
+# v1-fix is not a tag), or a `tags/<name>` source. A tag is deleted by
+# `:<tag>` or --delete/-d <tag>; a name deleted that is neither a tag nor a
+# known branch may be a tag on the remote. Any other source that is not a
+# local branch (a name that does not exist yet, a commit, a glob such as
+# refs/*:refs/*, a remote-tracking branch) may be a tag, and a refspec this
+# hook cannot read may be one: both ask.
+#
+# The remote's configuration counts too: remote.<name>.mirror makes every
+# push to it a tag push, and its remote.<name>.push refspecs are read as if
+# written when the command names none. -c settings of those keys ask ($4).
+_tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags (1, 0, unknown), $4 = 1 when -c sets a remote's mirror or push
+  local j k t o c rest tag=0 unread=0 del=0 nofollow=0 words=() specs=() r src dst w name kind remote line
   for ((k = $2; k < n; k++)); do
     t="${TOK[k]}"
     case "$t" in
-      --tags|--follow-tags|--mirror) tag=1 ;;
-      --no-follow-tags) nofollow=1 ;;
-      --delete|-d) del=1 ;;
-      -o|--push-option|--receive-pack|--exec|--repo) k=$((k + 1)) ;;
       --) for ((j = k + 1; j < n; j++)); do words+=("${TOK[j]}"); done; k=$n ;;
-      -*) ;;
+      --*)
+        o=$(_tg_push_long "${t%%=*}")
+        case "$o" in
+          --tags|--follow-tags|--mirror) tag=1 ;;
+          --no-follow-tags) nofollow=1 ;;
+          --delete) del=1 ;;
+          --repo|--receive-pack|--exec|--push-option|--recurse-submodules)
+            case "$t" in *=*) ;; *) k=$((k + 1)) ;; esac ;;
+        esac ;;
+      -?*)
+        # A bundle of short options (`-qd`, `-fdu`): d is --delete; o takes
+        # the rest of the word as its value, or the next word.
+        rest="${t#-}"
+        while [ -n "$rest" ]; do
+          c="${rest:0:1}"; rest="${rest:1}"
+          case "$c" in
+            d) del=1 ;;
+            o) [ -z "$rest" ] && k=$((k + 1)); break ;;
+          esac
+        done ;;
+      -) ;;
       *) words+=("$t") ;;
     esac
   done
   if [ "$nofollow" = 0 ]; then
     case "$3" in 1) tag=1 ;; unknown) unread=1 ;; esac
   fi
+  [ "${4:-0}" = 1 ] && unread=1
   # words[0] is the remote; the rest are refspecs.
-  for ((w = 1; w < ${#words[@]}; w++)); do
-    r="${words[w]}"
-    if [ "$r" = tag ] && [ $((w + 1)) -lt ${#words[@]} ]; then tag=1; w=$((w + 1)); continue; fi
+  for ((w = 1; w < ${#words[@]}; w++)); do specs+=("${words[w]}"); done
+  if [ "${TG_UNRES:-0}" = 1 ]; then
+    # The repository is unknown, so its remotes' configuration is too.
+    unread=1
+  else
+    remote="${words[0]:-}"
+    [ -z "$remote" ] && remote=$(_tg_push_remote)
+    # A remote given as a variable may be any of them: a mirror among them,
+    # or a push refspec that is not plainly a branch's, may push a tag.
+    _tg_unreadable "$remote" && remote=""
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      if [ -z "$remote" ]; then
+        case "$line" in
+          mirror) unread=1 ;;
+          *) [ "${#words[@]}" -le 1 ] && case "${line#+}" in *refs/tags/*) unread=1 ;; *:refs/heads/*|refs/heads/*) ;; *) unread=1 ;; esac ;;
+        esac
+      elif [ "$line" = mirror ]; then tag=1
+      elif [ "${#words[@]}" -le 1 ]; then specs+=("$line")
+      fi
+    done <<TG_PUSH_EOF
+$(_tg_remote_config "$remote")
+TG_PUSH_EOF
+  fi
+  for ((w = 0; w < ${#specs[@]}; w++)); do
+    r="${specs[w]}"
+    if [ "$r" = tag ] && [ $((w + 1)) -lt ${#specs[@]} ]; then tag=1; w=$((w + 1)); continue; fi
     if _tg_unreadable "$r"; then unread=1; continue; fi
     r="${r#+}"
     src="${r%%:*}"
@@ -435,10 +654,16 @@ _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followT
       case "$name" in refs/heads/*) continue ;; esac
       kind=$(_tg_ref_kind "$name" "${words[0]}")
       case "$kind" in tag) tag=1 ;; unknown) unread=1 ;; esac
-    else
-      case "$src" in HEAD|HEAD~*|HEAD^*|@|refs/heads/*) continue ;; esac
-      kind=$(_tg_ref_kind "$src" "${words[0]}")
-      case "$kind" in tag) tag=1 ;; unknown) [ "${TG_UNRES:-0}" = 1 ] && unread=1 ;; esac
+      continue
+    fi
+    # A destination that is a tag here is that tag on the remote.
+    case "$dst" in
+      ''|refs/*) ;;
+      *) [ "$(_tg_ref_kind "$dst" "")" = tag ] && { tag=1; continue; } ;;
+    esac
+    case "$src" in tags/?*) tag=1; continue ;; refs/heads/*) continue ;; esac
+    if [ "$(_tg_ref_kind "$src" "")" = tag ]; then tag=1
+    elif ! _tg_is_local_branch "$src"; then unread=1
     fi
   done
   if [ "$tag" = 1 ]; then _tg_emit release "$1"
@@ -517,6 +742,24 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
           addAssigneesToAssignable) _tg_emit issueAssign "$1" ;;
         esac
       done
+      # Any other mutation field whose name holds Merge, Release or Ref, in
+      # any case (mergeBranch, enqueuePullRequest, deleteRelease, createRef,
+      # updateRef, deleteRef, updateRefs): a field is a name followed by its
+      # arguments. Only in a document that has a mutation; a query that
+      # reads refs or mergeable changes nothing.
+      case "$text" in
+        *mutation*)
+          local fm=0 fr=0
+          for m in $(printf '%s' "$text" | grep -oE '[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(' | LC_ALL=C tr -d '(\t ' | LC_ALL=C tr 'A-Z' 'a-z' | LC_ALL=C sort -u); do
+            case "$m" in
+              mutation|mergepullrequest|enablepullrequestautomerge|createrelease|updaterelease) ;;
+              *merge*|enqueuepullrequest) fm=1 ;;
+              *release*|*ref*) fr=1 ;;
+            esac
+          done
+          [ "$fm" = 1 ] && _tg_emit merge "$1"
+          [ "$fr" = 1 ] && _tg_emit release "$1" ;;
+      esac
       [ "$unread" = 1 ] && _tg_emit unknown "$1"
       return 0 ;;
   esac
@@ -548,6 +791,8 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
       */git/refs/tags/*) _tg_emit release "$1"; return 0 ;;
       */git/refs/*)
         case "${ep##*/git/refs/}" in heads/*) ;; *) _tg_unreadable "$ep" && { _tg_emit tagUnread "$1"; return 0; } ;; esac ;;
+      # Deleting a release or one of its files.
+      */releases/*) [ "$method" = DELETE ] && { _tg_emit release "$1"; return 0; } ;;
     esac
     [ "$method" = DELETE ] && return 0
   fi
@@ -587,7 +832,7 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
         *) { [ "$have" = 0 ] || [ -n "$input" ]; } && _tg_emit tagUnread "$1" ;;
       esac ;;
     */pulls/*/merge|*/merges) _tg_emit merge "$1" ;;
-    */releases) _tg_emit release "$1" ;;
+    */releases|*/releases/*/assets) _tg_emit release "$1" ;;
     */pulls) _tg_emit prCreate "$1" ;;
     */issues) _tg_emit issueCreate "$1" ;;
     */issues/*/assignees) _tg_emit issueAssign "$1" ;;
@@ -596,16 +841,21 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
 }
 
 # gh release create: with --verify-tag and a literal tag, emit
-# releaseVerified:<tag>:<repo> so the caller can ask the remote whether the
-# tag is already there; otherwise release. A tag name cannot hold a `:`.
+# releaseVerified:<tag>:<repo> so the caller can check that gh creates the
+# release in origin's repository and that the tag is already on origin;
+# otherwise release. The repository is -R/--repo, else a GH_REPO= before gh,
+# else GH_REPO in this hook's environment, else gh's default. GH_HOST, or a
+# cd or a GH_REPO/GH_HOST setting earlier in the command (TG_GHMOVED), makes
+# it a plain release. A tag name cannot hold a `:`.
 _tg_release() {   # $1 = index of gh, $2 = index of the word create
-  local k t tag="" verify=0 repo=""
+  local k t tag="" verify=0 repo="" envrepo="" moved="${TG_GHMOVED:-0}"
   for ((k = $2 + 1; k < n; k++)); do
     t="${TOK[k]}"
     case "$t" in
       --verify-tag) verify=1 ;;
       -R|--repo) repo="${TOK[k+1]:-}"; k=$((k + 1)) ;;
       --repo=*) repo="${t#--repo=}" ;;
+      -R?*) repo="${t#-R}" ;;
       -t|--title|-n|--notes|-F|--notes-file|--target|--discussion-category|--notes-start-tag|-A|--assets) k=$((k + 1)) ;;
       -*) ;;
       *) [ -z "$tag" ] && tag="$t" ;;
@@ -613,11 +863,17 @@ _tg_release() {   # $1 = index of gh, $2 = index of the word create
   done
   # -R before `release` belongs to gh too.
   for ((k = $1 + 1; k < $2; k++)); do
-    case "${TOK[k]}" in -R|--repo) repo="${TOK[k+1]:-}" ;; --repo=*) repo="${TOK[k]#--repo=}" ;; esac
+    case "${TOK[k]}" in -R|--repo) repo="${TOK[k+1]:-}" ;; --repo=*) repo="${TOK[k]#--repo=}" ;; -R?*) repo="${TOK[k]#-R}" ;; esac
   done
-  # A repository given as a variable is not looked up: the URL would name
-  # nothing. A tag given as one is looked up as written, and is not found.
-  if [ "$verify" = 1 ] && [ -n "$tag" ] && ! _tg_unreadable "$repo"; then
+  for ((k = 0; k < $1; k++)); do
+    case "${TOK[k]}" in GH_REPO=*) envrepo="${TOK[k]#GH_REPO=}" ;; GH_HOST=*) moved=1 ;; esac
+  done
+  [ -n "${GH_HOST:-}" ] && moved=1
+  [ -n "$repo" ] || repo="$envrepo"
+  [ -n "$repo" ] || repo="${GH_REPO:-}"
+  # A repository given as a variable cannot be compared with origin. A tag
+  # given as one is looked up as written, and is not found.
+  if [ "$verify" = 1 ] && [ -n "$tag" ] && [ "$moved" = 0 ] && ! _tg_unreadable "$repo"; then
     case "$tag$repo" in *:*|*[[:space:]]*) _tg_emit release "$1"; return 0 ;; esac
     _tg_emit "releaseVerified:$tag:$repo" "$1"
   else
@@ -647,6 +903,10 @@ _tg_gh() {   # $1 = index of gh
     "pr merge") _tg_emit merge "$1" ;;
     "issue create"|"issue new") _tg_emit issueCreate "$1" ;;
     "release create"|"release new") _tg_release "$1" "$i2" ;;
+    # edit publishes a draft (--draft=false) or moves its tag; delete removes
+    # a release (and its tag, with --cleanup-tag); upload and delete-asset
+    # change the files people download from it.
+    "release edit"|"release delete"|"release upload"|"release delete-asset") _tg_emit release "$1" ;;
     "issue edit")
       for ((k = i2 + 1; k < n; k++)); do
         case "${TOK[k]}" in
@@ -657,27 +917,75 @@ _tg_gh() {   # $1 = index of gh
   return 0
 }
 
+# A program this hook does not know may run the rest of its line as a
+# command: caffeinate, stdbuf, setsid, watch, `find -exec`, parallel,
+# `script -q /dev/null`, and any other. So the words after it are read for gh
+# or git, and what each would do is kept when it is a Tier 3 action (a merge,
+# a release, a tag push or a possible one, a gh api call that cannot be read)
+# and dropped otherwise: `npm run git push` names no action, and a Tier 2
+# action there would cost a prompt for every script that merely mentions
+# git. A command word that is a variable or a substitution (`$GH pr merge 7`)
+# may be gh or git itself. The --verify-tag exemption does not apply here.
+_tg_scan() {   # $1 = index of the command word
+  local k t out line start=$(($1 + 1))
+  _tg_unreadable "${TOK[$1]}" && start=$1
+  for ((k = start; k < n; k++)); do
+    t="${TOK[k]}"
+    [ "${#t}" -le 4096 ] || continue
+    case "${t##*/}" in
+      [Gg][Hh]) out=$(_tg_gh "$k") ;;
+      [Gg][Ii][Tt]) out=$(_tg_git "$k") ;;
+      *)
+        [ "$k" = "$1" ] || continue
+        out=$(_tg_gh "$k"; _tg_git "$k") ;;
+    esac
+    while IFS= read -r line; do
+      case "${line%%$'\t'*}" in
+        merge|release|tagUnread|unknown) printf '%s\n' "$line" ;;
+        releaseVerified:*) printf 'release\t%s\n' "${line#*$'\t'}" ;;
+      esac
+    done <<TG_SCAN_EOF
+$out
+TG_SCAN_EOF
+  done
+  return 0
+}
+
 # Every action the command names, one `key<TAB>summary` line each. Runs in a
 # subshell: the parser exits 2 when awk fails, and that must reach the caller
 # as "cannot decide", not end this hook with a refusal.
 _tg_actions() {
   _bd_strip_noncode "$COMMAND"
   _bd_expand_interpreter_args
-  local segs seg
+  local segs seg pend=0 k
   segs=$(_bd_segments "$BD_CODE")
   case "$segs" in *__BD_SEG_FAIL__*) exit 3 ;; esac
+  # TG_GHMOVED: an earlier simple command changed directory or mentioned
+  # GH_REPO or GH_HOST, so a later gh may act on another repository.
+  TG_GHMOVED=0
   while IFS= read -r seg; do
+    [ "$pend" = 1 ] && TG_GHMOVED=1
     [ -z "$seg" ] && continue
     case "$seg" in __BD_UNBALANCED__) continue ;; esac
     TOK=()
     _rm_tokenise "$seg"
+    # Every comparison below is on the words as bash passes them, with
+    # backslash escapes removed.
+    _bd_unescape_tok
     n=${#TOK[@]}
     [ "$n" -gt 0 ] || continue
+    for ((k = 0; k < n; k++)); do
+      case "${TOK[k]}" in *GH_REPO*|*GH_HOST*) pend=1; break ;; esac
+    done
     _tg_command_word
     [ "$TG_I" -lt "$n" ] || continue
+    case "${TOK[TG_I]}" in cd|pushd|popd) pend=1 ;; esac
     case "$(_tg_prog "${TOK[TG_I]}")" in
       git) _tg_git "$TG_I" ;;
       gh) _tg_gh "$TG_I" ;;
+      # They print their arguments: `echo gh pr merge 1` runs nothing.
+      echo|printf) ;;
+      *) _tg_scan "$TG_I" ;;
     esac
   done <<< "$segs"
 }
@@ -707,18 +1015,56 @@ _tg_phrase() {
   esac
 }
 
-# Is this tag already on the remote? `git ls-remote --tags`, against origin,
-# or against the GitHub repository a -R/--repo names, stopped after
-# TG_REMOTE_TIMEOUT seconds (default 5). Any failure to check is "no". Sets
-# TG_REMOTE to what was asked.
-_tg_tag_on_remote() {   # $1 = tag, $2 = owner/name, host/owner/name, or empty
-  local tmp pid w rc=1
-  case "$2" in
-    '') TG_REMOTE=origin ;;
-    */*/*) TG_REMOTE="https://$2.git" ;;
-    */*) TG_REMOTE="https://github.com/$2.git" ;;
-    *) TG_REMOTE="$2"; return 1 ;;
+# host/owner/name of a git remote URL or a gh repository argument, in lower
+# case: https://host/o/n(.git), ssh://user@host:port/o/n, user@host:o/n,
+# host/o/n, or o/n (on github.com). Returns 1 for anything else.
+_tg_repo_id() {   # $1 = URL or repository argument
+  local u="$1" host path
+  case "$u" in
+    *://*)
+      u="${u#*://}"; host="${u%%/*}"; path="${u#*/}"
+      [ "$path" != "$u" ] || return 1
+      host="${host##*@}"; host="${host%%:*}" ;;
+    *@*:*) u="${u#*@}"; host="${u%%:*}"; path="${u#*:}" ;;
+    */*/*) host="${u%%/*}"; path="${u#*/}" ;;
+    */*) host=github.com; path="$u" ;;
+    *) return 1 ;;
   esac
+  path="${path#/}"; path="${path%/}"; path="${path%.git}"
+  case "$path" in */*/*|/*|*/|'') return 1 ;; */*) ;; *) return 1 ;; esac
+  [ -n "$host" ] || return 1
+  printf '%s/%s' "$host" "$path" | LC_ALL=C tr 'A-Z' 'a-z'
+}
+
+# Does gh create the release in origin's repository? With a repository
+# named (-R or GH_REPO), when it is origin's. With none, gh's default: the
+# remote `gh repo set-default` chose (remote.<name>.gh-resolved), or the only
+# remote; it must be origin.
+_tg_gh_repo_is_origin() {   # $1 = the repository named, or empty
+  local url want have resolved remotes
+  # The URL as configured: `remote get-url` applies url.<base>.insteadOf,
+  # which can turn a GitHub URL into a path that names no repository.
+  url=$(git -C "$RUN_DIR" config --get remote.origin.url 2>/dev/null) || return 1
+  if [ -n "$1" ]; then
+    want=$(_tg_repo_id "$1") || return 1
+    have=$(_tg_repo_id "$url") || return 1
+    [ "$want" = "$have" ]
+    return
+  fi
+  resolved=$(git -C "$RUN_DIR" config --name-only --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null)
+  if [ -n "$resolved" ]; then
+    [ "$resolved" = remote.origin.gh-resolved ]
+    return
+  fi
+  remotes=$(git -C "$RUN_DIR" remote 2>/dev/null)
+  [ "$remotes" = origin ]
+}
+
+# Is this tag already on origin? `git ls-remote --tags origin`, stopped after
+# TG_REMOTE_TIMEOUT seconds (default 5). Any failure to check is "no".
+_tg_tag_on_remote() {   # $1 = tag
+  local tmp pid w rc=1
+  TG_REMOTE=origin
   tmp=$(mktemp -t flow-tier-gate.XXXXXX 2>/dev/null) || return 1
   # Output goes to a file, not a pipe: a killed git can leave a helper (ssh,
   # a credential helper) holding a pipe open, and the read would then wait
@@ -730,7 +1076,7 @@ _tg_tag_on_remote() {   # $1 = tag, $2 = owner/name, host/owner/name, or empty
   # The shell reports a killed job on stderr when it reaps it; that report
   # is not this hook's to print.
   { wait "$pid"; } 2>/dev/null; rc=$?
-  kill "$w" 2>/dev/null
+  { kill "$w"; wait "$w"; } 2>/dev/null
   if [ "$rc" -eq 0 ] && awk -v r="refs/tags/$1" '$2 == r { f = 1 } END { exit !f }' "$tmp" 2>/dev/null; then
     rm -f "$tmp"; return 0
   fi
@@ -756,9 +1102,14 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
       # gh release create --verify-tag on a tag already on the remote creates
       # a release for a tag whose push was already confirmed: journaled. A tag
       # that is not there, or a check that fails, asks as any release does.
+      # The tag is looked for on origin, so gh must be creating the release
+      # in origin's repository too.
       VREST="${KEY#releaseVerified:}"
       VTAG="${VREST%%:*}"
-      if _tg_tag_on_remote "$VTAG" "${VREST#*:}"; then
+      VREPO="${VREST#*:}"
+      if git -C "$RUN_DIR" remote get-url origin >/dev/null 2>&1 && ! _tg_gh_repo_is_origin "$VREPO"; then
+        REASONS+=("Creating a release is a Tier 3 action (tiers.release). flow asks unless --verify-tag names a tag that is already on origin and gh creates the release in origin's repository, and the repository gh would use${VREPO:+ ($VREPO)} could not be confirmed to be origin's. Command: $SUMMARY")
+      elif _tg_tag_on_remote "$VTAG"; then
         JOURNAL_LINES+=("tiers.release (--verify-tag, $VTAG already on the remote)"$'\t'"$SUMMARY"$'\t'"$ADIR")
       else
         REASONS+=("Creating a release is a Tier 3 action (tiers.release). flow asks unless --verify-tag names a tag that is already on the remote, and $VTAG could not be found on $TG_REMOTE. Command: $SUMMARY")
