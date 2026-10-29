@@ -24,7 +24,7 @@
       "description": "Safety tier for each action that leaves the machine, applied by the tier-gate.sh PreToolUse hook to the Bash command that runs it. autonomous: run it. journal: run it and append one line to the decision journal (only where the repository has a journal directory). confirm: ask first (a permission prompt; in claude -p, which has no one to ask, a refusal).",
       "properties": {
         "push": {
-          "description": "git push.",
+          "description": "git push of branches. A push that sends a tag is the release tier.",
           "enum": [
             "autonomous",
             "journal",
@@ -69,7 +69,7 @@
           "default": "confirm"
         },
         "release": {
-          "description": "gh release create (or gh release new), and gh api POST to .../releases. Floor: confirm. A lower value is ignored with one warning naming this setting, and the release still asks.",
+          "description": "gh release create (or gh release new), gh api POST to .../releases, and pushing a tag (git push --tags, --follow-tags, a refs/tags/ refspec, a tag's name, or gh api POST to .../git/refs with a refs/tags/ ref). Floor: confirm. A lower value is ignored with one warning naming this setting, and the release still asks.",
           "enum": [
             "autonomous",
             "journal",

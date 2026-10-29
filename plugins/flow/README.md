@@ -246,8 +246,8 @@ HOOKS (16 scripts; 14 registered in hooks/hooks.json, the other two run from flo
   │                        block-unchecked-merge (refuses `gh pr merge` while checks are
   │                        queued, running or failed), ask-issue-create (asks before
   │                        `gh issue create` during an active goal), tier-gate (applies
-  │                        tiers.*: asks before merge, release and any action set to
-  │                        confirm; journals actions set to journal)
+  │                        tiers.*: asks before merge, release, a tag push and any
+  │                        action set to confirm; journals actions set to journal)
   ├── Ledger (PostToolUse / PostToolUseFailure): log-file-changes, log-commits, record-quality-run
   ├── Gates: verify-task-completion (TaskCompleted — blocks while edits postdate the last
   │          passing quality run), flow-goal-stop + flow-run-deterministic-checks +

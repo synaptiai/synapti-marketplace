@@ -92,7 +92,7 @@ Write `.claude/settings.flow.json` with:
 - `learning.enabled: true`. Not `learning.proposalDir` or `learning.transcriptDir`: Flow reads those from the user settings file only, so a value written here would be ignored
 - `journal.dir` (default `.decisions`). Written here it is a repository setting, so it must resolve inside the repository; a directory outside the checkout belongs in the user's own `~/.claude/settings.flow.json`
 - LSP settings (`lsp.enabled: true`, `lsp.timeout: 5000`, `lsp.diagnosticsAsQuality: true`)
-- Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings. The `tier-gate.sh` hook applies `tiers.*` to every Bash command: `push`, `prCreate`, `issueAssign` and `issueCreate` take `autonomous`, `journal` or `confirm`; `merge` and `release` are always `confirm`, and a lower value there is ignored with a warning
+- Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings. The `tier-gate.sh` hook applies `tiers.*` to every Bash command: `push`, `prCreate`, `issueAssign` and `issueCreate` take `autonomous`, `journal` or `confirm`; `merge` and `release` (which includes pushing a tag) are always `confirm`, and a lower value there is ignored with a warning
 
 **On re-run** (existing settings detected): Read current settings and merge — preserve user customizations, only add new keys that don't exist yet.
 
