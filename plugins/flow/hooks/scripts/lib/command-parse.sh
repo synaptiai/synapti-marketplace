@@ -142,13 +142,50 @@ _bd_unescape() {
 }
 
 # _bd_unescape_tok — _bd_unescape on every word of the caller's TOK.
+#
+# Long words go through sed together: one sed for the whole simple command,
+# not one per word, so a command of three hundred long backslashed words
+# costs one process rather than three hundred. A word with a line end in it
+# cannot be sent one per line, and goes through _bd_unescape alone; so does
+# every word when the lines sed prints back do not match the words sent.
 _bd_unescape_tok() {
-  local _ue_i
+  local _ue_i _ue_k _ue_line _ue_out
+  local -a _ue_idx=() _ue_res=()
   for ((_ue_i = 0; _ue_i < ${#TOK[@]}; _ue_i++)); do
     case "${TOK[_ue_i]}" in *\\*) ;; *) continue ;; esac
+    if [ "${#TOK[_ue_i]}" -gt 64 ]; then
+      case "${TOK[_ue_i]}" in
+        *$'\n'*) ;;
+        *) _ue_idx+=("$_ue_i"); continue ;;
+      esac
+    fi
     _bd_unescape "${TOK[_ue_i]}"
     TOK[_ue_i]="$BD_UNESC"
   done
+  [ "${#_ue_idx[@]}" -gt 0 ] || return 0
+  # The words are printed one per line, and a marker line after them keeps
+  # $(...) from removing a trailing empty line.
+  _ue_out=$(
+    for _ue_i in "${_ue_idx[@]}"; do printf '%s\n' "${TOK[_ue_i]}"; done \
+      | LC_ALL=C sed 's/\\\(.\)/\1/g'
+    printf '.'
+  ) || _ue_out=""
+  # Outside the here-document: bash 3.2 does not read $'\n' inside one.
+  _ue_out="${_ue_out%.}"
+  _ue_out="${_ue_out%$'\n'}"
+  while IFS= read -r _ue_line; do _ue_res+=("$_ue_line"); done <<BD_UE_EOF
+$_ue_out
+BD_UE_EOF
+  if [ "${#_ue_res[@]}" -eq "${#_ue_idx[@]}" ] && [ -n "$_ue_out" ]; then
+    for ((_ue_k = 0; _ue_k < ${#_ue_idx[@]}; _ue_k++)); do
+      TOK[_ue_idx[_ue_k]]="${_ue_res[_ue_k]}"
+    done
+  else
+    for _ue_i in "${_ue_idx[@]}"; do
+      _bd_unescape "${TOK[_ue_i]}"
+      TOK[_ue_i]="$BD_UNESC"
+    done
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -552,7 +589,7 @@ _BD_SEG_AWK='
 # Shared because every hook that reads commands has the same blind spot: the
 # merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
 _bd_expand_interpreter_args() {
-  local seg tok i n found
+  local seg tok base i n found
   local -a TOK=()
   local extra=""
   while IFS= read -r seg; do
@@ -564,7 +601,15 @@ _bd_expand_interpreter_args() {
     for ((i = 0; i < n; i++)); do
       tok="${TOK[i]}"
       # `ba\sh -c '...'` runs bash: the word is compared as the shell passes it.
-      if [ "${#tok}" -le 4096 ] && { _bd_unescape "$tok"; _bd_is_interpreter "$BD_UNESC"; }; then found=1; continue; fi
+      # Only its last path component can name an interpreter, and an
+      # interpreter's name is at most seven letters, fourteen characters
+      # with every letter escaped: a longer component is none, and is not
+      # unescaped (a sed for each long word made a command of many long
+      # quoted words slow).
+      if [ "${#tok}" -le 4096 ]; then
+        base="${tok##*/}"
+        if [ "${#base}" -le 16 ] && { _bd_unescape "$base"; _bd_is_interpreter "$BD_UNESC"; }; then found=1; continue; fi
+      fi
       if [ "$found" = "1" ]; then
         case "$tok" in
           *[[:space:]]*) extra="$extra
