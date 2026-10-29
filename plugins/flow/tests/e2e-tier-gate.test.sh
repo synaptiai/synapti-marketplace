@@ -731,6 +731,35 @@ EOF
   e2e_expect_clean_edges
 fi
 
+# --- T22: changing or deleting a release ------------------------------------------
+if _want tg-release-subcommands; then
+  _tg_setup tg-release-subcommands feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous; editing (which publishes a draft), deleting a release, and adding or removing its files, through gh release or gh api, ask under tiers.release; reading or downloading a release stays silent (T22)"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      release) _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+  done <<'EOF'
+release|gh release edit v1 --draft=false
+release|gh release edit v1 --tag v2 --verify-tag
+release|gh release delete v1 --cleanup-tag -y
+release|gh -R o/r release delete v1
+release|gh release upload v1 a.zip --clobber
+release|gh release delete-asset v1 a.zip -y
+release|gh api -X DELETE repos/o/r/releases/123
+release|gh api -X POST https://uploads.github.com/repos/o/r/releases/123/assets?name=a.zip --input a.zip
+release|gh api -X DELETE repos/o/r/releases/assets/5
+silent|gh release view v1
+silent|gh release list
+silent|gh release download v1 -p '*.zip'
+silent|gh api repos/o/r/releases/123/assets
+silent|gh api -X PATCH repos/o/r/releases/assets/5 -f name=x
+EOF
+  e2e_expect_clean_edges
+fi
+
 # --- T6, T7: gh api ------------------------------------------------------------
 if _want tg-api; then
   _tg_setup tg-api feature/issue-42-x "$ALL_CONFIRM" \

@@ -702,6 +702,8 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
       */git/refs/tags/*) _tg_emit release "$1"; return 0 ;;
       */git/refs/*)
         case "${ep##*/git/refs/}" in heads/*) ;; *) _tg_unreadable "$ep" && { _tg_emit tagUnread "$1"; return 0; } ;; esac ;;
+      # Deleting a release or one of its files.
+      */releases/*) [ "$method" = DELETE ] && { _tg_emit release "$1"; return 0; } ;;
     esac
     [ "$method" = DELETE ] && return 0
   fi
@@ -741,7 +743,7 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
         *) { [ "$have" = 0 ] || [ -n "$input" ]; } && _tg_emit tagUnread "$1" ;;
       esac ;;
     */pulls/*/merge|*/merges) _tg_emit merge "$1" ;;
-    */releases) _tg_emit release "$1" ;;
+    */releases|*/releases/*/assets) _tg_emit release "$1" ;;
     */pulls) _tg_emit prCreate "$1" ;;
     */issues) _tg_emit issueCreate "$1" ;;
     */issues/*/assignees) _tg_emit issueAssign "$1" ;;
@@ -801,6 +803,10 @@ _tg_gh() {   # $1 = index of gh
     "pr merge") _tg_emit merge "$1" ;;
     "issue create"|"issue new") _tg_emit issueCreate "$1" ;;
     "release create"|"release new") _tg_release "$1" "$i2" ;;
+    # edit publishes a draft (--draft=false) or moves its tag; delete removes
+    # a release (and its tag, with --cleanup-tag); upload and delete-asset
+    # change the files people download from it.
+    "release edit"|"release delete"|"release upload"|"release delete-asset") _tg_emit release "$1" ;;
     "issue edit")
       for ((k = i2 + 1; k < n; k++)); do
         case "${TOK[k]}" in
