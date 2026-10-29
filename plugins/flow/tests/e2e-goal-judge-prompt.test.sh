@@ -602,3 +602,32 @@ if _want skill-no-timeout; then
   e2e_expect_err "flow-judge: neither timeout(1) nor gtimeout is installed (install GNU coreutils; on macOS: brew install coreutils)"
   _edges skill not-called
 fi
+
+if _want skill-input-removed-on-term; then
+  _flow_test_begin "bin/flow-goal-judge-run.sh: the judge's input file is removed when the script is stopped by a TERM"
+  _setup skill-input-removed-on-term "the judge waits 5 s; bin/flow-goal-judge-run.sh gets a TERM once the judge has started; mktemp -t is a stub that makes its file in \$E2E_DIR/tmp (macOS mktemp -t does not follow TMPDIR)"
+  _goal
+  _evidence
+  mkdir -p "$E2E_DIR/tmp"
+  cat > "$E2E_BIN/mktemp" <<'STUB'
+#!/usr/bin/env bash
+[ "${1-}" = -t ] && exec /usr/bin/mktemp "${E2E_DIR:?}/tmp/$2"
+exec /usr/bin/mktemp "$@"
+STUB
+  chmod +x "$E2E_BIN/mktemp"
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    unset CLAUDE_HOOK_GOAL_JUDGE_MODE
+    export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH" E2E_DIR \
+      FLOW_TEST_CLAUDE_RESPONSE="$E2E_DIR/judge-reply.json" FLOW_TEST_CLAUDE_ARGS_DIR="$E2E_DIR/args/skill" FLOW_TEST_CLAUDE_SLEEP=5
+    "$E2E_ACTIVE_PLUGIN/bin/flow-goal-judge-run.sh" g-judge run-e2e > "$E2E_DIR/term.out" 2> "$E2E_DIR/term.err" &
+    pid=$!
+    n=0
+    while [ ! -f "$E2E_DIR/args/skill/stdin.txt" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
+    kill -TERM "$pid" 2>/dev/null
+    wait "$pid"
+  ) >/dev/null 2>&1
+  e2e_expect_equal yes "$([ -f "$E2E_DIR/args/skill/stdin.txt" ] && echo yes || echo no)" "the judge had started when the TERM was sent"
+  e2e_expect_equal "" "$(cd "$E2E_DIR/tmp" && ls -A | grep '^flow-judge-input' | tr '\n' ' ')" "input files left behind"
+fi

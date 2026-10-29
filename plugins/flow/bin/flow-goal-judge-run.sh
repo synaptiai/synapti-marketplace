@@ -78,6 +78,8 @@ if [ "$CHECKS_RC" -ne 0 ] || ! printf '%s' "$REPORT" | jq -e 'has("checked")' >/
   _blocked "the deterministic checks did not run (exit $CHECKS_RC)"
 fi
 BUNDLE_FILE=$(mktemp -t flow-judge-input.XXXXXX) || _blocked "mktemp failed"
+# Removed on every way out, a TERM included (bash runs the EXIT trap on one).
+trap 'rm -f "$BUNDLE_FILE"' EXIT
 if ! PYTHONSAFEPATH=1 python3 "$FLOW_ROOT/bin/_flow_evidence_bundle.py" "$GOAL_FILE" "$REPORT" "$RUN_DIR" > "$BUNDLE_FILE" 2>/dev/null; then
   rm -f "$BUNDLE_FILE"
   _blocked "the evidence bundle could not be assembled (python3 or PyYAML missing, or a goal or sidecar the assembler refused)"

@@ -404,6 +404,51 @@ if _want verdict-no-timeout; then
   _edges not-called
 fi
 
+# _term_block <shell> — the verdict block, run in the background under <shell>
+# with a judge that waits 5 s; once the judge has started, the block's shell
+# gets a TERM, as the Bash tool's time limit sends. mktemp -t is a stub that
+# makes its file in $E2E_DIR/tmp (macOS mktemp -t does not follow TMPDIR).
+# Prints the names left in $E2E_DIR/tmp that the block made.
+_term_block() {
+  mkdir -p "$E2E_DIR/tmp"
+  rm -f "$E2E_DIR/tmp/"*
+  if [ ! -x "$E2E_BIN/mktemp" ]; then
+    cat > "$E2E_BIN/mktemp" <<'STUB'
+#!/usr/bin/env bash
+[ "${1-}" = -t ] && exec /usr/bin/mktemp "${E2E_DIR:?}/tmp/$2"
+exec /usr/bin/mktemp "$@"
+STUB
+    chmod +x "$E2E_BIN/mktemp"
+  fi
+  rm -f "$E2E_DIR/args/"*
+  (cd "$E2E_ACTIVE_PLUGIN" && flow_block "$START" VERDICT_JUDGE_BLOCK) > "$E2E_DIR/term-block.sh"
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    unset CLAUDE_HOOK_GOAL_JUDGE_MODE
+    export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH" E2E_DIR \
+      FLOW_TEST_CLAUDE_RESPONSE="$E2E_DIR/reply.json" FLOW_TEST_CLAUDE_ARGS_DIR="$E2E_DIR/args" FLOW_TEST_CLAUDE_SLEEP=5 \
+      VERDICT_CRITERIA_FILE="$E2E_DIR/criteria.txt" VERDICT_BUNDLE_FILE="$E2E_DIR/bundle.txt" VERDICT_HOLDOUT_FILE="$E2E_DIR/holdout.txt"
+    "$1" "$E2E_DIR/term-block.sh" > "$E2E_DIR/term.out" 2> "$E2E_DIR/term.err" &
+    pid=$!
+    n=0
+    while [ ! -f "$E2E_DIR/args/stdin.txt" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
+    kill -TERM "$pid" 2>/dev/null
+    wait "$pid"
+  ) >/dev/null 2>&1
+  (cd "$E2E_DIR/tmp" && ls -A | grep '^flow-verdict-input' | tr '\n' ' ')
+}
+
+if _want verdict-input-removed-on-term; then
+  _flow_test_begin "start.md step 6: the judge's input file is removed when the block is stopped by a TERM (the Bash tool's time limit)"
+  _setup verdict-input-removed-on-term "the judge waits 5 s; the block's shell gets a TERM once the judge has started"
+  for __sh in $E2E_FENCE_SHELLS; do
+    left=$(_term_block "$__sh")
+    e2e_expect_equal yes "$([ -f "$E2E_DIR/args/stdin.txt" ] && echo yes || echo no)" "$__sh: the judge had started when the TERM was sent"
+    e2e_expect_equal "" "$left" "$__sh: input files left behind"
+  done
+fi
+
 if _want setup-timeout-probe; then
   _flow_test_begin "/flow:setup Phase 1 says whether timeout(1) or gtimeout is installed, which the judges need"
   _setup setup-timeout-probe "the Phase 1 detection fence, once with a timeout on PATH and once with neither timeout nor gtimeout"

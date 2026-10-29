@@ -135,6 +135,15 @@ assert_contains 'bin/flow-judge.sh" --judge verdict' "$(flow_block "$START_CMD" 
 assert_contains 'bin/flow-goal-judge-run.sh" ' "$(flow_block "$GOAL_SKILL" GOAL_JUDGE_RUN 2>/dev/null)" "the goal-evaluator skill's block runs bin/flow-goal-judge-run.sh"
 assert_contains 'bin/flow-judge.sh" --judge goal' "$(cat "$FLOW_DIR/bin/flow-goal-judge-run.sh")" "bin/flow-goal-judge-run.sh runs the helper"
 assert_contains 'exec "${PLUGIN_ROOT}/bin/flow-judge.sh" --judge goal' "$(cat "$STOP_EVAL")" "the Stop hook runs the helper"
+# A judge may run for up to 600 s, and the Bash tool stops a command after
+# 120000 ms unless told otherwise: every place that runs a judge block tells
+# the model to give the tool the judge's limit plus a margin, at most 600000.
+STEP6=$(awk '/^6\. \*\*Independent verdict\*\*/{f=1} f&&/VERDICT_JUDGE_BLOCK_BEGIN/{exit} f' "$START_CMD")
+assert_contains '`verdict.timeoutSeconds`, default 300, + 60) × 1000' "$STEP6" "start.md step 6 gives the Bash tool the verdict judge's limit plus 60 s"
+assert_contains 'never more than 600000' "$STEP6" "start.md step 6 caps the Bash tool's timeout at 600000"
+STEP5=$(awk '/^### Step 5: Judge/{f=1} f&&/GOAL_JUDGE_RUN_BEGIN/{exit} f' "$GOAL_SKILL")
+assert_contains "the Bash tool's \`timeout\` at \`flow.goals.judge.timeoutSeconds\` (default 60) × 1000 + 60000, at most 600000" "$STEP5" "the goal-evaluator skill's Step 5 gives the Bash tool the goal judge's limit plus 60 s"
+assert_contains '(`flow.goals.judge.timeoutSeconds`, default 60, + 60) × 1000 milliseconds, at most 600000' "$(cat "$FLOW_DIR/commands/goal.md")" "/flow:goal evaluate gives the Bash tool the goal judge's limit plus 60 s"
 DISPATCH=$(grep -rnE 'Agent\((verdict-judge|goal-evaluator-judge)|subagent_type: *(verdict-judge|goal-evaluator-judge)|dispatch(es)? Agent\(verdict|dispatch(es)? `?Agent\(goal' \
   "$FLOW_DIR/agents" "$FLOW_DIR/commands" "$FLOW_DIR/references" "$FLOW_DIR/skills" 2>/dev/null || true)
 assert_equal "" "$DISPATCH" "no file dispatches a judge with Agent() or as a subagent"

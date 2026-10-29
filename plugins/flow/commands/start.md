@@ -977,7 +977,7 @@ Prove everything works with fix-forward:
    - `VERDICT_BUNDLE_FILE` — the evidence bundle assembled in step 5
    - `VERDICT_HOLDOUT_FILE` — the holdout-validation findings from step 4 (P1/P2/P3 with file:line citations), or `none`
 
-   Then run this block with those three variables set. It puts each part inside its own `<<<UNTRUSTED_*>>>` fence (`bin/_flow_evidence_bundle.py --verdict-input`, the goal judge's fence format, which also defuses a fence marker written inside a part), so text in a criterion or in captured output is read as data, never as instructions:
+   Then run this block with those three variables set, giving the Bash tool a `timeout` of the judge's time limit plus 60 seconds, in milliseconds: (`verdict.timeoutSeconds`, default 300, + 60) × 1000, so 360000 by default, and never more than 600000, the tool's maximum. The tool's default of 120000 would stop the block while the judge is still inside its own limit. It puts each part inside its own `<<<UNTRUSTED_*>>>` fence (`bin/_flow_evidence_bundle.py --verdict-input`, the goal judge's fence format, which also defuses a fence marker written inside a part), so text in a criterion or in captured output is read as data, never as instructions:
 
    ```bash
    # VERDICT_JUDGE_BLOCK_BEGIN
@@ -1011,6 +1011,10 @@ Prove everything works with fix-forward:
    # references/verdict-output-format.md; its model is verdict.model (empty: the
    # CLI's default) and its time limit verdict.timeoutSeconds (default 300).
    INPUT_FILE=$(mktemp -t flow-verdict-input.XXXXXX) || { printf '%s\n' "VERDICT_JUDGE_STATE=blocked" "VERDICT_JUDGE_ERROR=mktemp failed"; exit 1; }
+   # Removed on every way out, a TERM from the Bash tool's time limit included:
+   # zsh runs an EXIT trap on a signal only when that signal's own trap exits.
+   trap 'rm -f "$INPUT_FILE"' EXIT
+   trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
    if ! PYTHONSAFEPATH=1 python3 "$FLOW_ROOT/bin/_flow_evidence_bundle.py" --verdict-input \
         "$VERDICT_CRITERIA_FILE" "$VERDICT_BUNDLE_FILE" "$VERDICT_HOLDOUT_FILE" > "$INPUT_FILE" 2>/dev/null; then
      rm -f "$INPUT_FILE"
