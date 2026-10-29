@@ -15,6 +15,8 @@
 }
 
 RS_TMP=$(mktemp -d "${TMPDIR:-/tmp}/flow-run-shard.XXXXXX") || { _flow_assert_fail "mktemp -d failed"; return 0; }
+# Removed also when a cancelled job stops this file part-way.
+trap 'rm -rf "$RS_TMP"' EXIT
 RS_RUN="$REPO_ROOT/plugins/flow/tests/run.sh"
 RS_ART=""
 if [ -n "${FLOW_E2E_ARTIFACT_DIR:-}" ]; then
@@ -55,6 +57,7 @@ assert_equal 0 "$RS_RC" "1/2 exits 0"
 assert_contains "run.sh: shard 1/2 runs 3 of 5 files" "$RS_OUT" "1/2 says how many files it runs"
 _rs_run two-of-2 2/2 "${RS_ALL[@]}"
 assert_equal "b d" "$RS_RAN" "2/2 of a..e runs b and d"
+assert_equal 0 "$RS_RC" "2/2 exits 0"
 assert_contains "run.sh: shard 2/2 runs 2 of 5 files" "$RS_OUT" "2/2 says how many files it runs"
 
 # Every file in exactly one of four parts, including a part of one file.
@@ -69,6 +72,7 @@ assert_equal "a b c d e" "$(printf '%s\n' $_rs_seen | sort | tr '\n' ' ' | sed '
 # 1/1 is the whole list.
 _rs_run one-of-1 1/1 "${RS_ALL[@]}"
 assert_equal "a b c d e" "$RS_RAN" "1/1 runs every file"
+assert_equal 0 "$RS_RC" "1/1 exits 0"
 
 # A part of a list given as arguments comes from that list, not the glob.
 _rs_run args 1/3 "$RS_TMP/b.test.sh" "$RS_TMP/d.test.sh" "$RS_TMP/e.test.sh"
@@ -83,6 +87,7 @@ assert_not_contains "SHARD_SEEN=1/2" "$RS_OUT" "a suite run in a part does not s
 # Unset: every file, and no shard line.
 _rs_run unset -unset "${RS_ALL[@]}"
 assert_equal "a b c d e" "$RS_RAN" "without FLOW_TEST_SHARD every file runs"
+assert_equal 0 "$RS_RC" "without FLOW_TEST_SHARD the run exits 0"
 assert_not_contains "run.sh: shard" "$RS_OUT" "without FLOW_TEST_SHARD no shard line is printed"
 
 # A malformed value runs nothing and is a runner error.

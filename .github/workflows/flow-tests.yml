@@ -38,11 +38,12 @@ jobs:
     #
     # Linux runs the suite in four parts, one job each: run.sh takes every
     # fourth file (FLOW_TEST_SHARD=K/N). In one piece it took 31 to 41 minutes
-    # (2026-10) against a 45-minute limit, and slower runners were cancelled
-    # while still passing. Per-file times from one run of the whole suite on
-    # main (2026-10-29) put the parts at about 9, 12, 5 and 12 minutes of
-    # tests, plus a minute or two of setup per job. macOS skips the System One
-    # suites and takes 15 to 24 minutes in one job.
+    # in the passing runs of 2026-10-15 to 2026-10-29 against a 45-minute
+    # limit, and slower runners were cancelled while still passing. Per-file
+    # times from run 40837192187 on main (2026-10-29) put the parts at about
+    # 9, 12, 5 and 12 minutes of tests, plus a minute or two of setup per job.
+    # macOS skips the System One suites and took 15 to 24 minutes in one job
+    # in the same runs.
     strategy:
       fail-fast: false
       matrix:

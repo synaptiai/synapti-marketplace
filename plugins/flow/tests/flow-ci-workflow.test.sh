@@ -85,9 +85,8 @@ _flow_test_begin "the split suite: every part has a matrix row and a long enough
 # - one artifact name for every part (upload-artifact refuses a second
 #   upload of a name);
 # - a fixed limit in the job, a step-level limit, or a row below the floor.
-#   Linux parts took about 5 to 12 minutes of tests each by the per-file
-#   times of one run on main (2026-10-29), and macOS 15 to 24 minutes in one
-#   job (2026-10), so the floors are 20 and 45 minutes.
+#   The comment above the matrix in flow-tests.yml gives the times these
+#   floors (20 minutes for a Linux part, 45 for macOS) were set from.
 if ! python3 -c "import yaml" >/dev/null 2>&1; then
   _flow_assert_pass "SKIP: PyYAML not installed (apt install python3-yaml / pip install pyyaml)"
   WF_LINUX_N=""
