@@ -60,6 +60,10 @@
 #   S11 a tag whose only release is a draft counts as having no release
 #      (GitHub's lookup by tag name returns published releases only), so the
 #      run creates a second release beside the draft
+#   S13 a draft release for the tag a run is about to create (a merged
+#      release pull request's version, an untagged version, or the next tag
+#      with no version file) goes unseen, and the run creates a second
+#      release beside it
 #   S12 a repository that pushes tags without GitHub releases lands in
 #      publish on every run and can never plan its next version; or the
 #      skip that lets it applies to another tag, or to a tag only in this
@@ -553,20 +557,27 @@ e2e_expect_line "RELEASE_PR=https://github.com/octo/market/pull/9"
 e2e_expect_no_line "RELEASE_RUN=pr"
 e2e_expect_clean_edges
 
+# _merged_release_pr — main carries 4.18.0 from a merged release pull
+# request (#9, merge commit MERGE_SHA), then one more commit; no v4.18.0 tag.
+_merged_release_pr() {
+  _released_marketplace
+  _marketplace_fixture 3.11.0
+  printf '{\n  "name": "beta",\n  "version": "3.11.0"\n}\n' > "$E2E_REPO/plugins/beta/.claude-plugin/plugin.json"
+  sed 's/"version": "4.17.0"/"version": "4.18.0"/' "$E2E_REPO/.claude-plugin/marketplace.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$E2E_REPO/.claude-plugin/marketplace.json"
+  _git commit -q -am "chore(release): beta 3.11.0, marketplace 4.18.0 (#9)"
+  MERGE_SHA=$(_git rev-parse HEAD)
+  printf 'later\n' > "$E2E_REPO/later.txt"
+  _git add later.txt
+  _git commit -q -m "docs: a later change"
+  _git push -q origin main
+  e2e_gh_fixture prs-all-chore_release-4.18.0-main "[{\"number\":9,\"state\":\"MERGED\",\"url\":\"https://github.com/octo/market/pull/9\",\"mergeCommit\":{\"oid\":\"$MERGE_SHA\"}}]"
+}
+
 _flow_test_begin "Phase 2: the merged release pull request is tagged at its merge commit (S4)"
 e2e_new release-plan-tag
-e2e_describe "main carries 4.18.0 from a merged release pull request, then one more commit; v4.18.0 does not exist"
-_released_marketplace
-_marketplace_fixture 3.11.0
-printf '{\n  "name": "beta",\n  "version": "3.11.0"\n}\n' > "$E2E_REPO/plugins/beta/.claude-plugin/plugin.json"
-sed 's/"version": "4.17.0"/"version": "4.18.0"/' "$E2E_REPO/.claude-plugin/marketplace.json" > "$E2E_DIR/m.json" && mv "$E2E_DIR/m.json" "$E2E_REPO/.claude-plugin/marketplace.json"
-_git commit -q -am "chore(release): beta 3.11.0, marketplace 4.18.0 (#9)"
-MERGE_SHA=$(_git rev-parse HEAD)
-printf 'later\n' > "$E2E_REPO/later.txt"
-_git add later.txt
-_git commit -q -m "docs: a later change"
-_git push -q origin main
-e2e_gh_fixture prs-all-chore_release-4.18.0-main "[{\"number\":9,\"state\":\"MERGED\",\"url\":\"https://github.com/octo/market/pull/9\",\"mergeCommit\":{\"oid\":\"$MERGE_SHA\"}}]"
+e2e_describe "main carries 4.18.0 from a merged release pull request, then one more commit; v4.18.0 does not exist; GitHub has a draft for v4.18.0-rc.1 only"
+_merged_release_pr
+e2e_gh_fixture releases '[{"tag_name":"v4.18.0-rc.1","draft":true}]'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
 e2e_expect_line "RELEASE_RUN=tag"
 e2e_expect_line "TAG=v4.18.0"
@@ -583,6 +594,7 @@ _commit_all
 _origin
 _repo_gh
 e2e_gh_fixture prs-all-chore_release-1.2.3-main '[]'
+e2e_gh_fixture releases '[]'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
 e2e_expect_line "RELEASE_RUN=untagged"
 e2e_expect_line "TAG=v1.2.3"
@@ -597,11 +609,67 @@ _git tag -a v2.4.9 -m v2.4.9
 _origin
 _repo_gh
 e2e_gh_fixture release-v2.4.9 '{"tag_name":"v2.4.9"}'
+e2e_gh_fixture releases '[{"tag_name":"v2.4.1","draft":true}]'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
 e2e_expect_line "VERSIONS_STATE=none"
 e2e_expect_line "RELEASE_RUN=tag"
 e2e_expect_line "TAG=v2.4.10"
 e2e_expect_line "TAG_COMMIT=$(_git rev-parse HEAD)"
+e2e_expect_clean_edges
+
+# The tag a run is about to create can already have a draft release on
+# GitHub (drafted ahead, for a tag that does not exist yet); creating the
+# release would make a second one.
+_flow_test_begin "Phase 2: a draft release for the tag this run would create stops it (S13)"
+e2e_new release-plan-tag-draft
+e2e_describe "the merged release pull request for 4.18.0; GitHub has a draft release for v4.18.0, whose tag does not exist yet"
+_merged_release_pr
+e2e_gh_pages releases '[{"tag_name":"v4.17.0","draft":false}]' '[{"tag_name":"v4.18.0","draft":true}]'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "DRAFT_RELEASE=v4.18.0"
+e2e_expect_out "only a draft release for v4.18.0"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_no_out "TAG_COMMIT="
+e2e_expect_clean_edges
+
+e2e_new release-plan-tag-draft-list-fails
+e2e_describe "the same, but gh fails when listing the releases"
+_merged_release_pr
+e2e_gh_fail releases
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=unavailable"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-untagged-draft
+e2e_describe "package.json at 1.2.3, never tagged, no release pull request; GitHub has a draft release for v1.2.3"
+e2e_repo main
+_npm_fixture
+_commit_all
+_origin
+_repo_gh
+e2e_gh_fixture prs-all-chore_release-1.2.3-main '[]'
+e2e_gh_fixture releases '[{"tag_name":"v1.2.3","draft":true}]'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "DRAFT_RELEASE=v1.2.3"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-no-files-draft-next
+e2e_describe "no version file; v2.4.9 released; GitHub has a draft release for v2.4.10"
+e2e_repo main
+_git tag -a v2.4.9 -m v2.4.9
+_origin
+_repo_gh
+e2e_gh_fixture release-v2.4.9 '{"tag_name":"v2.4.9"}'
+e2e_gh_fixture releases '[{"tag_name":"v2.4.10","draft":true}]'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "DRAFT_RELEASE=v2.4.10"
+e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 
 _flow_test_begin "Phase 2: a tag on origin with no GitHub release publishes that tag; a tag only in this clone stops (S8, S9)"
@@ -756,6 +824,7 @@ _git tag -a v2.4.9 -m v2.4.9
 _origin
 _repo_gh
 e2e_gh_fail release-v2.4.9
+e2e_gh_fixture releases '[]'
 e2e_run_block FLOW_RELEASE_SKIP_PUBLISH=v2.4.9 "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
 e2e_expect_line "RELEASE_RUN=tag"
 e2e_expect_line "TAG=v2.4.10"

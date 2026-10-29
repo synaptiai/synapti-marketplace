@@ -126,7 +126,7 @@ The block below works out which run this is, from the state of the repository an
 - `RELEASE_RUN=untagged` — the default branch carries a version that has no tag and no merged release pull request (a version bumped by hand, or a first release).
 - `RELEASE_RUN=publish` — the current version's tag (`TAG`) is on origin but GitHub has no release for it, as when an earlier run pushed the tag and the release was not created. This run creates only the GitHub release, unless you choose to skip it and plan the next version (see the question after the block).
 
-The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. It stops the same way when GitHub has only a draft release for the tag: `DRAFT_RELEASE` names the tag, to be published with `gh release edit <tag> --draft=false` or deleted with `gh release delete <tag>` (flow's tier hook asks before either runs); deleting keeps the tag, so the next run creates the release. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
+The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. It stops the same way when GitHub has only a draft release for the tag, whether the tag is already on origin or is the one this run would create (`RELEASE_RUN=tag` or `untagged`; a draft can name a tag that does not exist yet): `DRAFT_RELEASE` names the tag, to be published with `gh release edit <tag> --draft=false` or deleted with `gh release delete <tag>` (flow's tier hook asks before either runs); deleting the draft keeps any tag, so the next run creates the release. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
 
 The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`).
 
@@ -193,6 +193,45 @@ else
   CUR_STATE=$(printf '%s\n' "$CUR_OUT" | sed -n 's/^VERSIONS_STATE=//p')
   CUR_TAG_VERSION=$(printf '%s\n' "$CUR_OUT" | sed -n 's/^CURRENT_TAG_VERSION=//p')
   ORIGIN_HEAD=$(git rev-parse "refs/remotes/origin/$DEFAULT_BRANCH")
+  # _flow_draft_for: DRAFT is yes when GitHub has a draft release for
+  # CHECK_TAG, no when it has none, error when gh cannot list the releases.
+  # The list is fetched once per run. A draft can name a tag that does not
+  # exist yet, and creating a release beside it would make a second one. The
+  # tag is compared in the shell, not in the jq text, so nothing in the tag
+  # prefix from settings is read as jq.
+  DRAFT_LIST_RC=""
+  _flow_draft_for() {
+    if [ -z "$DRAFT_LIST_RC" ]; then
+      DRAFT_LIST=$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" --jq '.[] | select(.draft) | .tag_name' 2>/dev/null)
+      DRAFT_LIST_RC=$?
+    fi
+    if [ "$DRAFT_LIST_RC" -ne 0 ]; then
+      DRAFT=error
+    elif printf '%s\n' "$DRAFT_LIST" | grep -qxF -- "$CHECK_TAG"; then
+      DRAFT=yes
+    else
+      DRAFT=no
+    fi
+  }
+  _flow_draft_blocked() {
+    printf '%s\n' "STATE=blocked"
+    printf '%s\n' "DRAFT_RELEASE=$CHECK_TAG"
+    printf '%s\n' "ERROR=\"GitHub has only a draft release for $CHECK_TAG; publish the draft or delete it, then run /flow:release again\""
+  }
+  # _flow_draft_stop: CHECK_TAG is the tag this run would create. When GitHub
+  # has a draft release for it, or cannot say, print the state and return 0.
+  _flow_draft_stop() {
+    _flow_draft_for
+    if [ "$DRAFT" = error ]; then
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "ERROR=\"gh could not list the releases to look for a draft for $CHECK_TAG\""
+      return 0
+    elif [ "$DRAFT" = yes ]; then
+      _flow_draft_blocked
+      return 0
+    fi
+    return 1
+  }
   # _flow_tag_state: where the tag CHECK_TAG is. TAG_WHERE is remote (on
   # origin), local (in this clone only), absent, or error (origin did not
   # answer); with remote, GH_RELEASE is yes (published), draft, no or error.
@@ -214,18 +253,11 @@ else
       else
         case "$_gh_err" in *"(HTTP 404)"*) GH_RELEASE=no ;; *) GH_RELEASE=error ;; esac
       fi
-      # The lookup by tag finds published releases only. A draft for the tag
-      # is in the release list; creating a release beside it would make two.
-      # The tag is compared in the shell, not in the jq text, so nothing in
-      # the tag prefix from settings is read as jq.
+      # The lookup by tag finds published releases only; a draft is found in
+      # the release list.
       if [ "$GH_RELEASE" = no ]; then
-        if _drafts=$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" --jq '.[] | select(.draft) | .tag_name' 2>/dev/null); then
-          if printf '%s\n' "$_drafts" | grep -qxF -- "$CHECK_TAG"; then
-            GH_RELEASE=draft
-          fi
-        else
-          GH_RELEASE=error
-        fi
+        _flow_draft_for
+        case "$DRAFT" in yes) GH_RELEASE=draft ;; error) GH_RELEASE=error ;; esac
       fi
     elif [ "$_ls_rc" -ne 2 ]; then
       TAG_WHERE=error
@@ -249,9 +281,7 @@ else
       printf '%s\n' "STATE=unavailable"
       printf '%s\n' "ERROR=\"gh could not say whether GitHub has a release for $CHECK_TAG\""
     elif [ "$GH_RELEASE" = draft ]; then
-      printf '%s\n' "STATE=blocked"
-      printf '%s\n' "DRAFT_RELEASE=$CHECK_TAG"
-      printf '%s\n' "ERROR=\"GitHub has only a draft release for $CHECK_TAG; publish the draft or delete it, then run /flow:release again\""
+      _flow_draft_blocked
     elif [ "$GH_RELEASE" = no ]; then
       printf '%s\n' "RELEASE_RUN=publish"
       printf '%s\n' "TAG=$CHECK_TAG"
@@ -293,9 +323,12 @@ else
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"the last tag $LAST is not $TAG_PREFIX + MAJOR.MINOR.PATCH\""
     else
-      printf '%s\n' "RELEASE_RUN=tag"
-      printf '%s\n' "TAG=$TAG_PREFIX$NEXT_V"
-      printf '%s\n' "TAG_COMMIT=$ORIGIN_HEAD"
+      CHECK_TAG="$TAG_PREFIX$NEXT_V"
+      if ! _flow_draft_stop; then
+        printf '%s\n' "RELEASE_RUN=tag"
+        printf '%s\n' "TAG=$TAG_PREFIX$NEXT_V"
+        printf '%s\n' "TAG_COMMIT=$ORIGIN_HEAD"
+      fi
     fi
   else
     CHECK_TAG="$TAG_PREFIX$CUR_TAG_VERSION"
@@ -349,7 +382,10 @@ else
         PR_URL=${PR_REST#* }
         [ -n "$PR_LINE" ] && printf '%s\n' "RELEASE_PR=$PR_URL"
         if [ "$UNTAGGED" = 1 ]; then
-          if [ "$PR_STATE" = "MERGED" ]; then
+          CHECK_TAG="$TAG_PREFIX$LOOKUP_VERSION"
+          if _flow_draft_stop; then
+            :
+          elif [ "$PR_STATE" = "MERGED" ]; then
             printf '%s\n' "RELEASE_RUN=tag"
             printf '%s\n' "TAG_COMMIT=${PR_REST%% *}"
           else
