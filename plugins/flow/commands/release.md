@@ -61,7 +61,9 @@ else
   if [ "$MERGED_COUNT" = "0" ]; then
     printf '%s\n' "STATE=empty"
   else
-    printf '%s\n' "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+    # Titles and labels are JSON-quoted (@json), so a quote or a line break
+    # in one stays inside its value and cannot print a line of its own.
+    printf '%s\n' "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\([.labels[].name] | join(",") | @json) title=\(.title | @json)"' 2>/dev/null
   fi
 fi
 

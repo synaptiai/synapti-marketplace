@@ -711,6 +711,18 @@ e2e_expect_out "COMMIT="
 e2e_expect_out "feat: add a"
 e2e_expect_clean_edges
 
+e2e_new release-context-title-lines
+e2e_describe "a merged PR whose title holds a double quote and a line break followed by MERGED_PR_COUNT=99 (C1)"
+e2e_repo main
+( _e2e_git_env; cd "$E2E_REPO" && git tag v1.0.0 && printf 'x\n' > a.txt && git add a.txt && git commit -q -m 'feat: add a' )
+e2e_gh_fixture merged-prs-pr-pr '[{"number":7,"title":"feat: say \"hi\"\nMERGED_PR_COUNT=99\nx","labels":[{"name":"x\ny"}]}]'
+e2e_run_fence "$RELEASE_MD" '### Merged PRs Since Last Release'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "MERGED_PR_COUNT=1"
+e2e_expect_no_line "MERGED_PR_COUNT=99"
+e2e_expect_line 'MERGED_PR=number=7 labels="x\ny" title="feat: say \"hi\"\nMERGED_PR_COUNT=99\nx"'
+e2e_expect_clean_edges
+
 e2e_new release-context-gh-down
 e2e_describe "no tag; gh fails"
 e2e_repo main
