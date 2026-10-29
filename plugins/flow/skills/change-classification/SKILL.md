@@ -18,7 +18,8 @@ Evaluate in order: red flags, primary, secondary, default → uncertain.
 
 | Category | Signal | Result |
 |----------|--------|--------|
-| Red flag | `.env`, `.env.<environment>` (not `.env.example` / `.env.sample`, which are committable templates), `credentials*`, `*secret*`, key files | BLOCK — never commit |
+| Red flag | `.env`, `.env.<environment>` (`.env.local`, `.env.production`, ...), `credentials*`, `*secret*`, key files | BLOCK — never commit |
+| Red flag | `.env.example`, `.env.sample`, `.env.template` holding a value that looks like a real secret (not empty, not a placeholder; see `references/classification-signals.md`) | WARN — replace the value with a placeholder; the template itself is committable |
 | Red flag | `*.lock`, `package-lock.json`, files >1MB, auto-generated | WARN — verify intentional |
 | Primary | In branch diff (`git diff --name-only $DEFAULT_BRANCH...HEAD`) | in-context |
 | Primary | Path matches issue title/body keywords | in-context |

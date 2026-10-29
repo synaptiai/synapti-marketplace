@@ -394,6 +394,7 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 ### Commands Available
 | Command | Purpose |
 |---------|---------|
+| `/flow <verb> <target>` | Entry point that routes a verb to the command below |
 | `/flow:start <issue>` | Start work on an issue |
 | `/flow:commit` | Classify and commit changes |
 | `/flow:pr` | Create pull request |
@@ -401,8 +402,21 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 | `/flow:address <pr>` | Address review feedback |
 | `/flow:merge <pr>` | Merge approved PR |
 | `/flow:release <type>` | Create release |
+| `/flow:resolve [pr-or-branch]` | Resolve merge conflicts |
 | `/flow:status` | Workflow overview |
 | `/flow:learn` | Analyze patterns |
+| `/flow:setup` | Initialize flow for a repository |
+| `/flow:explain` | Questions about decisions on this branch |
+| `/flow:issue [topic]` | Create a GitHub issue |
+| `/flow:brainstorm [topic]` | Explore approaches before implementation |
+| `/flow:debug [error]` | Structured debugging |
+| `/flow:design [feature]` | Architecture and design review |
+| `/flow:goal` | Create, inspect and evaluate FlowGoals |
+| `/flow:resume` | Propose the next safe action for an interrupted run |
+| `/flow:workflow` | Inspect workflow definitions |
+| `/flow:trigger` | Manage FlowTriggers |
+| `/flow:run trigger <id>` | Run one FlowTrigger's target once |
+| `/flow:watch` | Generate a `/loop` prompt for hands-off iteration |
 
 ### Next Steps
 - Assign an issue and run `/flow:start <number>`

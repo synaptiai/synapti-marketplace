@@ -13,7 +13,8 @@ Complete reference for the change-classification skill's signal evaluation.
 
 | Pattern | Action | Rationale |
 |---------|--------|-----------|
-| `.env`, `.env.*` | BLOCK | Environment secrets |
+| `.env`, `.env.<environment>` (`.env.local`, `.env.production`, ...) | BLOCK | Environment secrets |
+| `.env.example`, `.env.sample`, `.env.template` | WARN when a value looks like a real secret; otherwise classify as usual | Committable templates. A value looks real when it is neither empty nor a placeholder (`changeme`, `your-key-here`, `<...>`, `xxx`): a known key prefix (`sk-`, `ghp_`, `github_pat_`, `AKIA`, `xox`), a private-key block, or a string of 20 or more letters and digits that mixes upper case, lower case and digits |
 | `credentials*`, `*secret*`, `*password*` | BLOCK | Sensitive data |
 | `*.pem`, `*.key`, `*.p12` | BLOCK | Cryptographic keys |
 | `id_rsa*`, `*.pub` (SSH keys) | BLOCK | SSH credentials |

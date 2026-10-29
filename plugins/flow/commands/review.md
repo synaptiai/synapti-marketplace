@@ -824,7 +824,7 @@ printf '%s\n' "### Path A Gate"
 #   4. $CLAUDE_PLUGIN_ROOT/settings.json when that variable is set, or the
 #      discovered install when it is not. When neither resolves, there is no
 #      plugin tier at all — rather than a settings file at the filesystem root,
-#      which is what the empty discovery result used to produce.
+#      which an empty discovery result would otherwise name.
 # The plugin tier is a settings FILE, so CLAUDE_PLUGIN_ROOT is taken at its
 # word when it is set. The shared plugin-root resolver is not used here: it
 # accepts a directory only when that directory holds an executable
@@ -1227,7 +1227,7 @@ Apply the consolidation table from `references/paired-review-protocol.md` (Synth
 
 The DROPPED row counts only the variants' own DISAGREE answers. A System One answer is not a challenger answer and never counts toward a drop. The optional System One step of Phase 4 step 2 (`review.challenge`) adds a note to a finding and changes nothing in this table.
 
-**DROPPED findings** are logged to the journal, `<journal dir>/issue-{N}.md` (the journal dir being what `bin/journal-dir.sh` prints; N = the issue `bin/flow-pr-linked-issue.sh` prints for this PR: the one GitHub lists it as closing) under a `## Dropped after challenge (PR #$PR_NUM, cycle {N})` heading with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
+**DROPPED findings** are logged to the journal, `<journal dir>/issue-{ISSUE}.md` (the journal dir being what `bin/journal-dir.sh` prints; ISSUE = the issue `bin/flow-pr-linked-issue.sh` prints for this PR: the one GitHub lists it as closing) under a `## Dropped after challenge (PR #$PR_NUM, cycle {CYCLE})` heading (CYCLE = `CYCLE_NUMBER`, this review's cycle) with the finding details and both DISAGREE reasons. They never appear in the rendered tables or the FLOW_REVIEW_CYCLE marker.
 
 **Manifest emit** — for each DROPPED finding, append a `dropped-finding` artifact to the journal manifest so `/flow:learn` can detect repeated drop reasons across cycles (a recurring drop reason is a learnable signal):
 
@@ -1324,8 +1324,8 @@ If any of A.1's variants failed (timeout, error, did-not-spawn), apply the fallb
 | One variant failed for facet F | Use the responding variant's findings only; mark each as `unchallenged` (MEDIUM). Note in output: `facet F: single-reviewer fallback (skeptic failed)`. |
 | Both variants failed for facet F | Re-dispatch single Agent for that facet using the Path B prompt. Note in output: `facet F: re-dispatched as single-reviewer (both variants failed)`. |
 | Challenge round failed for a facet | Skip A.3 for that facet; keep A.1 findings as `unchallenged`. Note in output: `facet F: challenge skipped (challenge prompt failed)`. |
-| A.2 auto-consensus matching errored on finding F (e.g., malformed `file:line`) | Skip auto-consensus for F; route F through A.3 challenge as if non-consensus. Log `LEDGER_WARN: PR#{N} A.2 skipped F:<id> due to <reason>` to stderr. |
-| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to the journal, `<journal dir>/issue-{N}.md` (the journal dir being what `bin/journal-dir.sh` prints; N = the issue this PR addresses) under a `## Consolidation gaps (PR #$PR_NUM, cycle {N})` heading with the orphan reason. Create the journal file with frontmatter if it does not exist. **Also emit `--type consolidation-gap`** via `bin/journal-record.sh` with `cycle`, `finding_id`, `reason`, and `pr` metadata so the manifest carries a machine-readable trail of fallback fires. |
+| A.2 auto-consensus matching errored on finding F (e.g., malformed `file:line`) | Skip auto-consensus for F; route F through A.3 challenge as if non-consensus. Log `LEDGER_WARN: PR#$PR_NUM A.2 skipped F:<id> due to <reason>` to stderr. |
+| A.4 consolidation lookup missing for finding F (e.g., orphaned challenge response) | Emit F as `unchallenged` MEDIUM. Append to the journal, `<journal dir>/issue-{ISSUE}.md` (the journal dir being what `bin/journal-dir.sh` prints; ISSUE = the issue this PR addresses) under a `## Consolidation gaps (PR #$PR_NUM, cycle {CYCLE})` heading (CYCLE = `CYCLE_NUMBER`, this review's cycle) with the orphan reason. Create the journal file with frontmatter if it does not exist. **Also emit `--type consolidation-gap`** via `bin/journal-record.sh` with `cycle`, `finding_id`, `reason`, and `pr` metadata so the manifest carries a machine-readable trail of fallback fires. |
 
 #### A.6 — Emit consolidated output
 

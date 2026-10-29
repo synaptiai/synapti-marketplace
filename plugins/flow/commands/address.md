@@ -701,6 +701,8 @@ Display categorized feedback:
 
 ## Phase 3: CODE
 
+**TDD enforcement**: a fix that changes behavior follows `testing.tddMode` exactly as `/flow:start` Phase 3 does (`enforce` default; `suggest` only with `testing.tddModeOptOut: true`; `off` still runs tests in verification). The `tdd-patterns` contract loaded above defines RED: a test is red only when it fails for the intended reason, its expected value has a stated source (spec, reference, hand computation, fixture, standard — never the implementation's output), and its input is not degenerate for the behavior under test. A fix that changes only documentation, comments, or configuration with no behavior change is exempt and needs no new test.
+
 For each feedback task (in priority order):
 
 ```
@@ -709,10 +711,16 @@ For each feedback task (in priority order):
 3. Context recovery: find current code location (don't trust line numbers)
    - Search for quoted code snippets
    - Read the file at the mentioned path
-4. Implement the fix
-5. Write or update tests that verify the fix:
+4. Reproducing test first (behavior-changing fix; exempt fixes go to step 5):
+   - tddMode=enforce: RED — write a test that reproduces the defect the comment
+     names, run it, and confirm it fails on the current code for the intended
+     reason (not a syntax error, not a wrong import). Expected value with its
+     stated source; an input on which the fixed and the unfixed code differ
+   - tddMode=suggest: the same, unless the user decides to skip it for this fix
+   - tddMode=off: no test-first step; step 5 still writes the test
+5. Implement the fix (GREEN) — the simplest change that makes the test pass:
+   - tddMode=off: then write or update a test that would have caught the issue
    - Follow existing test patterns (co-located files, same framework)
-   - At minimum, write a test that would have caught the issue
    - Test the specific edge case, not just the happy path
    - Only modify the fix target and its test file
 6. Verify the fix addresses the specific feedback and tests pass
@@ -830,10 +838,7 @@ case "$CYCLE_NUMBER" in ''|*[!0-9]*) printf '%s\n' "FINDING_DISMISSED=skipped (C
 #
 # It is NOT about glob expansion. status.md's containment check writes the id as
 # `*",$ID,"*`, where the quotes make it a literal, and commands/merge.md has no
-# glob at all — its gate is `comm` over sorted lists. An earlier version of this
-# comment claimed an id of `*` "matches every RESOLVED list"; that was never
-# true of any consumer, and the same claim was corrected in
-# bin/_journal_manifest.py in the same round.
+# glob at all — its gate is `comm` over sorted lists.
 if ! ( LC_ALL=C
        case "$FINDING_ID" in [A-Za-z]*) ;; *) exit 1 ;; esac
        case "$FINDING_ID" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ); then
@@ -1349,10 +1354,41 @@ true
 
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
-   - Fetch current body: `gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body'`
+   - Fetch the current body: run the block below with `PR_NUM=<n>` and no `BODY_FILE`; it prints the body.
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
-   - Update: `gh pr edit "$PR_NUM" --body "$UPDATED_BODY"`
+   - Update: run `mktemp` and note the path it prints, write the whole updated body to that path with the Write tool, and run the block with `PR_NUM=<n> BODY_FILE=<the path>`, followed in the same call by `rm -f <the path>`. The body quotes reviewer text, so it never goes in a shell command.
+
+   ```bash
+   # PR_BODY_BLOCK_BEGIN
+   # Reads the pull request body, or, with BODY_FILE, replaces it with that
+   # file's text. Each fence is its own shell, so REPO is resolved here:
+   # `gh --repo ""` falls back to gh's own resolution, which acts on whichever
+   # repository the working directory belongs to.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   case "${PR_NUM:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: PR_NUM must be a positive integer with no leading zero" >&2; exit 1 ;; esac
+   if [ -z "${BODY_FILE:-}" ]; then
+     gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' || exit 1
+     exit 0
+   fi
+   [ -f "$BODY_FILE" ] && [ -s "$BODY_FILE" ] || { printf '%s\n' "ERROR: BODY_FILE must name a file holding the updated body" >&2; exit 1; }
+   # The body is published, so only a file the session made with mktemp is
+   # accepted: directly in TMPDIR, a regular file and not a symlink, owned by
+   # this user, with one link. Any other file is not read.
+   PB_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+   PB_DIR=""
+   case "$BODY_FILE" in /*) PB_DIR=$(cd -P -- "$(dirname -- "$BODY_FILE")" 2>/dev/null && pwd -P) ;; esac
+   if [ -z "$PB_TMPDIR" ] || [ "$PB_DIR" != "$PB_TMPDIR" ] || [ -L "$BODY_FILE" ] \
+      || [ -z "$(find "$BODY_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+     printf '%s\n' "ERROR: BODY_FILE must be a file made by mktemp directly in \$TMPDIR; the body was not updated" >&2; exit 1
+   fi
+   gh pr edit "$PR_NUM" --repo "$REPO" --body-file "$BODY_FILE" >/dev/null
+   BODY_EXIT=$?
+   printf '%s\n' "BODY_EXIT=$BODY_EXIT"
+   [ "$BODY_EXIT" -eq 0 ] || exit 1
+   # PR_BODY_BLOCK_END
+   ```
 11. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
 12. **Conditional re-request review**:
 

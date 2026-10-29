@@ -153,7 +153,7 @@ diagnostic line ahead of the JSON would turn the decision into ignored text.
 
 ## Trust ledger — executing verification commands safely
 
-A goal's `verification_command` strings run under `bash -c`. With `flow.goals.executeVerificationCommands` at its default `false`, the deterministic-checks runner used to report every such AC as `not_executed`, which made `block` mode block on every stop forever. Flipping the global flag on is the wrong fix: the Stop hook fires on the first turn after `gh pr checkout`, so a hostile branch's `.flow/goals/*.goal.yaml` would execute attacker-controlled commands.
+A goal's `verification_command` strings run under `bash -c`. With `flow.goals.executeVerificationCommands` at its default `false`, they run only for a goal the trust ledger below records. For any other goal each such AC is reported `not_executed`, and in `block` mode a stop whose only open ACs are `not_executed` is allowed with `FLOW_GOAL_UNVERIFIED` and the command that trusts the goal, rather than blocked. The global flag stays off by default because the Stop hook fires on the first turn after `gh pr checkout`, so with it on a hostile branch's `.flow/goals/*.goal.yaml` would execute attacker-controlled commands.
 
 The trust ledger is the per-user answer. `bin/flow-goal-trust.sh` keeps `goal-trust.jsonl` in the per-user state directory (`bin/cascade-resolve.sh --state-dir`: `~/.claude/flow-state`, or a `FLOW_STATE_DIR` the user set) — outside the repo, so a checkout cannot write to it, and a `FLOW_STATE_DIR` inside the repository or set by its own `.claude/settings.json` is ignored ([README: Per-user locations](../README.md#per-user-locations)) — with one entry per recorded goal:
 

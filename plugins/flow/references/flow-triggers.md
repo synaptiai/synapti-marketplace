@@ -67,7 +67,7 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 
 | Key | Default | Description |
 |---|---|---|
-| `flow.triggers.enabled` | `false` | Master switch |
+| `flow.triggers.enabled` | `true` | Master switch; `false` turns `/flow:trigger` and `/flow:watch` off |
 | `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | `github_actions`, `local_cron` and `local_daemon` are schema-valid but allowed only when added here |
 | `flow.triggers.allowAutonomousMerge` | `false` | Hard-coded non-negotiable |
 | `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Recursion default |

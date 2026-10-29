@@ -191,7 +191,7 @@ gate; no value depends on whether video recording was available.
 | Result | Meaning | Passes gate? |
 |---|---|---|
 | `PASS` | Ran and passed | Yes |
-| `FAIL` | Ran and found P1 issues | No |
+| `FAIL` | Ran and found P1 or P2 issues | No |
 | `SKIP` | No UI changes, or the dev server was unavailable | Yes |
 | `SKIP_WARN` | UI changed, no browser tool, `requireVisualVerification` false | Yes, with warning |
 | `SKIP_USER_APPROVED` | The user skipped it via escalation | Yes |

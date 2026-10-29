@@ -84,9 +84,7 @@ Project-local workflows are committed by default (per the gitignore policy). Tru
 
 | Key | Default | Description |
 |---|---|---|
-| `flow.workflows.enabled` | `false` | Master switch for `/flow:workflow` command |
-
-Default is `false` because workflows are inspectable documents — most users don't need to run `/flow:workflow` interactively. Teams flip to `true` for CI integration.
+| `flow.workflows.enabled` | `true` | Master switch for `/flow:workflow` command; `false` turns it off |
 
 ## References
 

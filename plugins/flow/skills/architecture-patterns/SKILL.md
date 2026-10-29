@@ -22,7 +22,7 @@ Context, Containers, Components, or Code — start at the highest relevant level
 
 ## Coupling Analysis
 
-Check actual imports (`grep -rn "import\|require\|from " --include="*.{ts,js,tsx,jsx,py,rb}" -l`; look for A imports B and B imports A). Red flags:
+Check actual imports (`grep -rln "import\|require\|from " --include='*.ts' --include='*.js' --include='*.tsx' --include='*.jsx' --include='*.py' --include='*.rb' .`; look for A imports B and B imports A). Red flags:
 
 - **Circular dependencies** — break with interfaces or events.
 - **God objects** — one module imported by >50% of files; split by responsibility.
