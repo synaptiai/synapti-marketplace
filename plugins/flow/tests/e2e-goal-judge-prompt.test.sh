@@ -9,7 +9,8 @@
 # in a scratch repository with stopHookEnforcement=evaluator-loop and a goal
 # whose AC2 has no verification command, so the judge runs. The skill
 # scenarios run the block between GOAL_JUDGE_RUN_BEGIN and GOAL_JUDGE_RUN_END
-# of skills/goal-evaluator/SKILL.md under zsh and bash. The claude CLI is
+# of skills/goal-evaluator/SKILL.md under zsh and bash; the block resolves the
+# plugin root and calls bin/flow-goal-judge-run.sh. The claude CLI is
 # tests/lib/mock-claude.sh with FLOW_TEST_CLAUDE_ARGS_DIR set, which keeps each
 # flag's value, the prompt on stdin, the recursion guard variable and its
 # working directory; the hook's calls go to args/hook, the skill's to
@@ -46,6 +47,9 @@
 #      unparseable reply) into a continuation with an empty verdict, reason
 #      and next step, instead of needs_human_review, why, and the command
 #      that evaluates the goal by hand
+#   P13 bin/flow-goal-judge-run.sh, which the block calls, runs the judge on a
+#      run id with a path in it, a goal or run directory reached through a
+#      symlink, checks that did not run, or an input that was not assembled
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -485,5 +489,82 @@ if _want skill-bad-id; then
     GOAL_ID=../g-judge RUN_ID=run-e2e "$SKILL" GOAL_JUDGE_RUN
   e2e_expect_line "JUDGE_STATE=blocked"
   e2e_expect_line "JUDGE_ERROR=GOAL_ID must be a goal id without '/' or '..'"
+  _edges skill not-called
+fi
+
+if _want skill-bad-run-id; then
+  _flow_test_begin "goal-evaluator skill: a run id with a path in it is refused, and no judge runs (P13)"
+  _setup skill-bad-run-id "RUN_ID is ../run-e2e; the goal is valid"
+  _goal
+  _evidence
+  _skill RUN_ID=../run-e2e
+  e2e_expect_line "JUDGE_STATE=blocked"
+  e2e_expect_line "JUDGE_ERROR=RUN_ID must be a run id without '/' or '..'"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  _edges skill not-called
+fi
+
+if _want skill-goal-symlink; then
+  _flow_test_begin "goal-evaluator skill: a goal file reached through a symlink is not read, and no judge runs (P13)"
+  _setup skill-goal-symlink "the goal file is a symlink to a valid goal outside .flow/goals"
+  _goal
+  _evidence
+  mv "$E2E_REPO/.flow/goals/g-judge.goal.yaml" "$E2E_DIR/elsewhere.goal.yaml"
+  ln -s "$E2E_DIR/elsewhere.goal.yaml" "$E2E_REPO/.flow/goals/g-judge.goal.yaml"
+  _skill
+  e2e_expect_line "JUDGE_STATE=blocked"
+  e2e_expect_line "JUDGE_ERROR=no goal file to read at .flow/goals/<GOAL_ID>.goal.yaml (missing, or reached through a symlink)"
+  _edges skill not-called
+fi
+
+if _want skill-run-symlink; then
+  _flow_test_begin "goal-evaluator skill: a run directory reached through a symlink is not read, and no judge runs (P13)"
+  _setup skill-run-symlink "the run directory is a symlink to a directory outside the repository"
+  _goal
+  _evidence
+  mv "$E2E_REPO/$RUN_REL" "$E2E_DIR/elsewhere-run"
+  ln -s "$E2E_DIR/elsewhere-run" "$E2E_REPO/$RUN_REL"
+  _skill
+  e2e_expect_line "JUDGE_STATE=blocked"
+  e2e_expect_line "JUDGE_ERROR=the run directory is reached through a symlink or cannot be checked"
+  _edges skill not-called
+fi
+
+if _want skill-checks-fail; then
+  _flow_test_begin "goal-evaluator skill: deterministic checks that did not run stop the block before the judge (P13)"
+  _setup skill-checks-fail "the plugin copy's deterministic-check producer exits 3 without a report"
+  e2e_plugin_copy hooks/scripts/flow-run-deterministic-checks.sh '#!/usr/bin/env bash
+exit 3'
+  _goal
+  _evidence
+  _skill
+  e2e_expect_line "JUDGE_STATE=blocked"
+  e2e_expect_line "JUDGE_ERROR=the deterministic checks did not run (exit 3)"
+  _edges skill not-called
+fi
+
+if _want skill-checks-no-report; then
+  _flow_test_begin "goal-evaluator skill: a check report without a checked key stops the block before the judge (P13)"
+  _setup skill-checks-no-report "the plugin copy's deterministic-check producer exits 0 and prints {}"
+  e2e_plugin_copy hooks/scripts/flow-run-deterministic-checks.sh '#!/usr/bin/env bash
+printf "{}\n"'
+  _goal
+  _evidence
+  _skill
+  e2e_expect_line "JUDGE_STATE=blocked"
+  e2e_expect_line "JUDGE_ERROR=the deterministic checks did not run (exit 0)"
+  _edges skill not-called
+fi
+
+if _want skill-bundle-fail; then
+  _flow_test_begin "goal-evaluator skill: an evidence bundle that could not be assembled stops the block before the judge (P13)"
+  _setup skill-bundle-fail "the plugin copy's bundle assembler exits 1"
+  e2e_plugin_copy bin/_flow_evidence_bundle.py 'import sys
+sys.exit(1)'
+  _goal
+  _evidence
+  _skill
+  e2e_expect_line "JUDGE_STATE=blocked"
+  e2e_expect_line "JUDGE_ERROR=the evidence bundle could not be assembled (python3 or PyYAML missing, or a goal or sidecar the assembler refused)"
   _edges skill not-called
 fi
