@@ -46,7 +46,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | brainstorming | dispatched | 440 | Generate 2-4 distinct approaches with trade-off analysis across simplicity, flexibility, performance, eff... |
 | branch-and-task-management | dispatched | 401 | Create feature branches with naming conventions, load full issue context and impact analysis, and decompo... |
 | capability-discovery | dispatched | 552 | Discover available agents, skills, quality commands (lint, test, typecheck), tech stack, verification cap... |
-| change-classification | dispatched | 528 | Classify code changes as in-context, uncertain, or out-of-context using primary signals (branch diff, iss... |
+| change-classification | dispatched | 527 | Classify code changes as in-context, uncertain, or out-of-context using primary signals (branch diff, iss... |
 | code-quality-principles | ambient | 585 | Enforce code quality through the Boy Scout Rule (leave code better than found), secret-free commits, prod... |
 | code-review-methodology | dispatched | 564 | Conduct two-stage code review: Stage 1 verifies spec compliance (criterion-to-code mapping), Stage 2 eval... |
 | convention-enforcement | dispatched | 434 | Validate git conventions (commit messages, branch naming, PR format, issue linkage) by detecting project-... |
