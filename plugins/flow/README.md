@@ -275,7 +275,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-clone-scan.sh    — lists duplicated blocks a branch introduced, using jscpd against the merge base
   ├── flow-pr-linked-issue.sh — prints the issue GitHub lists as closed by a pull request
   ├── flow-check-resolution-body.sh — refuses a resolution comment the merge finding-ledger gate would misread
-  └── flow-pr-feedback.sh   — prints a pull request's inline review comments and reviews, one JSON object per line
+  └── flow-pr-feedback.sh   — prints a pull request's inline review comments, reviews and conversation comments, every page, one JSON object per line
   Goals, runs and the quality ledger
   ├── flow-active-goal.sh   — finds the FlowGoal for the current branch and prints its status, criteria or JSON
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)

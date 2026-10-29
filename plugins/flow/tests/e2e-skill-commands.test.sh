@@ -21,6 +21,9 @@
 #   F1 the comments or reviews are not printed, or not as one object per line
 #   F2 a failed gh call exits 0, so an empty list reads as "no feedback"
 #   F3 a PR number with a path in it reaches the API path
+#   F4 only the first page of comments or reviews is read (GitHub returns 30
+#      a page), or the conversation comments on the pull request itself are
+#      not read
 #
 # grep --include (brainstorming step 2, architecture-patterns coupling check)
 #   G1 one --include holding a brace list, which grep does not expand, so no
@@ -169,23 +172,44 @@ e2e_expect_line "FLOW_ROOT=$FLOW_INSTALL"
 e2e_expect_equal yes "$([ -f "$FLOW_INSTALL/agents/code-reviewer.md" ] && echo yes || echo no)" "whether the plugin's agents are under that root"
 e2e_expect_clean_edges
 
-# _feedback_fixtures — PR 7 in o/r with one inline comment and one review.
+# _feedback_fixtures — PR 7 in o/r: inline comments on two pages (the second
+# page's comment is read only with --paginate), reviews on two pages, and one
+# conversation comment on each of two pages.
 _feedback_fixtures() {
   e2e_gh_fixture repo '{"nameWithOwner":"o/r"}'
-  e2e_gh_fixture pull-comments-7 '[{"id":11,"path":"src/a.sh","line":3,"body":"quote this","user":{"login":"rev"}}]'
-  e2e_gh_fixture pr-reviews-7 '{"reviews":[{"state":"CHANGES_REQUESTED","body":"see inline","author":{"login":"rev"}}]}'
+  e2e_gh_pages pull-comments-7 '[{"id":11,"path":"src/a.sh","line":3,"body":"quote this","user":{"login":"rev"}}]' \
+    '[{"id":12,"path":"src/b.sh","line":9,"body":"on page two","user":{"login":"rev2"}}]'
+  e2e_gh_pages reviews-7 '[{"id":21,"state":"CHANGES_REQUESTED","body":"see inline","user":{"login":"rev"}}]' \
+    '[{"id":22,"state":"COMMENTED","body":"second page review","user":{"login":"rev2"}}]'
+  e2e_gh_pages comments-7 '[{"id":31,"body":"please also update the docs","user":{"login":"lead"}}]' \
+    '[{"id":32,"body":"conversation page two","user":{"login":"lead"}}]'
 }
 
-_flow_test_begin "feedback-resolution Collect: the installed plugin's script prints the inline comments, then the reviews (F1)"
+_flow_test_begin "feedback-resolution Collect: the installed plugin's script prints every page of inline comments, reviews and conversation comments (F1, F4)"
 e2e_new feedback-collect
-e2e_describe "flow is installed under HOME; PR 7 has one inline comment and one review"
+e2e_describe "flow is installed under HOME; PR 7 has inline comments, reviews and conversation comments, each on two pages"
 e2e_repo feature/e2e
 _install_flow
 _feedback_fixtures
 e2e_run_fence "$NO_ROOT" "HOME=$E2E_HOME" "PR_NUM=7" "$SKILLS_DIR/feedback-resolution/SKILL.md" 'flow-pr-feedback.sh'
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_equal '{"id":11,"path":"src/a.sh","line":3,"body":"quote this","author":"rev"}
-{"state":"CHANGES_REQUESTED","body":"see inline","author":"rev"}' "$(printf '%s\n' "$E2E_OUT" | jq -c . 2>&1)" "the inline comment, then the review"
+{"id":12,"path":"src/b.sh","line":9,"body":"on page two","author":"rev2"}
+{"state":"CHANGES_REQUESTED","body":"see inline","author":"rev"}
+{"state":"COMMENTED","body":"second page review","author":"rev2"}
+{"id":31,"kind":"conversation","body":"please also update the docs","author":"lead"}
+{"id":32,"kind":"conversation","body":"conversation page two","author":"lead"}' "$(printf '%s\n' "$E2E_OUT" | jq -c . 2>&1)" "the inline comments, then the reviews, then the conversation comments, every page"
+e2e_expect_clean_edges
+
+_flow_test_begin "feedback-resolution Collect: a failed conversation-comment call is a non-zero exit (F2)"
+e2e_new feedback-collect-conv-fail
+e2e_describe "the conversation-comment call for PR 7 fails with HTTP 502"
+e2e_repo feature/e2e
+_install_flow
+_feedback_fixtures
+e2e_gh_fail comments-7
+e2e_run_fence "$NO_ROOT" "HOME=$E2E_HOME" "PR_NUM=7" "$SKILLS_DIR/feedback-resolution/SKILL.md" 'flow-pr-feedback.sh'
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
 e2e_expect_clean_edges
 
 _flow_test_begin "feedback-resolution Collect: a failed gh call is a non-zero exit, and the reviews are not read (F2)"
@@ -195,10 +219,10 @@ e2e_repo feature/e2e
 _install_flow
 _feedback_fixtures
 e2e_gh_fail pull-comments-7
-rm -f "$E2E_GH/pr-reviews-7.json"
+rm -f "$E2E_GH/reviews-7.json" "$E2E_GH/comments-7.json"
 e2e_run_fence "$NO_ROOT" "HOME=$E2E_HOME" "PR_NUM=7" "$SKILLS_DIR/feedback-resolution/SKILL.md" 'flow-pr-feedback.sh'
 e2e_expect_equal 1 "$E2E_RC" "the exit status"
-e2e_expect_equal "" "$(cat "$E2E_GH/unhandled.log")" "no call after the failed one (pr-reviews-7 has no fixture)"
+e2e_expect_equal "" "$(cat "$E2E_GH/unhandled.log")" "no call after the failed one (reviews-7 and comments-7 have no fixture)"
 
 _flow_test_begin "feedback-resolution Collect: a PR number that is not a positive whole number is refused before any gh call (F3)"
 for BAD in "7/../8" "07" "-1"; do
