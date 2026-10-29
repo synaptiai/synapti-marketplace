@@ -32,11 +32,17 @@ otherwise the version), and VERSIONS_STATE:
             written (exit 0), so a release re-run after its bump commit
             does not bump twice
   mismatch  the files to bump disagree on the current version (exit 1)
-  refused   a file cannot be bumped safely, or the new version cannot be
-            worked out (exit 1); the reason is on a REFUSED= line
+  refused   a file cannot be bumped safely, a file holds a version that is
+            not a semantic version, or the new version cannot be worked
+            out (exit 1); the reason is on a REFUSED= line
 Nothing is written unless every file can be: each new text is built and
-re-parsed first, and only a change to that one value passes. Exit 2 is a
-usage error.
+re-parsed first, and only a change to that one value passes; then every new
+text is written to a temporary file beside its target, and only when all of
+them are written are they renamed over their targets. If a rename fails, the
+files already renamed get their old text back, and any that cannot is named
+on a WRITTEN_PATH= line. Every printed value is a fixed word, a path checked
+against a plain pattern, a semantic version, or a REFUSED reason in quotes
+with its control characters escaped. Exit 2 is a usage error.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -99,7 +105,17 @@ def usage(msg):
 
 
 def quote(text):
-    return '"%s"' % text.replace("\\", "\\\\").replace('"', '\\"')
+    """The text in double quotes on one line: a backslash, a double quote and
+    every control character are escaped, so no value can end the line."""
+    out = []
+    for ch in text:
+        if ch in '\\"':
+            out.append("\\" + ch)
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append("\\x%02x" % ord(ch))
+        else:
+            out.append(ch)
+    return '"%s"' % "".join(out)
 
 
 # --- JSON: find the exact span of one value, so the edit touches nothing else
@@ -336,7 +352,7 @@ def plugin_files(root, name):
     source = entry.get("source")
     pdir = "plugins/%s" % name
     if isinstance(source, str):
-        if not SOURCE_PATH.match(source) or ".." in source.split("/"):
+        if not SOURCE_PATH.fullmatch(source) or ".." in source.split("/"):
             raise Refused("the %s entry's source %s is not a path inside the repository" % (name, source))
         pdir = source[2:] if source.startswith("./") else source
         pdir = pdir.rstrip("/")
@@ -361,7 +377,7 @@ def plugin_files(root, name):
 
 
 def bumped(current, kind):
-    m = PLAIN.match(current)
+    m = PLAIN.fullmatch(current)
     if not m:
         raise Refused("the current version %s is not MAJOR.MINOR.PATCH; pass --to with the version to release" % current)
     a, b, c = (int(x) for x in m.groups())
@@ -372,7 +388,9 @@ def bumped(current, kind):
     return "%d.%d.%d" % (a, b, c + 1)
 
 
-def write_atomic(root, rel, text):
+def stage(root, rel, text):
+    """Write text to a temporary file beside rel, with rel's mode, and return
+    (temporary path, target path)."""
     path = inside(root, rel)
     mode = os.stat(path).st_mode & 0o7777
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", prefix=".flow-version.")
@@ -380,13 +398,52 @@ def write_atomic(root, rel, text):
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
             f.write(text)
         os.chmod(tmp, mode)
-        os.replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)
         except OSError:
             pass
         raise
+    return tmp, path
+
+
+def write_all(root, texts, originals):
+    """Write every text, or none: stage them all, then rename each over its
+    target. On a failure, remove the temporary files, put the old text back
+    in every file already renamed, and raise OSError naming any path that
+    still holds its new text in .left."""
+    staged = []
+    renamed = []
+    try:
+        for rel, text in texts.items():
+            tmp, path = stage(root, rel, text)
+            staged.append((rel, tmp, path))
+        for rel, tmp, path in staged:
+            os.replace(tmp, path)
+            renamed.append(rel)
+    except (OSError, Refused) as e:
+        for rel, tmp, _ in staged:
+            if rel not in renamed:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+        left = []
+        for rel in renamed:
+            tmp = None
+            try:
+                tmp, path = stage(root, rel, originals[rel])
+                os.replace(tmp, path)
+            except (OSError, Refused):
+                left.append(rel)
+                if tmp is not None:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+        err = OSError(str(e))
+        err.left = left
+        raise err
 
 
 def main(argv):
@@ -426,13 +483,13 @@ def main(argv):
         if kind and kind not in ("patch", "minor", "major"):
             usage("--bump and --market-bump take patch, minor or major")
     for v in (to, market_to):
-        if v and not SEMVER.match(v):
+        if v and not SEMVER.fullmatch(v):
             usage("--to and --market-to take a version such as 1.4.0")
     if (market_bump or market_to) and plugin is None:
         usage("--market-bump and --market-to need --plugin")
     if mode == "write" and not (bump or to):
         usage("--write needs --bump or --to")
-    if plugin is not None and not PLUGIN_NAME.match(plugin):
+    if plugin is not None and not PLUGIN_NAME.fullmatch(plugin):
         usage("--plugin takes a plugin name such as flow")
     if tomllib is None:
         sys.stderr.write("flow-release-versions: python3 3.11 or later is needed to read TOML\n")
@@ -463,6 +520,19 @@ def main(argv):
         finish("refused", refused=str(e), code=1)
     except (OSError, UnicodeDecodeError, ValueError) as e:
         finish("refused", refused="a version file cannot be read: %s" % e, code=1)
+
+    # Every value printed below comes from a file in the repository. A version
+    # that is not a semantic version is refused before anything is printed and
+    # is not quoted back, so no value can add an output line of its own.
+    for r in records:
+        if not r.get("skip") and not SEMVER.fullmatch(r["current"]):
+            where = r["path"]
+            if r.get("entry"):
+                where += " (the %s entry)" % r["entry"]
+            elif r.get("field"):
+                where += " (%s)" % r["field"]
+            finish("refused", code=1,
+                   refused="%s holds a version that is not a semantic version such as 1.4.0" % where)
 
     bumps = [r for r in records if not r.get("skip") and r.get("group") != "market"]
     markets = [r for r in records if not r.get("skip") and r.get("group") == "market"]
@@ -501,9 +571,11 @@ def main(argv):
 
     # Build every new text before writing any of them.
     texts = {}
+    originals = {}
     if bumps and not error:
         for r in bumps + markets:
             probe = (mnew or r["current"]) if r.get("group") == "market" else (new or current)
+            originals.setdefault(r["path"], r["text"])
             try:
                 base = texts.get(r["path"], r["text"])
                 if r["kind"] == "json":
@@ -537,10 +609,15 @@ def main(argv):
     if mode == "plan":
         finish("planned")
     try:
-        for path, text in texts.items():
-            write_atomic(root, path, text)
-    except (OSError, Refused) as e:
-        finish("refused", refused="writing failed: %s" % e, code=1)
+        write_all(root, texts, originals)
+    except OSError as e:
+        left = getattr(e, "left", [])
+        for rel in left:
+            print("WRITTEN_PATH=%s" % rel)
+        if left:
+            finish("refused", code=1,
+                   refused="writing failed: %s; these files still hold the new version: %s" % (e, ", ".join(left)))
+        finish("refused", refused="writing failed, and no file was changed: %s" % e, code=1)
     finish("written")
 
 

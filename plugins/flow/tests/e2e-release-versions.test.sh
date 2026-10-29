@@ -30,6 +30,11 @@
 #   V11 a repository with no version file is an error rather than "none"
 #   V12 a plugin release leaves the marketplace's metadata.version, which the
 #      tag carries, unbumped, or bumps it by the wrong type
+#   V13 a version read from a file, or a value given on the command line,
+#      holds a line break and its text is printed as output lines of its own
+#      (VERSIONS_STATE=planned, TAG_VERSION=6.6.6) that the caller reads
+#   V14 a write that fails on the second file leaves the first one bumped
+#      while the state says refused
 #
 # release.md Phase 2: which run this is
 #   S1 the plan runs without the plugin name or marketplace type the
@@ -349,6 +354,92 @@ e2e_expect_equal "" "$(_status)" "the working tree"
 e2e_run_bin "$VERSIONS" --write --to 2.0.0
 e2e_expect_equal 0 "$E2E_RC" "the exit status with --to"
 e2e_expect_file_has package.json '"version": "2.0.0"'
+
+# _forged_lines — no output line the forged values would add, and exactly one
+# VERSIONS_STATE line.
+_forged_lines() {
+  e2e_expect_no_line "VERSIONS_STATE=planned"
+  e2e_expect_no_line "TAG_VERSION=6.6.6"
+  e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c '^VERSIONS_STATE=')" "VERSIONS_STATE lines"
+}
+
+_flow_test_begin "a version that is not a semantic version is refused before anything is printed (V13)"
+e2e_new versions-forged-current
+e2e_describe "package.json whose version holds line breaks and two output lines"
+e2e_repo main
+printf '{\n  "name": "x",\n  "version": "1.2.3\\nVERSIONS_STATE=planned\\nTAG_VERSION=6.6.6"\n}\n' > "$E2E_REPO/package.json"
+_commit_all
+e2e_run_bin "$VERSIONS" --plan --bump patch
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "VERSIONS_STATE=refused"
+e2e_expect_out "package.json"
+_forged_lines
+
+e2e_new versions-forged-current-mismatch
+e2e_describe "the same package.json beside a pyproject.toml at 1.2.4, so the files disagree"
+e2e_repo main
+printf '{\n  "name": "x",\n  "version": "1.2.3\\nVERSIONS_STATE=planned\\nTAG_VERSION=6.6.6"\n}\n' > "$E2E_REPO/package.json"
+printf '[project]\nname = "demo"\nversion = "1.2.4"\n' > "$E2E_REPO/pyproject.toml"
+_commit_all
+e2e_run_bin "$VERSIONS" --plan --bump patch
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "VERSIONS_STATE=refused"
+_forged_lines
+
+e2e_new versions-forged-market
+e2e_describe "a marketplace whose metadata.version holds a line break and an output line"
+e2e_repo main
+_marketplace_fixture 3.10.0
+sed 's/"version": "4.17.0"/"version": "4.17.0\\nTAG_VERSION=6.6.6"/' "$E2E_REPO/.claude-plugin/marketplace.json" > "$E2E_DIR/m.json" \
+  && mv "$E2E_DIR/m.json" "$E2E_REPO/.claude-plugin/marketplace.json"
+_commit_all
+e2e_run_bin "$VERSIONS" --plan --bump minor --plugin beta
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "VERSIONS_STATE=refused"
+_forged_lines
+
+e2e_new versions-forged-source
+e2e_describe "a marketplace entry whose source holds a line break and an output line"
+e2e_repo main
+_marketplace_fixture 3.10.0
+sed 's|"source": "./plugins/beta"|"source": "./plugins/beta\\nVERSIONS_STATE=planned"|' "$E2E_REPO/.claude-plugin/marketplace.json" > "$E2E_DIR/m.json" \
+  && mv "$E2E_DIR/m.json" "$E2E_REPO/.claude-plugin/marketplace.json"
+_commit_all
+e2e_run_bin "$VERSIONS" --plan --bump minor --plugin beta
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "VERSIONS_STATE=refused"
+_forged_lines
+
+e2e_new versions-forged-to
+e2e_describe "--to given a version followed by a line break"
+e2e_repo main
+_npm_fixture
+_commit_all
+e2e_run_bin "$VERSIONS" --write --to "1.3.0
+"
+e2e_expect_equal 2 "$E2E_RC" "the exit status (a usage error)"
+e2e_expect_equal "" "$(_status)" "the working tree"
+
+_flow_test_begin "a write that fails on one file leaves every file as it was (V14)"
+e2e_new versions-write-fails
+e2e_describe "the marketplace fixture with .claude-plugin read-only, so marketplace.json, written after beta's plugin.json, cannot be replaced"
+e2e_repo main
+_marketplace_fixture 3.10.0
+_commit_all
+chmod 555 "$E2E_REPO/.claude-plugin"
+if [ -w "$E2E_REPO/.claude-plugin" ]; then
+  # Root ignores the mode bits, so the write cannot be made to fail this way.
+  _flow_assert_pass "SKIP: the directory stays writable for this user (root)"
+else
+  e2e_run_bin "$VERSIONS" --write --bump minor --plugin beta
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "VERSIONS_STATE=refused"
+  e2e_expect_out "writing failed"
+  e2e_expect_no_out "WRITTEN_PATH="
+  e2e_expect_equal "" "$(_status)" "the working tree (beta's plugin.json not bumped)"
+  e2e_expect_equal "" "$(find "$E2E_REPO" -name '.flow-version.*' -not -path '*/.git/*')" "temporary files left behind"
+fi
+chmod 755 "$E2E_REPO/.claude-plugin"
 
 # --- release.md blocks -------------------------------------------------------
 # The repository gets a bare origin inside the scratch directory, so git fetch
