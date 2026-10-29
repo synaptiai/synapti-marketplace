@@ -106,11 +106,13 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
+  status: achieved
   current_phase: verify
-  current_activity: 'waiting for the PR #315 CI run'
-  turns_evaluated: 0
+  current_activity: verdict PASS
+  turns_evaluated: 3
   last_evaluation:
-    result: incomplete
-    reason: Goal created; evidence not yet collected.
-    at: '2026-10-29T12:08:39Z'
+    result: pass
+    reason: 'AC1 and AC2 pass on flow-tests runs 40871146691 (head fcbf9ad9) and 40869949651:
+      slowest Linux part 806 s; x1.3 = 1048 s <= 1200 s; 20 min >= x1.2 = 967 s. Verdict
+      judge PASS.'
+    at: '2026-10-29T15:00:00Z'

@@ -25,6 +25,36 @@ artifacts:
   path: B
   findings_count: 14
   pr: 315
+- type: goal-evaluation
+  captured_at: '2026-10-29T12:11:41Z'
+  goal_id: issue-314
+  from: active
+  to: waiting_for_ci
+  trigger: command
+  reason: ci-running
+- type: verdict
+  captured_at: '2026-10-29T12:35:42Z'
+  result: PASS
+  pr: 315
+- type: goal-evaluation
+  captured_at: '2026-10-29T12:35:49Z'
+  goal_id: issue-314
+  from: waiting_for_ci
+  to: active
+  trigger: command
+  reason: ci-finished
+- type: goal-evaluation
+  captured_at: '2026-10-29T12:35:49Z'
+  goal_id: issue-314
+  from: active
+  to: achieved
+  trigger: evaluator
+  reason: verdict-pass
+- type: workflow-run
+  captured_at: '2026-10-29T12:36:07Z'
+  workflow: start-issue
+  run_id: 2026-10-29T100336Z-issue-314
+  status: completed
 ---
 # Issue #314: split the Linux flow test job
 
@@ -79,3 +109,10 @@ _Captured by specification-capture skill on 2026-10-29. Source: user-confirmed._
 - Mutation: 78 mutant workflows from the reviews; all are refused except three actionlint rejects and three with the same parsed content (`04`, `2_0`, a row in block layout). The run.sh mutants (index base, unset, leading zero, K>N, empty part, no slash) all fail run-shard.test.sh.
 - Local run at e68cec83..a652ed44: the four parts together ran each of the 101 files once. Parts 2-4 passed. Part 1 had 5 SIGINT-timing failures in e2e-flow-dir-symlinks.test.sh while four parts ran at once on one laptop; the file alone passed 1266/0 on the same commit.
 - Acceptance criteria are measured on the pull request's CI run with ~/flow-310-work/check-ac.sh <run-id>.
+
+## Verdict
+
+
+- Verdict PASS on both criteria (2026-10-29), from flow-tests runs 40871146691 (head fcbf9ad9) and 40869949651 (head afb40923). The slowest Linux part was 806 s: × 1.3 = 1048 s ≤ 1200 s, and the 20-minute limit leaves 49% headroom. macOS took 22.6 and 21.2 minutes against its 45-minute limit.
+- The first judgement failed criterion 1 on the evidence bundle: three risk-map rows had no input and expected value, and no line number. With the rows and line numbers added, it passed.
+- run.sh also rejects K or N with a leading zero or more than four digits (01/4, 1/04, 99999/99999). That rule is stricter than the specification's list of malformed values; the code comment and run-shard.test.sh:97-102 state it.
