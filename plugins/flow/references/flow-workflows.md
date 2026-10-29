@@ -40,7 +40,7 @@ The full schema lives at `plugins/flow/schemas/v1/workflow.schema.json`.
 6. **No native-slash invocations** — no `/goal`, `/loop`, `/schedule`, `/routine` as invoked commands. Hard fail.
 7. **Completion gate field present** — `completion_gate.documented_requirements` is a non-empty array. The label values are NOT cross-referenced against activity evidence outputs (the field is advisory documentation; commands enforce their own gates).
 
-   For backward compatibility, the legacy field name `completion_gate.requires` is accepted during the v3.0.x window — `/flow:workflow validate` emits a deprecation warning to stderr and migrates in-memory. Support is removed in v3.1.
+   The legacy field name `completion_gate.requires` is still accepted: `/flow:workflow validate` emits a deprecation warning to stderr and renames it to `documented_requirements` in memory.
 
 ## Project-local overrides
 

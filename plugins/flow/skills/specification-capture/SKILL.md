@@ -9,7 +9,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: **every issue gets the four elements (non-goals, failure modes, interface contracts, risk map) in the journal before PLAN.** Invoked with issue context, journal path, and invocation reason (Per-invoker scope below). Returns the `## Captured Specification` payload from [`references/specification-journal-format.md`](../../references/specification-journal-format.md) after writing and re-reading `.decisions/issue-{N}.md`. Permitted skips: elements outside the invoker's scope row; the risk map when `specFirst.riskMap` is `false` (written as `disabled — specFirst.riskMap=false`); elements the journal already holds for an unchanged issue.
+Iron law: **every issue gets the four elements (non-goals, failure modes, interface contracts, risk map) in the journal before PLAN.** Invoked with issue context, journal path, and invocation reason (Per-invoker scope below). Returns the `## Captured Specification` payload from [`references/specification-journal-format.md`](../../references/specification-journal-format.md) after writing and re-reading the journal file named in Inputs. Permitted skips: elements outside the invoker's scope row; the risk map when `specFirst.riskMap` is `false` (written as `disabled — specFirst.riskMap=false`); elements the journal already holds for an unchanged issue.
 
 ## Inputs
 

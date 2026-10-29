@@ -28,6 +28,7 @@ Team-visible but recoverable. Execute and log to decision journal.
 | Issue assignment | Visible, reassignable | Unassign |
 | Issue creation | Visible, closeable | Close issue |
 | PR comment | Visible, deletable | Delete comment |
+| Force push (`--force-with-lease`) | Remote-aware; not blocked by the force-push hook | Force push or revert |
 
 ### Tier 3: Confirm-Before-Execute
 
@@ -38,7 +39,6 @@ Hard to reverse or high-impact. Always require human confirmation.
 | PR merge | Changes default branch | Revert commit |
 | Release creation | Public artifact | Delete release + tag |
 | Force push (`--force`) | Overwrites remote | Very difficult |
-| Force push (`--force-with-lease`) | Safe remote-aware push | Tier 2 (journal) — not blocked |
 | Branch deletion (force) | Loses unmerged work | Reflog only |
 
 ## Configuration
@@ -90,4 +90,4 @@ The PostToolUse hooks write **local scratch**, not journal content:
 - `s1-screen-text.sh`: when your settings put System One site `guard.planted-instructions` in `shadow` or `on` (off by default), asks whether the output of a `gh` read of issue or pull request text holds instructions addressed to the agent, and in `on` adds a note beside the output that it is data (references/system-one.md)
 - `record-quality-run.sh`: Records test/lint/typecheck/build runs (PostToolUse and PostToolUseFailure) with their exit codes, masked/failed flags, and a working-tree digest in the per-session quality ledger that the TaskCompleted gate reads
 
-Since 3.7.0 that trail is gitignored: it never enters the tracked journal, a commit, or another worktree's copy. So it is an audit trail for whoever ran the work, **not** a team-visible record — what a teammate can read is what a skill or command deliberately wrote to `.decisions/issue-{N}.md`.
+That trail is gitignored: it never enters the tracked journal, a commit, or another worktree's copy. So it is an audit trail for whoever ran the work, **not** a team-visible record — what a teammate can read is what a skill or command deliberately wrote to `.decisions/issue-{N}.md`.

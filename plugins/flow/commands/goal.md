@@ -246,7 +246,7 @@ jq -n \
 
 Skipping the write breaks delta computation for the next turn (everything becomes "unchanged"). Helper failure is **non-fatal** — surface to stderr via the `||` clause, never abort the command's lifecycle update.
 
-**F10 — Terminal-transition Tier 2 confirmation**:
+**Terminal-transition Tier 2 confirmation**:
 
 When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion. The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
 
@@ -355,7 +355,7 @@ When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook spawns `Ski
 | `/flow:goal history` — list all goals with filters | 1 | Autonomous, read-only |
 | `/flow:goal create <kind>` — invoke `Skill(goal-contract-capture)`, write `.flow/goals/<id>.goal.yaml`, transition draft→active | 2 | Journal-and-proceed (writes a goal artifact + lifecycle transition) |
 | `/flow:goal evaluate <id>` — non-terminal verdict — invoke `Skill(goal-evaluator)`, persist verdict, update lifecycle | 1 | Autonomous |
-| `/flow:goal evaluate <id>` — terminal verdict (`achieved` / `failed`) | 2 | **Confirm** via AskUserQuestion (per F10 — see "Terminal-state confirmation" below) |
+| `/flow:goal evaluate <id>` — terminal verdict (`achieved` / `failed`) | 2 | **Confirm** via AskUserQuestion (see "Terminal-transition Tier 2 confirmation" above) |
 | `/flow:goal pause <id>` — active → waiting_for_user | 1 | Autonomous; reason via AskUserQuestion if not `--reason` |
 | `/flow:goal resume <id>` — waiting → active | 1 | Autonomous |
 | `/flow:goal clear <id>` — non-terminal → cancelled | 2 | **Confirm** via AskUserQuestion (irreversible) |

@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Glob
 
 ## Iron Law
 
-**EVIDENCE BEFORE CLAIMS, ALWAYS. If you haven't read the code, you don't know what it does.**
+**Evidence before claims: if you haven't read the code, you don't know what it does.**
 
 No recommendation without a citation. No behavioral claim without verification. Confidence is not evidence.
 
@@ -22,7 +22,7 @@ Every claim about code carries a `file_path:line_number` reference. When reviewi
 
 ## Finding Prioritization
 
-All findings, review comments, and issues use P1/P2/P3. This operationalizes the organizational hard boundary **"No Ungrounded Claims"**: every finding carries evidence (file:line, test output, runtime observation) proportional to its priority.
+All findings, review comments, and issues use P1/P2/P3. Every finding carries evidence (file:line, test output, runtime observation) proportional to its priority.
 
 | Priority | Meaning | Action |
 |----------|---------|--------|

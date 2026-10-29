@@ -33,7 +33,7 @@ All five must hold before creation; otherwise stop:
 4. Every acceptance criterion has a "Met" or "Interpreted" status with concrete evidence.
 5. No P1 findings remain from code review.
 
-"Get the PR up and fix it after", "the reviewer will catch it", "small change", and "CI will validate it" are not exemptions. The eight quality gates flow enforces are mapped in [`gate-configuration.md`](../../references/gate-configuration.md#quality-gates).
+"Get the PR up and fix it after", "the reviewer will catch it", "small change", and "CI will validate it" are not exemptions. The quality gates flow enforces are mapped in [`gate-configuration.md`](../../references/gate-configuration.md#quality-gates).
 
 ## PR Body
 

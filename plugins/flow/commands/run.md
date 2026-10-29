@@ -38,7 +38,7 @@ ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" 
 3. Invoke `Skill(trigger-policy)` in `enforce` mode. Abort on violation (Tier 3 deny, recursion deny, etc.).
 4. Check `concurrency.policy`:
    - `skip_if_running` (default) — if a previous run for this trigger is in flight (check `.flow/runs/` for runs with metadata.trigger=<id> and state.status=active; a run under a symlinked `.flow`, `.flow/runs` or run directory, or whose `run.yaml` is itself a symlink, is not read and counts as absent — `bin/flow-mkdir.sh --check` refuses the directories), exit 0 with a notice.
-   - `queue` — queue the run (currently logs a journal artifact; full queue semantics not implemented).
+   - `queue` — queue the run (logs a journal artifact only; nothing holds the run for later execution).
    - `cancel_previous` — find any in-flight runs and transition them to `cancelled` before starting.
 5. Set env var `FLOW_TRIGGERED_RUN=true` (target commands consult this for recursion policy enforcement).
 6. Invoke `target.command` from the trigger YAML.
@@ -53,7 +53,7 @@ When `FLOW_TRIGGERED_RUN=true`:
 ## Anti-patterns
 
 - ❌ Bypassing trigger-policy validation. Triggers fire without supervision; policy is the only gate.
-- ❌ Treating concurrency.skip_if_running as a no-op when a stuck active run exists. Stuck-active is surfaced as a warning today; stale-run auto-detection is not yet implemented.
+- ❌ Treating concurrency.skip_if_running as a no-op when a stuck active run exists. A stuck active run is surfaced as a warning; nothing detects stale runs automatically.
 - ❌ Allowing FLOW_TRIGGERED_RUN to be set when not actually triggered. Manual invocation must NOT set the env var.
 
 ## Critical references

@@ -6,7 +6,7 @@ allowed-tools: Read
 
 # LLM Operator Principles
 
-Consulted by every `/flow:*` command before any other skill.
+Loaded by every `/flow:*` command that lists it under Required Skills.
 
 ## Iron Law
 

@@ -17,7 +17,7 @@ Skill-driven workflow from issue assignment through implementation. Follows the 
 ## Required Skills
 
 This command operates with these domain skills loaded:
-- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `branch-and-task-management` — branch creation, task decomposition
 - `change-classification` — change context awareness
 - `capability-discovery` — detect available quality tools
@@ -434,7 +434,7 @@ Dispatch based on `FLOW_GOAL_STATE`:
 - **`exists`** — non-terminal goal already on disk; print `FlowGoal already exists: <GOAL_PATH> (status: $GOAL_STATUS) — resuming. Use /flow:goal inspect <GOAL_ID> to review.`
 - **`terminal`** — goal is `achieved|failed|cancelled` and immutable. Refuse to resume; surface a six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md): _Situation_: terminal goal at `<GOAL_PATH>`. _Tried_: detected `lifecycle.status=<GOAL_STATUS>`. _Options_: (1) Use `/flow:goal clear <GOAL_ID>` then re-run `/flow:start`, (2) Pick a new goal id, (3) Abort. _Recommendation_: Option 1 if the original goal is stale. _Blocking_: yes. _Risk_: mutating a terminal goal corrupts the audit trail.
 - **`blocked`** — a check the block needs could not run (cascade-resolve unavailable, or the `.flow/goals` symlink check could not run because python3 is missing); surface `FLOW_GOAL_ERROR` and halt Phase 1. It is not a symlink and not an absent goal.
-- **`skip`** — proceed without goal creation (v2 behavior preserved).
+- **`skip`** — proceed without creating a goal.
 
 For `FLOW_GOAL_STATE=create`:
 
@@ -469,7 +469,7 @@ For `FLOW_GOAL_STATE=create`:
      fi
    fi
    ```
-4. Only after verify passes, proceed to create the FlowRun (next section). **Do not** emit a per-artifact `FlowGoal created:` line here — the compact runtime summary that supersedes it is emitted once both the goal and run exist (see **Runtime summary** below).
+4. Only after verify passes, proceed to create the FlowRun (next section). The goal is reported in the runtime summary, emitted once both the goal and run exist (see **Runtime summary** below).
 
 ### FlowRun (v3 runtime)
 
@@ -506,7 +506,7 @@ fi
 true
 ```
 
-Dispatch on `FLOW_RUN_STATE`: **`skip`** — proceed without a FlowRun (v2 behavior; the wiring is a no-op). **`blocked`** — `cascade-resolve.sh` was unavailable; surface the `FLOW_RUN_ERROR` line to the user and halt Phase 1 rather than silently proceeding without a run (same posture as `FLOW_GOAL_STATE=blocked`). **`create`** — proceed as below.
+Dispatch on `FLOW_RUN_STATE`: **`skip`** — proceed without a FlowRun. **`blocked`** — `cascade-resolve.sh` was unavailable; surface the `FLOW_RUN_ERROR` line to the user and halt Phase 1 rather than silently proceeding without a run (same posture as `FLOW_GOAL_STATE=blocked`). **`create`** — proceed as below.
 
 When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`start-issue`, goal=`$GOAL_LINK` — the FlowGoal created above, or `null` when goal creation was skipped), initial phase `preflight`. Because `/flow:start` is issue-scoped, also emit the `workflow-run` artifact to the issue journal (`journal-record.sh` resolves its directory):
 
@@ -523,7 +523,7 @@ fi
 
 ### Runtime summary
 
-Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summary **in place of** any per-artifact `FlowGoal created:` line. Do not dump the goal/run YAML — "invisible" means low-ceremony, not hidden-state. The summary has exactly these lines:
+Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summary. It is the only report of the goal and run, so do not print their YAML. The summary has exactly these lines:
 
 - **Goal**: `<GOAL_ID>` (`<lifecycle status>`) — `<verifiable>` of `<total>` ACs carry a `verification_command`
 - **Workflow**: `start-issue`
@@ -910,8 +910,6 @@ __ic=""
 true
 ```
 
-**Critical gate**: Step 5 is a HARD GATE. If tests fail, the task CANNOT be marked completed. The loop stays on the current task until tests pass or the user is escalated to. Skipping ahead to the next task with failing tests is explicitly prohibited.
-
 **Parallel task detection**: If tasks have no overlapping files and agent teams are enabled, suggest parallel execution via agent team.
 
 **Quality loop** (bounded by `qualityCheckMaxIterations`):
@@ -932,7 +930,7 @@ If failures: fix and re-run. The iteration ceiling is a safety net against true 
 3. **Smoke test** → hit key endpoints or run the CLI with sample input
 4. If any step fails → enter debug-fix-retest loop. Do NOT proceed to Phase 4 until code builds and runs.
 
-Skipping the build-and-run step is ONLY permitted if the change falls into one of the three enumerated whitelist categories defined in the `runtime-verification` skill: `markdown-only`, `config-only`, or `dependency-bump-only`. Any other skip requires a Proactive-Autonomy escalation — see the skill for the required six-field structure. If in doubt, run it.
+Skipping the build-and-run step is ONLY permitted if the change falls into one of the three enumerated whitelist categories defined in the `runtime-verification` skill: `markdown-only`, `config-only`, or `dependency-bump-only`. Any other skip requires a Proactive-Autonomy escalation — see the skill for the required six-field structure.
 
 ## Phase 4: VERIFY
 
@@ -941,7 +939,7 @@ Prove everything works with fix-forward:
 1. **Run full quality suite** (parallel Bash calls for lint, test, typecheck)
 2. **Runtime verification** (MANDATORY — not conditional on skill availability):
 
-   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks. Its contract (loaded above) owns the skip whitelist — only `markdown-only`, `config-only`, `dependency-bump-only`, each with its required evidence — and any other skip needs an approved six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md). If in doubt, run it.
+   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks. Its contract (loaded above) owns the skip whitelist — only `markdown-only`, `config-only`, `dependency-bump-only`, each with its required evidence — and any other skip needs an approved six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md).
 
    When the diff is UI-relevant (UI file extensions OR acceptance criteria with UI keywords — see the visual-verification skill for the exact detection rules), invoke `Skill(visual-verification)` in parallel, passing it the **full text** of each acceptance criterion and each risk-map row whose Area names a UI state, verbatim. The skill derives interaction scenarios from those words; a summary loses them, and it runs in its own context so it has no other way to see them. The two skills coordinate via the dev server URL: if `runtime-verification` cannot start the dev server, `visual-verification` returns SKIP with that reason and the completion gate treats the dev-server failure as the primary finding.
 3. **Self-review with fix-forward** — dispatch Agent(code-reviewer):
@@ -972,14 +970,7 @@ Prove everything works with fix-forward:
    - Only proceed to step 5 when holdout-validation returns PASS or no fixable findings remain
 
    The holdout-validation output is passed to the verdict-judge in step 6 as a required input.
-5. **Per-criterion evidence collection** — execute verification tasks created in Phase 2:
-   ```
-   For each "Verify: ..." task:
-     1. TaskUpdate(verifyTaskId, status: "in_progress")
-     2. Run the verification command from the task description
-     3. Capture output as evidence
-     4. TaskUpdate(verifyTaskId, status: "completed", result: "EVIDENCE_COLLECTED")
-   ```
+5. **Per-criterion evidence collection** — for each atomic task from Phase 2, run the verification command from its description against the final code and capture the output as evidence. Phase 3 captured evidence as each task completed; run it again here because later fixes may have changed the result.
    Assemble the evidence bundle following the canonical format in [`references/evidence-bundle-format.md`](../references/evidence-bundle-format.md). For every acceptance criterion, the bundle MUST include: `### Verification command` (the exact command from the Spec Validation Gate), `### Output` (captured stdout/stderr verbatim), `### Visual analysis` (for ui types: one `Viewport:`/`Screenshot:`/`Result:`/`Observed:` block per configured viewport, plus every `Step:` block from a driven flow or a `Flows: none — {reason}` line, copied from the visual-verification result tasks — the judge never opens the screenshot; `none — criterion type {type} has no visual surface` for every other type), `### Does NOT promise` (non-goals — pulled from the Phase 1 specification capture), `### What was tested` (informational), `### Type` (the task's Verification type), and the five mandatory completeness subsections `### What was NOT tested`, `### Known limitations of this evidence`, `### Negative/adversarial cases covered`, `### Test inputs and expected values` (rows taken from the cited test files' source — input, expected, source of expected; `none — {reason}` only for ui/config types), `### Risk map coverage` (`<area> → <test file:line>` per mapped row; `none — risk map disabled (specFirst.riskMap=false)` when disabled). All seven mandatory subsections (`Does NOT promise`, `Visual analysis`, plus the five completeness ones) accept `none` as a positive statement when the producer can affirmatively say there is nothing to disclose (`Visual analysis` only on non-ui types); bare blank is NOT permitted and triggers the verdict-judge auto-FAIL. If a mandatory subsection cannot be filled, escalate via `references/escalation-format.md` rather than emitting a blank field — the gap surfaces with better context than waiting for the auto-FAIL downstream.
 6. **Independent verdict** — if `verdict.enabled` is `true` (default), dispatch Agent(verdict-judge):
    ```
@@ -1043,7 +1034,7 @@ Prove everything works with fix-forward:
    - Runtime verification passed (or skipped under one of the three enumerated whitelist categories in the `runtime-verification` skill: `markdown-only`, `config-only`, `dependency-bump-only`)
    - No unresolved P1 findings
    - Holdout validation: PASS or P3-only (no unresolved P1/P2 conflicts)
-   - All tasks completed (including verification tasks)
+   - All tasks completed
    - Verdict: all criteria PASS or user-approved (when `verdict.enabled`)
    - Visual verification: no BLOCKED results (see escalation below)
 

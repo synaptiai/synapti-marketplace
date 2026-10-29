@@ -526,7 +526,7 @@ State values: `unavailable` (gh API failed) | `no_open_prs` (user has no open PR
 
 ## Display
 
-Render according to `STATUS_MODE` (from the **Mode** block). All modes draw from the same gathered state; they differ only in shape. The v3 sections stay gated on `flow.goals.enabled` / `flow.triggers.enabled` — when disabled, render the existing `(… v3 not enabled …)` line in every mode (no change for v2 users). If `STATUS_MODE_NOTE` was emitted, print it as a one-line note above the output.
+Render according to `STATUS_MODE` (from the **Mode** block). All modes draw from the same gathered state; they differ only in shape. The v3 sections stay gated on `flow.goals.enabled` / `flow.triggers.enabled` — when disabled, render the `(… v3 not enabled …)` line in every mode. If `STATUS_MODE_NOTE` was emitted, print it as a one-line note above the output.
 
 ### `compact` (default)
 
@@ -667,8 +667,6 @@ Edge cases (driven by `LEDGER_STATE=`, NOT by silence):
 - `LEDGER_STATE=no_open_prs` → `No open findings.`
 - `LEDGER_STATE=no_markers` → `No open findings.`
 - `LEDGER_STATE=findings` → apply the per-priority rules above.
-
-Format matches the workshop slide mockup in `docs/flow-team-session/slides.md` (`/flow:status — what to expect` section, Findings Ledger row).
 
 ## Suggestions Logic
 

@@ -15,7 +15,7 @@ Iron law: no AC transitions to `pass` without a FlowEvidence sidecar whose `prov
 ## Inputs
 
 1. **Evidence id** — `evidence-<AC.id>-<descriptor>-<turn>`; lowercase, digits, `_-`.
-2. **Evidence type** — one of `evidence.schema.json`'s enum: command_result, test_result, lint_result, runtime_smoke_result, visual_result, git_diff, holdout_validation, verdict, human_approval, review_comment_snapshot, ci_status, llm_judge_report, artifact_check, path_boundary_check.
+2. **Evidence type** — one of `evidence.schema.json`'s enum: command_result, test_result, lint_result, typecheck_result, runtime_smoke_result, visual_result, git_diff, holdout_validation, verdict, human_approval, review_comment_snapshot, ci_status, llm_judge_report, artifact_check, path_boundary_check.
 3. **Proves** — AC ids this evidence supports.
 4. Optional: `command`, `exit_code`, raw output path, `limitations`, `negative_cases`.
 

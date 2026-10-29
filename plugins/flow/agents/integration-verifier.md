@@ -2,7 +2,7 @@
 name: integration-verifier
 description: "Verify end-to-end functionality beyond unit tests. Start dev servers, run E2E suites, perform smoke tests, and validate acceptance criteria at runtime. Use after unit-level quality checks pass, when a change has runtime surface. Do not use for markdown-, config-, or dependency-only changes."
 model: inherit
-tools: Bash, Read, Glob, Grep, TaskCreate, TaskList, TaskUpdate
+tools: Bash, Read, Glob, Grep, Skill, TaskCreate, TaskList, TaskUpdate
 skills: runtime-verification, evidence-based-development
 memory: project
 ---

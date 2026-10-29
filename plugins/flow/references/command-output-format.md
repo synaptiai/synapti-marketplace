@@ -4,7 +4,7 @@ Reference document. The canonical shape every `!`-prefixed bash block in `comman
 
 ## Why this format
 
-The first cycle of the `!`-prefix refactor emitted bare command output — `git branch --show-current` produced just `feature/flow-bang-prefix-context`, with no label. The agent had to map unlabeled lines to the right Display-template cell by inference from section ordering. With two `[]` lines from different `gh pr list` queries, the inference is brittle and silently breaks if the bash order drifts.
+Bare command output gives the agent unlabeled lines — `git branch --show-current` prints only the branch name — which it must map to Display-template cells by their order. With two `[]` lines from different `gh pr list` queries, that mapping is brittle and silently breaks if the bash order drifts.
 
 The format here trades 1-2 lines of extra stdout per block for a deterministic agent-readable contract:
 
@@ -37,7 +37,7 @@ KEY=value                        # only when STATE=ok
 
 3. **Records use one labeled line per entity.** A PR row becomes `PR=104 state=OPEN review=APPROVED checks=2/2-SUCCESS title="refactor: ..."`. The agent reads multiple records by reading multiple lines under the same heading. Field order within a record SHOULD be stable across runs.
 
-4. **Empty list-sections emit a positive sentinel.** Use `STATE=empty` (not silence, not `(none)`). The agent matches against the closed vocabulary `ok | empty | blocked | unavailable` — never against the empty string.
+4. **Empty list-sections emit a positive sentinel.** Use `STATE=empty` (not silence, not `(none)`). The agent matches against the closed vocabulary `ok | empty | blocked | unavailable | none` (`none` is described below the sentinel table) — never against the empty string.
 
 5. **Error paths emit `STATE=blocked` + `ERROR=<message>`.** Replace inline `ERROR: ...` prefixes with the two-field form. The agent halts on `STATE=blocked` without parsing the message.
 
@@ -60,15 +60,15 @@ Per-section state variables (e.g., `LEDGER_STATE=`, `PREFLIGHT_STATE=`) follow t
 
 ### Domain-specific state vocabularies
 
-A section MAY define a richer state vocabulary by introducing a `<DOMAIN>_STATE=` variable distinct from `STATE=`. This is allowed when the domain has more than four mutually exclusive outcomes that downstream rendering rules need to distinguish. The domain vocabulary MUST be:
+A section MAY define a richer state vocabulary by introducing a `<DOMAIN>_STATE=` variable distinct from `STATE=`. This is allowed when the domain has more mutually exclusive outcomes than the five bare `STATE=` values that downstream rendering rules need to distinguish. The domain vocabulary MUST be:
 
 - Closed (enumerated explicitly at the consumer site — no free-text values).
 - Documented inline next to the consumer's Render Rules so the agent knows which values are valid.
-- Distinct from the bare `STATE=` sentinel — never shadow or extend `STATE=`'s four-value set.
+- Distinct from the bare `STATE=` sentinel — never shadow or extend `STATE=`'s five-value set.
 
 The canonical example is `LEDGER_STATE=`, defined by `/flow:status`'s Findings-Ledger section: `{findings, no_markers, no_open_prs, unavailable}`. The Render Rules in `commands/status.md` enumerate the four values and the per-value template. Without this extension the section would have to collapse "no markers yet" and "no open PRs" into the same `empty` sentinel, losing useful diagnostic information.
 
-When in doubt, prefer the four-value `STATE=` and add diagnostic detail in a separate `ERROR=` / `<KEY>=` line rather than extending the closed vocabulary.
+When in doubt, prefer the bare `STATE=` vocabulary and add diagnostic detail in a separate `ERROR=` / `<KEY>=` line rather than extending the closed vocabulary.
 
 ## Worked example — `/flow:status` ! block #1
 
@@ -115,9 +115,9 @@ LEARNING_PENDING=2026-05-15
 
 The agent renders the Display template by reading section-by-section. Section names line up 1:1; field names are explicit; the JSON blob has been pre-parsed via `--jq` into a single labeled line.
 
-## Worked example — `/flow:merge` ledger gate (state machine)
+## Worked example — `/flow:status` Findings Ledger (state machine)
 
-The ledger gate has four mutually exclusive outcomes. With the format above, each is a single line:
+The Findings Ledger section has four mutually exclusive outcomes. With the format above, each is a single line:
 
 ```
 ### Findings Ledger

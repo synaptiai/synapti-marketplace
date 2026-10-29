@@ -93,21 +93,6 @@ AskUserQuestion(
 
 This shape gives the user the full context (in the question body) AND a structured choice (in the options array). When the user picks an option, the agent has unambiguous direction.
 
-## Field-name compatibility
-
-The vision article (`flow_plugin_medium_article_grounded.md`) uses a slightly different set of field names: `Context / Options considered / Tradeoffs / Recommendation / Risk of inaction / Decision needed`. The mapping is:
-
-| Vision name | Canonical name (this doc) | Notes |
-|---|---|---|
-| Context | Situation | Same intent: state the relevant facts |
-| Options considered | (combined with Tried + Options) | The vision treats "options considered" as a single field; the canonical split separates "what I tried (and why those didn't work)" from "what I am offering as paths forward" because users frequently need to see the failed attempts before they trust the offered options |
-| Tradeoffs | (one-line trade-offs in each Option) | Inlined per option for brevity |
-| Recommendation | Recommendation | Same |
-| Risk of inaction | Blocking? + Risk | The vision combines these; the canonical split separates "does this block the current command" (Blocking?) from "what breaks if wrong" (Risk). The Blocking? field replaced an older "Time sensitivity" field to remove calendar-time framings that anchored deferral. |
-| Decision needed | (implicit in the AskUserQuestion options array) | The structured tool surfaces this naturally |
-
-Both shapes carry the same information. The canonical six-field structure is preferred for new commands and agents because it maps cleanly onto `AskUserQuestion`, which is the only delivery channel the project endorses.
-
 ## Anti-patterns
 
 - **"What should I do?"** with no Situation/Tried/Options. This is the bare question that the protocol exists to prevent.

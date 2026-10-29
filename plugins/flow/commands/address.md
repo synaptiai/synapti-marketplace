@@ -10,7 +10,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `feedback-resolution` — surgical changes, context recovery, pushback criteria
 - `change-classification` — verify no out-of-context changes
 - `capability-discovery` — quality commands for verification
@@ -357,7 +357,7 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 
 ### System One checks (optional)
 
-Two decisions in this command can be asked of a System One provider (`references/system-one.md`): whether an inline review comment still applies to the code now (`address.still_applies`), and which priority a feedback item has (`address.category`). The block below prints one line for each that is active, and nothing for one that is off, which is the default. With no line for a decision, skip the steps that name it: the command does what it did before.
+Two decisions in this command can be asked of a System One provider (`references/system-one.md`): whether an inline review comment still applies to the code now (`address.still_applies`), and which priority a feedback item has (`address.category`). The block below prints one line for each that is active, and nothing for one that is off, which is the default. With no line for a decision, skip the steps that name it: the Explore check runs as written and your own category stands.
 
 ```!
 # S1_ADDRESS_MODES_BLOCK_BEGIN
@@ -758,7 +758,7 @@ For each Pushback item:
    `cmd` before the block starts; inside single quotes, a `'` in the value ends the quote the same
    way.
 3. The id reaches the `DISPUTED:[...]` array of the resolution marker through the
-   `DISPUTED_ARRAY_BLOCK` in Phase 5 step 9, which reads it back out of the artifact this block
+   `DISPUTED_ARRAY_BLOCK` in Phase 4 step 9, which reads it back out of the artifact this block
    writes — do not transcribe it by hand. `templates/resolution-comment.md` already carries the array and
    `references/finding-ledger-parser.md` already gives it precedence below `RESOLVED` and
    `ESCALATED`. A disputed id blocks the merge because it is unresolved — `commands/merge.md` reads
@@ -925,7 +925,7 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
 
 ## Phase 4: VERIFY (Convergence Check)
 
-**CRITICAL: The resolution comment and inline replies are MANDATORY. NEVER skip posting. Push without posting is incomplete — the reviewer cannot see what was addressed. Do not re-request review until the resolution comment is posted and TaskUpdate confirms completion.**
+Post the inline replies (step 8) and the resolution comment (step 9) every cycle: a push without them leaves the reviewer unable to see what was addressed. Re-request review only after the resolution comment is posted and its task is marked completed.
 
 1. **Quality commands** (parallel): lint, test, typecheck
 2. **Comprehensive self-review** of ALL files touched on the branch — parallel agent dispatch matching `/flow:pr` Phase 3 fan-out so fix commits don't slip convention/test/error-handling regressions past automated re-review:
@@ -1292,19 +1292,13 @@ true
        `in_fix_forward` instead of `disputed`. The `REASON` names the remedy, which is to re-run
        the block with the earlier issue: `ISSUE=<n> PR_NUM=<pr>`. The block uses a pre-set `ISSUE`
        as given and skips the lookup.
-
-       An earlier revision checked this automatically with an unmarked `gh api | jq` fence in this
-       prose. It referenced `$REPO` and `$TRUST_LIST`, which nothing in its own shell defined, and
-       checked no exit status — so it failed, printed nothing, and the instruction below read that
-       silence as "nothing to worry about". A check whose failure is indistinguishable from a clean
-       result is the defect this whole step exists to remove, so it is gone rather than repaired.
      - **No `DISPUTED_REASON_CODE` line.** **Stop. Do not post the comment.** Report the `REASON`
        and fix it first. Do NOT reason from "Phase 3 recorded nothing this run": the array is
        cumulative over the pull request, so a dismissal from cycle 2 that this read could not see
        is erased by a `DISPUTED:[]` posted in cycle 3, and it reclassifies from `disputed` to
        still-being-fixed.
 
-     Never skip the comment silently — Phase 5 calls it mandatory, and a missing resolution comment
+     Never skip the comment silently — Phase 4 step 9 calls it mandatory, and a missing resolution comment
      leaves `/flow:merge` with no `RESOLVED` array at all.
 
    Set `BODY` from a file, as the inline replies are: run `mktemp` and note the path it prints,

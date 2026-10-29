@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill
 
 # /flow:trigger — FlowTrigger management
 
-Flow cannot invoke native `/loop`, scheduled tasks, or any external runner from plugin code. FlowTrigger artifacts at `.flow/triggers/<id>.trigger.yaml` describe **wake-up intent** — they declare when flow SHOULD resume work and what command to invoke, but actual execution requires manual user invocation (v3.0: manual | hook | loop_prompt) or an external runner (v3.1+: github_actions | local_cron).
+Flow cannot invoke native `/loop`, scheduled tasks, or any external runner from plugin code. FlowTrigger artifacts at `.flow/triggers/<id>.trigger.yaml` describe **wake-up intent** — they declare when flow SHOULD resume work and what command to invoke, but actual execution requires manual user invocation (trigger types manual, hook, loop_prompt). The schema also defines github_actions and local_cron, but no runner for them ships and `flow.triggers.allowedTypes` excludes them by default.
 
 ## Required Skills
 

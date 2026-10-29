@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Glob
 
 ## Iron Law
 
-**EVERY CHANGE MUST BE INTENTIONAL. If you can't explain why a line changed, revert it.**
+**Every change is intentional: if you can't explain why a line changed, revert it.**
 
 ## Before You Write Code
 

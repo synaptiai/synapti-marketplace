@@ -16,9 +16,9 @@ A FlowGoal is a durable, schema-validated YAML file at `.flow/goals/<id>.goal.ya
 
 The full schema lives at `plugins/flow/schemas/v1/goal.schema.json`.
 
-## FlowGoals are on by default (v3.1)
+## FlowGoals are on by default
 
-As of v3.1, `/flow:start` records FlowGoals automatically — `flow.goals.goalCreation` defaults to `auto`. There is no opt-in prompt; goals, runs, and evidence are written to `.flow/` behind the scenes and surfaced through `/flow:status`. You interact with outcomes, not the runtime.
+`/flow:start` records FlowGoals automatically — `flow.goals.goalCreation` defaults to `auto`. There is no opt-in prompt; goals, runs, and evidence are written to `.flow/` behind the scenes and surfaced through `/flow:status`. You interact with outcomes, not the runtime.
 
 `goalCreation` is a 3-state setting in `.claude/settings.flow.json`:
 
@@ -36,7 +36,7 @@ As of v3.1, `/flow:start` records FlowGoals automatically — `flow.goals.goalCr
 - `goalCreation: auto` (default) — `/flow:start <issue>` creates `.flow/goals/issue-<N>.goal.yaml` **iff** the Spec Validation Gate passed with ≥1 acceptance criterion carrying a `verification_command` (labels do not veto). An issue that yields zero verifiable ACs (e.g. a spec-free `documentation`/`chore` issue) creates **no** goal, silently.
 - `goalCreation: always` — create a goal unconditionally; a degenerate goal (no verifiable ACs) is allowed but flagged in the compact summary.
 - `goalCreation: off` — never auto-create; manual `/flow:goal create` still works.
-- `flow.goals.enabled: false` — disables the whole feature (Stop hook fast-paths, `/flow:goal` disabled). Distinct from `goalCreation: off`, which keeps the feature on and only suppresses auto-creation.
+- `flow.goals.enabled: false` — disables `/flow:goal`; the Stop hook does not read this switch. Distinct from `goalCreation: off`, which keeps the feature on and only suppresses auto-creation.
 - `executeVerificationCommands: true` — lets the Stop hook's deterministic-checks runner execute every goal's `verification_command` strings, trusted or not. Governs only the Stop hook path (`hooks/scripts/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` and `Skill(goal-evaluator)` execute verification commands when present regardless. You rarely need it: goals created through flow are recorded in the per-user **trust ledger** (`bin/flow-goal-trust.sh`, `<state dir>/goal-trust.jsonl` (the per-user state directory: `~/.claude/flow-state`, or a `FLOW_STATE_DIR` you set; see [README: Per-user locations](../README.md#per-user-locations))) and the Stop hook executes a trusted goal's commands with the flag left `false`. A goal that arrived with a checkout is untrusted; its ACs are reported `not_executed` until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml` (also required after editing a `verification_command` by hand). Set the flag `true` only when every `.flow/goals/*.goal.yaml` source is trusted — the Stop hook fires on every turn, so unvetted commands run every turn.
 
 > **Upgrading from the v3.0 `requireGoalForStart` flag?** It is mapped read-only — `true` → `always`, `false` → `off`, absent → `auto` — and your settings file is never rewritten. See `migration-v2-to-v3.md`.

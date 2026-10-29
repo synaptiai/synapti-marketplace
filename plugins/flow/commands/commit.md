@@ -10,7 +10,7 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `change-classification` — signal-based change analysis
 - `convention-enforcement` — commit message validation
 

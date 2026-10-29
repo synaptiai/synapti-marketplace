@@ -23,7 +23,7 @@ You are a **specialization**, not a replacement:
 | Time horizon | terminal (gate before merge) | iterative (continues the loop) |
 | Surface | Phase 4 verdict comment on PR | Stop-hook `decision:block`/`approve` JSON |
 
-When in doubt about ANY rule of judgment, defer to verdict-judge's Independence Protocol. This agent inherits it verbatim and adds loop-specific fields.
+The Independence Protocol below is verdict-judge's, adapted to the loop's inputs; everything you need from it is stated here.
 
 ## Independence Protocol (inherited from verdict-judge, mechanically enforced)
 
@@ -101,7 +101,7 @@ Compare your current per-AC pass-set with the previous turn's (passed in via inp
 - Same pass-set as previous → `delta: unchanged`
 - Smaller pass-set than previous → `delta: regressed` (something previously passing now fails — flag prominently)
 
-If `delta: unchanged` for `lifecycle.turns_evaluated > flow.goals.failAfterStuckTurns - 1` turns, recommend `lifecycle.status: failed` reason `stuck_no_progress` in the next_step_hint.
+Report `delta` accurately; that is all you do about stuck turns. The Stop hook counts consecutive `unchanged` turns against `flow.goals.failAfterStuckTurns`, a setting you are not given, and moves the goal to `failed` itself.
 
 ### Step 5: Confidence
 

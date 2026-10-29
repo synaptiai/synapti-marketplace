@@ -24,9 +24,9 @@ Written by the PostToolUse hooks (`log-file-changes.sh`, `log-commits.sh`).
 `{journal.dir}/auto-log/`, which is gitignored: an audit trail of every edit and
 commit, kept locally because it is machine output rather than a decision. The
 tracked `.decisions/issue-{N}.md` carries deliberate entries and its manifest
-only. Before this was separated, the breadcrumbs entered commits, PR diffs and
-every worktree's copy of the journal, and two worktrees writing them conflicted
-on the journal itself.
+only. Kept in the tracked journal, the breadcrumbs would enter commits, PR diffs
+and every worktree's copy of the journal, and two worktrees writing them would
+conflict on the journal itself.
 
 | File | Contents |
 |------|----------|

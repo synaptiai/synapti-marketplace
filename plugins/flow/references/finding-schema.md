@@ -2,7 +2,7 @@
 
 Reference document. The canonical shape every reviewer agent emits, and the canonical row shape that flows into `FLOW_REVIEW_CYCLE` markers. Synthesis across the four reviewer agents (`code-reviewer`, `error-handler-inspector`, `security-reviewer`, `integration-verifier`) is a structured operation against this schema: same column set per facet, same ID grammar, same priority/category/confidence vocabulary.
 
-`convention-checker` is intentionally NOT migrated to this schema. Convention findings (commit-message format, branch-name pattern, PR template adherence) have a different shape than file:line code findings — they are rule-vs-artifact comparisons, not bugs in code. `convention-checker` keeps its own per-rule output, and the orchestrator either surfaces convention violations separately or maps them into the canonical schema with `category=conventions` and `location=<commit-sha>` / `location=<branch-name>` when they need to live in the same finding ledger as code findings.
+`convention-checker` does not use this schema. Convention findings (commit-message format, branch-name pattern, PR template adherence) have a different shape than file:line code findings — they are rule-vs-artifact comparisons, not bugs in code. `convention-checker` keeps its own per-rule output, and the orchestrator either surfaces convention violations separately or maps them into the canonical schema with `category=conventions` and `location=<commit-sha>` / `location=<branch-name>` when they need to live in the same finding ledger as code findings.
 
 ## Required fields
 
@@ -131,7 +131,7 @@ Reviewers should pick from this controlled list when possible. Free-form categor
 ## Output format (per reviewer agent)
 
 Findings are rendered as a **two-column table** so they stay legible in GitHub's narrow PR-comment
-column. Previously a 6-column table (`ID | Category | Location | Problem | Suggested Fix | Confidence`) collapsed
+column. A table with one column per field collapses
 on GitHub: each prose cell wraps one word — sometimes one character — per line, stacking `category`
 vertically and breaking `location` mid-path. Two columns give each prose column ~half the width, so
 the short metadata (id, category, location, confidence, disposition) is packed into the first cell and
@@ -173,15 +173,14 @@ Cell construction:
 - **Confidence + disposition:** agents end the Finding cell with `_(HIGH)_`, `_(MEDIUM)_` or `_(LOW)_`.
   The posted review renders `_(HIGH · consensus)_` on both paths; Path B's disposition is `unchallenged`.
   On someone else's pull request a LOW finding is not rendered in the priority tables: it is listed
-  under `Needs investigation` (`commands/review.md` Phase 4 step 6). (These replace the old
-  `Confidence` and `Disposition` columns.)
+  under `Needs investigation` (`commands/review.md` Phase 4 step 6).
 - **Needs investigation entry:** `- **{ID} · {priority} · {category} · `{location}`** — {problem}`,
   with the routed priority in the second position and no confidence suffix. A counted finding, in a
   table or a P3 bullet, opens `**{ID} · {category} · ` instead. The two shapes are what the posting
   block checks: a LOW id appears exactly once, in the entry shape at its routed priority, and no
   line in the body carries a `_(LOW` suffix.
 - **Suggested Fix cell:** the `suggested_fix` prose, or `—` when non-obvious (then append a
-  `**{ID} context:** …` paragraph below the table explaining the trade-off, as before).
+  `**{ID} context:** …` paragraph below the table explaining the trade-off).
 
 **Pipe escaping (required):** any literal `|` inside a cell MUST be written `\|` or kept inside a code
 span. Findings routinely quote shell pipes (`grep \| head`); an unescaped `|` silently breaks the row

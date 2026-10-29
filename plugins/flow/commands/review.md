@@ -10,7 +10,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `code-review-methodology` — 6-facet review, finding synthesis, adversarial protocol
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 - `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
@@ -1016,7 +1016,7 @@ true
 
 If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
-**Model selection.** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — passing `AGENT_TEAM_MODEL` as the Agent tool's per-invocation `model` override (the `model=...` shown in the `Agent(...)` examples maps to that tool argument). The override takes precedence over each agent's `model: inherit` frontmatter (precedence: dispatch override > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. **When `AGENT_TEAM_MODEL=inherit`, OMIT the `model` argument entirely** — the dispatch-time override accepts only `sonnet`/`opus`/`haiku`/`fable`, and the session model (the behavior before this setting existed) is expressed by dropping the override, NOT by passing `model=inherit`. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
+**Model selection.** When `USE_PATH_A=1`, the gate emits `AGENT_TEAM_MODEL` (default `sonnet`). Dispatch every Path A agent below — both the A.1 paired reviewers and the A.3 challenge rounds — passing `AGENT_TEAM_MODEL` as the Agent tool's per-invocation `model` override (the `model=...` shown in the `Agent(...)` examples maps to that tool argument). The override takes precedence over each agent's `model: inherit` frontmatter (precedence: dispatch override > frontmatter > session model), so the reviewers run on `AGENT_TEAM_MODEL` regardless of the session's model. **When `AGENT_TEAM_MODEL=inherit`, OMIT the `model` argument entirely** — the dispatch-time override accepts only `sonnet`/`opus`/`haiku`/`fable`, and the session model is expressed by dropping the override, NOT by passing `model=inherit`. The two `Skill(holdout-validation)` invocations are unaffected (skills run inline in the parent context, not as model-dispatched subagents).
 
 #### A.1 — Independent Analysis (paired reviewers, parallel dispatch)
 
@@ -1030,7 +1030,7 @@ If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
-Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
+Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block, or 10 when `REVIEW_RUN_PR_COMMANDS` is not `yes` (the two `test-runner` variants are not dispatched) — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
 
 Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection** above. (When the resolved value is `inherit`, drop the `model=` argument — the session model is the default when no override is passed.)
 
@@ -1130,20 +1130,20 @@ Skill(holdout-validation):
 
 Each returns a structured finding list. Index returned findings by facet for the challenge round: `findings[facet][variant] = [F1, F2, ...]`.
 
-**Note on holdout-validation challenge participation** (designed asymmetry — not a tooling workaround): the two `Skill(holdout-validation)` invocations contribute findings to A.2 auto-consensus matching but **do NOT participate in the A.3 challenge round**. This is the principled split between two categorically different finding types:
+**Note on holdout-validation challenge participation**: the two `Skill(holdout-validation)` invocations contribute findings to A.2 auto-consensus matching but **do NOT participate in the A.3 challenge round**. This is the principled split between two categorically different finding types:
 
 - **Adversarial challenge (AGREE/DISAGREE/REFINE) is for subjective judgment.** Reviewers can legitimately hold different opinions about whether a SQL pattern is actually exploitable, whether a race condition matters at the project's scale, or whether a P2 finding should be P1 instead. The challenge round surfaces those disagreements; the consolidator weights confidence by the disposition the OTHER reviewer assigned.
 - **Holdout findings are objective claim-verification.** The question they answer is binary: did the self-reported evidence match the file state? The file state is the arbiter, not reviewer opinion. A challenger cannot meaningfully DISAGREE with "the agent claimed test X exists; grep finds no test for X" — they can re-check the file (which produces the same answer) but they cannot vote it away.
 
-Including holdout in challenge would either (a) produce vacuous AGREE responses (re-check confirms what we already established) or (b) confuse the protocol (DISAGREE based on what — the file state changed? the claim was parsed differently?). The asymmetry is principled and intentional. The two holdout lenses (skeptic + verifier) DO produce a confidence signal: when both lenses raise the same finding the disposition is `consensus`; when only one lens raises it the disposition is `unchallenged` (meaning the OTHER lens parsed the claim differently or weighted holdout-scenario priority differently — itself a useful signal worth investigating, but not via AGREE/DISAGREE voting).
+Including holdout in challenge would either (a) produce vacuous AGREE responses (re-check confirms what we already established) or (b) confuse the protocol (DISAGREE based on what — the file state changed? the claim was parsed differently?). The two holdout lenses (skeptic + verifier) DO produce a confidence signal: when both lenses raise the same finding the disposition is `consensus`; when only one lens raises it the disposition is `unchallenged` (meaning the OTHER lens parsed the claim differently or weighted holdout-scenario priority differently — itself a useful signal worth investigating, but not via AGREE/DISAGREE voting).
 
-Consequently, the cost table in `references/paired-review-protocol.md` (the `team-coordination` protocol detail) lists **10** challenge calls rather than 12 — the 2-call savings is the principled exclusion, not a tooling shortcut. Holdout findings emit at A.4 with `consensus` (both lenses raised it independently) or `unchallenged` (one lens only); they NEVER carry `validated` / `refined` / `kept` because those dispositions are challenge-round outputs.
+Consequently, the cost table in `references/paired-review-protocol.md` (the `team-coordination` protocol detail) lists **10** challenge calls rather than 12, because holdout is excluded. Holdout findings emit at A.4 with `consensus` (both lenses raised it independently) or `unchallenged` (one lens only); they NEVER carry `validated` / `refined` / `kept` because those dispositions are challenge-round outputs.
 
 **Post-condition on returned IDs**: each variant's findings must have IDs matching `^[A-Za-z][A-Za-z0-9_-]*$` before A.2 consumes them — the same allowlist the `case "$ID"` guard in `status.md` and `references/finding-ledger-parser.md` enforce (`merge.md` consumes the IDs without re-validating them). IDs that fail validation are skipped at A.2 with a `LEDGER_WARN: PR#{N} A.1 rejected non-conforming ID '{safe-id}' from {variant}` to stderr. This avoids producing markers that get silently dropped downstream and makes the A.2 lexicographic tiebreaker safe against pathological IDs.
 
 #### A.2 — Auto-consensus detection
 
-Before dispatching the challenge round, detect findings that BOTH variants raised independently. The match window is hard-coded for v1: same facet AND same file AND lines within ±2 AND priority within ±1 (P1↔P2 counts; P1↔P3 does not).
+Before dispatching the challenge round, detect findings that BOTH variants raised independently. The match window is fixed: same facet AND same file AND lines within ±2 AND priority within ±1 (P1↔P2 counts; P1↔P3 does not).
 
 ```bash
 # Pseudocode (apply per facet, deterministic — see helpers below).
@@ -1207,7 +1207,7 @@ Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL) [challenge mode]:
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Same instructions, reversed: challenge the skeptic's non-auto-consensus
    findings for facet 'security'."
 
-[... repeat for the other 5 facets in parallel ...]
+[... repeat for the other 4 facets in parallel ...]
 ```
 
 Each challenge call returns a list of `{finding-id, disposition, optional reason/refinement}`.
@@ -1355,7 +1355,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
 
 Path B agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
 
-**Parallel Agent dispatch** — 5 agents in single message:
+**Parallel Agent dispatch** — 5 agents in single message (4 when `REVIEW_RUN_PR_COMMANDS` is not `yes`: `test-runner` is not dispatched):
 
 ```
 Agent(code-reviewer):
@@ -1849,7 +1849,7 @@ fi
 
    **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend "fix if bounded (<10 lines) or document inline in the PR body" in the review comment.
 
-   **Minimal-scope mode (`settings.json` → `minimalScope: true`):** for cosmetic P3 findings in untouched files only, the original follow-up workflow is restored:
+   **Minimal-scope mode (`settings.json` → `minimalScope: true`):** for cosmetic P3 findings in untouched files only, use the follow-up issue workflow:
 
    Present the findings and use the AskUserQuestion tool with contextual options: "These cosmetic P3 findings are in untouched files. Which ones should become follow-up issues?"
 

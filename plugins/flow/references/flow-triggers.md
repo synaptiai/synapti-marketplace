@@ -2,7 +2,7 @@
 
 FlowTrigger is the flow plugin's project-local replacement for "background execution" — except flow makes NO claim to actually run things in the background. Plugins cannot invoke native `/loop` or scheduled tasks from plugin code. FlowTrigger artifacts declare WHEN flow should resume work and WHAT to do, but actual execution requires a runner: the user manually invoking `/loop`, a Stop hook firing, CI invoking a workflow, or (v3.1+) an external runner like GitHub Actions or local cron.
 
-## Trigger types (v3.0)
+## Trigger types (in the default `allowedTypes`)
 
 | Type | Runner | Mechanism |
 |---|---|---|
@@ -10,7 +10,7 @@ FlowTrigger is the flow plugin's project-local replacement for "background execu
 | `hook` | Claude Code hook | A hook script (e.g., PostToolUse) invokes `/flow:run trigger <id>` programmatically |
 | `loop_prompt` | User-invoked `/loop` | `/flow:watch` generates a loop-prompt file the user invokes with `/loop @.claude/flow-loop-<id>.md` |
 
-## Trigger types (v3.1+ — design only, NOT shipped in v3.0)
+## Trigger types (schema-valid, not in the default `allowedTypes`)
 
 | Type | Runner | Mechanism |
 |---|---|---|
@@ -64,7 +64,7 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 | Key | Default | Description |
 |---|---|---|
 | `flow.triggers.enabled` | `false` | Master switch |
-| `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | v3.1+ types are valid schema but disabled until shipped |
+| `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | `github_actions`, `local_cron` and `local_daemon` are schema-valid but allowed only when added here |
 | `flow.triggers.allowAutonomousMerge` | `false` | Hard-coded non-negotiable |
 | `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Recursion default |
 | `flow.triggers.defaultConcurrency` | `skip_if_running` | When triggers fire on top of in-flight runs |

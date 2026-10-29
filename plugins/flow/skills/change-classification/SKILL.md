@@ -27,7 +27,7 @@ Evaluate in order: red flags, primary, secondary, default → uncertain.
 | Secondary | Config/dotfile/manifest in project root | uncertain |
 | Secondary | Unrelated directory, no link to issue or tasks | out-of-context |
 
-Boy Scout cleanup (lint, format, typo, obvious bug) in a file already in the branch diff is the `boy-scout` subtype of in-context and uses the `improve` commit type. Weights, thresholds, and commit-type inference: `references/classification-signals.md`.
+Boy Scout cleanup (lint, format, typo, obvious bug) in a file already in the branch diff is the `boy-scout` subtype of in-context and uses the `improve` commit type. Signal detection methods and commit-type inference: `references/classification-signals.md`.
 
 ### First-Touch Detection
 
