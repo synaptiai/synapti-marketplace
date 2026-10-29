@@ -1354,10 +1354,41 @@ true
 
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
-   - Fetch current body: `gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body'`
+   - Fetch the current body: run the block below with `PR_NUM=<n>` and no `BODY_FILE`; it prints the body.
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
-   - Update: `gh pr edit "$PR_NUM" --body "$UPDATED_BODY"`
+   - Update: run `mktemp` and note the path it prints, write the whole updated body to that path with the Write tool, and run the block with `PR_NUM=<n> BODY_FILE=<the path>`, followed in the same call by `rm -f <the path>`. The body quotes reviewer text, so it never goes in a shell command.
+
+   ```bash
+   # PR_BODY_BLOCK_BEGIN
+   # Reads the pull request body, or, with BODY_FILE, replaces it with that
+   # file's text. Each fence is its own shell, so REPO is resolved here:
+   # `gh --repo ""` falls back to gh's own resolution, which acts on whichever
+   # repository the working directory belongs to.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   case "${PR_NUM:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: PR_NUM must be a positive integer with no leading zero" >&2; exit 1 ;; esac
+   if [ -z "${BODY_FILE:-}" ]; then
+     gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' || exit 1
+     exit 0
+   fi
+   [ -f "$BODY_FILE" ] && [ -s "$BODY_FILE" ] || { printf '%s\n' "ERROR: BODY_FILE must name a file holding the updated body" >&2; exit 1; }
+   # The body is published, so only a file the session made with mktemp is
+   # accepted: directly in TMPDIR, a regular file and not a symlink, owned by
+   # this user, with one link. Any other file is not read.
+   PB_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+   PB_DIR=""
+   case "$BODY_FILE" in /*) PB_DIR=$(cd -P -- "$(dirname -- "$BODY_FILE")" 2>/dev/null && pwd -P) ;; esac
+   if [ -z "$PB_TMPDIR" ] || [ "$PB_DIR" != "$PB_TMPDIR" ] || [ -L "$BODY_FILE" ] \
+      || [ -z "$(find "$BODY_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+     printf '%s\n' "ERROR: BODY_FILE must be a file made by mktemp directly in \$TMPDIR; the body was not updated" >&2; exit 1
+   fi
+   gh pr edit "$PR_NUM" --repo "$REPO" --body-file "$BODY_FILE" >/dev/null
+   BODY_EXIT=$?
+   printf '%s\n' "BODY_EXIT=$BODY_EXIT"
+   [ "$BODY_EXIT" -eq 0 ] || exit 1
+   # PR_BODY_BLOCK_END
+   ```
 11. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
 12. **Conditional re-request review**:
 
