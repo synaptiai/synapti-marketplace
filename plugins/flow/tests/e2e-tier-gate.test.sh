@@ -367,7 +367,7 @@ if _want tg-tag-push; then
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     if [ "$WANT" = ask ]; then
-      _expect_ask "tiers.release"
+      _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
     elif [ "$WANT" = maybe ]; then
       _expect_ask "may push or delete a tag"
     else
@@ -530,7 +530,7 @@ if _want tg-tag-delete; then
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
-      ask) _expect_ask "tiers.release" ;;
+      ask) _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)" ;;
       maybe) _expect_ask "may push or delete a tag" ;;
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
     esac
