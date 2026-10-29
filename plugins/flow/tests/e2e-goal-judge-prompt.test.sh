@@ -158,6 +158,20 @@ _hook() {
 }
 _got() { if [ -f "$E2E_DIR/args/$1" ]; then cat "$E2E_DIR/args/$1"; else printf '(not called)'; fi; }
 
+# _edges_judged — for a scenario that runs the hook: every gh call had a
+# fixture, and the judge was called. The judge here is mock-claude.sh, which
+# does not write the harness's claude-calls.log, so e2e_expect_clean_edges
+# would record "the claude CLI was not called", which is untrue.
+_edges_judged() {
+  if [ -s "$E2E_GH/unhandled.log" ]; then
+    _e2e_result fail "every gh call had a fixture ($(tr '\n' ';' < "$E2E_GH/unhandled.log"))"
+  else
+    _e2e_result pass "every gh call had a fixture"
+  fi
+  if [ -f "$E2E_DIR/args/model.txt" ]; then _e2e_result pass "the judge was called"
+  else _e2e_result fail "the judge was called"; fi
+}
+
 # _skill — the skill's judge-input block for goal g-judge and run run-e2e.
 _skill() { e2e_run_block GOAL_ID=g-judge RUN_ID=run-e2e "$SKILL" GOAL_JUDGE_INPUT; }
 
@@ -178,7 +192,7 @@ if _want hook-agent-body; then
     *) e2e_expect_equal "has it" "lacks it" "the Independence Protocol in the system prompt" ;; esac
   e2e_expect_equal haiku "$(_got model.txt)" "the judge's model"
   e2e_expect_equal "" "$E2E_ERR" "stderr"
-  e2e_expect_clean_edges
+  _edges_judged
 fi
 
 # _fallback <scenario> <purpose> <how to break the agent file>
@@ -201,7 +215,7 @@ _fallback() {
   e2e_expect_equal 1 "$(printf '%s\n' "$E2E_ERR" | grep -c .)" "stderr lines"
   e2e_expect_equal haiku "$(_got model.txt)" "the judge's model"
   [ "$4" = unreadable ] && chmod 644 "$E2E_ACTIVE_PLUGIN/$AGENT"
-  e2e_expect_clean_edges
+  _edges_judged
 }
 
 if _want hook-agent-absent; then
@@ -258,7 +272,7 @@ if _want skill-same-input; then
   _hook
   e2e_expect_equal "$(_e2e_sha256 "$E2E_DIR/args/stdin.txt" 2>/dev/null)" "$(_e2e_sha256 "$E2E_DIR/skill-bundle.txt")" "sha256 of the skill's bundle against the hook's judge prompt"
   e2e_expect_equal "$(_got model.txt)" "$skill_model" "the skill's model against the hook's"
-  e2e_expect_clean_edges
+  _edges_judged
 fi
 
 # _models <scenario> <judge.model value> <expected model> <stderr expected: yes|no>
@@ -272,7 +286,7 @@ _models() {
   else e2e_expect_equal "" "$E2E_ERR" "skill stderr"; fi
   _hook
   e2e_expect_equal "$3" "$(_got model.txt)" "the hook's model"
-  e2e_expect_clean_edges
+  _edges_judged
 }
 
 if _want model-sonnet; then
