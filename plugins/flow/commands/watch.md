@@ -32,9 +32,9 @@ true
 
 ```bash
 ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" \
-  --default "false" '.flow.triggers.enabled')
+  --default "true" '.flow.triggers.enabled')
 if [ "$ENABLED" != "true" ]; then
-  printf '%s\n' "flow.triggers.enabled is false — /flow:watch is opt-in."
+  printf '%s\n' "flow.triggers.enabled is false in your flow settings, so /flow:watch is turned off. Set it to true to use watch mode."
   exit 0
 fi
 
