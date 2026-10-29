@@ -36,10 +36,11 @@ When the System One decision point `address.category` is on, `/flow:address` ask
 ## Fix Each Item (one task per item)
 
 1. Read the comment. Do not trust its line number — locate by the quoted snippet (`grep -n "quoted_code" $FILE`) and path, then read the current file.
-2. Implement the minimal fix to the literal comment. If intent is unclear, check follow-up comments and codebase patterns, take the most conservative interpretation, and state it in the response.
-3. Write or update a test that would have caught the issue, following existing test patterns; test the specific edge case, not just the happy path. Touch only the fix target and its test file.
-4. Verify the fix addresses that comment and tests pass.
-5. Commit `fix(scope): address review — {summary}` — one commit per item, never batched.
+2. Decide whether the fix changes behavior. A fix to documentation, comments, or configuration with no behavior change is exempt: it needs no new test, so go to step 4.
+3. For a behavior-changing fix, follow `testing.tddMode` as `/flow:start` does (`tdd-patterns`): with `enforce` (default), write a test that reproduces the defect first and watch it fail on the current code for the intended reason, with a sourced expected value and an input on which the fixed and unfixed code differ; with `suggest` (only with `tddModeOptOut: true`), do the same unless the user decides to skip it; with `off`, write the test after the fix. Follow existing test patterns, test the specific edge case, and touch only the fix target and its test file.
+4. Implement the minimal fix to the literal comment, the simplest change that makes the reproducing test pass. If intent is unclear, check follow-up comments and codebase patterns, take the most conservative interpretation, and state it in the response.
+5. Verify the fix addresses that comment and tests pass.
+6. Commit `fix(scope): address review — {summary}` — one commit per item, never batched.
 
 No new features; no formatting changes in files the feedback did not mention.
 

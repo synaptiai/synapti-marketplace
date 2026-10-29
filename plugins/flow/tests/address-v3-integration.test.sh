@@ -1521,3 +1521,21 @@ assert_not_contains "$LONGID" "$OUT_LI" "and is not echoed back whole"
   ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$LONGID" REASON=breaks-test \
   DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh) >/dev/null 2>&1; RC_LW=$?
 assert_equal "2" "$RC_LW" "and the writer refuses to record it in the first place"
+
+_flow_test_begin "address.md Phase 3: a behavior-changing fix writes its reproducing test first, per testing.tddMode"
+# The Phase 3 per-task loop, from its fence to the Boy Scout pass.
+PHASE3_LOOP=$(awk '/^## Phase 3: CODE/{f=1} f&&/^\*\*Boy Scout pass\*\*/{exit} f' "$ADDRESS_MD")
+assert_contains "testing.tddMode" "$PHASE3_LOOP" "Phase 3 reads testing.tddMode"
+assert_contains "exactly as \`/flow:start\` Phase 3 does" "$PHASE3_LOOP" "and applies it as /flow:start does"
+assert_match 'documentation, comments, or configuration with no behavior change is exempt' "$PHASE3_LOOP" "docs, comment and config-only fixes are exempt"
+# The test step comes before the implementation step: the step that writes the
+# reproducing test has a lower number than the one that implements the fix.
+TEST_STEP=$(printf '%s\n' "$PHASE3_LOOP" | grep -m1 -E '^[0-9]+\. Reproducing test first' | cut -d. -f1)
+IMPL_STEP=$(printf '%s\n' "$PHASE3_LOOP" | grep -m1 -E '^[0-9]+\. Implement the fix' | cut -d. -f1)
+assert_match '^[0-9]+$' "$TEST_STEP" "Phase 3 has a reproducing-test step"
+assert_match '^[0-9]+$' "$IMPL_STEP" "Phase 3 has an implement step"
+[ -n "$TEST_STEP" ] && [ -n "$IMPL_STEP" ] && [ "$TEST_STEP" -lt "$IMPL_STEP" ]
+assert_exit 0 $? "the reproducing test (step $TEST_STEP) comes before the fix (step $IMPL_STEP)"
+for mode in enforce suggest off; do
+  assert_contains "tddMode=$mode" "$PHASE3_LOOP" "Phase 3 says what tddMode=$mode does"
+done

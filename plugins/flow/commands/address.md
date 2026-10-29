@@ -701,6 +701,8 @@ Display categorized feedback:
 
 ## Phase 3: CODE
 
+**TDD enforcement**: a fix that changes behavior follows `testing.tddMode` exactly as `/flow:start` Phase 3 does (`enforce` default; `suggest` only with `testing.tddModeOptOut: true`; `off` still runs tests in verification). The `tdd-patterns` contract loaded above defines RED: a test is red only when it fails for the intended reason, its expected value has a stated source (spec, reference, hand computation, fixture, standard — never the implementation's output), and its input is not degenerate for the behavior under test. A fix that changes only documentation, comments, or configuration with no behavior change is exempt and needs no new test.
+
 For each feedback task (in priority order):
 
 ```
@@ -709,10 +711,16 @@ For each feedback task (in priority order):
 3. Context recovery: find current code location (don't trust line numbers)
    - Search for quoted code snippets
    - Read the file at the mentioned path
-4. Implement the fix
-5. Write or update tests that verify the fix:
+4. Reproducing test first (behavior-changing fix; exempt fixes go to step 5):
+   - tddMode=enforce: RED — write a test that reproduces the defect the comment
+     names, run it, and confirm it fails on the current code for the intended
+     reason (not a syntax error, not a wrong import). Expected value with its
+     stated source; an input on which the fixed and the unfixed code differ
+   - tddMode=suggest: the same, unless the user decides to skip it for this fix
+   - tddMode=off: no test-first step; step 5 still writes the test
+5. Implement the fix (GREEN) — the simplest change that makes the test pass:
+   - tddMode=off: then write or update a test that would have caught the issue
    - Follow existing test patterns (co-located files, same framework)
-   - At minimum, write a test that would have caught the issue
    - Test the specific edge case, not just the happy path
    - Only modify the fix target and its test file
 6. Verify the fix addresses the specific feedback and tests pass
