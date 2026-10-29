@@ -704,6 +704,11 @@ if _want tg-verify-tag; then
   # Behind a program the hook does not know, the exemption does not apply.
   _tg_run 'caffeinate gh release create v1.2.0 --verify-tag'
   _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  # A tag made and pushed in the same command is not on the remote when the
+  # hook runs: the push asks, and so does the release.
+  _tg_run 'git tag v3.0.0 && git push origin v3.0.0 && gh release create v3.0.0 --verify-tag'
+  _expect_ask "may push or delete a tag"
+  e2e_expect_out "v3.0.0 could not be found on origin"
   _tg_run 'gh release create v1.2.0 --verify-tag && gh pr merge 7 --repo o/r --squash'
   _expect_ask "tiers.merge"
   e2e_expect_equal 1 "$(grep -c 'verify-tag' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "breadcrumbs after the run that also asked"
