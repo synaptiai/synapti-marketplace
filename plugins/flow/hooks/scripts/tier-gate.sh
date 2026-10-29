@@ -190,7 +190,8 @@
 # journaled, since a prompt for every script that
 # mentions git would cost more than the setting saves. And what text cannot
 # show: a whole command held in a variable or built at run time (`$CMD`,
-# `eval "$CMD"`), an ANSI-C quoted word (`$'g\x68'`), a gh or git alias, a
+# `eval "$CMD"`), an ANSI-C quoted subcommand (`gh pr $'m\x65rge'`; as the
+# program it reads as a variable, so it asks), a gh or git alias, a
 # gh extension, a script file or a make target, another program that talks
 # to GitHub (curl, git send-pack), GIT_DIR or GIT_WORK_TREE set by export
 # rather than before git, GH_REPO or GH_HOST exported in an earlier Bash
