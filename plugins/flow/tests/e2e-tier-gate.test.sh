@@ -632,6 +632,11 @@ if _want tg-tag-journal-floor; then
   _tg_run 'git push -u origin HEAD >/dev/null 2>&1'
   _expect_silent_allow
   e2e_expect_file_has "$(_tg_trail42)" 'tiers.push (journal) "git push -u origin HEAD"'
+  # env -S with a quoted string is read twice (as env's words and as a script
+  # handed to env); the push it runs is one push, so one breadcrumb.
+  _tg_run "env -S 'git push origin HEAD:refs/heads/dd'"
+  _expect_silent_allow
+  e2e_expect_equal 1 "$(grep -c 'tiers.push (journal) "git push origin HEAD:refs/heads/dd"' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "breadcrumbs for the env -S push"
   e2e_expect_clean_edges
 fi
 
