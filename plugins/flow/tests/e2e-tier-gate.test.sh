@@ -504,6 +504,7 @@ if _want tg-verify-tag; then
   _tg_remote
   _tg_run 'gh release create --title "v 1" v1.2.0 --verify-tag --notes x'
   _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr of the journaled --verify-tag (no job report from the stopped watchdog)"
   e2e_expect_file_has "$(_tg_trail42)" 'tiers.release (--verify-tag, v1.2.0 already on the remote) "gh release create --title "v 1" v1.2.0 --verify-tag --notes x"'
   _tg_run 'gh release create v2.0.0 --verify-tag'
   _expect_ask "v2.0.0 could not be found on origin"
@@ -781,6 +782,20 @@ if _want tg-jq-missing; then
   # Only the command is judged, not the rest of the payload: a transcript
   # path that mentions github and push says nothing about `ls`.
   e2e_run_hook "PATH=$NOJQ" "$HOOK" '{"transcript_path":"/home/u/github/push-merge-release.jsonl","tool_input":{"command":"ls -la"}}'
+  _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr for ls"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-payload-unparsable; then
+  _tg_setup tg-payload-unparsable feature/issue-42-x '{"tiers":{"push":"confirm"}}' \
+    "the payload is not valid JSON: a command text naming gh pr merge asks, one naming git push is allowed with one stderr line naming the payload, and one naming neither is allowed silently (T11)"
+  e2e_run_hook "$HOOK" '{"tool_input":{"command":"gh pr merge 7 --repo o/r --squash"'
+  _expect_ask "Flow could not read this command"
+  e2e_run_hook "$HOOK" '{"tool_input":{"command":"git push origin HEAD"},'
+  _expect_silent_allow
+  e2e_expect_err "could not read the command (the hook payload could not be parsed)"
+  e2e_run_hook "$HOOK" '{"transcript_path":"/home/u/gh-merge.jsonl","tool_input":{"command":"ls -la"'
   _expect_silent_allow
   e2e_expect_equal "" "$E2E_ERR" "stderr for ls"
   e2e_expect_clean_edges

@@ -190,7 +190,14 @@ if ! command -v jq >/dev/null 2>&1; then
   esac
   exit 0
 fi
-COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || COMMAND=""
+# A payload jq cannot parse is judged like one read without jq: from the
+# command key on. A payload that parses and holds no command is no command.
+if ! COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null); then
+  case "$INPUT" in
+    *'"command"'*) _tg_undecidable "${INPUT#*\"command\"}" "the hook payload could not be parsed" ;;
+  esac
+  exit 0
+fi
 [ -z "$COMMAND" ] && exit 0
 
 # Cheap reject before any parsing: this hook runs before every Bash call, and
@@ -730,7 +737,7 @@ _tg_tag_on_remote() {   # $1 = tag, $2 = owner/name, host/owner/name, or empty
   # The shell reports a killed job on stderr when it reaps it; that report
   # is not this hook's to print.
   { wait "$pid"; } 2>/dev/null; rc=$?
-  kill "$w" 2>/dev/null
+  { kill "$w"; wait "$w"; } 2>/dev/null
   if [ "$rc" -eq 0 ] && awk -v r="refs/tags/$1" '$2 == r { f = 1 } END { exit !f }' "$tmp" 2>/dev/null; then
     rm -f "$tmp"; return 0
   fi
