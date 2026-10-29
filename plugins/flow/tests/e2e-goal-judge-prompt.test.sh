@@ -532,8 +532,11 @@ fi
 
 if _want skill-checks-fail; then
   _flow_test_begin "goal-evaluator skill: deterministic checks that did not run stop the block before the judge (P13)"
-  _setup skill-checks-fail "the plugin copy's deterministic-check producer exits 3 without a report"
+  # The report it prints has a checked key, so only the exit status says the
+  # checks did not finish.
+  _setup skill-checks-fail "the plugin copy's deterministic-check producer prints a report with a checked key and exits 3"
   e2e_plugin_copy hooks/scripts/flow-run-deterministic-checks.sh '#!/usr/bin/env bash
+printf "{\"checked\":[]}\n"
 exit 3'
   _goal
   _evidence
