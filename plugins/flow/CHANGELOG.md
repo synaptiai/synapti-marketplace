@@ -22,9 +22,17 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
   `journal` writes a breadcrumb to the git-ignored auto-log trail and lets the
   command run, and `autonomous` lets it run. Merge and release never go below
   `confirm`; a lower setting is ignored with one line on stderr. Pushing or
-  deleting a tag is the release tier, and `gh release create --verify-tag` for
-  a tag already on the remote is only journalled, so a release asks once, at
-  the tag push. A hook "ask" prompts in an interactive session, including
+  deleting a tag is the release tier, and so are `gh release edit`, `delete`,
+  `upload` and `delete-asset`. `gh release create --verify-tag` for a tag
+  already on origin, in the repository gh targets, is only journalled, so a
+  release asks once, at the tag push. The hook reads the command after shell
+  keywords and groups (`if`, `do`, `!`, `{`, `function`, `coproc`), wrappers
+  (`env`, `timeout`, `sudo`, `xargs` and others) and backslashes inside a
+  word, reads `git push` options by prefix as git does, and asks when it
+  cannot tell a tag push from a branch push: a source that is not a local
+  branch, a glob, `remote.<name>.mirror` or `.push` in config or `-c`. After a
+  program it does not know, a merge, release or tag push later in the command
+  still asks. A hook "ask" prompts in an interactive session, including
   bypassPermissions mode, and refuses in `claude -p`.
 - `journal-append.sh` and `journal-record.sh --session` write the documented
   `session-YYYY-MM-DD.md` journal on a branch with no issue number; goals
@@ -40,12 +48,21 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
   `metadata.version`) and refuses when they disagree. The first run opens a
   release pull request with the bump and changelog; after it is merged, the
   second run creates an annotated tag on the merge commit, pushes it and
-  creates the GitHub release. Nothing is pushed to the default branch.
+  creates the GitHub release. Nothing is pushed to the default branch. Whether
+  a version is released is read from the tag on origin and the GitHub release:
+  a tag on origin with no release only creates the release, and a tag that
+  exists only in the local clone stops the run with the commands to push or
+  delete it. A version that is not a semantic version is refused, the version
+  files are written all or nothing, and a failed bump, commit or push restores
+  the files and removes the local release branch.
 - `bin/flow-judge.sh` runs the goal judge and the verdict judge through
   `claude --print --disallowedTools '*'` with the agent file's body as the
   system prompt. The verdict judge's model is the new `verdict.model` setting
   (empty means the CLI default) and its time limit `verdict.timeoutSeconds`
-  (default 300).
+  (default 300); the commands give the Bash tool a longer timeout than the
+  judge's. The judges need `timeout` or `gtimeout` (macOS: `brew install
+  coreutils`); `/flow:setup` reports when neither is installed, and a judge
+  that cannot start says so.
 
 ### Changed
 
@@ -100,6 +117,22 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
 
 - `/flow` routes `goal`, `resume`, `run`, `trigger`, `watch` and `workflow`;
   its verb list named only the other sixteen commands.
+- `block-unchecked-merge.sh` reads a word with a backslash in it as bash
+  does, so `gh pr mer\ge 1` is refused like `gh pr merge 1`.
+- The goal judge runs in its per-user directory or not at all; when that
+  directory could not be created it ran in `/tmp`, where another user's
+  `.claude/settings.json` or `CLAUDE.md` would load.
+- A `.env.example`, `.env.sample` or `.env.template` holding a value that
+  looks like a real key is blocked, not committed; placeholders still commit.
+  The check also catches long hex strings and the `sk_live_`, `AIza`,
+  `glpat-` and `xoxb-` prefixes.
+- PR feedback collection reads every page of inline comments and reviews,
+  and includes conversation comments; it read the first 30 inline comments.
+- The trigger schema check refuses a symlinked trigger, and long values in
+  its messages are cut short.
+- The `/flow:watch`, `/flow:trigger`, `/flow:workflow`, `/flow:run`,
+  `/flow:resume` and `/flow:goal` pre-flights say a setting could not be read
+  when the settings resolver fails; they reported the feature as turned off.
 - `/flow:start` Phase 4 collects evidence per atomic task; it looped over
   "Verify:" tasks that Phase 2 forbids creating.
 - `/flow:address` cites Phase 4 step 9 for the resolution comment; it cited a
