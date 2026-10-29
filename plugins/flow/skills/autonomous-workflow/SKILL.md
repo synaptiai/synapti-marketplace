@@ -19,7 +19,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, TaskCreate, TaskList,
    a. **Static**: lint/test/typecheck in parallel. With `lsp.diagnosticsAsQuality`, LSP diagnostics add a signal (errors P1, warnings P2), never replace CLI checks.
    b. **Runtime**: build, start, verify; on failure enter the debug-fix-retest loop (bounded by `closedLoop.maxDebugIterations`).
    c. **Review**: self-review with fix-forward; fix P1/P2 immediately.
-   d. **Verdict**: when `verdict.enabled`, run the verdict judge through the claude CLI with no tools (`/flow:start` Phase 4 step 6, `bin/flow-judge.sh --judge verdict`) with acceptance criteria, evidence bundle and holdout-validation output only (no diff, rationale, journal). Per criterion PASS/FAIL/NEEDS-HUMAN-REVIEW; FAIL enters a fix loop, NEEDS-HUMAN-REVIEW escalates.
+   d. **Verdict**: when `verdict.enabled`, run the verdict judge through the claude CLI with no tools (`/flow:start` Phase 4 step 6) with acceptance criteria, evidence bundle and holdout-validation output only (no diff, rationale, journal). Per criterion PASS/FAIL/NEEDS-HUMAN-REVIEW; FAIL enters a fix loop, NEEDS-HUMAN-REVIEW escalates.
 
 ## Task-Tool Contract
 
@@ -36,13 +36,11 @@ TaskCreate in PLAN (one per deliverable, imperative subject, acceptance criteria
 
 ## Three-Tier Safety
 
-| Tier | Actions | Behavior |
-|------|---------|----------|
-| **1** Autonomous | Commits, branches, file edits, staging | Execute |
-| **2** Journal | Push, PR creation, issue assignment | Execute, log to journal |
-| **3** Confirm | Merge, release, force operations | Human confirmation, always |
+- **1** Autonomous: commits, branches, file edits, staging. Execute.
+- **2** Journal: push, PR creation, issue assignment. Execute, log to journal.
+- **3** Confirm: merge, release, force operations. Human confirmation, always.
 
-`settings.json` `tiers`, applied to each Bash command by the `tier-gate.sh` hook: push, prCreate, issueAssign and issueCreate take autonomous, journal or confirm; merge and release are always confirm. Full tables: `references/three-tier-safety.md`.
+The `tier-gate.sh` hook applies `settings.json` `tiers` to each Bash command; merge and release are always confirm. Full tables: `references/three-tier-safety.md`.
 
 ## AskUserQuestion Enforcement
 
@@ -57,7 +55,7 @@ TaskCreate in PLAN (one per deliverable, imperative subject, acceptance criteria
 
 ## Bounded Verification
 
-Ceilings (`qualityCheckMaxIterations`, `closedLoop.maxDebugIterations` default 5, `fixForwardMaxIterations`) are safety nets, not budgets. Run, fix, re-run until convergence. Halt only for **genuine non-convergence** (same failure across the last 3 iterations with no progress AND ceiling reached), then file a six-field escalation per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence. Never silently loop past the ceiling.
+Ceilings (`qualityCheckMaxIterations`, `closedLoop.maxDebugIterations`, `fixForwardMaxIterations`) are safety nets, not budgets. Run, fix, re-run until convergence. Halt only for **genuine non-convergence**, then file a six-field escalation per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence. Never silently loop past the ceiling.
 
 ## Stop Conditions
 

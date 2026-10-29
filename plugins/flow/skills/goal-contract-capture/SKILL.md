@@ -37,10 +37,4 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 
 ## Trust
 
-`bin/flow-goal-record.sh --create` also records the goal in the per-user trust ledger (`goal-trust.jsonl` in the per-user state directory `bin/cascade-resolve.sh --state-dir` names, via `bin/flow-goal-trust.sh record`). The Stop hook executes a goal's verification commands only when the goal is trusted or `flow.goals.executeVerificationCommands` is true. A goal is trusted only when it was created through flow in this user's environment; a goal that arrived with a checkout is not. Editing a `verification_command` by hand changes the hash and untrusts the goal until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`.
-
-## References
-
-- `plugins/flow/skills/specification-capture/SKILL.md`: the journal headings lifted in step 5.
-- `plugins/flow/skills/criterion-verification-map/SKILL.md`: AC verification-command shape.
-- `plugins/flow/references/flow-goals.md`: full YAML example and settings.
+`bin/flow-goal-record.sh --create` also records the goal in the per-user trust ledger (`bin/flow-goal-trust.sh record`). The Stop hook runs a goal's verification commands only when the goal is trusted or `flow.goals.executeVerificationCommands` is true; a goal that arrived with a checkout is not trusted. Editing a `verification_command` by hand untrusts the goal until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`. Full YAML example, settings and the trust ledger: `references/flow-goals.md`.

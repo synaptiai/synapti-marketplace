@@ -52,9 +52,7 @@ Return the `## Captured Specification` payload; consumers cite subsections as `N
 
 ## Anti-patterns
 
-- "The acceptance criteria are enough": criteria scope WHAT; the elements scope IS NOT, FAILS HOW, WHICH SCHEMAS, WRONG WHERE.
-- "I'll capture during PLAN": PLAN's fence is built from the specification; the Stranger Test fails.
-- "The failure-mode categories cover risk": no. Timeouts, partial failures, invalid input, missing context are infrastructure error paths agents already over-test. The risk map is about the core logic being subtly wrong.
+The reasons the acceptance criteria alone, a capture deferred to PLAN, or the failure-mode categories do not stand in for the specification: `references/specification-journal-format.md`.
 
 ## Verification gates
 

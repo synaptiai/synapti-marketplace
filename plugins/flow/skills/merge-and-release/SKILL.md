@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 # Merge and Release
 
-Policy reference for `/flow:merge` and `/flow:release`; the runnable bash lives in `commands/merge.md` and `commands/release.md`.
+Policy reference for `/flow:merge` and `/flow:release`; the runnable bash lives in `commands/merge.md` and `commands/release.md`, and the detail in `references/merge-and-release.md`.
 
 ## Contract
 
@@ -26,7 +26,7 @@ Iron law: **merge is irreversible in practice — every prerequisite is verified
 
 Plus the `pr-lifecycle` finding-ledger check: non-empty `ESCALATED` or unmatched `FINDINGS` blocks.
 
-**Stale approval**: compare the latest `submittedAt` among reviews with `state == "APPROVED"` against the `committedDate` of the newest commit. Commits after approval: warn "Approval may be stale", request re-review, do not merge — the approver has not seen what would be merged.
+**Stale approval** (compared as in `references/merge-and-release.md`): commits after approval: warn "Approval may be stale", request re-review, do not merge — the approver has not seen what would be merged.
 
 ## Stop Conditions
 
@@ -34,38 +34,20 @@ Any prerequisite fails, stale approval, unresolved conversations > 0, unfinished
 
 ## Merge Execution (Phases 2–4)
 
-Display the Merge Assessment table (each prerequisite's status, strategy, branch-delete decision) as text, then run the merge. The confirmation is the `tier-gate.sh` hook's permission prompt on the `gh pr merge` command (`tiers.merge` is always `confirm`), which shows that command; do not ask a separate yes/no question first. A merge declined at the prompt stops the command.
+Display the Merge Assessment table as text, then run the merge. The confirmation is the `tier-gate.sh` hook's permission prompt on the `gh pr merge` command (`tiers.merge` is always `confirm`), which shows that command; do not ask a separate yes/no question first. A merge declined at the prompt stops the command.
 
 - `merge.strategy`: `squash` | `merge` | `rebase` (default `squash`)
 - `merge.deleteBranch`: default `true`; `--delete-branch` is part of the command the prompt shows
-- `merge.markerTrust.allowedAssociations`: default `["OWNER","MEMBER","COLLABORATOR"]`; filters whose ledger markers are honored, pinned to the plugin tier rather than the settings cascade (`references/finding-ledger-parser.md`)
+- `merge.markerTrust.allowedAssociations`: whose ledger markers are honored; read from the plugin tier only, never the settings cascade (`references/finding-ledger-parser.md`)
 
 Post-merge: `gh pr view $PR_NUM --json state` must return `MERGED`; then suggest switching to the default branch and pulling.
 
 ## Release (`/flow:release`)
 
-**Two runs.** A release reaches the default branch only through a release pull request. The first run bumps the version files and the changelog on a release branch (`conventions.branchPatterns.release`, default `chore/release-{version}`) and opens that pull request; the second run, after it is merged, tags the merge commit and publishes the GitHub release. Phase 2 tells the runs apart from the repository's state: whether the current version is tagged, and whether a release pull request for the version is open or merged.
+**Two runs.** A release reaches the default branch only through a release pull request: the first run bumps the version files and the changelog on a release branch and opens that pull request; the second, after it is merged, tags the merge commit and publishes the GitHub release.
 
-**Version** (Phase 2): tag = `release.tagPrefix` (default `v`) + version; in a plugin marketplace the version is the marketplace's `metadata.version`, bumped by minor for a minor or major plugin release and by patch for a patch unless a type is named. `bin/flow-release-versions.sh --plan` lists the version files to bump (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`, or a named plugin's `plugin.json`, its `marketplace.json` entry and the marketplace's `metadata.version`) and the files it skips with the reason; files that disagree on the current version stop the release.
+**Version** (Phase 2): tag = `release.tagPrefix` (default `v`) + version, bumped by semver (`patch`, `minor`, `major`). In a plugin marketplace the version is the marketplace's `metadata.version`, bumped by minor for a minor or major plugin release and by patch for a patch unless a type is named. `bin/flow-release-versions.sh --plan` lists the version files to bump and the files it skips; files that disagree on the current version stop the release. No version file and no prior tag: first release is `v1.0.0`.
 
-| Bump | Format | When |
-|------|--------|------|
-| `patch` | 0.0.X+1 | Bug fixes only, no behavior change |
-| `minor` | 0.X+1.0 | New features, no breaking changes |
-| `major` | X+1.0.0 | Breaking changes |
-
-No version file and no prior tag: first release is `v1.0.0`.
-
-**Changelog** (Phase 3): merged PRs since the last tag, grouped by conventional prefix — Features (`feat:`), Bug Fixes (`fix:`), Other Changes (`docs:`, `chore:`, …) — each with PR number and author, plus a "Full Changelog" compare link `{prev}...{new}`.
-
-**Execute** (Phase 4): show the Release Preview (version, previous tag, PR count, version files, changelog) as text. First run: create the release branch, commit only the bumped files and the changelog, push the branch and open the release pull request (`chore(release): <plugin> <version>, marketplace <version>` in a marketplace, `chore(release): <tag>` otherwise); nothing is pushed to the default branch. Second run: `git tag -a` on the merge commit, `git push origin <tag>`, then `gh release create <tag> --verify-tag`; flow's tier hook asks for confirmation before the tag is pushed. The runnable sequence is in `commands/release.md`.
+**Changelog** (Phase 3) and **Execute** (Phase 4): show the Release Preview as text. The first run commits only the bumped files and the changelog and pushes nothing to the default branch; in the second, flow's tier hook asks for confirmation before the tag is pushed.
 
 **Post-release** (Phase 5, second run): `gh release view "$TAG"` must succeed; the summary lists every version file bumped and every file skipped.
-
-## Why Tier 3 Is Structural
-
-An unwanted merge or release is paid for by people outside this conversation; only the human in the loop can speak for them.
-
-## Keeping Policy and Bash Aligned
-
-Merge prerequisites and execution: `commands/merge.md`. Version, tagging, GitHub release: `commands/release.md`. A new prerequisite, strategy, or versioning rule changes the command and this reference together.
