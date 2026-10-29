@@ -30,6 +30,11 @@
 #   V11 a repository with no version file is an error rather than "none"
 #   V12 a plugin release leaves the marketplace's metadata.version, which the
 #      tag carries, unbumped, or bumps it by the wrong type
+#   V13 a version read from a file, or a value given on the command line,
+#      holds a line break and its text is printed as output lines of its own
+#      (VERSIONS_STATE=planned, TAG_VERSION=6.6.6) that the caller reads
+#   V14 a write that fails on the second file leaves the first one bumped
+#      while the state says refused
 #
 # release.md Phase 2: which run this is
 #   S1 the plan runs without the plugin name or marketplace type the
@@ -44,15 +49,39 @@
 #      tagged or bumped without asking
 #   S6 a repository with no version file cannot release at all
 #   S7 the plan runs off the default branch or behind origin
+#   S8 the current version counts as released when its tag is only in this
+#      clone (a tag push that failed), or when the tag is on origin but the
+#      GitHub release was never created (a release create that failed), so
+#      the run plans the next version and that release is never published
+#   S9 gh failing to answer whether the release exists is taken for "no
+#      release", and the run re-creates one
+#   S10 the release branch name is built from a version or a branch pattern
+#      that does not make a valid branch name
+#
+# release.md Phase 1
+#   C1 a merged pull request's title holding a quote or a line break prints
+#      output lines of its own
 #
 # release.md Phase 4
 #   P1 the release pull request's commit carries files the script did not
 #      bump (anything else staged) or leaves out the changelog file
 #   P2 anything is pushed to the default branch
 #   P3 a refused bump leaves the release branch behind
+#   P4 a new changelog file, not yet known to git, makes the commit fail
+#   P5 a failed commit or push leaves the run on the release branch with the
+#      versions bumped, or its cleanup loses the changelog edit or unstages
+#      what was staged before the run
+#   P6 a release branch left by an earlier failed run is reported as "cannot
+#      create the branch" with no way forward
+#   P7 a version file with changes of its own is bumped and committed with
+#      them, or restored over them on a failure
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
+#   T3 a failed tag push leaves a tag in this clone with no word on how to
+#      push or delete it
+#   T4 a release that is not created after the tag push is reported as a
+#      success, or with no way to create it later
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -350,6 +379,92 @@ e2e_run_bin "$VERSIONS" --write --to 2.0.0
 e2e_expect_equal 0 "$E2E_RC" "the exit status with --to"
 e2e_expect_file_has package.json '"version": "2.0.0"'
 
+# _forged_lines — no output line the forged values would add, and exactly one
+# VERSIONS_STATE line.
+_forged_lines() {
+  e2e_expect_no_line "VERSIONS_STATE=planned"
+  e2e_expect_no_line "TAG_VERSION=6.6.6"
+  e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c '^VERSIONS_STATE=')" "VERSIONS_STATE lines"
+}
+
+_flow_test_begin "a version that is not a semantic version is refused before anything is printed (V13)"
+e2e_new versions-forged-current
+e2e_describe "package.json whose version holds line breaks and two output lines"
+e2e_repo main
+printf '{\n  "name": "x",\n  "version": "1.2.3\\nVERSIONS_STATE=planned\\nTAG_VERSION=6.6.6"\n}\n' > "$E2E_REPO/package.json"
+_commit_all
+e2e_run_bin "$VERSIONS" --plan --bump patch
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "VERSIONS_STATE=refused"
+e2e_expect_out "package.json"
+_forged_lines
+
+e2e_new versions-forged-current-mismatch
+e2e_describe "the same package.json beside a pyproject.toml at 1.2.4, so the files disagree"
+e2e_repo main
+printf '{\n  "name": "x",\n  "version": "1.2.3\\nVERSIONS_STATE=planned\\nTAG_VERSION=6.6.6"\n}\n' > "$E2E_REPO/package.json"
+printf '[project]\nname = "demo"\nversion = "1.2.4"\n' > "$E2E_REPO/pyproject.toml"
+_commit_all
+e2e_run_bin "$VERSIONS" --plan --bump patch
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "VERSIONS_STATE=refused"
+_forged_lines
+
+e2e_new versions-forged-market
+e2e_describe "a marketplace whose metadata.version holds a line break and an output line"
+e2e_repo main
+_marketplace_fixture 3.10.0
+sed 's/"version": "4.17.0"/"version": "4.17.0\\nTAG_VERSION=6.6.6"/' "$E2E_REPO/.claude-plugin/marketplace.json" > "$E2E_DIR/m.json" \
+  && mv "$E2E_DIR/m.json" "$E2E_REPO/.claude-plugin/marketplace.json"
+_commit_all
+e2e_run_bin "$VERSIONS" --plan --bump minor --plugin beta
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "VERSIONS_STATE=refused"
+_forged_lines
+
+e2e_new versions-forged-source
+e2e_describe "a marketplace entry whose source holds a line break and an output line"
+e2e_repo main
+_marketplace_fixture 3.10.0
+sed 's|"source": "./plugins/beta"|"source": "./plugins/beta\\nVERSIONS_STATE=planned"|' "$E2E_REPO/.claude-plugin/marketplace.json" > "$E2E_DIR/m.json" \
+  && mv "$E2E_DIR/m.json" "$E2E_REPO/.claude-plugin/marketplace.json"
+_commit_all
+e2e_run_bin "$VERSIONS" --plan --bump minor --plugin beta
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "VERSIONS_STATE=refused"
+_forged_lines
+
+e2e_new versions-forged-to
+e2e_describe "--to given a version followed by a line break"
+e2e_repo main
+_npm_fixture
+_commit_all
+e2e_run_bin "$VERSIONS" --write --to "1.3.0
+"
+e2e_expect_equal 2 "$E2E_RC" "the exit status (a usage error)"
+e2e_expect_equal "" "$(_status)" "the working tree"
+
+_flow_test_begin "a write that fails on one file leaves every file as it was (V14)"
+e2e_new versions-write-fails
+e2e_describe "the marketplace fixture with .claude-plugin read-only, so marketplace.json, written after beta's plugin.json, cannot be replaced"
+e2e_repo main
+_marketplace_fixture 3.10.0
+_commit_all
+chmod 555 "$E2E_REPO/.claude-plugin"
+if [ -w "$E2E_REPO/.claude-plugin" ]; then
+  # Root ignores the mode bits, so the write cannot be made to fail this way.
+  _flow_assert_pass "SKIP: the directory stays writable for this user (root)"
+else
+  e2e_run_bin "$VERSIONS" --write --bump minor --plugin beta
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "VERSIONS_STATE=refused"
+  e2e_expect_out "writing failed"
+  e2e_expect_no_out "WRITTEN_PATH="
+  e2e_expect_equal "" "$(_status)" "the working tree (beta's plugin.json not bumped)"
+  e2e_expect_equal "" "$(find "$E2E_REPO" -name '.flow-version.*' -not -path '*/.git/*')" "temporary files left behind"
+fi
+chmod 755 "$E2E_REPO/.claude-plugin"
+
 # --- release.md blocks -------------------------------------------------------
 # The repository gets a bare origin inside the scratch directory, so git fetch
 # and git push run for real; gh answers from fixtures.
@@ -373,6 +488,7 @@ _released_marketplace() {
   _git tag -a v4.17.0 -m "v4.17.0"
   _origin
   _repo_gh
+  e2e_gh_fixture release-v4.17.0 '{"tag_name":"v4.17.0"}'
 }
 
 _flow_test_begin "Phase 2: the current version is tagged, so this run opens a release pull request (S1, S2)"
@@ -469,11 +585,120 @@ e2e_repo main
 _git tag -a v2.4.9 -m v2.4.9
 _origin
 _repo_gh
+e2e_gh_fixture release-v2.4.9 '{"tag_name":"v2.4.9"}'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
 e2e_expect_line "VERSIONS_STATE=none"
 e2e_expect_line "RELEASE_RUN=tag"
 e2e_expect_line "TAG=v2.4.10"
 e2e_expect_line "TAG_COMMIT=$(_git rev-parse HEAD)"
+e2e_expect_clean_edges
+
+_flow_test_begin "Phase 2: a tag on origin with no GitHub release publishes that tag; a tag only in this clone stops (S8, S9)"
+e2e_new release-plan-publish
+e2e_describe "marketplace at v4.17.0, tagged and pushed, but GitHub has no release for v4.17.0"
+_released_marketplace
+e2e_gh_not_found release-v4.17.0
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "RELEASE_RUN=publish"
+e2e_expect_line "TAG=v4.17.0"
+e2e_expect_no_out "RELEASE_BRANCH="
+e2e_expect_no_out "NEW_VERSION="
+e2e_expect_clean_edges
+
+e2e_new release-plan-release-unknown
+e2e_describe "the same, but gh fails when asked for the release"
+_released_marketplace
+e2e_gh_fail release-v4.17.0
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=unavailable"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-local-tag
+e2e_describe "marketplace at 4.17.0, pushed, tagged v4.17.0 in this clone only"
+e2e_repo main
+_marketplace_fixture 3.10.0
+_commit_all
+_origin
+_git tag -a v4.17.0 -m "v4.17.0"
+_repo_gh
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "LOCAL_TAG=v4.17.0"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-no-files-publish
+e2e_describe "no version file; v2.4.9 pushed with no GitHub release"
+e2e_repo main
+_git tag -a v2.4.9 -m v2.4.9
+_origin
+_repo_gh
+e2e_gh_not_found release-v2.4.9
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
+e2e_expect_line "RELEASE_RUN=publish"
+e2e_expect_line "TAG=v2.4.9"
+e2e_expect_no_out "TAG=v2.4.10"
+e2e_expect_clean_edges
+
+e2e_new release-plan-no-files-local-tag
+e2e_describe "no version file; v2.4.9 in this clone only"
+e2e_repo main
+_origin
+_git tag -a v2.4.9 -m v2.4.9
+_repo_gh
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "LOCAL_TAG=v2.4.9"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+_flow_test_begin "Phase 2: a release branch name that is not a valid branch name stops the run (S10)"
+e2e_new release-plan-bad-pattern
+e2e_describe "conventions.branchPatterns.release set to 'release {version}', with a space"
+_released_marketplace
+mkdir -p "$E2E_REPO/.claude"
+printf '%s\n' '{"conventions":{"branchPatterns":{"release":"release {version}"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_out "not a valid branch name"
+e2e_expect_no_out "RELEASE_BRANCH="
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-bad-next-version
+e2e_describe "a version script that answers with a next version holding a slash"
+_released_marketplace
+e2e_plugin_copy bin/flow-release-versions.sh '#!/bin/sh
+case " $* " in *" --bump "*) printf "%s\n" "CURRENT_TAG_VERSION=4.17.0" "TAG_VERSION=4.18.0/x" "VERSIONS_STATE=planned" ;;
+  *) printf "%s\n" "CURRENT_TAG_VERSION=4.17.0" "VERSIONS_STATE=planned" ;; esac'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_no_out "RELEASE_BRANCH="
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-bad-current-version
+e2e_describe "a version script that answers with a current version holding a slash"
+_released_marketplace
+e2e_plugin_copy bin/flow-release-versions.sh '#!/bin/sh
+printf "%s\n" "CURRENT_TAG_VERSION=4.17.0/x" "VERSIONS_STATE=planned"'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+_flow_test_begin "Phase 2: a local release branch left by an earlier run is named, with both ways forward (P6)"
+e2e_new release-plan-local-branch
+e2e_describe "the released marketplace with a local chore/release-4.18.0 branch and no pull request or branch on origin"
+_released_marketplace
+_git branch chore/release-4.18.0
+e2e_gh_fixture prs-all-chore_release-4.18.0-main '[]'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_line "LOCAL_BRANCH=chore/release-4.18.0"
+e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 
 _flow_test_begin "Phase 2: refused off the default branch, behind origin, or with a bad argument (S7)"
@@ -564,6 +789,116 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_equal "" "$(_status)" "the working tree"
 done
 
+# An npm package released as v1.2.3 and pushed, for the release pull request
+# block run with VERSION=1.3.0.
+_released_npm() {
+  e2e_repo main
+  _npm_fixture
+  _commit_all
+  _git tag -a v1.2.3 -m v1.2.3
+  _origin
+}
+_pr_block() {
+  e2e_run_block RELEASE_BRANCH=chore/release-1.3.0 DEFAULT_BRANCH=main VERSION=1.3.0 TAG_PREFIX=v "$@" "$RELEASE_MD" RELEASE_PR_BLOCK
+}
+# _left_as_before — the state the block found: on main, no release branch,
+# package.json at 1.2.3, the changelog edit and the staged file kept.
+_left_as_before() {
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=blocked"
+  e2e_expect_out "PR_CLEANUP="
+  e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "" "$(_git branch --list chore/release-1.3.0)" "the local release branch (removed)"
+  e2e_expect_equal "fixtures" "$(_head_subject)" "HEAD's subject"
+  e2e_expect_file_has package.json '"version": "1.2.3"'
+  e2e_expect_file_has CHANGELOG.md '## 1.3.0'
+  e2e_expect_equal "$(printf ' M CHANGELOG.md\nA  staged.txt')" "$(_status)" "the working tree (changelog edit kept, staged file still staged)"
+}
+
+_flow_test_begin "Phase 4 pr: a new changelog file is committed with the bump (P4)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-new-changelog-$E2E_FENCE_SHELLS"
+  e2e_describe "npm package released as v1.2.3; CHANGELOG.md written for the first time, not yet known to git; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  printf '# Changelog\n\n## 1.3.0\n- new\n' > "$E2E_REPO/CHANGELOG.md"
+  _pr_block CHANGELOG_FILE=CHANGELOG.md
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=pushed"
+  e2e_expect_equal "CHANGELOG.md package.json" "$(_head_files)" "the files in the bump commit"
+  e2e_expect_equal "" "$(_status)" "the working tree"
+done
+
+_flow_test_begin "Phase 4 pr: a failed commit or push puts everything back as it was (P5)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-commit-fails-$E2E_FENCE_SHELLS"
+  e2e_describe "a pre-commit hook that fails; CHANGELOG.md edited; an unrelated file staged; block under $E2E_FENCE_SHELLS"
+  e2e_repo main
+  _npm_fixture
+  printf '# Changelog\n' > "$E2E_REPO/CHANGELOG.md"
+  _commit_all
+  _git tag -a v1.2.3 -m v1.2.3
+  _origin
+  printf '# Changelog\n\n## 1.3.0\n- new\n' > "$E2E_REPO/CHANGELOG.md"
+  printf 'staged\n' > "$E2E_REPO/staged.txt"
+  _git add staged.txt
+  mkdir -p "$E2E_REPO/.git/hooks"
+  printf '#!/bin/sh\nexit 1\n' > "$E2E_REPO/.git/hooks/pre-commit"
+  chmod +x "$E2E_REPO/.git/hooks/pre-commit"
+  _pr_block CHANGELOG_FILE=CHANGELOG.md
+  _left_as_before
+  e2e_expect_out "git commit failed"
+done
+
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-push-fails-$E2E_FENCE_SHELLS"
+  e2e_describe "origin unreachable when the branch is pushed; CHANGELOG.md edited; an unrelated file staged; block under $E2E_FENCE_SHELLS"
+  e2e_repo main
+  _npm_fixture
+  printf '# Changelog\n' > "$E2E_REPO/CHANGELOG.md"
+  _commit_all
+  _git tag -a v1.2.3 -m v1.2.3
+  _origin
+  printf '# Changelog\n\n## 1.3.0\n- new\n' > "$E2E_REPO/CHANGELOG.md"
+  printf 'staged\n' > "$E2E_REPO/staged.txt"
+  _git add staged.txt
+  _git remote set-url origin "$E2E_DIR/missing.git"
+  _pr_block CHANGELOG_FILE=CHANGELOG.md
+  _left_as_before
+  e2e_expect_out "git push"
+done
+
+_flow_test_begin "Phase 4 pr: a release branch left by an earlier run is named, with both ways forward (P6)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-branch-exists-$E2E_FENCE_SHELLS"
+  e2e_describe "the local branch chore/release-1.3.0 already exists; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  _git branch chore/release-1.3.0
+  _pr_block
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=blocked"
+  e2e_expect_out "git push -u origin chore/release-1.3.0"
+  e2e_expect_out "git branch -D chore/release-1.3.0"
+  e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "fixtures" "$(_git log -1 --format=%s chore/release-1.3.0)" "the existing branch (untouched)"
+  e2e_expect_equal "" "$(_status)" "the working tree"
+done
+
+_flow_test_begin "Phase 4 pr: a version file with changes of its own stops the run before anything is written (P7)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-dirty-version-file-$E2E_FENCE_SHELLS"
+  e2e_describe "package.json has an uncommitted change of its own; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  sed 's/"test": "true"/"test": "make test"/' "$E2E_REPO/package.json" > "$E2E_DIR/p.json" && mv "$E2E_DIR/p.json" "$E2E_REPO/package.json"
+  _pr_block
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=blocked"
+  e2e_expect_out "package.json"
+  e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "" "$(_git branch --list chore/release-1.3.0)" "the release branch (never created)"
+  e2e_expect_file_has package.json '"test": "make test"'
+  e2e_expect_file_has package.json '"version": "1.2.3"'
+done
+
 _flow_test_begin "Phase 4 tag: an annotated tag on the merge commit, not pushed by the block (T1, T2)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_new "release-tag-$E2E_FENCE_SHELLS"
@@ -602,6 +937,51 @@ e2e_expect_equal 1 "$E2E_RC" "the exit status"
 e2e_expect_line "TAG_STATE=blocked"
 e2e_expect_out "already exists"
 
+# The whole tag fence: the block, the push and the release, as one call.
+_flow_test_begin "Phase 4 tag fence: tag, push and release; a failed push or release names the way forward (T3, T4)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-tag-fence-$E2E_FENCE_SHELLS"
+  e2e_describe "a released marketplace; tag its head as v4.18.0 and publish; block under $E2E_FENCE_SHELLS"
+  _released_marketplace
+  e2e_gh_fixture release-create-v4.18.0 'https://github.com/octo/market/releases/tag/v4.18.0'
+  e2e_run_fence TAG=v4.18.0 TAG_COMMIT="$(_git rev-parse HEAD)" DEFAULT_BRANCH=main CHANGELOG=notes "$RELEASE_MD" RELEASE_TAG_BLOCK_BEGIN
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "TAG_STATE=created"
+  e2e_expect_line "https://github.com/octo/market/releases/tag/v4.18.0"
+  e2e_expect_equal "$(_git rev-parse v4.18.0)" "$(_git ls-remote origin refs/tags/v4.18.0 | cut -f1)" "the tag on origin"
+  e2e_expect_clean_edges
+
+  e2e_new "release-tag-fence-push-fails-$E2E_FENCE_SHELLS"
+  e2e_describe "the same, with origin unreachable when the tag is pushed; block under $E2E_FENCE_SHELLS"
+  _released_marketplace
+  _git remote set-url origin "$E2E_DIR/missing.git"
+  e2e_run_fence TAG=v4.18.0 TAG_COMMIT="$(_git rev-parse HEAD)" DEFAULT_BRANCH=main CHANGELOG=notes "$RELEASE_MD" RELEASE_TAG_BLOCK_BEGIN
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_out "git push origin v4.18.0"
+  e2e_expect_out "git tag -d v4.18.0"
+  e2e_expect_clean_edges
+
+  e2e_new "release-tag-fence-release-fails-$E2E_FENCE_SHELLS"
+  e2e_describe "the same, with gh failing to create the release after the push; block under $E2E_FENCE_SHELLS"
+  _released_marketplace
+  e2e_gh_fail release-create-v4.18.0
+  e2e_run_fence TAG=v4.18.0 TAG_COMMIT="$(_git rev-parse HEAD)" DEFAULT_BRANCH=main CHANGELOG=notes "$RELEASE_MD" RELEASE_TAG_BLOCK_BEGIN
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_out "run /flow:release again"
+  e2e_expect_equal "$(_git rev-parse v4.18.0)" "$(_git ls-remote origin refs/tags/v4.18.0 | cut -f1)" "the tag on origin"
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
+
+_flow_test_begin "Phase 4 publish fence: the release is created for the tag already on origin"
+e2e_new release-publish-fence
+e2e_describe "v4.17.0 on origin with no release; the publish fence with TAG=v4.17.0"
+_released_marketplace
+e2e_gh_fixture release-create-v4.17.0 'https://github.com/octo/market/releases/tag/v4.17.0'
+e2e_run_fence TAG=v4.17.0 CHANGELOG=notes "$RELEASE_MD" 'set TAG from Phase 2'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "https://github.com/octo/market/releases/tag/v4.17.0"
+e2e_expect_clean_edges
+
 # The Phase 1 context fence. The gh stub keys `gh pr list --state merged` on
 # its --head and --base values; this call passes neither, so the stub names
 # its fixture merged-prs-pr-pr.
@@ -618,6 +998,18 @@ e2e_expect_line "MERGED_PR_COUNT=1"
 e2e_expect_line 'MERGED_PR=number=7 labels="enhancement" title="feat: add a"'
 e2e_expect_out "COMMIT="
 e2e_expect_out "feat: add a"
+e2e_expect_clean_edges
+
+e2e_new release-context-title-lines
+e2e_describe "a merged PR whose title holds a double quote and a line break followed by MERGED_PR_COUNT=99 (C1)"
+e2e_repo main
+( _e2e_git_env; cd "$E2E_REPO" && git tag v1.0.0 && printf 'x\n' > a.txt && git add a.txt && git commit -q -m 'feat: add a' )
+e2e_gh_fixture merged-prs-pr-pr '[{"number":7,"title":"feat: say \"hi\"\nMERGED_PR_COUNT=99\nx","labels":[{"name":"x\ny"}]}]'
+e2e_run_fence "$RELEASE_MD" '### Merged PRs Since Last Release'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "MERGED_PR_COUNT=1"
+e2e_expect_no_line "MERGED_PR_COUNT=99"
+e2e_expect_line 'MERGED_PR=number=7 labels="x\ny" title="feat: say \"hi\"\nMERGED_PR_COUNT=99\nx"'
 e2e_expect_clean_edges
 
 e2e_new release-context-gh-down

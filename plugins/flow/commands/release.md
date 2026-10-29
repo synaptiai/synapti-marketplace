@@ -61,7 +61,9 @@ else
   if [ "$MERGED_COUNT" = "0" ]; then
     printf '%s\n' "STATE=empty"
   else
-    printf '%s\n' "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\"\([.labels[].name] | join(","))\" title=\"\(.title)\""' 2>/dev/null
+    # Titles and labels are JSON-quoted (@json), so a quote or a line break
+    # in one stays inside its value and cannot print a line of its own.
+    printf '%s\n' "$MERGED_JSON" | jq -r '.[] | "MERGED_PR=number=\(.number) labels=\([.labels[].name] | join(",") | @json) title=\(.title | @json)"' 2>/dev/null
   fi
 fi
 
@@ -118,10 +120,13 @@ The first word of `$ARGUMENTS` is the bump type. In a plugin marketplace, the se
 
 The block below works out which run this is, from the state of the repository and its pull requests. It never writes:
 
-- `RELEASE_RUN=pr` — the current version is tagged, so this run plans the next one: it bumps the version files on a release branch and opens the release pull request.
+- `RELEASE_RUN=pr` — the current version is released (its tag is on origin and GitHub has a release for it), so this run plans the next one: it bumps the version files on a release branch and opens the release pull request.
 - `RELEASE_RUN=waiting` — the release pull request for the next version is open. Nothing to do until it is merged; show `RELEASE_PR` and stop.
 - `RELEASE_RUN=tag` — the default branch carries a version that has no tag, and its release pull request is merged: this run tags that merge commit (`TAG_COMMIT`) and publishes the GitHub release. With no version file at all, it tags the default branch's head with the last tag's version bumped.
 - `RELEASE_RUN=untagged` — the default branch carries a version that has no tag and no merged release pull request (a version bumped by hand, or a first release).
+- `RELEASE_RUN=publish` — the current version's tag (`TAG`) is on origin but GitHub has no release for it, as when an earlier run pushed the tag and the release was not created. This run creates only the GitHub release.
+
+The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
 
 The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`).
 
@@ -188,6 +193,52 @@ else
   CUR_STATE=$(printf '%s\n' "$CUR_OUT" | sed -n 's/^VERSIONS_STATE=//p')
   CUR_TAG_VERSION=$(printf '%s\n' "$CUR_OUT" | sed -n 's/^CURRENT_TAG_VERSION=//p')
   ORIGIN_HEAD=$(git rev-parse "refs/remotes/origin/$DEFAULT_BRANCH")
+  # _flow_tag_state: where the tag CHECK_TAG is. TAG_WHERE is remote (on
+  # origin), local (in this clone only), absent, or error (origin did not
+  # answer); with remote, GH_RELEASE is yes, no (GitHub answers 404) or error.
+  # A tag in this clone alone does not make a release: a tag push that failed
+  # leaves one, and so does a GitHub release that was never created.
+  _flow_tag_state() {
+    TAG_WHERE=absent
+    GH_RELEASE=""
+    git ls-remote --exit-code --tags origin "refs/tags/$CHECK_TAG" >/dev/null 2>&1
+    _ls_rc=$?
+    if [ "$_ls_rc" -eq 0 ]; then
+      TAG_WHERE=remote
+      if _gh_err=$(gh api "repos/{owner}/{repo}/releases/tags/$CHECK_TAG" --jq .tag_name 2>&1 >/dev/null); then
+        GH_RELEASE=yes
+      else
+        case "$_gh_err" in *"(HTTP 404)"*) GH_RELEASE=no ;; *) GH_RELEASE=error ;; esac
+      fi
+    elif [ "$_ls_rc" -ne 2 ]; then
+      TAG_WHERE=error
+    elif git rev-parse -q --verify "refs/tags/$CHECK_TAG" >/dev/null; then
+      TAG_WHERE=local
+    fi
+  }
+  # _flow_tag_done: when CHECK_TAG is not a published release and that decides
+  # this run, print the state and set TAG_DONE=1: publish the tag that is on
+  # origin, or stop.
+  _flow_tag_done() {
+    TAG_DONE=1
+    if [ "$TAG_WHERE" = error ]; then
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "ERROR=\"git could not list the tags on origin\""
+    elif [ "$TAG_WHERE" = local ]; then
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "LOCAL_TAG=$CHECK_TAG"
+      printf '%s\n' "ERROR=\"the tag $CHECK_TAG is in this clone but not on origin; push it to publish it, or delete it, then run /flow:release again\""
+    elif [ "$GH_RELEASE" = error ]; then
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "ERROR=\"gh could not say whether GitHub has a release for $CHECK_TAG\""
+    elif [ "$GH_RELEASE" = no ]; then
+      printf '%s\n' "RELEASE_RUN=publish"
+      printf '%s\n' "TAG=$CHECK_TAG"
+    else
+      TAG_DONE=0
+    fi
+  }
+  TAG_DONE=0
   UNTAGGED=0
   if [ "$CUR_STATE" = "mismatch" ] || [ "$CUR_STATE" = "refused" ]; then
     printf '%s\n' "$CUR_OUT"
@@ -197,6 +248,11 @@ else
     # No version file: a tag-only release of the head of the default branch.
     printf '%s\n' "$CUR_OUT"
     LAST=$(git describe --tags --abbrev=0 "$ORIGIN_HEAD" 2>/dev/null)
+    if [ -n "$LAST" ]; then
+      CHECK_TAG="$LAST"
+      _flow_tag_state
+      _flow_tag_done
+    fi
     LAST_V=${LAST#"$TAG_PREFIX"}
     case "$LAST_V" in
       '') NEXT_V="1.0.0" ;;
@@ -210,7 +266,9 @@ else
         esac ;;
       *) NEXT_V="" ;;
     esac
-    if [ -z "$NEXT_V" ]; then
+    if [ "$TAG_DONE" = 1 ]; then
+      :
+    elif [ -z "$NEXT_V" ]; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"the last tag $LAST is not $TAG_PREFIX + MAJOR.MINOR.PATCH\""
     else
@@ -219,7 +277,9 @@ else
       printf '%s\n' "TAG_COMMIT=$ORIGIN_HEAD"
     fi
   else
-    if git rev-parse -q --verify "refs/tags/$TAG_PREFIX$CUR_TAG_VERSION" >/dev/null; then
+    CHECK_TAG="$TAG_PREFIX$CUR_TAG_VERSION"
+    _flow_tag_state
+    if [ "$TAG_WHERE" = remote ] && [ "$GH_RELEASE" = yes ]; then
       # The current version is released: plan the next one.
       if [ -n "$RELEASE_PLUGIN" ] && [ -n "$MARKET_TYPE" ]; then
         PLAN_OUT=$("$VERSIONS" --plan --bump "$RELEASE_TYPE" --plugin "$RELEASE_PLUGIN" --market-bump "$MARKET_TYPE")
@@ -234,15 +294,27 @@ else
       [ "$PLAN_RC" -eq 0 ] || LOOKUP_VERSION=""
     else
       printf '%s\n' "$CUR_OUT"
-      PLAN_RC=0
+      _flow_tag_done
       LOOKUP_VERSION="$CUR_TAG_VERSION"
       UNTAGGED=1
     fi
-    if [ -z "$LOOKUP_VERSION" ]; then
+    # The script prints only semantic versions; this keeps any other value
+    # out of the tag and branch names below.
+    case "$LOOKUP_VERSION" in
+      *[!0-9A-Za-z.+-]*) LOOKUP_VERSION="" ;;
+    esac
+    # The branch pattern comes from settings; {version} is replaced by
+    # parameter expansion, which reads nothing in the version as syntax.
+    RELEASE_BRANCH=${BRANCH_PATTERN//\{version\}/$LOOKUP_VERSION}
+    if [ "$TAG_DONE" = 1 ]; then
+      :
+    elif [ -z "$LOOKUP_VERSION" ]; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"the next version cannot be worked out; see REFUSED\""
+    elif ! git check-ref-format --branch "$RELEASE_BRANCH" >/dev/null 2>&1; then
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "ERROR=\"conventions.branchPatterns.release, with {version} replaced, is not a valid branch name\""
     else
-      RELEASE_BRANCH=$(printf '%s\n' "$BRANCH_PATTERN" | sed "s/{version}/$LOOKUP_VERSION/g")
       printf '%s\n' "TAG=$TAG_PREFIX$LOOKUP_VERSION"
       printf '%s\n' "RELEASE_BRANCH=$RELEASE_BRANCH"
       if ! PR_LINE=$(gh pr list --state all --head "$RELEASE_BRANCH" --base "$DEFAULT_BRANCH" \
@@ -271,6 +343,10 @@ else
         elif git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" >/dev/null 2>&1; then
           printf '%s\n' "STATE=blocked"
           printf '%s\n' "ERROR=\"origin already has $RELEASE_BRANCH with no open pull request; open one for it or delete the branch\""
+        elif git rev-parse -q --verify "refs/heads/$RELEASE_BRANCH" >/dev/null; then
+          printf '%s\n' "STATE=blocked"
+          printf '%s\n' "LOCAL_BRANCH=$RELEASE_BRANCH"
+          printf '%s\n' "ERROR=\"the local branch $RELEASE_BRANCH is left from an earlier run; push it and open its pull request, or delete it, then run /flow:release again\""
         else
           printf '%s\n' "RELEASE_RUN=pr"
         fi
@@ -318,7 +394,7 @@ Show the assessment as text — this is not a question:
 ```markdown
 ## Release Preview
 
-**Run**: {release pull request | tag and publish}
+**Run**: {release pull request | tag and publish | publish the existing tag}
 **Version**: {tag}  {plugin and its version, in a marketplace}
 **Previous**: {last_tag}
 **PRs included**: {N}
@@ -333,6 +409,8 @@ Show the assessment as text — this is not a question:
 ### `RELEASE_RUN=pr`: open the release pull request
 
 Run the block below with `RELEASE_BRANCH`, `DEFAULT_BRANCH` and `TAG_PREFIX` from Phase 2, `VERSION` set to `NEW_VERSION`, `PLUGIN` to the plugin name and `MARKET_VERSION` to `NEW_MARKETPLACE_VERSION` (both empty outside a marketplace), `CHANGELOG_FILE` to the changelog file you edited (empty when none), and `CHANGELOG` to the generated changelog. It creates the release branch from the default branch, writes the bump, commits only the bumped files and the changelog file, pushes the branch and opens the pull request. Nothing is pushed to the default branch.
+
+It stops before creating anything when the release branch already exists in this clone (`PR_ERROR` names both ways forward) or when a version file it would bump has uncommitted changes of its own. When the bump, the commit or the push fails, it puts the repository back as it found it: the version files restored, the default branch checked out, the release branch deleted, and the changelog edit and anything staged before kept. `PR_CLEANUP` says what it did, or what it could not undo.
 
 The pull request title (also the commit subject) is `chore(release): <plugin> <version>, marketplace <marketplace version>` in a marketplace and `chore(release): <tag>` otherwise.
 
@@ -356,6 +434,64 @@ if [ ! -x "$VERSIONS" ]; then
   printf '%s\n' "PR_ERROR=\"flow-release-versions.sh missing or non-executable at $VERSIONS\""
   exit 1
 fi
+if git rev-parse -q --verify "refs/heads/$RELEASE_BRANCH" >/dev/null; then
+  printf '%s\n' "PR_STATE=blocked"
+  printf '%s\n' "PR_ERROR=\"the local branch $RELEASE_BRANCH is left from an earlier run; push it and open its pull request (git push -u origin $RELEASE_BRANCH, then gh pr create --base $DEFAULT_BRANCH --head $RELEASE_BRANCH), or delete it (git branch -D $RELEASE_BRANCH), then run /flow:release again\""
+  exit 1
+fi
+# The files the bump writes, from a plan with the same arguments. None may
+# hold a change of its own: the bump commit would carry it, and a failure
+# below restores these files from the last commit.
+if [ -n "${PLUGIN:-}" ] && [ -n "${MARKET_VERSION:-}" ]; then
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN" --market-to "$MARKET_VERSION")
+elif [ -n "${PLUGIN:-}" ]; then
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN")
+else
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION")
+fi
+# The script names only paths without spaces or quotes, one per line.
+VERSION_PATHS=$(printf '%s\n' "$PLAN_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
+DIRTY=""
+while IFS= read -r _p; do
+  [ -n "$_p" ] || continue
+  [ -z "$(git status --porcelain -- "$_p")" ] || DIRTY="$DIRTY $_p"
+done <<EOF
+$VERSION_PATHS
+EOF
+if [ -n "$DIRTY" ]; then
+  printf '%s\n' "PR_STATE=blocked"
+  printf '%s\n' "PR_ERROR=\"these version files have uncommitted changes of their own:$DIRTY; commit or stash them, then run /flow:release again\""
+  exit 1
+fi
+# _flow_undo: put the repository back as this block found it, and print
+# PR_CLEANUP with what it did or could not do. The version files go back to
+# the last commit (they were clean before the bump); the changelog edit and
+# anything staged before this block stay as they were.
+COMMITTED=0
+_flow_undo() {
+  _left=""
+  if [ "$COMMITTED" = 1 ] && ! git reset -q --soft HEAD~1; then
+    _left="$_left; the bump commit is still on $RELEASE_BRANCH"
+  fi
+  while IFS= read -r _p; do
+    [ -n "$_p" ] || continue
+    git reset -q -- "$_p" >/dev/null 2>&1
+    git checkout -q -- "$_p" || _left="$_left; $_p still holds the new version"
+  done <<EOF
+$VERSION_PATHS
+EOF
+  [ -z "${CHANGELOG_FILE:-}" ] || git reset -q -- "$CHANGELOG_FILE" >/dev/null 2>&1
+  if git switch -q "$DEFAULT_BRANCH"; then
+    git branch -q -D "$RELEASE_BRANCH" || _left="$_left; the local branch $RELEASE_BRANCH is still there (git branch -D $RELEASE_BRANCH)"
+  else
+    _left="$_left; still on $RELEASE_BRANCH (git switch $DEFAULT_BRANCH, then git branch -D $RELEASE_BRANCH)"
+  fi
+  if [ -z "$_left" ]; then
+    printf '%s\n' "PR_CLEANUP=\"the version files are restored, $DEFAULT_BRANCH is checked out and the local $RELEASE_BRANCH is deleted; the changelog edit and anything staged before are kept\""
+  else
+    printf '%s\n' "PR_CLEANUP=\"cleanup incomplete$_left\""
+  fi
+}
 if ! git switch -q -c "$RELEASE_BRANCH"; then
   printf '%s\n' "PR_STATE=blocked"
   printf '%s\n' "PR_ERROR=\"cannot create the branch $RELEASE_BRANCH\""
@@ -369,32 +505,46 @@ else
   BUMP_OUT=$("$VERSIONS" --write --to "$VERSION"); BUMP_RC=$?
 fi
 printf '%s\n' "$BUMP_OUT"
-# The script names only paths without spaces or quotes, one per line.
-BUMP_FILES=$(printf '%s\n' "$BUMP_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
-if [ -n "${CHANGELOG_FILE:-}" ]; then
-  if git diff --quiet -- "$CHANGELOG_FILE" 2>/dev/null && ! git ls-files --others --exclude-standard -- "$CHANGELOG_FILE" | grep -q .; then
-    printf '%s\n' "PR_WARN=\"$CHANGELOG_FILE has no change; the release pull request carries no changelog entry\""
-  else
-    BUMP_FILES=$(printf '%s\n%s\n' "$BUMP_FILES" "$CHANGELOG_FILE")
-  fi
-fi
 if [ "$BUMP_RC" -ne 0 ] || ! printf '%s\n' "$BUMP_OUT" | grep -qx 'VERSIONS_STATE=written'; then
-  # The script writes nothing unless every file can be written, so there is
-  # nothing to undo but the branch.
-  git switch -q "$DEFAULT_BRANCH" && git branch -q -d "$RELEASE_BRANCH"
+  # The script writes every file or none, and names any it could not put
+  # back on a WRITTEN_PATH line; the undo restores them all either way.
+  _flow_undo
   printf '%s\n' "PR_STATE=blocked"
   printf '%s\n' "PR_ERROR=\"the version files were not bumped; see VERSIONS_STATE\""
   exit 1
 fi
-# Paths given to git commit commit those files alone, whatever else is staged.
-if ! printf '%s\n' "$BUMP_FILES" | sed '/^$/d' | xargs git commit -q -m "$PR_TITLE" --; then
+COMMIT_FILES=$(printf '%s\n' "$BUMP_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
+if [ -n "${CHANGELOG_FILE:-}" ]; then
+  if git diff --quiet -- "$CHANGELOG_FILE" 2>/dev/null && ! git ls-files --others --exclude-standard -- "$CHANGELOG_FILE" | grep -q .; then
+    printf '%s\n' "PR_WARN=\"$CHANGELOG_FILE has no change; the release pull request carries no changelog entry\""
+  else
+    COMMIT_FILES=$(printf '%s\n%s\n' "$COMMIT_FILES" "$CHANGELOG_FILE")
+  fi
+fi
+# git add first: git commit's paths match only files git already knows, so a
+# changelog file written for the first time would fail the commit. Paths
+# given to git commit commit those files alone, whatever else is staged.
+set --
+ADD_OK=1
+while IFS= read -r _p; do
+  [ -n "$_p" ] || continue
+  git add -- "$_p" || ADD_OK=0
+  set -- "$@" "$_p"
+done <<EOF
+$COMMIT_FILES
+EOF
+if [ "$ADD_OK" = 1 ] && git commit -q -m "$PR_TITLE" -- "$@"; then
+  COMMITTED=1
+else
+  _flow_undo
   printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"git commit failed on $RELEASE_BRANCH\""
+  printf '%s\n' "PR_ERROR=\"git add or git commit failed on $RELEASE_BRANCH, so nothing was committed; see the git output above\""
   exit 1
 fi
 if ! git push -q -u origin "$RELEASE_BRANCH"; then
+  _flow_undo
   printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"git push of $RELEASE_BRANCH failed; the commit is on the local branch\""
+  printf '%s\n' "PR_ERROR=\"git push of $RELEASE_BRANCH failed, so the bump commit was undone; check that origin is reachable, then run /flow:release again\""
   exit 1
 fi
 printf '%s\n' "PR_STATE=pushed"
@@ -409,7 +559,7 @@ Show the pull request's URL. The release continues when it is merged: run `/flow
 
 The release title names the tag and, in a marketplace, the plugin and its version with a one-line summary: `v4.17.0 — flow 3.10.0: <summary>`. Outside a marketplace it is the tag.
 
-Run the block below with `TAG`, `TAG_COMMIT` and `DEFAULT_BRANCH` from Phase 2, `TITLE` set to the release title, and `CHANGELOG` to the generated changelog. It creates an annotated tag on `TAG_COMMIT`, then pushes it and creates the GitHub release from it. flow's tier hook treats the tag push as a release and asks for your confirmation before it runs; if you decline, the tag exists only in your clone (`git tag -d <tag>` removes it).
+Run the block below with `TAG`, `TAG_COMMIT` and `DEFAULT_BRANCH` from Phase 2, `TITLE` set to the release title, and `CHANGELOG` to the generated changelog. It creates an annotated tag on `TAG_COMMIT`, then pushes it and creates the GitHub release from it. The whole block is one call, and flow's tier hook, which treats the tag push as a release, asks for your confirmation before any of it runs; if you decline, nothing runs and no tag is created. If the push fails after the tag is created, the tag is in your clone only, and `TAG_ERROR` says how to push or delete it. If the release is not created after the push, run `/flow:release` again: it finds the tag on origin and creates only the release.
 
 ```bash
 # RELEASE_TAG_BLOCK_BEGIN
@@ -437,11 +587,27 @@ if ! git tag -a "$TAG" -m "$TITLE" "$TAG_COMMIT"; then
 fi
 printf '%s\n' "TAG_STATE=created"
 # RELEASE_TAG_BLOCK_END
-git push origin "$TAG" &&
-  gh release create "$TAG" --verify-tag --title "$TITLE" --notes "$CHANGELOG"
+if ! git push origin "$TAG"; then
+  printf '%s\n' "TAG_ERROR=\"git push of $TAG failed; the tag is in this clone only: push it (git push origin $TAG) or delete it (git tag -d $TAG)\""
+  exit 1
+fi
+gh release create "$TAG" --verify-tag --title "$TITLE" --notes "$CHANGELOG" \
+  || { printf '%s\n' "TAG_ERROR=\"$TAG is on origin but the GitHub release was not created; run /flow:release again to create it\""; exit 1; }
 ```
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes. First run: `preflight` (`RELEASE_RUN=pr`), `bump` (version files bumped and committed on the release branch, changelog written), `release_pr` (branch pushed, pull request opened). Second run: `preflight` (`RELEASE_RUN=tag`), `tag` (annotated tag created, pushed after the tier prompt, GitHub release created). Each write advances `state.current_phase` in that order.
+### `RELEASE_RUN=publish`: create the release for a tag already on origin
+
+The tag is already on origin, so nothing is tagged or pushed. Generate the changelog from the pull requests merged between the tag before `TAG` and `TAG` (Phase 1 counted from `TAG` itself, so its list is empty), set `TITLE` as for `RELEASE_RUN=tag`, and run the block below. flow's tier hook finds the tag on origin and writes a line to flow's auto-log trail instead of asking: the tag push it confirms has already happened.
+
+```bash
+if [ -z "${TAG:-}" ]; then
+  printf '%s\n' "TAG_ERROR=\"set TAG from Phase 2\""
+  exit 1
+fi
+gh release create "$TAG" --verify-tag --title "${TITLE:-$TAG}" --notes "$CHANGELOG"
+```
+
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes. First run: `preflight` (`RELEASE_RUN=pr`), `bump` (version files bumped and committed on the release branch, changelog written), `release_pr` (branch pushed, pull request opened). Second run: `preflight` (`RELEASE_RUN=tag`), `tag` (annotated tag created, pushed after the tier prompt, GitHub release created). A run with `RELEASE_RUN=publish` records `preflight` and `tag` (GitHub release created for the tag already on origin). Each write advances `state.current_phase` in that order.
 
 ## Phase 5: Post-Release
 
@@ -460,7 +626,7 @@ Display the pull request or release URL and a summary that lists every version f
 
 | Action | Tier | Behavior |
 |---|---|---|
-| Read git history / merged PRs / release pull requests / current version | 1 | Autonomous, read-only |
+| Read git history / merged PRs / release pull requests / current version / tags on origin / GitHub releases | 1 | Autonomous, read-only |
 | Calculate next version, plan the version-file bump | 1 | Autonomous, read-only |
 | Generate changelog from PR titles | 1 | Autonomous |
 | Create the release branch, write the bump and changelog, commit | 1 | Autonomous, local |
@@ -468,7 +634,7 @@ Display the pull request or release URL and a summary that lists every version f
 | `gh pr create` (the release pull request) | 2 | Per `flow.tiers.prCreate` |
 | `git tag -a <tag> <merge commit>` | 1 | Autonomous, local |
 | `git push origin <tag>` | 3 | **Confirm** — the tier hook asks before it runs |
-| `gh release create <tag> --verify-tag` | 3 | **Confirm** — the tier hook asks before it runs |
+| `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push in the same call; with the tag already on origin (`RELEASE_RUN=publish`), the tier hook journals it, since the tag push it confirms has already happened |
 | Post-release verification (`gh release view`) | 1 | Autonomous |
 
-`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push and the GitHub release need your confirmation at flow's tier hook, whatever `flow.tiers.release` says. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.
+`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push, with the GitHub release created in the same call, needs your confirmation at flow's tier hook, whatever `flow.tiers.release` says. Creating the release for a tag already on origin is not asked again. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.

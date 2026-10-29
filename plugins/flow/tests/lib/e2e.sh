@@ -179,6 +179,10 @@ case "$args" in
     h=${args#*--head }; h=${h%% *}; b=${args#*--base }; b=${b%% *}
     f=prs-all-$(printf '%s' "$h" | tr / _)-$(printf '%s' "$b" | tr / _) ;;
   "api repos/"*"/compare/"*) f=compare-${args#*/compare/} ;;
+  # /flow:release asks whether a tag has a GitHub release: release-<tag>.
+  "api repos/"*"/releases/tags/"*) f=release-${args##*/releases/tags/} ;;
+  # and creates one: release-create-<tag>, the release's JSON.
+  "release create "*) n=${args#release create }; f=release-create-${n%% *} ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
 # An answer written by e2e_gh_http: GitHub's error body on stdout and gh's
