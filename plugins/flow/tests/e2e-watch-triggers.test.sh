@@ -31,6 +31,11 @@
 #   W11 the branch watch is created on the default branch itself, where it has
 #      nothing to merge in
 #   W12 a template stops validating once its placeholders are filled
+#   W13 a template's target.command is /flow:run itself, which /flow:run step 6
+#      would dispatch again and again; the loop prompt must call /flow:run and
+#      the target must be the work
+#   W14 the issue loop's snapshot folder .flow/watch/ is not ignored, so the
+#      working tree turns dirty on the first iteration
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -121,6 +126,29 @@ for name in issue-watch branch-watch; do
   e2e_expect_equal "" "$(grep -nE '[$][{][A-Z][A-Z_]*[}]' "$E2E_REPO/t/$name.yaml")" "placeholders left in $name"
 done
 
+_flow_test_begin "no shipped template's target.command runs /flow:run (W13)"
+e2e_new template-targets
+e2e_describe "target.command of every triggers/templates/*.trigger.yaml"
+e2e_repo main
+TARGETS=$(python3 -c '
+import glob, os, sys, yaml
+for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.trigger.yaml"))):
+    d = yaml.safe_load(open(p, encoding="utf-8"))
+    print("%s %s" % (os.path.basename(p), d["target"]["command"]))' "$TPL_DIR")
+e2e_expect_equal 5 "$(printf '%s\n' "$TARGETS" | grep -c .)" "templates read"
+e2e_expect_equal "" "$(printf '%s\n' "$TARGETS" | grep "^[^ ]* /flow:run" )" "templates whose target runs /flow:run"
+e2e_expect_equal "pr-watch.trigger.yaml /flow:address \${PR}" "$(printf '%s\n' "$TARGETS" | grep '^pr-watch')" "pr-watch's target"
+e2e_expect_equal "issue-watch.trigger.yaml /flow:status" "$(printf '%s\n' "$TARGETS" | grep '^issue-watch')" "issue-watch's target"
+e2e_expect_equal "branch-watch.trigger.yaml /flow:resolve \${BRANCH}" "$(printf '%s\n' "$TARGETS" | grep '^branch-watch')" "branch-watch's target"
+
+_flow_test_begin ".flow/watch/ is ignored by /flow:setup's ignore lines and by this repository (W14)"
+e2e_new setup-ignores-watch
+e2e_describe "the /flow:setup .gitignore block run in a repository with no .gitignore"
+e2e_repo main
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/setup.md" 'for IGNORE in'
+e2e_expect_file_has .gitignore ".flow/watch/"
+e2e_expect_equal ".flow/watch/" "$(grep -x '.flow/watch/' "$REPO_ROOT/.gitignore")" "the repository's own .gitignore line"
+
 _flow_test_begin "/flow:watch pre-flight: no setting means triggers are on (W9)"
 e2e_new watch-preflight-default
 e2e_describe "no flow settings at all, and a plugin settings.json without the key, so the command's own fallback decides"
@@ -164,6 +192,9 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
     e2e_expect_equal "yes no" "$(_has_word "$forb" "$a") $(_has_word "$allow" "$a")" "$a forbidden and not allowed"
   done
   e2e_expect_equal "issue_state == closed" "$(_stops .flow/triggers/issue-42-watch.trigger.yaml)" "the stop condition"
+  e2e_expect_file_has .flow/watch/.gitignore "*"
+  e2e_expect_equal "" "$( _e2e_git_env; cd "$E2E_REPO" && printf '{}\n' > .flow/watch/issue-42.json && git status --porcelain -- .flow/watch)" "untracked files under .flow/watch"
+  e2e_expect_file_has .claude/flow-loop-issue-42-watch.md "/flow:run trigger issue-42-watch"
   e2e_expect_file_has .claude/flow-loop-issue-42-watch.md "issue #42"
   e2e_expect_file_has .claude/flow-loop-issue-42-watch.md "/flow:start 42"
   e2e_expect_file_has .claude/flow-loop-issue-42-watch.md "Stop when the issue is closed"
@@ -237,6 +268,8 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_file_has .claude/flow-loop-branch-feature-issue-7-it-s-x-watch.md "Feature/Issue-7_it's-x"
   e2e_expect_file_has .claude/flow-loop-branch-feature-issue-7-it-s-x-watch.md 'git merge --no-edit "origin/main"' 
   e2e_expect_file_has .claude/flow-loop-branch-feature-issue-7-it-s-x-watch.md "Never rebase"
+  e2e_expect_file_has .claude/flow-loop-branch-feature-issue-7-it-s-x-watch.md "/flow:run trigger branch-feature-issue-7-it-s-x-watch"
+  e2e_expect_equal "/flow:resolve Feature/Issue-7_it's-x" "$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["target"]["command"])' "$E2E_REPO/.flow/triggers/branch-feature-issue-7-it-s-x-watch.trigger.yaml")" "the generated target"
   e2e_expect_file_has .claude/flow-loop-branch-feature-issue-7-it-s-x-watch.md "Stop when the branch is merged or deleted"
   e2e_expect_equal "" "$(grep -nE '[$][{][A-Z][A-Z_]*[}]' "$E2E_REPO/.claude/flow-loop-branch-feature-issue-7-it-s-x-watch.md")" "placeholders left in the loop prompt"
   e2e_expect_clean_edges

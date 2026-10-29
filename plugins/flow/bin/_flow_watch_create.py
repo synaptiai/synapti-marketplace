@@ -21,7 +21,9 @@ Output, one KEY=value per line:
   WATCH_STATE=refused   REFUSED="<reason>"; nothing written (exit 1)
 Exit 2 is a usage error, 3 a check that could not run (PyYAML missing).
 Neither file is written through a symbolic link: .flow, .flow/triggers,
-.claude and the files themselves are refused when they are links.
+.claude and the files themselves are refused when they are links. For an
+issue watch it also creates .flow/watch/ with a .gitignore of `*`, where the
+loop keeps each iteration's snapshot.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -208,6 +210,15 @@ def main(argv):
             out("exists", TRIGGER_ID=tid, TRIGGER_FILE=tfile,
                 REFUSED="%s already exists; disable or delete it with /flow:trigger first" % tfile)
             return 1
+        if kind == "issue":
+            # The issue loop keeps each iteration's snapshot in .flow/watch/,
+            # which ignores itself, as the journal's auto-log folder does: a
+            # repository that never ran /flow:setup has no ignore line for it.
+            no_link(".flow/watch/.gitignore")
+            if not os.path.isdir(".flow/watch"):
+                os.mkdir(".flow/watch")
+            if not os.path.lexists(".flow/watch/.gitignore"):
+                write_new(".flow/watch/.gitignore", "*\n")
         if not os.path.isdir(".claude"):
             os.mkdir(".claude")
         if os.path.lexists(lfile):
