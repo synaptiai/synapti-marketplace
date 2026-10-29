@@ -369,6 +369,30 @@ if _want skill-timeout; then
   _edges skill called
 fi
 
+if _want skill-cli-exit; then
+  _flow_test_begin "goal-evaluator skill: a CLI that exits non-zero is unavailable even when it printed a verdict (P10)"
+  _setup skill-cli-exit "the CLI prints a not_achieved verdict and exits 1"
+  _goal
+  _evidence
+  _skill FLOW_TEST_CLAUDE_EXIT=1
+  e2e_expect_line "JUDGE_STATE=unavailable"
+  e2e_expect_line "JUDGE_ERROR=the judge gave no verdict (exit 1; 124 is its time limit)"
+  e2e_expect_no_out "JUDGE_VERDICT="
+  _edges skill called
+fi
+
+if _want skill-bad-verdict; then
+  _flow_test_begin "goal-evaluator skill: a reply whose verdict is outside the schema is unavailable (P4)"
+  _setup skill-bad-verdict "the judge replies verdict: done"
+  printf '%s\n' '{"structured_output":{"verdict":"done","confidence":1,"delta":"made_progress","next_step_hint":"","reason":"r"}}' > "$E2E_DIR/judge-reply.json"
+  _goal
+  _evidence
+  _skill
+  e2e_expect_line "JUDGE_STATE=unavailable"
+  e2e_expect_no_out "JUDGE_VERDICT="
+  _edges skill called
+fi
+
 if _want hook-timeout; then
   _flow_test_begin "Stop hook: a judge that runs past its time limit is stopped, and no verdict is recorded (P10)"
   _setup hook-timeout "the judge waits 5 s before replying; timeout(1) stops it after 1 s with status 124"

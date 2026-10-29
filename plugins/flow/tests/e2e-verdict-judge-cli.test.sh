@@ -220,6 +220,24 @@ if _want verdict-error-reply; then
   _edges called
 fi
 
+if _want verdict-bad-overall; then
+  _flow_test_begin "start.md step 6: an Overall line with a word outside the verdict vocabulary is unavailable (V7)"
+  _setup verdict-bad-overall "the judge replies '### Overall: PROBABLY PASS'" "" '{"type":"result","is_error":false,"result":"### Overall: PROBABLY PASS"}'
+  _run
+  e2e_expect_line "VERDICT_JUDGE_STATE=unavailable"
+  e2e_expect_no_out "VERDICT_RESULT="
+  _edges called
+fi
+
+if _want verdict-cli-exit; then
+  _flow_test_begin "start.md step 6: a CLI that exits non-zero is unavailable even when it printed a verdict (V7)"
+  _setup verdict-cli-exit "the CLI prints the FAIL verdict and exits 1"
+  _run FLOW_TEST_CLAUDE_EXIT=1
+  e2e_expect_line "VERDICT_JUDGE_STATE=unavailable"
+  e2e_expect_line "VERDICT_JUDGE_ERROR=the verdict judge gave no '### Overall:' line (exit 1; 124 is its time limit)"
+  _edges called
+fi
+
 if _want verdict-disabled; then
   _flow_test_begin "start.md step 6: verdict.enabled false runs no judge (V8)"
   _setup verdict-disabled "verdict.enabled false in the repository settings" '{"verdict":{"enabled":false}}'
