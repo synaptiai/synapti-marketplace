@@ -266,9 +266,17 @@ _tg_command_word() {
   # A reserved word or a group opener in command position starts a compound
   # command, and the command it runs is the next word: `if gh release create
   # v1; then`, `do gh pr merge 1`, `! git push`, `{ git push --tags; }`.
+  # `function NAME` is followed by the body (`function f { git push; }`), and
+  # coproc by the command it runs, or by a NAME and a body (`coproc N { ...;
+  # }`). The parser splits at `(` and `)`, so `f() { ...; }`, a subshell and a
+  # case pattern already start their own simple command.
   while [ "$i" -lt "$n" ]; do
     case "${TOK[i]}" in
       if|then|elif|else|while|until|do|'!'|'{') i=$((i + 1)) ;;
+      function) i=$((i + 2)) ;;
+      coproc)
+        i=$((i + 1))
+        [ "${TOK[i+1]:-}" = '{' ] && i=$((i + 1)) ;;
       *) _tg_is_assignment "${TOK[i]}" && i=$((i + 1)) || break ;;
     esac
   done
@@ -276,7 +284,7 @@ _tg_command_word() {
     [ "${#TOK[i]}" -le 4096 ] || break
     w=$(_tg_prog "${TOK[i]}")
     case "$w" in
-      command|exec|env|nohup|time|nice|timeout|sudo|doas|xargs) ;;
+      command|builtin|exec|env|nohup|time|nice|timeout|sudo|doas|xargs) ;;
       *) break ;;
     esac
     i=$((i + 1))

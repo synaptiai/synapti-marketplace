@@ -288,7 +288,7 @@ fi
 # --- T5b: behind a shell keyword or a group ------------------------------------
 if _want tg-keywords; then
   _tg_setup tg-keywords feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; the action follows if, then, else, elif, while, until, do, ! or {: each asks, naming its key, and a read-only gh command in the same place stays silent (T5b)"
+    "every tier confirm; the action follows if, then, else, elif, while, until, do, !, {, a function definition, coproc, select, case, a subshell, or builtin: each asks, naming its key, and a read-only gh command in the same place stays silent (T5b)"
   while IFS='|' read -r KEY C; do
     _tg_run "$C"
     _expect_ask "tiers.$KEY"
@@ -306,8 +306,21 @@ merge|until gh pr merge 1 --repo o/r --squash; do sleep 1; done
 merge|while true; do gh pr merge 1; done
 push|if make; then git push; fi
 prCreate|! { gh pr create --fill; }
+release|function f { gh release create v9; }
+release|function f() { gh release create v9; }
+release|f() { gh release create v9; }
+release|f () { gh release create v9; }
+release|coproc gh release create v9
+release|coproc NAME { gh release create v9; }
+release|select x in a b; do gh release create v9; done
+release|case x in x) gh release create v9;; esac
+release|case x in (x) gh release create v9;; esac
+release|( gh release create v9 )
+push|coproc git push
+push|function f { git push; }
+issueCreate|builtin command gh issue create -t x -b y
 EOF
-  for C in 'if gh pr view 3; then echo; fi' '{ gh release view v1; }' 'echo if gh release create v1'; do
+  for C in 'if gh pr view 3; then echo; fi' '{ gh release view v1; }' 'echo if gh release create v1' 'function gh { echo; }' 'coproc cat' 'function release { echo; }'; do
     _tg_run "$C"
     _expect_silent_allow
   done
