@@ -414,3 +414,20 @@ PY
 assert_exit 1 "$?" "a required skill that does not load exits 1"
 assert_contains "SKILL_LOAD_ERROR=no-such-skill reason=not-found" "$(cat "$FIX/gen.err")" "and names the skill"
 assert_equal "" "$(cat "$FIX/gen.out")" "and prints nothing on stdout"
+
+# The Required Skills section runs to the next "## " heading or the end of the
+# file, not to the first line that starts with "#": a command whose section
+# is the last one is read, and a section that names no skill and has no
+# "_None" line is refused rather than written as "(none)".
+_flow_test_begin "bin/flow-skill-manifests.sh reads a Required Skills section with no heading after it, and refuses one with neither a skill nor _None"
+_fls_gen_copy
+printf '# Zz\n\n## Required Skills\n\n- `tdd-patterns` — a skill listed in the last section of the file\n' > "$FIX/gen/commands/zz-last.md"
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 0 "$?" "a section with no heading after it generates ($(tr '\n' ' ' < "$FIX/gen.err"))"
+assert_match '^\| `/flow:zz-last` \| tdd-patterns \| [0-9]+ \| [0-9]+ \| [1-9][0-9]* \|$' "$(grep '^| `/flow:zz-last`' "$FIX/gen.out")" "its row names the skill, not (none)"
+_fls_gen_copy
+printf '# Zz\n\n## Required Skills\n\nSome prose that names no skill.\n\n## Next\n\nText.\n' > "$FIX/gen/commands/zz-prose.md"
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 1 "$?" "a section with neither a skill nor a _None line exits 1"
+assert_contains "commands/zz-prose.md: the Required Skills section lists no skill and has no _None line" "$(cat "$FIX/gen.err")" "and says which command"
+assert_equal "" "$(cat "$FIX/gen.out")" "and prints nothing on stdout"
