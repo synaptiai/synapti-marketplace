@@ -38,6 +38,11 @@
 #   T13 a tag push (--tags, --follow-tags, -c push.followTags, a refs/tags/
 #      refspec, a tag's name, `tag <name>`, gh api git/refs) is read as a
 #      branch push, or a branch whose name looks like a version is read as a tag
+#   T14 gh release create --verify-tag is journaled although the tag is not on
+#      the remote, the check fails or hangs, or it asks although the tag is there
+#   T15 gh api PATCH on a release or an issue's assignees, or a GraphQL
+#      mutation (inline, query=@file, --input), is missed; a read or another
+#      mutation (createIssueType) is caught; an unreadable query is allowed
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -89,6 +94,15 @@ _tg_run() {   # [NAME=value ...] <command>
 # The journal files under .decisions, one name per line (sorted).
 _tg_journals() { (cd "$E2E_REPO/.decisions" 2>/dev/null && ls *.md 2>/dev/null) | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'; }
 
+# _tg_trail [<journal dir>] [<repo>] — the auto-log trail files the hook wrote,
+# as paths under the repository, one per line (sorted).
+_tg_trail() {
+  local d="${1:-.decisions}" r="${2:-$E2E_REPO}"
+  (cd "$r" 2>/dev/null && ls "$d"/auto-log/*.md 2>/dev/null) | LC_ALL=C sort
+}
+# The trail file for issue 42 this month, as the hook names it.
+_tg_trail42() { printf '.decisions/auto-log/issue-42.%s.md' "$(date +%Y-%m)"; }
+
 _expect_ask() {   # <text the reason must contain>
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   _E2E_EXTRA_FRAMES=1 e2e_expect_out "$ASK"
@@ -126,12 +140,15 @@ for KEY in push prCreate issueAssign issueCreate; do
   fi
   if _want "tg-$KEY-journal"; then
     _tg_setup "tg-$KEY-journal" feature/issue-42-x "{\"tiers\":{\"$KEY\":\"journal\"}}" \
-      "tiers.$KEY journal on branch feature/issue-42-x: no output, and one line naming tiers.$KEY and the command in .decisions/issue-42.md (T1, T2, T8)"
+      "tiers.$KEY journal on branch feature/issue-42-x: no output, one breadcrumb naming tiers.$KEY and the command in the git-ignored trail .decisions/auto-log/issue-42.<YYYY-MM>.md, and the tracked .decisions/issue-42.md unchanged (T1, T2, T8)"
+    printf '# Journal\n' > "$E2E_REPO/.decisions/issue-42.md"
     _tg_run "$CMD"
     _expect_silent_allow
-    e2e_expect_equal "issue-42.md" "$(_tg_journals)" "journal files"
-    e2e_expect_file_has .decisions/issue-42.md "tiers.$KEY (journal): ${CMD%% --*}"
-    e2e_expect_equal 1 "$(grep -c "tiers\.$KEY (journal)" "$E2E_REPO/.decisions/issue-42.md" 2>/dev/null)" "journal lines"
+    e2e_expect_equal "$(_tg_trail42)" "$(_tg_trail)" "trail files"
+    e2e_expect_file_has "$(_tg_trail42)" "tiers.$KEY (journal) \"${CMD%% --*}"
+    e2e_expect_equal 1 "$(grep -c "^<!-- auto-log: .*tiers\.$KEY (journal)" "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "breadcrumbs"
+    e2e_expect_equal "# Journal" "$(cat "$E2E_REPO/.decisions/issue-42.md")" "the tracked journal"
+    e2e_expect_equal "*" "$(cat "$E2E_REPO/.decisions/auto-log/.gitignore" 2>/dev/null)" "the trail's .gitignore"
     e2e_expect_clean_edges
   fi
   if _want "tg-$KEY-autonomous"; then
@@ -150,7 +167,7 @@ if _want tg-default-journal; then
     "no repository settings: the plugin default for push, journal, applies (T1)"
   _tg_run 'git push'
   _expect_silent_allow
-  e2e_expect_file_has .decisions/issue-42.md "tiers.push (journal): git push"
+  e2e_expect_file_has "$(_tg_trail42)" 'tiers.push (journal) "git push"'
   e2e_expect_clean_edges
 fi
 
@@ -325,7 +342,125 @@ if _want tg-tag-journal-floor; then
   e2e_expect_equal "" "$(_tg_journals)" "journal files after the tag push"
   _tg_run 'git push origin HEAD'
   _expect_silent_allow
-  e2e_expect_file_has .decisions/issue-42.md "tiers.push (journal): git push origin HEAD"
+  e2e_expect_file_has "$(_tg_trail42)" 'tiers.push (journal) "git push origin HEAD"'
+  e2e_expect_clean_edges
+fi
+
+if _want tg-follow-tags-config; then
+  _tg_setup tg-follow-tags-config feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
+    "push.followTags true in the repository's git config: a branch push asks under tiers.release; -c push.followTags=false or --no-follow-tags on the command line turns it off again (T13)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git config push.followTags true ) \
+    || _flow_assert_fail "tg-follow-tags-config: could not set push.followTags"
+  _tg_run 'git push origin HEAD'
+  _expect_ask "tiers.release"
+  _tg_run 'git -c push.followTags=false push origin HEAD'
+  _expect_silent_allow
+  _tg_run 'git push --no-follow-tags origin HEAD'
+  _expect_silent_allow
+  e2e_expect_clean_edges
+fi
+
+# --- T14: gh release create --verify-tag ---------------------------------------
+# _tg_remote — give the scratch repository a bare origin holding tag v1.2.0;
+# v2.0.0 exists only locally.
+_tg_remote() {
+  ( _e2e_git_env
+    git -C "$E2E_DIR" init -q --bare remote.git && cd "$E2E_REPO" \
+      && git remote add origin "$E2E_DIR/remote.git" \
+      && git tag -a v1.2.0 -m v1.2.0 && git tag -a v2.0.0 -m v2.0.0 \
+      && git push -q origin v1.2.0 ) >/dev/null 2>&1 \
+    || _flow_assert_fail "$E2E_NAME: could not create the bare remote"
+}
+
+if _want tg-verify-tag; then
+  _tg_setup tg-verify-tag feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
+    "gh release create --verify-tag on a tag origin has: journaled in the trail, no ask; on a tag only local, without --verify-tag, or with the tag a variable: ask (T14)"
+  _tg_remote
+  _tg_run 'gh release create --title "v 1" v1.2.0 --verify-tag --notes x'
+  _expect_silent_allow
+  e2e_expect_file_has "$(_tg_trail42)" 'tiers.release (--verify-tag, v1.2.0 already on the remote) "gh release create --title "v 1" v1.2.0 --verify-tag --notes x"'
+  _tg_run 'gh release create v2.0.0 --verify-tag'
+  _expect_ask "v2.0.0 could not be found on origin"
+  _tg_run 'gh release create v1.2.0 --title v1.2.0'
+  _expect_ask "tiers.release"
+  _tg_run 'gh release create "$TAG" --verify-tag'
+  _expect_ask "tiers.release"
+  _tg_run 'gh release create v1.2.0 --verify-tag -R "$R"'
+  _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  e2e_expect_no_out "could not be found"
+  _tg_run 'gh release create v1.2.0 --verify-tag && gh pr merge 7 --repo o/r --squash'
+  _expect_ask "tiers.merge"
+  e2e_expect_equal 1 "$(grep -c 'verify-tag' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "breadcrumbs after the run that also asked"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-verify-tag-no-remote; then
+  _tg_setup tg-verify-tag-no-remote feature/issue-42-x "" \
+    "gh release create --verify-tag in a repository with no origin: the check fails, so it asks (T14)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m v1.2.0 ) >/dev/null 2>&1
+  _tg_run 'gh release create v1.2.0 --verify-tag'
+  _expect_ask "v1.2.0 could not be found on origin"
+  e2e_expect_equal "" "$(_tg_trail)" "trail files"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-verify-tag-timeout; then
+  _tg_setup tg-verify-tag-timeout feature/issue-42-x "" \
+    "origin is an ssh remote whose ssh never answers: the check is stopped after TG_REMOTE_TIMEOUT=2 seconds and the release asks, well inside 15 seconds (T14)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git remote add origin ssh://example.invalid/r.git ) >/dev/null 2>&1
+  printf '#!/bin/sh\nsleep 30\n' > "$E2E_BIN/slow-ssh"; chmod +x "$E2E_BIN/slow-ssh"
+  T0=$(date +%s)
+  _tg_run "GIT_SSH_COMMAND=$E2E_BIN/slow-ssh" TG_REMOTE_TIMEOUT=2 'gh release create v1.2.0 --verify-tag'
+  T1=$(date +%s)
+  _expect_ask "v1.2.0 could not be found on origin"
+  e2e_expect_equal "" "$E2E_ERR" "stderr"
+  e2e_expect_equal yes "$([ $((T1 - T0)) -lt 15 ] && echo yes || echo no)" "finished within 15 seconds ($((T1 - T0)) s)"
+  e2e_expect_clean_edges
+fi
+
+# --- T15: gh api PATCH and GraphQL ---------------------------------------------
+if _want tg-api-patch-graphql; then
+  _tg_setup tg-api-patch-graphql feature/issue-42-x "$ALL_CONFIRM" \
+    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key; reads and other mutations do not (T15)"
+  printf '%s\n' 'mutation { enablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }' > "$E2E_REPO/q.graphql"
+  printf '%s\n' '{"query":"mutation { createRelease(input:{repositoryId:\"r\", tagName:\"v1\"}) { release { id } } }"}' > "$E2E_REPO/body.json"
+  printf '%s\n' '{"query":"query { viewer { login } }"}' > "$E2E_REPO/read.json"
+  printf '%s\n' '{"assignees":["me"]}' > "$E2E_REPO/assign.json"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      unknown) _expect_ask "may merge a pull request or create a release" ;;
+      *) _expect_ask "(tiers.$WANT)" ;;
+    esac
+  done <<'EOF'
+release|gh api -X PATCH repos/o/r/releases/123 -F draft=false
+release|gh api --method PATCH /repos/{owner}/{repo}/releases/9 -f name=x
+issueAssign|gh api -X PATCH repos/o/r/issues/4 -f 'assignees[]=me'
+issueAssign|gh api --method PUT repos/o/r/issues/4 -f assignee=me
+merge|gh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:"x"}) { clientMutationId } }'
+merge|gh api graphql -F query=@q.graphql
+release|gh api graphql -f query='mutation($id:ID!){ updateRelease(input:{releaseId:$id}){ release { id } } }'
+release|gh api graphql --input body.json
+prCreate|gh api graphql -f query='mutation { createPullRequest(input:{}) { pullRequest { id } } }'
+issueCreate|gh api graphql -fquery='mutation { createIssue(input:{}) { issue { id } } }'
+issueAssign|gh api graphql -f query='mutation { addAssigneesToAssignable(input:{}) { clientMutationId } }'
+unknown|gh api graphql -f query="$Q"
+unknown|gh api graphql -F query=@missing.graphql
+unknown|gh api graphql --input -
+silent|gh api graphql -f query='query { repository(owner:"o", name:"r") { pullRequest(number:1) { mergeable } } }'
+silent|gh api graphql -f query='mutation { addComment(input:{}) { clientMutationId } }'
+silent|gh api graphql -f query='mutation { createIssueType(input:{}) { clientMutationId } }'
+silent|gh api graphql --input read.json
+silent|gh api -X PATCH repos/o/r/issues/4 -f title=x
+silent|gh api -X PATCH repos/o/r/releases/assets/5 -f name=x
+silent|gh api -X PUT repos/o/r/releases/123 -f name=x
+silent|gh api -X GET repos/o/r/releases/123
+silent|gh api -X PATCH repos/o/r/issues/4/comments -f assignees=x
+EOF
+  _tg_run 'gh api -X PATCH repos/o/r/issues/4 --input assign.json'
+  _expect_silent_allow
+  e2e_expect_err "could not read whether gh api -X PATCH repos/o/r/issues/4 --input assign.json changes an issue's assignees"
   e2e_expect_clean_edges
 fi
 
@@ -366,20 +501,20 @@ fi
 # --- T8, T9: where the journal line goes ----------------------------------------
 if _want tg-journal-session; then
   _tg_setup tg-journal-session feature/no-number '{"tiers":{"push":"journal"}}' \
-    "tiers.push journal on a branch with no issue number: the line goes to .decisions/session-<local day>.md, with a UTC time (T8)"
+    "tiers.push journal on a branch with no issue number: the breadcrumb goes to .decisions/auto-log/session-<local day>.md, with a UTC time, and no tracked journal is created (T8)"
   _tg_run 'git push origin HEAD'
   _expect_silent_allow
   SESSION_FILE=""
   for D in "$TG_DAY_AFTER" "$TG_DAY_BEFORE"; do
-    [ -f "$E2E_REPO/.decisions/session-$D.md" ] && { SESSION_FILE=".decisions/session-$D.md"; break; }
+    [ -f "$E2E_REPO/.decisions/auto-log/session-$D.md" ] && { SESSION_FILE=".decisions/auto-log/session-$D.md"; break; }
   done
-  e2e_expect_equal "session-$TG_DAY_AFTER.md" "$(_tg_journals)" "journal files"
-  e2e_expect_file_has "$SESSION_FILE" "tiers.push (journal): git push origin HEAD"
+  e2e_expect_equal ".decisions/auto-log/session-$TG_DAY_AFTER.md" "$(_tg_trail)" "trail files"
+  e2e_expect_equal "" "$(_tg_journals)" "tracked journal files"
   LINE=$(grep 'tiers.push (journal)' "$E2E_REPO/$SESSION_FILE" 2>/dev/null)
   case "$LINE" in
-    "- "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z" tiers.push (journal): git push origin HEAD")
-      _e2e_result pass "the line is '- <UTC time> tiers.push (journal): <command>'" ;;
-    *) _e2e_result fail "the line is '- <UTC time> tiers.push (journal): <command>' (got '$LINE')" ;;
+    "<!-- auto-log: "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z' tiers.push (journal) "git push origin HEAD" -->')
+      _e2e_result pass "the breadcrumb is '<!-- auto-log: <UTC time> tiers.push (journal) \"<command>\" -->'" ;;
+    *) _e2e_result fail "the breadcrumb is '<!-- auto-log: <UTC time> tiers.push (journal) \"<command>\" -->' (got '$LINE')" ;;
   esac
   e2e_expect_clean_edges
 fi
@@ -397,12 +532,13 @@ fi
 
 if _want tg-journal-dir-setting; then
   _tg_setup tg-journal-dir-setting feature/issue-42-x '{"tiers":{"push":"journal"},"journal":{"dir":"notes"}}' \
-    "journal.dir notes: the line goes to notes/issue-42.md, and none to .decisions (T8)"
+    "journal.dir notes: the breadcrumb goes to notes/auto-log/issue-42.<YYYY-MM>.md, and none to .decisions (T8)"
   mkdir -p "$E2E_REPO/notes"
   _tg_run 'git push'
   _expect_silent_allow
-  e2e_expect_file_has notes/issue-42.md "tiers.push (journal): git push"
-  e2e_expect_equal "" "$(_tg_journals)" "journal files under .decisions"
+  e2e_expect_equal "notes/auto-log/issue-42.$(date +%Y-%m).md" "$(_tg_trail notes)" "trail files under notes"
+  e2e_expect_file_has "notes/auto-log/issue-42.$(date +%Y-%m).md" 'tiers.push (journal) "git push"'
+  e2e_expect_equal "" "$(_tg_trail)" "trail files under .decisions"
   e2e_expect_clean_edges
 fi
 
@@ -418,10 +554,10 @@ fi
 
 if _want tg-two-journal; then
   _tg_setup tg-two-journal feature/issue-42-x '{"tiers":{"push":"journal","prCreate":"journal"}}' \
-    "git push then gh pr create, both journal: one line each, in that order, in issue-42.md (T8)"
+    "git push then gh pr create, both journal: one breadcrumb each, in that order, in the issue-42 trail (T8)"
   _tg_run 'git push -u origin HEAD && gh pr create --fill'
   _expect_silent_allow
-  e2e_expect_equal "push,prCreate" "$(grep -oE 'tiers\.[A-Za-z]+ \(journal\)' "$E2E_REPO/.decisions/issue-42.md" | sed -E 's/tiers\.([A-Za-z]+).*/\1/' | tr '\n' ',' | sed 's/,$//')" "journal keys in order"
+  e2e_expect_equal "push,prCreate" "$(grep -oE 'tiers\.[A-Za-z]+ \(journal\)' "$E2E_REPO/$(_tg_trail42)" | sed -E 's/tiers\.([A-Za-z]+).*/\1/' | tr '\n' ',' | sed 's/,$//')" "breadcrumb keys in order"
   e2e_expect_clean_edges
 fi
 
@@ -451,14 +587,37 @@ exit 2'
   e2e_expect_clean_edges
 fi
 
-if _want tg-journal-fails; then
-  _tg_setup tg-journal-fails feature/issue-42-x '{"tiers":{"push":"journal"}}' \
-    "the issue journal is a symlink, so journal-append.sh refuses it: git push is allowed with one stderr line, and the link's target is untouched (T10)"
-  printf 'outside\n' > "$E2E_DIR/outside.md"
-  ln -s "$E2E_DIR/outside.md" "$E2E_REPO/.decisions/issue-42.md"
+if _want tg-crumb-safe; then
+  _tg_setup tg-crumb-safe feature/issue-42-x '{"tiers":{"push":"journal"}}' \
+    "a pushed refspec holding a comment terminator: the breadcrumb neutralizes it, so it stays one HTML comment (T8)"
+  _tg_run "git push origin 'a-->b<!--c'"
+  _expect_silent_allow
+  e2e_expect_file_has "$(_tg_trail42)" 'tiers.push (journal) "git push origin a-- >b< !--c" -->'
+  e2e_expect_equal 1 "$(grep -o -- '-->' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null | wc -l | tr -d ' ')" "comment terminators in the trail"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-trail-dir-symlink; then
+  _tg_setup tg-trail-dir-symlink feature/issue-42-x '{"tiers":{"push":"journal"}}' \
+    "the trail directory .decisions/auto-log is a symlink to a directory outside the repository: git push is allowed with one stderr line naming it, and nothing is written there (T10)"
+  mkdir -p "$E2E_DIR/elsewhere"
+  ln -s "$E2E_DIR/elsewhere" "$E2E_REPO/.decisions/auto-log"
   _tg_run 'git push'
   _expect_silent_allow
-  e2e_expect_err "could not append to the decision journal (journal-append.sh exit 2"
+  e2e_expect_err "could not write to the auto-log trail (the trail directory is a symlink)"
+  e2e_expect_equal "" "$(ls -A "$E2E_DIR/elsewhere")" "files in the link's target"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-journal-fails; then
+  _tg_setup tg-journal-fails feature/issue-42-x '{"tiers":{"push":"journal"}}' \
+    "the trail file is a symlink: git push is allowed with one stderr line, and the link's target is untouched (T10)"
+  printf 'outside\n' > "$E2E_DIR/outside.md"
+  mkdir -p "$E2E_REPO/.decisions/auto-log"
+  ln -s "$E2E_DIR/outside.md" "$E2E_REPO/$(_tg_trail42)"
+  _tg_run 'git push'
+  _expect_silent_allow
+  e2e_expect_err "could not write to the auto-log trail (the trail file is a symlink)"
   e2e_expect_equal 1 "$(printf '%s\n' "$E2E_ERR" | grep -c .)" "stderr lines"
   e2e_expect_equal "outside" "$(cat "$E2E_DIR/outside.md")" "the link target"
   e2e_expect_clean_edges
@@ -531,7 +690,8 @@ if _want tg-cwd; then
   printf '%s\n' '{"tiers":{"push":"journal","prCreate":"confirm"}}' > "$OTHER/.claude/settings.flow.json"
   e2e_run_hook "$HOOK" "$(jq -cn --arg cwd "$OTHER" '{cwd:$cwd,tool_input:{command:"git push"}}')"
   _expect_silent_allow
-  e2e_expect_equal "yes" "$(grep -q 'tiers.push (journal): git push' "$OTHER/.decisions/issue-77.md" 2>/dev/null && echo yes || echo no)" "the line in the other repository's issue-77.md"
+  e2e_expect_equal "yes" "$(grep -q 'tiers.push (journal) "git push"' "$OTHER/.decisions/auto-log/issue-77.$(date +%Y-%m).md" 2>/dev/null && echo yes || echo no)" "the breadcrumb in the other repository's issue-77 trail"
+  e2e_expect_equal "" "$(_tg_trail)" "trail files in the starting repository"
   e2e_expect_equal "" "$(_tg_journals)" "journal files in the starting repository"
   e2e_run_hook "$HOOK" "$(jq -cn --arg cwd "$OTHER" '{cwd:$cwd,tool_input:{command:"gh pr create --fill"}}')"
   _expect_ask "tiers.prCreate"

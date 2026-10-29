@@ -14,28 +14,46 @@
 #   tiers.release      gh release create, and a tag push         always confirm
 #
 # `new` is gh's alias for `create` (`gh pr new`, `gh issue new`, `gh release
-# new`) and counts the same. `gh api` counts when its method is POST or PUT,
-# given with -X/--method or implied by a -f/-F/--field/--raw-field/--input
-# parameter (gh's own rule), on these endpoints: .../pulls/{n}/merge and
-# .../merges (merge), .../releases (release), .../pulls (prCreate), .../issues
-# (issueCreate), .../issues/{n}/assignees (issueAssign). A leading `/`, a full
-# https:// URL, a query string and `{owner}/{repo}` placeholders are allowed.
+# new`) and counts the same. `gh api` counts as follows. A leading `/`, a full
+# https:// URL, a query string and `{owner}/{repo}` placeholders are allowed;
+# the method is -X/--method, or POST when a -f/-F/--field/--raw-field/--input
+# parameter is given (gh's own rule), or GET.
+#   POST/PUT .../pulls/{n}/merge, .../merges              merge
+#   POST .../releases; PATCH .../releases/{id}            release
+#   POST .../git/refs with a refs/tags/ ref               release
+#   POST .../pulls                                        prCreate
+#   POST .../issues                                       issueCreate
+#   POST .../issues/{n}/assignees; PATCH or PUT
+#     .../issues/{n} with an assignee or assignees field  issueAssign
+#   graphql with mergePullRequest or
+#     enablePullRequestAutoMerge                          merge
+#   graphql with createRelease or updateRelease           release
+#   graphql with createPullRequest                        prCreate
+#   graphql with createIssue                              issueCreate
+#   graphql with addAssigneesToAssignable                 issueAssign
+# The GraphQL query is read from -f/-F query=..., query=@file and --input
+# file (relative to the command's directory).
 #
 # Pushing a tag is the release tier, not push: `git push` with --tags,
-# --follow-tags, --mirror or `-c push.followTags=true`; `git push <remote> tag
-# <name>`; a refspec with refs/tags/ on either side (`HEAD:refs/tags/v1`); or
-# a refspec whose source is a tag in this repository (`git push origin v1.2.0`
-# when v1.2.0 is a tag; a branch named v1-fix is not). A command that pushes a
-# branch and a tag is release. A refspec given as a variable may be a tag, so
-# it asks as release does. `gh api` POST to .../git/refs with a refs/tags/ ref
-# (or a ref that cannot be read) is release too. push.followTags set in git's
-# own configuration files is not read.
+# --follow-tags, --mirror, `-c push.followTags=true`, or push.followTags true
+# in the repository's git configuration (a -c on the command line overrides
+# it); `git push <remote> tag <name>`; a refspec with refs/tags/ on either
+# side (`HEAD:refs/tags/v1`); or a refspec whose source is a tag in this
+# repository (`git push origin v1.2.0` when v1.2.0 is a tag; a branch named
+# v1-fix is not). A command that pushes a branch and a tag is release.
+#
+# `gh release create <tag> --verify-tag` creates a release for a tag that
+# must already be on GitHub, and that tag's push was already confirmed. So
+# when `git ls-remote --tags` finds the tag on the remote (origin, or the
+# GitHub repository -R/--repo names), within TG_REMOTE_TIMEOUT seconds
+# (default 5), it is journaled instead of asked. Without --verify-tag, with a
+# tag absent from the remote, or when the check fails, it asks.
 #
 # Values: confirm asks (permissionDecision "ask", with a reason naming the
-# action, the setting and the command); journal appends one line to the
-# decision journal and allows; autonomous allows. merge and release have a
-# floor of confirm: they always ask, and a lower value is ignored with one
-# stderr line naming the setting. An "ask" is a prompt in an interactive
+# action, the setting and the command); journal writes one breadcrumb to the
+# git-ignored auto-log trail and allows; autonomous allows. merge and release
+# have a floor of confirm: they always ask, and a lower value is ignored with
+# one stderr line naming the setting. An "ask" is a prompt in an interactive
 # session, bypassPermissions mode included, and a refusal in `claude -p`,
 # which has no one to ask.
 #
@@ -43,21 +61,33 @@
 #   command names no tiered action                    -> exit 0, no output
 #   every action it names resolves to autonomous      -> exit 0, no output
 #   any action resolves to confirm (merge and release -> exit 0, stdout JSON permissionDecision "ask"
-#     always do)                                         naming each such action; no journal line is
+#     always do)                                         naming each such action; no breadcrumb is
 #                                                        written, since the person may refuse
 #   merge or release set below confirm                -> as above, plus one stderr line naming the setting
-#   otherwise, journal-tier actions                   -> one line per action appended to the decision
-#                                                        journal (issue-{N}.md on a branch naming issue
-#                                                        N, otherwise session-{YYYY-MM-DD}.md), exit 0,
-#                                                        no output
+#   gh release create --verify-tag, tag on the remote -> journaled, as below
+#   gh release create --verify-tag, tag not found or  -> "ask"
+#     the check failed or timed out
+#   otherwise, journal-tier actions                   -> one breadcrumb per action in the auto-log
+#                                                        trail (<journal dir>/auto-log/issue-{N}.{YYYY-MM}.md
+#                                                        on a branch naming issue N, otherwise
+#                                                        auto-log/session-{YYYY-MM-DD}.md), exit 0, no
+#                                                        output; the tracked journal is not touched
 #     the journal directory does not exist            -> nothing written, exit 0, no output (the
 #                                                        repository does not keep a flow journal)
-#     the journal helper fails                        -> exit 0, one stderr line
+#     the trail is refused (a symlink) or the write   -> exit 0, one stderr line
+#     fails
 #   push, prCreate, issueAssign or issueCreate whose  -> that action is allowed, one stderr line
 #     value is not autonomous|journal|confirm, or
 #     whose setting cannot be read (cascade fails)
+#   gh api PATCH/PUT on .../issues/{n} whose body is  -> allowed, one stderr line (it may change
+#     a file (--input)                                   assignees; not a confirm-floor action)
 #   a gh api write whose whole endpoint is a variable -> "ask": it may be a merge or a release
-#     or a substitution
+#     or a substitution, or a GraphQL query that
+#     cannot be read (a variable, stdin, a missing
+#     file)
+#   a push whose refspec is a variable or a           -> "ask": it may push a tag
+#     substitution, or a gh api git/refs POST whose
+#     ref cannot be read
 #   cannot decide: jq missing, the command parser     -> text that mentions merge or release with gh:
 #     missing or failed                                    "ask"; other text that mentions push or gh:
 #                                                        exit 0, one stderr line; anything else:
@@ -84,8 +114,7 @@
 #
 # Not covered, by design: deliberate evasion (a command held in a variable
 # and run as `$CMD`, a gh alias, a script file, a quote inside the word),
-# `gh api graphql` mutations, and PATCH requests (publishing a draft release,
-# setting assignees through issues/{n}). `--help` is not exempted: it costs a
+# and a GraphQL mutation not listed above. `--help` is not exempted: it costs a
 # prompt, while exempting a value that happens to read `--help` would cost a
 # missed confirmation. For the same reason the parser reads every quoted
 # argument with a space in it, after env, sudo, timeout, xargs, nohup and the
@@ -257,6 +286,9 @@ _tg_emit() {   # $1 = key, $2 = index of the command word
 # git: the subcommand past git's own options.
 _tg_git() {   # $1 = index of git
   local j=$(($1 + 1)) follow=0 c
+  # push.followTags from git's configuration in the repository the command
+  # runs in; a -c on the command line overrides it, as it does for git.
+  [ "$(git -C "$CWD" config --type=bool --get push.followTags 2>/dev/null)" = true ] && follow=1
   while [ "$j" -lt "$n" ]; do
     c=""
     case "${TOK[j]}" in
@@ -325,9 +357,28 @@ _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followT
   fi
 }
 
-# gh api: the effective method and the endpoint.
+# The text of a GraphQL query given as a field value or a file: prints it, or
+# returns 1 when it cannot be read (a variable, a substitution, stdin, a file
+# that is not there). A `$` inside the query is a GraphQL variable, so only a
+# value that is wholly a variable counts as unreadable.
+_tg_query_text() {   # $1 = the value after query=, or @file
+  local v="$1" f
+  case "$v" in
+    '$'*|__BD_SUBST__*|'`'*) return 1 ;;
+    @*)
+      f="${v#@}"
+      case "$f" in ''|-|*'$'*|*__BD_SUBST__*) return 1 ;; esac
+      case "$f" in /*) ;; *) f="$CWD/$f" ;; esac
+      [ -f "$f" ] && [ -r "$f" ] || return 1
+      head -c 200000 "$f" 2>/dev/null || return 1 ;;
+    *) printf '%s' "$v" ;;
+  esac
+}
+
+# gh api: the effective method, the endpoint and the fields.
 _tg_api() {   # $1 = index of gh, $2 = index of the word api
-  local k=$(($2 + 1)) t method="" fields=0 ep="" after=0
+  local k=$(($2 + 1)) t method="" ep="" after=0 input="" fv
+  local -a fields=()
   while [ "$k" -lt "$n" ]; do
     t="${TOK[k]}"
     if [ "$after" = 1 ]; then [ -z "$ep" ] && ep="$t"; k=$((k + 1)); continue; fi
@@ -335,24 +386,57 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
       --) after=1 ;;
       -X|--method) method="${TOK[k+1]:-}"; k=$((k + 2)); continue ;;
       --method=*) method="${t#--method=}" ;;
-      --raw-field=*|--field=*|--input=*) fields=1 ;;
-      -f|--raw-field|-F|--field|--input) fields=1; k=$((k + 2)); continue ;;
+      --raw-field=*) fields+=("${t#--raw-field=}") ;;
+      --field=*) fields+=("${t#--field=}") ;;
+      --input=*) input="${t#--input=}" ;;
+      --input) input="${TOK[k+1]:--}"; k=$((k + 2)); continue ;;
+      -f|--raw-field|-F|--field) fields+=("${TOK[k+1]:-}"); k=$((k + 2)); continue ;;
       -H|--header|-q|--jq|-t|--template|--hostname|-p|--preview|--cache) k=$((k + 2)); continue ;;
       --*) ;;
       -X?*) method="${t#-X}" ;;
-      -f?*|-F?*) fields=1 ;;
+      -f?*|-F?*) fields+=("${t#-?}") ;;
       -*) ;;
       *) [ -z "$ep" ] && ep="$t" ;;
     esac
     k=$((k + 1))
   done
   [ -n "$ep" ] || return 0
+
+  # GraphQL: the mutation names decide, read from -f/-F query=..., a
+  # query=@file, or the --input body.
+  case "$ep" in
+    graphql|/graphql|*/graphql)
+      local text="" unread=0 found=0 m
+      for fv in "${fields[@]+"${fields[@]}"}"; do
+        case "$fv" in
+          query=*) found=1
+            if t=$(_tg_query_text "${fv#query=}"); then text="$text $t"; else unread=1; fi ;;
+        esac
+      done
+      if [ -n "$input" ]; then
+        found=1
+        if t=$(_tg_query_text "@$input"); then text="$text $t"; else unread=1; fi
+      fi
+      [ "$found" = 1 ] || return 0
+      for m in $(printf '%s' "$text" | grep -owE 'mergePullRequest|enablePullRequestAutoMerge|createRelease|updateRelease|createPullRequest|createIssue|addAssigneesToAssignable' | LC_ALL=C sort -u); do
+        case "$m" in
+          mergePullRequest|enablePullRequestAutoMerge) _tg_emit merge "$1" ;;
+          createRelease|updateRelease) _tg_emit release "$1" ;;
+          createPullRequest) _tg_emit prCreate "$1" ;;
+          createIssue) _tg_emit issueCreate "$1" ;;
+          addAssigneesToAssignable) _tg_emit issueAssign "$1" ;;
+        esac
+      done
+      [ "$unread" = 1 ] && _tg_emit unknown "$1"
+      return 0 ;;
+  esac
+
   if [ -z "$method" ]; then
-    if [ "$fields" = 1 ]; then method=POST; else method=GET; fi
+    if [ "${#fields[@]}" -gt 0 ] || [ -n "$input" ]; then method=POST; else method=GET; fi
   fi
   if ! _tg_unreadable "$method"; then
     method=$(printf '%s' "$method" | LC_ALL=C tr 'a-z' 'A-Z')
-    case "$method" in POST|PUT) ;; *) return 0 ;; esac
+    case "$method" in POST|PUT|PATCH) ;; *) return 0 ;; esac
   fi
   # A whole endpoint this hook cannot read may be a merge or a release. A
   # partly unreadable one is read by its literal parts: `/merge` would have
@@ -366,19 +450,40 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
   # are not part of the path.
   ep="${ep%%\?*}"
   while :; do case "$ep" in */) ep="${ep%/}" ;; *) break ;; esac; done
+
+  # PATCH: editing or publishing a release, and changing an issue's
+  # assignees. (PUT on an issue is matched the same way.)
+  if [ "$method" = PATCH ] || [ "$method" = PUT ]; then
+    case "$ep" in
+      */releases/*/*) ;;
+      */releases/*) [ "$method" = PATCH ] && { _tg_emit release "$1"; return 0; } ;;
+      */issues/*/*) ;;
+      */issues/*)
+        for fv in "${fields[@]+"${fields[@]}"}"; do
+          case "${fv%%=*}" in
+            assignee|assignees|'assignees[]') _tg_emit issueAssign "$1"; return 0 ;;
+          esac
+        done
+        # A body from a file may change the assignees; that is not a
+        # confirm-floor action, so it is allowed with a note.
+        [ -n "$input" ] && _tg_emit assignUnread "$1"
+        return 0 ;;
+    esac
+    [ "$method" = PATCH ] && return 0
+  fi
+
   case "$ep" in
     */git/refs)
       # Creating a tag ref is a tag push. A ref that cannot be read (a
       # variable, or --input) may be a tag.
-      local refs="" kk
-      for ((kk = $2 + 1; kk < n; kk++)); do
-        case "${TOK[kk]}" in
-          *ref=*|--input|--input=*) refs="$refs ${TOK[kk]}" ;;
-        esac
+      local refs="" have=0
+      for fv in "${fields[@]+"${fields[@]}"}"; do
+        case "$fv" in ref=*) have=1; refs="$refs ${fv#ref=}" ;; esac
       done
       case "$refs" in
         *refs/tags/*) _tg_emit release "$1" ;;
-        *'$'*|*__BD_SUBST__*|*--input*|'') _tg_emit tagUnread "$1" ;;
+        *'$'*|*__BD_SUBST__*) _tg_emit tagUnread "$1" ;;
+        *) { [ "$have" = 0 ] || [ -n "$input" ]; } && _tg_emit tagUnread "$1" ;;
       esac ;;
     */pulls/*/merge|*/merges) _tg_emit merge "$1" ;;
     */releases) _tg_emit release "$1" ;;
@@ -387,6 +492,36 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
     */issues/*/assignees) _tg_emit issueAssign "$1" ;;
   esac
   return 0
+}
+
+# gh release create: with --verify-tag and a literal tag, emit
+# releaseVerified:<tag>:<repo> so the caller can ask the remote whether the
+# tag is already there; otherwise release. A tag name cannot hold a `:`.
+_tg_release() {   # $1 = index of gh, $2 = index of the word create
+  local k t tag="" verify=0 repo=""
+  for ((k = $2 + 1; k < n; k++)); do
+    t="${TOK[k]}"
+    case "$t" in
+      --verify-tag) verify=1 ;;
+      -R|--repo) repo="${TOK[k+1]:-}"; k=$((k + 1)) ;;
+      --repo=*) repo="${t#--repo=}" ;;
+      -t|--title|-n|--notes|-F|--notes-file|--target|--discussion-category|--notes-start-tag|-A|--assets) k=$((k + 1)) ;;
+      -*) ;;
+      *) [ -z "$tag" ] && tag="$t" ;;
+    esac
+  done
+  # -R before `release` belongs to gh too.
+  for ((k = $1 + 1; k < $2; k++)); do
+    case "${TOK[k]}" in -R|--repo) repo="${TOK[k+1]:-}" ;; --repo=*) repo="${TOK[k]#--repo=}" ;; esac
+  done
+  # A repository given as a variable is not looked up: the URL would name
+  # nothing. A tag given as one is looked up as written, and is not found.
+  if [ "$verify" = 1 ] && [ -n "$tag" ] && ! _tg_unreadable "$repo"; then
+    case "$tag$repo" in *:*|*[[:space:]]*) _tg_emit release "$1"; return 0 ;; esac
+    _tg_emit "releaseVerified:$tag:$repo" "$1"
+  else
+    _tg_emit release "$1"
+  fi
 }
 
 # gh: the two subcommand words past options.
@@ -410,7 +545,7 @@ _tg_gh() {   # $1 = index of gh
     "pr create"|"pr new") _tg_emit prCreate "$1" ;;
     "pr merge") _tg_emit merge "$1" ;;
     "issue create"|"issue new") _tg_emit issueCreate "$1" ;;
-    "release create"|"release new") _tg_emit release "$1" ;;
+    "release create"|"release new") _tg_release "$1" "$i2" ;;
     "issue edit")
       for ((k = i2 + 1; k < n; k++)); do
         case "${TOK[k]}" in
@@ -471,17 +606,64 @@ _tg_phrase() {
   esac
 }
 
+# Is this tag already on the remote? `git ls-remote --tags`, against origin,
+# or against the GitHub repository a -R/--repo names, stopped after
+# TG_REMOTE_TIMEOUT seconds (default 5). Any failure to check is "no". Sets
+# TG_REMOTE to what was asked.
+_tg_tag_on_remote() {   # $1 = tag, $2 = owner/name, host/owner/name, or empty
+  local tmp pid w rc=1
+  case "$2" in
+    '') TG_REMOTE=origin ;;
+    */*/*) TG_REMOTE="https://$2.git" ;;
+    */*) TG_REMOTE="https://github.com/$2.git" ;;
+    *) TG_REMOTE="$2"; return 1 ;;
+  esac
+  tmp=$(mktemp -t flow-tier-gate.XXXXXX 2>/dev/null) || return 1
+  # Output goes to a file, not a pipe: a killed git can leave a helper (ssh,
+  # a credential helper) holding a pipe open, and the read would then wait
+  # for it.
+  GIT_TERMINAL_PROMPT=0 git -C "$RUN_DIR" ls-remote --tags "$TG_REMOTE" "refs/tags/$1" >"$tmp" 2>/dev/null &
+  pid=$!
+  ( sleep "${TG_REMOTE_TIMEOUT:-5}"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  w=$!
+  # The shell reports a killed job on stderr when it reaps it; that report
+  # is not this hook's to print.
+  { wait "$pid"; } 2>/dev/null; rc=$?
+  kill "$w" 2>/dev/null
+  if [ "$rc" -eq 0 ] && awk -v r="refs/tags/$1" '$2 == r { f = 1 } END { exit !f }' "$tmp" 2>/dev/null; then
+    rm -f "$tmp"; return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
 REASONS=()
+# Each entry: the setting's label, a tab, the command summary.
 JOURNAL_LINES=()
 while IFS=$'\t' read -r KEY SUMMARY; do
-  if [ "$KEY" = tagUnread ]; then
-    REASONS+=("A push whose refs cannot be read from the command may push a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
-    continue
-  fi
-  if [ "$KEY" = unknown ]; then
-    REASONS+=("A gh api write whose endpoint cannot be read from the command may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
-    continue
-  fi
+  case "$KEY" in
+    tagUnread)
+      REASONS+=("A push whose refs cannot be read from the command may push a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
+      continue ;;
+    unknown)
+      REASONS+=("A gh api call whose endpoint or GraphQL query cannot be read from the command (a variable, a substitution, stdin or a missing file) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
+      continue ;;
+    assignUnread)
+      _tg_note "could not read whether $SUMMARY changes an issue's assignees (its body is a file); allowing it without a tier check"
+      continue ;;
+    releaseVerified:*)
+      # gh release create --verify-tag on a tag already on the remote creates
+      # a release for a tag whose push was already confirmed: journaled. A tag
+      # that is not there, or a check that fails, asks as any release does.
+      VREST="${KEY#releaseVerified:}"
+      VTAG="${VREST%%:*}"
+      if _tg_tag_on_remote "$VTAG" "${VREST#*:}"; then
+        JOURNAL_LINES+=("tiers.release (--verify-tag, $VTAG already on the remote)"$'\t'"$SUMMARY")
+      else
+        REASONS+=("Creating a release is a Tier 3 action (tiers.release). flow asks unless --verify-tag names a tag that is already on the remote, and $VTAG could not be found on $TG_REMOTE. Command: $SUMMARY")
+      fi
+      continue ;;
+  esac
   case "$KEY" in merge|release) DEFAULT=confirm ;; *) DEFAULT=journal ;; esac
   VALUE=$(cd "$RUN_DIR" 2>/dev/null && "$PLUGIN_ROOT/bin/cascade-resolve.sh" --default "$DEFAULT" ".tiers.$KEY" 2>/dev/null)
   RC=$?
@@ -502,7 +684,7 @@ while IFS=$'\t' read -r KEY SUMMARY; do
       fi
       case "$VALUE" in
         confirm) REASONS+=("$(_tg_phrase "$KEY") is a Tier 2 action set to confirm (tiers.$KEY), so it needs your approval. Command: $SUMMARY") ;;
-        journal) JOURNAL_LINES+=("- $(date -u +%Y-%m-%dT%H:%M:%SZ) tiers.$KEY (journal): $SUMMARY") ;;
+        journal) JOURNAL_LINES+=("tiers.$KEY (journal)"$'\t'"$SUMMARY") ;;
         autonomous) ;;
         *) _tg_note "tiers.$KEY is \"$(printf '%s' "$VALUE" | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-40)\", not autonomous, journal or confirm; allowing $SUMMARY without a tier check" ;;
       esac
@@ -520,27 +702,72 @@ fi
 
 [ "${#JOURNAL_LINES[@]}" -gt 0 ] || exit 0
 
-# The journal: issue-{N}.md on a branch that names issue N, else the session
-# journal. Written only where the repository keeps a flow journal: a push in a
-# repository that never ran /flow:setup must not create .decisions/ in it.
+# --- the journal line goes to the auto-log trail ------------------------------
+# Not the tracked journal: `<journal dir>/auto-log/`, the git-ignored trail
+# log-commits.sh and log-file-changes.sh write, named the same way:
+# issue-{N}.{YYYY-MM}.md on a branch naming issue N (rotated monthly),
+# otherwise session-{YYYY-MM-DD}.md. The path checks below are theirs (see
+# log-file-changes.sh, _flow_autolog). Written only where the repository keeps
+# a flow journal directory: a push in a repository that never ran /flow:setup
+# must not create .decisions/ in it.
 [ -n "$REPO_ROOT" ] || exit 0
 JOURNAL_DIR=$(cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/journal-dir.sh" 2>/dev/null) || JOURNAL_DIR=""
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 case "$JOURNAL_DIR" in
-  /*) JOURNAL_ABS="$JOURNAL_DIR" ;;
-  *) JOURNAL_ABS="$REPO_ROOT/$JOURNAL_DIR" ;;
+  /*) JOURNAL_BASE="$JOURNAL_DIR" ;;
+  *) JOURNAL_BASE="$REPO_ROOT/$JOURNAL_DIR" ;;
 esac
-[ -d "$JOURNAL_ABS" ] || exit 0
+[ -d "$JOURNAL_BASE" ] || exit 0
 
 BRANCH=$(git -C "$CWD" branch --show-current 2>/dev/null) || BRANCH=""
 ISSUE_NUM=$(printf '%s' "$BRANCH" | grep -oE 'issue-[0-9]+' | head -n 1 | grep -oE '[0-9]+') || ISSUE_NUM=""
-if [ -n "$ISSUE_NUM" ]; then TARGET=(--issue "$ISSUE_NUM"); else TARGET=(--session); fi
+if [ -n "$ISSUE_NUM" ]; then
+  AUTOLOG="$JOURNAL_BASE/auto-log/issue-$ISSUE_NUM.$(date +%Y-%m).md"
+else
+  AUTOLOG="$JOURNAL_BASE/auto-log/session-$(date +%Y-%m-%d).md"
+fi
+AUTOLOG_DIR=$(dirname "$AUTOLOG")
 
-TEXT=$(printf '%s\n' "${JOURNAL_LINES[@]}")
-ERR=$(cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/journal-append.sh" "${TARGET[@]}" --text "$TEXT" 2>&1 >/dev/null)
+_tg_trail_refused() {
+  _tg_note "could not write to the auto-log trail ($1); allowing"
+  exit 0
+}
+# A symlinked trail file or directory is refused: after `gh pr checkout` of a
+# hostile fork it could point anywhere. The directory is created by
+# bin/flow-mkdir.sh --contained at the repository top (nothing below the top
+# through a symlink); an absolute journal.dir from the user's own settings is
+# created as configured.
+[ -L "$AUTOLOG" ] && _tg_trail_refused "the trail file is a symlink"
+[ -L "$AUTOLOG_DIR" ] && _tg_trail_refused "the trail directory is a symlink"
+if ! (cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/flow-mkdir.sh" --contained -- "$AUTOLOG_DIR") >/dev/null 2>&1; then
+  USER_DIR=$(cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/journal-dir.sh" --user-owned 2>/dev/null) || USER_DIR=""
+  [ -n "$USER_DIR" ] || _tg_trail_refused "its directory could not be created inside the repository"
+  mkdir -p "$AUTOLOG_DIR" 2>/dev/null || _tg_trail_refused "its directory could not be created"
+fi
+# The trail directory ignores itself, so it never dirties the tree.
+[ -L "$AUTOLOG_DIR/.gitignore" ] && _tg_trail_refused "its .gitignore is a symlink"
+{ [ -f "$AUTOLOG_DIR/.gitignore" ] || printf '*\n' > "$AUTOLOG_DIR/.gitignore" 2>/dev/null; } || true
+
+# One HTML-comment breadcrumb per action, as the other trail entries are,
+# with the comment terminators and control characters neutralized: the trail
+# is fed back to Claude by /flow:explain.
+_tg_crumb_safe() {
+  local v="${1//-->/-- >}"
+  v="${v//<!--/< !--}"
+  printf '%s' "$v" | LC_ALL=C tr '\000-\037\177' ' '
+}
+AGENT_TYPE=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null) || AGENT_TYPE=""
+AGENT_SAFE=""
+[ -n "$AGENT_TYPE" ] && AGENT_SAFE=" agent=$(_tg_crumb_safe "$AGENT_TYPE")"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+TEXT=""
+for J in "${JOURNAL_LINES[@]}"; do
+  TEXT="$TEXT<!-- auto-log: $NOW $(_tg_crumb_safe "${J%%$'\t'*}") \"$(_tg_crumb_safe "${J#*$'\t'}")\"$AGENT_SAFE -->"$'\n'
+done
+ERR=$(printf '%s' "$TEXT" | (cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/journal-append.sh" --file "$AUTOLOG" -) 2>&1 >/dev/null)
 RC=$?
 if [ "$RC" -ne 0 ]; then
   ERR=$(printf '%s' "$ERR" | head -n 1 | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-200)
-  _tg_note "could not append to the decision journal (journal-append.sh exit $RC${ERR:+: $ERR}); allowing"
+  _tg_note "could not write to the auto-log trail (journal-append.sh exit $RC${ERR:+: $ERR}); allowing"
 fi
 exit 0
