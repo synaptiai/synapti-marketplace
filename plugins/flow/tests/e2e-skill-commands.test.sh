@@ -16,6 +16,9 @@
 #      and workflow reads as missing, or the trigger schema cannot be opened
 #   R2 the command finds a name that the plugin does not ship
 #   R3 the trigger schema check exits 0 because no schema was read
+#   R4 the trigger schema check follows a trigger that is a symbolic link and
+#      prints what it points at in its error messages
+#   R5 a schema error message carries a long value from the trigger whole
 #
 # Review feedback (feedback-resolution Collect, bin/flow-pr-feedback.sh)
 #   F1 the comments or reviews are not printed, or not as one object per line
@@ -155,6 +158,38 @@ if python3 -c 'import yaml, jsonschema' >/dev/null 2>&1; then
   _run_text "skills/trigger-policy/SKILL.md (step 1 fence)" "$(_trigger_schema_fence)" "$NO_ROOT" "HOME=$E2E_HOME" "TRIGGER_YAML=valid.trigger.yaml"
   e2e_expect_equal 1 "$E2E_RC" "the exit status with no schema to read"
   e2e_expect_no_out "SCHEMA_ERROR"
+  e2e_expect_clean_edges
+
+  _flow_test_begin "trigger-policy step 1: a trigger that is a symbolic link is refused, and its target is not printed (R4)"
+  e2e_new trigger-policy-schema-symlink
+  e2e_describe "the trigger file is a symbolic link to a file outside the repository whose YAML would fail the schema and carries a sentinel string"
+  e2e_repo feature/e2e
+  _install_flow
+  printf 'metadata: LINK-TARGET-SENTINEL-7f3a\n' > "$E2E_DIR/outside.yaml"
+  ln -s "$E2E_DIR/outside.yaml" "$E2E_REPO/link.trigger.yaml"
+  _run_text "skills/trigger-policy/SKILL.md (step 1 fence)" "$(_trigger_schema_fence)" "$NO_ROOT" "HOME=$E2E_HOME" "TRIGGER_YAML=link.trigger.yaml"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status for a trigger that is a symbolic link"
+  e2e_expect_err "flow-trigger-schema-check: the trigger is a symbolic link; it is not read"
+  e2e_expect_equal 0 "$(printf '%s\n' "$E2E_OUT" "$E2E_ERR" | grep -c LINK-TARGET-SENTINEL-7f3a)" "lines of stdout and stderr carrying the link target's contents"
+  e2e_expect_no_out "SCHEMA_ERROR"
+  e2e_expect_clean_edges
+
+  _flow_test_begin "trigger-policy step 1: a long value in a schema error is cut short (R5)"
+  e2e_new trigger-policy-schema-long-value
+  e2e_describe "metadata.id is 2000 letters ending in a sentinel, which does not match the id pattern"
+  e2e_repo feature/e2e
+  _install_flow
+  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/trigger/valid.yaml" "$E2E_REPO/long.trigger.yaml" <<'PY2'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+d["metadata"]["id"] = "a" * 2000 + "TAIL-SENTINEL-9c1e"
+yaml.safe_dump(d, open(sys.argv[2], "w", encoding="utf-8"), sort_keys=False)
+PY2
+  _run_text "skills/trigger-policy/SKILL.md (step 1 fence)" "$(_trigger_schema_fence)" "$NO_ROOT" "HOME=$E2E_HOME" "TRIGGER_YAML=long.trigger.yaml"
+  e2e_expect_equal 2 "$E2E_RC" "the exit status for a trigger with a bad id"
+  e2e_expect_out "SCHEMA_ERROR=metadata/id: 'aaaa"
+  e2e_expect_no_out "TAIL-SENTINEL-9c1e"
+  e2e_expect_equal yes "$(printf '%s\n' "$E2E_OUT" | awk 'length($0) > 400 { long = 1 } END { print long ? "no" : "yes" }')" "every SCHEMA_ERROR line is at most 400 characters"
   e2e_expect_clean_edges
 else
   _flow_test_begin "trigger-policy step 1: the trigger schema is read from the installed plugin (R1, R3)"
