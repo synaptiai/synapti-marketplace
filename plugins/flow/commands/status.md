@@ -576,7 +576,7 @@ The complete verbose dashboard (every section):
 - **Learning**: {pending/none}
 
 ### FlowGoal State
-{When STATE=disabled: render "(FlowGoal v3 not enabled — set `flow.goals.enabled: true` in `.claude/settings.flow.json` to opt in)"}
+{When STATE=disabled: render "(FlowGoals are turned off — `flow.goals.enabled` is false in the settings; set it to true to turn them back on)"}
 {When STATE=no_active_goal: render "No active FlowGoal."}
 {When STATE=degenerate: render "⚠ Degenerate state: multiple active goals — run `/flow:goal history` and clear extras"}
 {When STATE=unavailable: render "Unavailable: {REASON}"}
