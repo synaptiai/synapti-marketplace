@@ -449,7 +449,7 @@ g19_fixture "$G19_ACCEPTED_DIR" \
 
 | Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
 |---|---|---|---|---|---|
-| [EV-0042] | Jane Doe, VP Engineering | 2026-07-20 | Low exploitability in this deployment; upgrade scheduled next quarter | 2026-10-20 | Slack thread, 2026-07-20, #security-review |'
+| [EV-0042] | Jane Doe, VP Engineering | 2026-07-20 | Low exploitability in this deployment; upgrade scheduled next quarter | 2099-01-01 | Slack thread, 2026-07-20, #security-review |'
 G19_ACCEPTED_RESULT=$(g19_result "$G19_ACCEPTED_DIR")
 assert_equal "PASS" "$G19_ACCEPTED_RESULT" "AC3: a High finding with a named accepter, valid dates, and a stated basis in Accepted risks passes G19"
 
@@ -783,7 +783,7 @@ g19_fixture "$H4_DIR" \
 
 | Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
 |---|---|---|---|---|---|
-| [EV-0010] | Jane Doe, VP Engineering | 2026-07-20 | Low exploitability in this deployment | 2026-10-20 | Slack thread, 2026-07-20, #security-review |'
+| [EV-0010] | Jane Doe, VP Engineering | 2026-07-20 | Low exploitability in this deployment | 2099-01-01 | Slack thread, 2026-07-20, #security-review |'
 H4_RESULT=$(g19_result "$H4_DIR")
 assert_equal "FAIL" "$H4_RESULT" "H4: one disposed and one undisposed finding — the gate still FAILs overall"
 H4_EVIDENCE=$(g19_evidence "$H4_DIR")
@@ -931,7 +931,7 @@ g19_fixture "$H9_ACC_DIR" \
 
 | Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
 |---|---|---|---|---|---|
-| [EV-0002] | Jane Doe | 2026-07-20 | Low exploitability; unrelated finding, but this basis text happens to mention EV-0099 in passing for historical context | 2026-10-20 | Slack thread |'
+| [EV-0002] | Jane Doe | 2026-07-20 | Low exploitability; unrelated finding, but this basis text happens to mention EV-0099 in passing for historical context | 2099-01-01 | Slack thread |'
 H9_ACC_RESULT=$(g19_result "$H9_ACC_DIR")
 assert_equal "FAIL" "$H9_ACC_RESULT" "H9: a coincidental EV-#### mention in the Accepted risks Basis prose does not falsely dispose an unrelated finding"
 
@@ -1272,7 +1272,7 @@ g19_fixture "$G19_ACC_PLACEHOLDER_DIR" \
 
 | Risk ID | Accepted by | Date | Basis for acceptance | Review date | Evidence of the acceptance |
 |---|---|---|---|---|---|
-| [EV-0054] | {fill} | 2026-07-20 | {fill} | 2026-10-20 | {fill} |'
+| [EV-0054] | {fill} | 2026-07-20 | {fill} | 2099-01-01 | {fill} |'
 assert_equal "FAIL" "$(g19_result "$G19_ACC_PLACEHOLDER_DIR")" "F4: unfilled {fill} Accepter/Basis placeholders no longer dispose a finding via Accepted risks"
 
 # --- New (SEC-2 security-skeptic, SEC-3 security-verifier, F1
