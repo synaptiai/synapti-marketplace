@@ -630,11 +630,11 @@ Display the pull request or release URL and a summary that lists every version f
 | Calculate next version, plan the version-file bump | 1 | Autonomous, read-only |
 | Generate changelog from PR titles | 1 | Autonomous |
 | Create the release branch, write the bump and changelog, commit | 1 | Autonomous, local |
-| `git push -u origin <release branch>` | 2 | Per `flow.tiers.push` |
-| `gh pr create` (the release pull request) | 2 | Per `flow.tiers.prCreate` |
+| `git push -u origin <release branch>` | 2 | Per `tiers.push` |
+| `gh pr create` (the release pull request) | 2 | Per `tiers.prCreate` |
 | `git tag -a <tag> <merge commit>` | 1 | Autonomous, local |
 | `git push origin <tag>` | 3 | **Confirm** — the tier hook asks before it runs |
 | `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push in the same call; with the tag already on origin (`RELEASE_RUN=publish`), the tier hook journals it, since the tag push it confirms has already happened |
 | Post-release verification (`gh release view`) | 1 | Autonomous |
 
-`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push, with the GitHub release created in the same call, needs your confirmation at flow's tier hook, whatever `flow.tiers.release` says. Creating the release for a tag already on origin is not asked again. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.
+`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push, with the GitHub release created in the same call, needs your confirmation at flow's tier hook, whatever `tiers.release` says. Creating the release for a tag already on origin is not asked again. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.

@@ -833,7 +833,8 @@ The evaluation runs come after `threshold.json` is written. They use the
 correctness eval's runner with a fresh `--out`; the runner stops before a
 run when the cost recorded so far plus `--max-budget-usd` would pass
 `--max-total-usd`, which held the 24 runs to $50, the budget the
-maintainer approved:
+maintainer approved. The command is the one those runs used, on `claude-sonnet-5`;
+a new run names the current model, `claude-sonnet-5-5`:
 
 ```bash
 E=plugins/flow/evals/results/discrimination-<date>

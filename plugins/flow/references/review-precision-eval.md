@@ -255,8 +255,8 @@ verdict; "Result" below gives what was measured and why.
 
 ### What a verdict run measures
 
-A verdict run re-runs the plain arm (`review-b`) on `claude-opus-5-5` and `claude-sonnet-5`,
-three times per case and trap, with a prompt that also asks each finding's reviewers and
+A verdict run re-runs the plain arm (`review-b`) on `claude-opus-5-5` and `claude-sonnet-5`, the
+models of the recorded runs it is compared with, three times per case and trap, with a prompt that also asks each finding's reviewers and
 suggested fix, and keeps each run's parsed findings. The shipped site scripts are then replayed
 over those findings, offline, against TypeSafe `jev-1.13.0`:
 

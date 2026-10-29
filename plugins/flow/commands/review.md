@@ -1030,7 +1030,7 @@ If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
-Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block, or 10 when `REVIEW_RUN_PR_COMMANDS` is not `yes` (the two `test-runner` variants are not dispatched) — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other.
+Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block, or 10 when `REVIEW_RUN_PR_COMMANDS` is not `yes` (the two `test-runner` variants are not dispatched) — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other. `<agent>-skeptic` and `<agent>-verifier` below are not separate agent files: dispatch the `<agent>` agent (for example `security-reviewer`) with that variant's prompt.
 
 Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection** above. (When the resolved value is `inherit`, drop the `model=` argument — the session model is the default when no override is passed.)
 
