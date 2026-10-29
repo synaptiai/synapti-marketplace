@@ -8,7 +8,8 @@
 #   ./flow-goal-evaluator.sh < event.json
 #
 # Contract:
-#   - Accepts and ignores ALL flags so it survives hook arg drift.
+#   - Accepts ALL flags so it survives hook arg drift; records two of them
+#     only when FLOW_TEST_CLAUDE_ARGS_DIR is set (see below).
 #   - Reads stdin to /dev/null so the producer's `<` redirect doesn't SIGPIPE.
 #   - Emits the fixture file's contents on stdout, byte-for-byte.
 #   - Exits 0 if fixture is readable; 1 if env var unset or fixture unreadable.
@@ -35,9 +36,30 @@ if [ ! -r "$FLOW_TEST_CLAUDE_RESPONSE" ]; then
   exit 1
 fi
 
-# Tolerate a closed FD 0 — `cat > /dev/null <&-` errors with "Bad file
-# descriptor". `|| true` keeps the shim exit 0 so the hook sees clean stdout.
-cat > /dev/null 2>/dev/null || true
+# With FLOW_TEST_CLAUDE_ARGS_DIR set, the shim keeps what the hook passed, one
+# file each, byte for byte: the value after --system-prompt in
+# system-prompt.txt, the value after --model in model.txt, and stdin (the
+# prompt) in stdin.txt. A value can span lines, so each goes to its own file
+# rather than one flattened line. Without it, every flag is ignored as before.
+if [ -n "${FLOW_TEST_CLAUDE_ARGS_DIR:-}" ]; then
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --system-prompt|--model)
+        if [ $# -lt 2 ]; then shift; continue; fi
+        case "$1" in
+          --system-prompt) printf '%s' "$2" > "$FLOW_TEST_CLAUDE_ARGS_DIR/system-prompt.txt" ;;
+          --model) printf '%s' "$2" > "$FLOW_TEST_CLAUDE_ARGS_DIR/model.txt" ;;
+        esac
+        shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  cat > "$FLOW_TEST_CLAUDE_ARGS_DIR/stdin.txt" 2>/dev/null || true
+else
+  # Tolerate a closed FD 0 — `cat > /dev/null <&-` errors with "Bad file
+  # descriptor". `|| true` keeps the shim exit 0 so the hook sees clean stdout.
+  cat > /dev/null 2>/dev/null || true
+fi
 cat "$FLOW_TEST_CLAUDE_RESPONSE"
 # Optionally exit with a non-zero code (real `claude --print` can return
 # a partial-JSON stdout with a non-zero exit on network/model errors).
