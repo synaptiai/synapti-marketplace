@@ -132,7 +132,8 @@ assert_contains "--output-format json" "$ARGS_LINE" "the helper asks for JSON ou
 assert_contains '--system-prompt "$SYSTEM_PROMPT"' "$ARGS_LINE" "the helper passes the agent body as the system prompt"
 assert_match '^export CLAUDE_HOOK_GOAL_JUDGE_MODE=true$' "$(grep -E '^export CLAUDE_HOOK_GOAL_JUDGE_MODE' "$HELPER")" "the helper sets the recursion guard for the judge"
 assert_contains 'bin/flow-judge.sh" --judge verdict' "$(flow_block "$START_CMD" VERDICT_JUDGE_BLOCK 2>/dev/null)" "start.md's verdict block runs the helper"
-assert_contains 'bin/flow-judge.sh" --judge goal' "$(flow_block "$GOAL_SKILL" GOAL_JUDGE_RUN 2>/dev/null)" "the goal-evaluator skill's block runs the helper"
+assert_contains 'bin/flow-goal-judge-run.sh" ' "$(flow_block "$GOAL_SKILL" GOAL_JUDGE_RUN 2>/dev/null)" "the goal-evaluator skill's block runs bin/flow-goal-judge-run.sh"
+assert_contains 'bin/flow-judge.sh" --judge goal' "$(cat "$FLOW_DIR/bin/flow-goal-judge-run.sh")" "bin/flow-goal-judge-run.sh runs the helper"
 assert_contains 'exec "${PLUGIN_ROOT}/bin/flow-judge.sh" --judge goal' "$(cat "$STOP_EVAL")" "the Stop hook runs the helper"
 DISPATCH=$(grep -rnE 'Agent\((verdict-judge|goal-evaluator-judge)|subagent_type: *(verdict-judge|goal-evaluator-judge)|dispatch(es)? Agent\(verdict|dispatch(es)? `?Agent\(goal' \
   "$FLOW_DIR/agents" "$FLOW_DIR/commands" "$FLOW_DIR/references" "$FLOW_DIR/skills" 2>/dev/null || true)

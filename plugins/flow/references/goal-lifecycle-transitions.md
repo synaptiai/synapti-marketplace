@@ -87,6 +87,10 @@ Used by `goal-evaluator` Step 6. "Candidate" is the deterministic verdict from t
 
 Terminal rows are returned by the skill as `proposed_transition` and written by the caller after user confirmation; the Stop-hook evaluator-loop path records the verdict with `bin/flow-record-verdict.sh` and approves the stop with a hint instead (no `AskUserQuestion` inside a hook). The two stop-hook rows are the exception: the hook writes `failed` itself, because nobody is there to confirm and continuing would keep the agent working on a goal it cannot reach.
 
+The Stop-hook evaluator-loop cannot ask: it records the verdict and approves the stop with a hint to run `/flow:goal evaluate <id>`. It writes one terminal status itself, `failed`, on stuck detection and when the turn budget is used up on a turn that would block again. Stuck detection belongs to the Stop hook: in evaluator-loop mode it counts consecutive `unchanged` turns against `flow.goals.failAfterStuckTurns` (default 3) and writes `failed` with reason `stuck_no_progress` itself. The goal-evaluator skill does not count turns.
+
+`last-verdict.json` has one writer per path: the caller of the goal-evaluator skill (`commands/goal.md` or `flow-goal-evaluator.sh`) through `bin/flow-record-verdict.sh`, never the skill. Two writers race and the last one wins.
+
 ## Related
 
 - `plugins/flow/skills/goal-lifecycle/SKILL.md` — the skill that mediates every transition.

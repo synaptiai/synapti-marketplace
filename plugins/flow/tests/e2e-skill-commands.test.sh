@@ -17,6 +17,11 @@
 #   R2 the command finds a name that the plugin does not ship
 #   R3 the trigger schema check exits 0 because no schema was read
 #
+# Review feedback (feedback-resolution Collect, bin/flow-pr-feedback.sh)
+#   F1 the comments or reviews are not printed, or not as one object per line
+#   F2 a failed gh call exits 0, so an empty list reads as "no feedback"
+#   F3 a PR number with a path in it reaches the API path
+#
 # grep --include (brainstorming step 2, architecture-patterns coupling check)
 #   G1 one --include holding a brace list, which grep does not expand, so no
 #      file matches and the search reports nothing
@@ -127,13 +132,26 @@ if python3 -c 'import yaml, jsonschema' >/dev/null 2>&1; then
   _install_flow
   cp "$REPO_ROOT/plugins/flow/tests/fixtures/trigger/valid.yaml" "$E2E_REPO/valid.trigger.yaml"
   cp "$REPO_ROOT/plugins/flow/tests/fixtures/trigger/missing-required.yaml" "$E2E_REPO/bad.trigger.yaml"
-  e2e_expect_equal yes "$(_trigger_schema_fence | grep -q 'trigger.schema.json' && echo yes || echo no)" "whether the schema fence was extracted"
+  e2e_expect_equal yes "$(_trigger_schema_fence | grep -q 'bin/flow-trigger-schema-check.sh' && echo yes || echo no)" "whether the schema fence was extracted"
   _run_text "skills/trigger-policy/SKILL.md (step 1 fence)" "$(_trigger_schema_fence)" "$NO_ROOT" "HOME=$E2E_HOME" "TRIGGER_YAML=valid.trigger.yaml"
   e2e_expect_equal 0 "$E2E_RC" "the exit status for a valid trigger"
   e2e_expect_no_out "SCHEMA_ERROR"
   _run_text "skills/trigger-policy/SKILL.md (step 1 fence)" "$(_trigger_schema_fence)" "$NO_ROOT" "HOME=$E2E_HOME" "TRIGGER_YAML=bad.trigger.yaml"
   e2e_expect_equal 2 "$E2E_RC" "the exit status for a trigger missing required fields"
   e2e_expect_out "SCHEMA_ERROR="
+  e2e_expect_clean_edges
+
+  _flow_test_begin "trigger-policy step 1: an install with no trigger schema does not pass the check (R3)"
+  e2e_new trigger-policy-no-schema
+  e2e_describe "flow is installed under HOME from a copy of the plugin with schemas/v1/trigger.schema.json removed; the trigger is valid"
+  e2e_repo feature/e2e
+  e2e_plugin_copy schemas/v1/trigger.schema.json ""
+  rm -f "$E2E_ACTIVE_PLUGIN/schemas/v1/trigger.schema.json"
+  _install_flow
+  cp "$REPO_ROOT/plugins/flow/tests/fixtures/trigger/valid.yaml" "$E2E_REPO/valid.trigger.yaml"
+  _run_text "skills/trigger-policy/SKILL.md (step 1 fence)" "$(_trigger_schema_fence)" "$NO_ROOT" "HOME=$E2E_HOME" "TRIGGER_YAML=valid.trigger.yaml"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status with no schema to read"
+  e2e_expect_no_out "SCHEMA_ERROR"
   e2e_expect_clean_edges
 else
   _flow_test_begin "trigger-policy step 1: the trigger schema is read from the installed plugin (R1, R3)"
@@ -150,6 +168,49 @@ e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_line "FLOW_ROOT=$FLOW_INSTALL"
 e2e_expect_equal yes "$([ -f "$FLOW_INSTALL/agents/code-reviewer.md" ] && echo yes || echo no)" "whether the plugin's agents are under that root"
 e2e_expect_clean_edges
+
+# _feedback_fixtures — PR 7 in o/r with one inline comment and one review.
+_feedback_fixtures() {
+  e2e_gh_fixture repo '{"nameWithOwner":"o/r"}'
+  e2e_gh_fixture pull-comments-7 '[{"id":11,"path":"src/a.sh","line":3,"body":"quote this","user":{"login":"rev"}}]'
+  e2e_gh_fixture pr-reviews-7 '{"reviews":[{"state":"CHANGES_REQUESTED","body":"see inline","author":{"login":"rev"}}]}'
+}
+
+_flow_test_begin "feedback-resolution Collect: the installed plugin's script prints the inline comments, then the reviews (F1)"
+e2e_new feedback-collect
+e2e_describe "flow is installed under HOME; PR 7 has one inline comment and one review"
+e2e_repo feature/e2e
+_install_flow
+_feedback_fixtures
+e2e_run_fence "$NO_ROOT" "HOME=$E2E_HOME" "PR_NUM=7" "$SKILLS_DIR/feedback-resolution/SKILL.md" 'flow-pr-feedback.sh'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_equal '{"id":11,"path":"src/a.sh","line":3,"body":"quote this","author":"rev"}
+{"state":"CHANGES_REQUESTED","body":"see inline","author":"rev"}' "$(printf '%s\n' "$E2E_OUT" | jq -c . 2>&1)" "the inline comment, then the review"
+e2e_expect_clean_edges
+
+_flow_test_begin "feedback-resolution Collect: a failed gh call is a non-zero exit, and the reviews are not read (F2)"
+e2e_new feedback-collect-gh-fail
+e2e_describe "the inline-comment call for PR 7 fails with HTTP 502"
+e2e_repo feature/e2e
+_install_flow
+_feedback_fixtures
+e2e_gh_fail pull-comments-7
+rm -f "$E2E_GH/pr-reviews-7.json"
+e2e_run_fence "$NO_ROOT" "HOME=$E2E_HOME" "PR_NUM=7" "$SKILLS_DIR/feedback-resolution/SKILL.md" 'flow-pr-feedback.sh'
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_equal "" "$(cat "$E2E_GH/unhandled.log")" "no call after the failed one (pr-reviews-7 has no fixture)"
+
+_flow_test_begin "feedback-resolution Collect: a PR number that is not a positive whole number is refused before any gh call (F3)"
+for BAD in "7/../8" "07" "-1"; do
+  e2e_new "feedback-collect-bad-$(printf '%s' "$BAD" | tr -c 'A-Za-z0-9' _)"
+  e2e_describe "PR_NUM is '$BAD'; gh has no fixtures, so any call would be logged as unhandled"
+  e2e_repo feature/e2e
+  _install_flow
+  e2e_run_fence "$NO_ROOT" "HOME=$E2E_HOME" "PR_NUM=$BAD" "$SKILLS_DIR/feedback-resolution/SKILL.md" 'flow-pr-feedback.sh'
+  e2e_expect_equal 2 "$E2E_RC" "the exit status for '$BAD'"
+  e2e_expect_err "usage: flow-pr-feedback.sh <pr-number>"
+  e2e_expect_clean_edges
+done
 
 # _grep_tree — a TypeScript and a Python file that match, and a Markdown file
 # that matches too but is not source.

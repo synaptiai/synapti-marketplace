@@ -10,7 +10,8 @@
 #
 # The three callers give a judge the same instructions, model and limits:
 #   - hooks/scripts/flow-goal-evaluator.sh (Stop hook, evaluator-loop mode)
-#   - skills/goal-evaluator/SKILL.md Step 5 (/flow:goal evaluate)
+#   - skills/goal-evaluator/SKILL.md Step 5 (/flow:goal evaluate), through
+#     bin/flow-goal-judge-run.sh
 #   - commands/start.md Phase 4 step 6 (the verdict judge)
 #
 # What it does, per judge:

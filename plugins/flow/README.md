@@ -263,6 +263,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── cascade-resolve.sh    — reads one setting through the settings cascade (see Configuration)
   ├── flow-migrate-settings.sh — upgrades a settings file that still uses a deprecated key (dry-run unless --apply)
   ├── flow-load-skills.sh   — inlines a command's Required Skills (ambient bodies, dispatched contracts)
+  ├── flow-skill-manifests.sh — regenerates the tables in references/skill-manifests.md (--write)
   └── validate-skill-input.sh — validates skill inputs against the JSON Schemas under schemas/
   Review
   ├── flow-finding-route.sh — routes consolidated findings by confidence and review mode, and builds the marker rows
@@ -271,11 +272,14 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-dep-diff.sh      — lists dependencies added, bumped or removed between two commits, from the manifests, offline
   ├── flow-clone-scan.sh    — lists duplicated blocks a branch introduced, using jscpd against the merge base
   ├── flow-pr-linked-issue.sh — prints the issue GitHub lists as closed by a pull request
-  └── flow-check-resolution-body.sh — refuses a resolution comment the merge finding-ledger gate would misread
+  ├── flow-check-resolution-body.sh — refuses a resolution comment the merge finding-ledger gate would misread
+  └── flow-pr-feedback.sh   — prints a pull request's inline review comments and reviews, one JSON object per line
   Goals, runs and the quality ledger
   ├── flow-active-goal.sh   — finds the FlowGoal for the current branch and prints its status, criteria or JSON
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
+  ├── flow-goal-judge-run.sh — runs the goal judge for /flow:goal evaluate, as the Stop hook runs it
+  ├── flow-trigger-schema-check.sh — validates a FlowTrigger YAML against the plugin's trigger schema
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
   ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink (exit 2), or says the check could not run (exit 3); needs python3 but not PyYAML
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
@@ -329,15 +333,15 @@ Two loading modes, decided from each skill's frontmatter:
 - **Ambient** (no `context: fork`, no `agent:`) — the whole body is inlined. These are stance skills that apply throughout (`llm-operator-principles`, `evidence-based-development`, `autonomous-workflow`, `code-quality-principles`).
 - **Dispatched** (`context: fork` or `agent:`) — only the skill's `## Contract` section is inlined (its first H2, at most 120 words: iron law, invoking phase, return shape, permitted skips). The body runs in full when the command invokes `Skill(<name>)`.
 
-Rules. The plugin's test suite enforces rules 1 to 3; promotion refuses a learned skill whose body is over 600 words:
+Rules. The plugin's test suite enforces rules 1 to 3 and the word limit in rule 4; promotion also refuses a learned skill whose body is over 600 words:
 
 1. Every command either has `## Required Skills` bullets plus the loader block, or an explicit `_None — {reason}_` marker and no loader block.
 2. The loader block's names equal the bullet list exactly.
 3. Every dispatched skill has `## Contract` as its first H2, at most 120 words.
-4. Every `Skill(X)` invocation in a command body names one of its Required Skills. Skill bodies are kept to about 600 words; long tables live under `references/` and are linked.
+4. Every `Skill(X)` invocation in a command body names one of its Required Skills. Every skill body is at most 600 words, frontmatter excluded; long tables live under `references/` and are linked.
 5. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) use the `_None_` marker.
 
-`references/skill-manifests.md` lists what each command loads and how many words that costs.
+`references/skill-manifests.md` lists what each command loads and how many words that costs. `bin/flow-skill-manifests.sh --write` regenerates its tables, and the test suite fails when they are out of date.
 
 ## Canonical Reference Documents
 

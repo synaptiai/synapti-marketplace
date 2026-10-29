@@ -110,6 +110,12 @@ The two must agree, and a reader is the dangerous one to get wrong. A reader tha
 
 The journal is the source of truth. A journal section is reused verbatim only when all four subsections are present AND the issue has not been updated since the journal was last written (`git log -1 --format=%cd .decisions/issue-{N}.md` versus the issue's `updatedAt` from `gh issue view --json updatedAt`). Otherwise the skill fills only the missing or stale elements — it never re-prompts for elements the journal already holds.
 
+## Anti-patterns
+
+- "The acceptance criteria are enough": criteria scope WHAT; the elements scope IS NOT, FAILS HOW, WHICH SCHEMAS, WRONG WHERE.
+- "I'll capture during PLAN": PLAN's fence is built from the specification; the Stranger Test fails.
+- "The failure-mode categories cover risk": no. Timeouts, partial failures, invalid input, missing context are infrastructure error paths agents already over-test. The risk map is about the core logic being subtly wrong.
+
 ## Goal contract mapping
 
 `skills/goal-contract-capture/SKILL.md` lifts these subsections into the FlowGoal YAML `specification` block: `non_goals`, `failure_modes`, `interface_contracts`, and `risk_map: [{area, plausible_wrong_version, discriminating_check}]` (one entry per table row; absent when the subsection is the disabled marker).
