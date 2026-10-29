@@ -75,6 +75,10 @@
 #      create the branch" with no way forward
 #   P7 a version file with changes of its own is bumped and committed with
 #      them, or restored over them on a failure
+#   P8 a failed run started on another branch, or on a detached commit,
+#      ends on the default branch instead of where it started
+#   P9 a failed run unstages a changelog the user had staged before it, or
+#      leaves the release's version of it staged in place of the user's
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
@@ -866,6 +870,65 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   _left_as_before
   e2e_expect_out "git push"
 done
+
+# _released_with_changelog <commit|push> — the npm package released as
+# v1.2.3 with a committed CHANGELOG.md, then made to fail at that step: a
+# pre-commit hook that fails, or origin unreachable.
+_released_with_changelog() {
+  e2e_repo main
+  _npm_fixture
+  printf '# Changelog\n' > "$E2E_REPO/CHANGELOG.md"
+  _commit_all
+  _git tag -a v1.2.3 -m v1.2.3
+  _origin
+  case "$1" in
+    commit)
+      mkdir -p "$E2E_REPO/.git/hooks"
+      printf '#!/bin/sh\nexit 1\n' > "$E2E_REPO/.git/hooks/pre-commit"
+      chmod +x "$E2E_REPO/.git/hooks/pre-commit" ;;
+    push) _git remote set-url origin "$E2E_DIR/missing.git" ;;
+  esac
+}
+
+_flow_test_begin "Phase 4 pr: a failed run returns to what was checked out, and keeps a changelog staged before (P8, P9)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-undo-branch-$E2E_FENCE_SHELLS"
+  e2e_describe "the block run from the branch release-base, not main; origin unreachable at the push; block under $E2E_FENCE_SHELLS"
+  _released_with_changelog push
+  _git switch -q -c release-base
+  _pr_block
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_equal "release-base" "$(_git branch --show-current)" "the branch afterwards (the one the block started on)"
+  e2e_expect_equal "" "$(_git branch --list chore/release-1.3.0)" "the local release branch (removed)"
+  e2e_expect_out "release-base is checked out"
+
+  e2e_new "release-pr-undo-detached-$E2E_FENCE_SHELLS"
+  e2e_describe "the block run on a detached HEAD at main's commit; origin unreachable at the push; block under $E2E_FENCE_SHELLS"
+  _released_with_changelog push
+  START=$(_git rev-parse HEAD)
+  _git switch -q --detach "$START"
+  _pr_block
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_equal "" "$(_git symbolic-ref -q --short HEAD)" "the branch afterwards (still detached)"
+  e2e_expect_equal "$START" "$(_git rev-parse HEAD)" "the detached commit afterwards"
+  e2e_expect_equal "" "$(_git branch --list chore/release-1.3.0)" "the local release branch (removed)"
+
+  for STEP in commit push; do
+    e2e_new "release-pr-undo-staged-changelog-$STEP-$E2E_FENCE_SHELLS"
+    e2e_describe "a draft changelog entry staged, the final one in the working tree; the $STEP fails; block under $E2E_FENCE_SHELLS"
+    _released_with_changelog "$STEP"
+    printf '# Changelog\n\n## 1.3.0\n- draft\n' > "$E2E_REPO/CHANGELOG.md"
+    _git add CHANGELOG.md
+    printf '# Changelog\n\n## 1.3.0\n- final\n' > "$E2E_REPO/CHANGELOG.md"
+    _pr_block CHANGELOG_FILE=CHANGELOG.md
+    e2e_expect_equal 1 "$E2E_RC" "the exit status"
+    e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+    e2e_expect_equal "MM CHANGELOG.md" "$(_status)" "the working tree (the staged draft is still staged, the final edit still unstaged)"
+    e2e_expect_equal "$(printf '# Changelog\n\n## 1.3.0\n- draft')" "$(_git show :CHANGELOG.md)" "the staged changelog (the draft)"
+    e2e_expect_file_has CHANGELOG.md '- final'
+  done
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
 
 _flow_test_begin "Phase 4 pr: a release branch left by an earlier run is named, with both ways forward (P6)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do

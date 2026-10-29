@@ -408,9 +408,9 @@ Show the assessment as text — this is not a question:
 
 ### `RELEASE_RUN=pr`: open the release pull request
 
-Run the block below with `RELEASE_BRANCH`, `DEFAULT_BRANCH` and `TAG_PREFIX` from Phase 2, `VERSION` set to `NEW_VERSION`, `PLUGIN` to the plugin name and `MARKET_VERSION` to `NEW_MARKETPLACE_VERSION` (both empty outside a marketplace), `CHANGELOG_FILE` to the changelog file you edited (empty when none), and `CHANGELOG` to the generated changelog. It creates the release branch from the default branch, writes the bump, commits only the bumped files and the changelog file, pushes the branch and opens the pull request. Nothing is pushed to the default branch.
+Run the block below with `RELEASE_BRANCH`, `DEFAULT_BRANCH` and `TAG_PREFIX` from Phase 2, `VERSION` set to `NEW_VERSION`, `PLUGIN` to the plugin name and `MARKET_VERSION` to `NEW_MARKETPLACE_VERSION` (both empty outside a marketplace), `CHANGELOG_FILE` to the changelog file you edited (empty when none), and `CHANGELOG` to the generated changelog. It creates the release branch from the commit checked out (the default branch, which Phase 2 requires), writes the bump, commits only the bumped files and the changelog file, pushes the branch and opens the pull request. Nothing is pushed to the default branch.
 
-It stops before creating anything when the release branch already exists in this clone (`PR_ERROR` names both ways forward) or when a version file it would bump has uncommitted changes of its own. When the bump, the commit or the push fails, it puts the repository back as it found it: the version files restored, the default branch checked out, the release branch deleted, and the changelog edit and anything staged before kept. `PR_CLEANUP` says what it did, or what it could not undo.
+It stops before creating anything when the release branch already exists in this clone (`PR_ERROR` names both ways forward) or when a version file it would bump has uncommitted changes of its own. When the bump, the commit or the push fails, it puts the repository back as it found it: the version files restored, the branch or commit it started on checked out again, the release branch deleted, and the changelog edit and anything staged before kept as they were (a changelog you had staged stays staged). `PR_CLEANUP` says what it did, or what it could not undo.
 
 The pull request title (also the commit subject) is `chore(release): <plugin> <version>, marketplace <marketplace version>` in a marketplace and `chore(release): <tag>` otherwise.
 
@@ -463,6 +463,27 @@ if [ -n "$DIRTY" ]; then
   printf '%s\n' "PR_ERROR=\"these version files have uncommitted changes of their own:$DIRTY; commit or stash them, then run /flow:release again\""
   exit 1
 fi
+# What was checked out, to return to on a failure: a branch, or the commit
+# of a detached HEAD.
+START_BRANCH=$(git symbolic-ref -q --short HEAD)
+START_COMMIT=$(git rev-parse HEAD)
+if [ -n "$START_BRANCH" ]; then
+  START_NAME="$START_BRANCH"
+  START_SWITCH="git switch $START_BRANCH"
+else
+  START_NAME="the detached commit $START_COMMIT"
+  START_SWITCH="git switch --detach $START_COMMIT"
+fi
+# The changelog's index entry before this block stages it: mode and blob,
+# empty when git does not track the file. A failure puts it back, so a
+# changelog the user had staged stays staged as they staged it.
+CL_MODE=""
+CL_BLOB=""
+if [ -n "${CHANGELOG_FILE:-}" ]; then
+  read -r CL_MODE CL_BLOB _cl_rest <<EOF
+$(git ls-files -s -- "$CHANGELOG_FILE" | head -n 1)
+EOF
+fi
 # _flow_undo: put the repository back as this block found it, and print
 # PR_CLEANUP with what it did or could not do. The version files go back to
 # the last commit (they were clean before the bump); the changelog edit and
@@ -480,14 +501,27 @@ _flow_undo() {
   done <<EOF
 $VERSION_PATHS
 EOF
-  [ -z "${CHANGELOG_FILE:-}" ] || git reset -q -- "$CHANGELOG_FILE" >/dev/null 2>&1
-  if git switch -q "$DEFAULT_BRANCH"; then
+  if [ -n "${CHANGELOG_FILE:-}" ]; then
+    if [ -n "$CL_BLOB" ]; then
+      git update-index --cacheinfo "$CL_MODE,$CL_BLOB,$CHANGELOG_FILE" \
+        || _left="$_left; the staged $CHANGELOG_FILE is the release's version, not yours"
+    else
+      git reset -q -- "$CHANGELOG_FILE" >/dev/null 2>&1
+    fi
+  fi
+  _back=0
+  if [ -n "$START_BRANCH" ]; then
+    git switch -q "$START_BRANCH" && _back=1
+  else
+    git switch -q --detach "$START_COMMIT" && _back=1
+  fi
+  if [ "$_back" = 1 ]; then
     git branch -q -D "$RELEASE_BRANCH" || _left="$_left; the local branch $RELEASE_BRANCH is still there (git branch -D $RELEASE_BRANCH)"
   else
-    _left="$_left; still on $RELEASE_BRANCH (git switch $DEFAULT_BRANCH, then git branch -D $RELEASE_BRANCH)"
+    _left="$_left; still on $RELEASE_BRANCH ($START_SWITCH, then git branch -D $RELEASE_BRANCH)"
   fi
   if [ -z "$_left" ]; then
-    printf '%s\n' "PR_CLEANUP=\"the version files are restored, $DEFAULT_BRANCH is checked out and the local $RELEASE_BRANCH is deleted; the changelog edit and anything staged before are kept\""
+    printf '%s\n' "PR_CLEANUP=\"the version files are restored, $START_NAME is checked out and the local $RELEASE_BRANCH is deleted; the changelog edit and anything staged before are kept\""
   else
     printf '%s\n' "PR_CLEANUP=\"cleanup incomplete$_left\""
   fi
