@@ -482,6 +482,8 @@ push|git pu\sh origin HEAD
 prCreate|gh pr cr\eate --fill
 issueAssign|gh issue edit 5 --add-as\signee @me
 merge|gh api -X P\UT repos/o/r/pulls/7/me\rge
+merge|watch 'g\h pr merge 1 --body aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 'b\c ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+release|watch 'x\y ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' 'gh rel\ease create v9 --notes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 EOF
   for C in 'echo g\h pr merge 1' 'git commit -m "gh pr mer\ge 1"' 'gh pr vi\ew 3'; do
     _tg_run "$C"
