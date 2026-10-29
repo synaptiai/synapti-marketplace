@@ -21,9 +21,10 @@
     },
     "tiers": {
       "type": "object",
-      "description": "Safety tier classification for actions",
+      "description": "Safety tier for each action that leaves the machine, applied by the tier-gate.sh PreToolUse hook to the Bash command that runs it. autonomous: run it. journal: run it and append one line to the decision journal (only where the repository has a journal directory). confirm: ask first (a permission prompt; in claude -p, which has no one to ask, a refusal).",
       "properties": {
         "push": {
+          "description": "git push.",
           "enum": [
             "autonomous",
             "journal",
@@ -32,6 +33,7 @@
           "default": "journal"
         },
         "prCreate": {
+          "description": "gh pr create (or gh pr new), and gh api POST to .../pulls.",
           "enum": [
             "autonomous",
             "journal",
@@ -40,6 +42,7 @@
           "default": "journal"
         },
         "issueAssign": {
+          "description": "gh issue edit --add-assignee, and gh api POST to .../issues/{n}/assignees.",
           "enum": [
             "autonomous",
             "journal",
@@ -48,6 +51,7 @@
           "default": "journal"
         },
         "issueCreate": {
+          "description": "gh issue create (or gh issue new), and gh api POST to .../issues.",
           "enum": [
             "autonomous",
             "journal",
@@ -56,6 +60,7 @@
           "default": "journal"
         },
         "merge": {
+          "description": "gh pr merge, and gh api PUT or POST to .../pulls/{n}/merge or .../merges. Floor: confirm. A lower value is ignored with one warning naming this setting, and the merge still asks.",
           "enum": [
             "autonomous",
             "journal",
@@ -64,6 +69,7 @@
           "default": "confirm"
         },
         "release": {
+          "description": "gh release create (or gh release new), and gh api POST to .../releases. Floor: confirm. A lower value is ignored with one warning naming this setting, and the release still asks.",
           "enum": [
             "autonomous",
             "journal",

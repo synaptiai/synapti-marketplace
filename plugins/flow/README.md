@@ -96,7 +96,7 @@ See [`skills/llm-operator-principles/SKILL.md`](skills/llm-operator-principles/S
 
 Two opt-in modes complement the LLM-operator defaults:
 
-- `autonomous: true` — removes `AskUserQuestion` interruptions for any decision the agent can resolve under the operator principles. Reserves `AskUserQuestion` for Tier 3 confirmations (merge, release) and true product/architecture decisions. Recommended for sole-maintainer repositories.
+- `autonomous: true` — removes `AskUserQuestion` interruptions for any decision the agent can resolve under the operator principles. Reserves `AskUserQuestion` for true product/architecture decisions; Tier 3 confirmations (merge, release) are the tier hook's prompt and still appear. Recommended for sole-maintainer repositories.
 - `minimalScope: true` — offers a follow-up issue, instead of an in-PR fix, for cosmetic P3 in untouched files only. Use when scope is deliberately constrained (e.g., a one-line hotfix that should not expand into a refactor). P1/P2 findings still fix in-PR even in this mode.
 
 Both can be toggled in settings or in-conversation ("autonomous mode on", "minimal scope on").
@@ -245,7 +245,9 @@ HOOKS (16 scripts; 14 registered in hooks/hooks.json, the other two run from flo
   ├── Safety (PreToolUse): block-force-push, block-destructive, block-secrets,
   │                        block-unchecked-merge (refuses `gh pr merge` while checks are
   │                        queued, running or failed), ask-issue-create (asks before
-  │                        `gh issue create` during an active goal)
+  │                        `gh issue create` during an active goal), tier-gate (applies
+  │                        tiers.*: asks before merge, release and any action set to
+  │                        confirm; journals actions set to journal)
   ├── Ledger (PostToolUse / PostToolUseFailure): log-file-changes, log-commits, record-quality-run
   ├── Gates: verify-task-completion (TaskCompleted — blocks while edits postdate the last
   │          passing quality run), flow-goal-stop + flow-run-deterministic-checks +
@@ -253,8 +255,8 @@ HOOKS (16 scripts; 14 registered in hooks/hooks.json, the other two run from flo
   ├── Reply style: reply-style-check (Stop — opt-in, warns only)
   └── Session: session-end-learn, session-end-state, nudge-idle-teammate
 
-  Note: merge/release confirmation gates run at the COMMAND level via
-  AskUserQuestion (see references/three-tier-safety.md), not as hooks.
+  Note: merge/release confirmation is tier-gate's permission prompt, for the
+  command and for a merge or release typed directly (references/three-tier-safety.md).
 
 BIN/ HELPER SCRIPTS (most print usage with --help)
   Settings and skills
@@ -307,7 +309,7 @@ TESTS (not part of what a user runs)
 
 | Event | Wired Script | Min. Claude Code | Notes |
 |-------|--------------|------------------|-------|
-| `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-unchecked-merge`, `block-secrets`, `ask-issue-create` | All current | Documented event. `block-force-push`, `block-destructive` and `block-unchecked-merge` parse the command rather than match its text, so a command that only mentions `rm -rf` or `gh pr merge` in a string is not refused; each `block-*` guard blocks when a tool it needs (such as `jq`) is missing. `block-force-push` blocks unless it can show the command does not force-push; `--force-with-lease` is allowed. `block-unchecked-merge` refuses `gh pr merge` while any check is queued, running or failed, refuses `--auto` on a base branch with no required checks, and accepts a merge only in one literal shape: `gh pr merge <number> --repo owner/name --squash\|--merge\|--rebase [...]`, which `/flow:merge` writes. `ask-issue-create` returns `permissionDecision: ask` (documented JSON contract) only for `gh issue create` while a FlowGoal is active and `minimalScope` is false |
+| `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-unchecked-merge`, `block-secrets`, `ask-issue-create`, `tier-gate` | All current | Documented event. `block-force-push`, `block-destructive` and `block-unchecked-merge` parse the command rather than match its text, so a command that only mentions `rm -rf` or `gh pr merge` in a string is not refused; each `block-*` guard blocks when a tool it needs (such as `jq`) is missing. `block-force-push` blocks unless it can show the command does not force-push; `--force-with-lease` is allowed. `block-unchecked-merge` refuses `gh pr merge` while any check is queued, running or failed, refuses `--auto` on a base branch with no required checks, and accepts a merge only in one literal shape: `gh pr merge <number> --repo owner/name --squash\|--merge\|--rebase [...]`, which `/flow:merge` writes. `ask-issue-create` returns `permissionDecision: ask` (documented JSON contract) only for `gh issue create` while a FlowGoal is active and `minimalScope` is false. `tier-gate` parses the command the same way and applies `tiers.*`: `permissionDecision: ask` for merge, release and any action set to `confirm`, one decision-journal line for an action set to `journal` |
 | `PostToolUse` (Edit\|Write\|NotebookEdit) | `log-file-changes` | All current | Documented event; also appends a `file_change` entry to the session quality ledger (`notebook_path` read for NotebookEdit) |
 | `PostToolUse` (Bash) | `log-commits`, `record-quality-run`, `s1-screen-text` | All current | Documented event; `s1-screen-text` is the System One site `guard.planted-instructions`, off by default, and ends after reading your settings unless they put the site in `shadow` or `on`; `record-quality-run` classifies test/lint/typecheck/build commands at command position, records the exit code (0 for a call that finished in the foreground, since Claude Code sends none on success, but only when the test command is the whole command or follows nothing but `cd <dir> &&`, variable assignments and a leading `set` line, and no exit code for a call in the background, a timed-out call, a result with keys a finished call does not carry, or any other shape, such as a pipe, `;`, `&&` or `\|\|` after it, a substitution, a heredoc, a background `&` or an `env`, `time`, `nice` or `timeout` prefix; the `Exit code N` of a failure), a `masked` flag (`\|\| true`), and a sha256 digest of the working-tree contents (HEAD excluded, so commits of tested edits stay clean); with the System One site `quality.tests-ran` switched on, a passing built-in test run whose output shows no test running is recorded as not passing |
 | `PostToolUseFailure` (Bash) | `record-quality-run` | All current | Documented event ("after a tool call fails"): records the failed run (`failed: true`, exit code from the `Exit code N` line of `error`) so a failing test run reaches the ledger; deduped with PostToolUse on `tool_use_id` |
@@ -371,7 +373,7 @@ Every command in `plugins/flow/commands/` ships with a `## Tier Classification` 
 |---|---|
 | 1 (Autonomous) | File edits, branches, commits — execute without asking |
 | 2 (Journal) | Push, PR creation, posting reviews / resolution comments — execute and log |
-| 3 (Confirm) | Merge, release — always ask via `AskUserQuestion` |
+| 3 (Confirm) | Merge, release — always ask, through the tier hook's permission prompt |
 
 Per-command tier tables make the safety boundary explicit at the point of use. Reviewers can audit a command's behavior without reading the full prose; users can see what a command will do before invoking it. Verification: `grep -L "^## Tier Classification" plugins/flow/commands/*.md` returns nothing.
 

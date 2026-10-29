@@ -33,19 +33,23 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 | Value | Behavior |
 |-------|----------|
 | `autonomous` | Execute without any user interaction |
-| `journal` | Execute and log to decision journal |
-| `confirm` | Require explicit human confirmation via AskUserQuestion |
+| `journal` | Execute, and append one line (UTC time, setting, command) to the decision journal: `issue-{N}.md` on a branch naming issue N, `session-{YYYY-MM-DD}.md` otherwise. Nothing is written in a repository with no journal directory. |
+| `confirm` | Ask first: a permission prompt that names the action, its setting and the command. In `claude -p` it is a refusal. |
+
+The `tier-gate.sh` PreToolUse hook applies these values to every Bash command that runs one of the actions below. See [`three-tier-safety.md`](three-tier-safety.md).
 
 ### Actions
 
-| Key | Default | Action |
-|-----|---------|--------|
-| `push` | journal | `git push` to remote |
-| `prCreate` | journal | `gh pr create` |
-| `issueAssign` | journal | `gh issue edit --add-assignee` |
-| `issueCreate` | journal | `gh issue create` |
-| `merge` | confirm | `gh pr merge` |
-| `release` | confirm | `gh release create` |
+| Key | Default | Allowed values | Action |
+|-----|---------|----------------|--------|
+| `push` | journal | autonomous, journal, confirm | `git push` to remote |
+| `prCreate` | journal | autonomous, journal, confirm | `gh pr create` (`gh pr new`); `gh api` POST to `.../pulls` |
+| `issueAssign` | journal | autonomous, journal, confirm | `gh issue edit --add-assignee`; `gh api` POST to `.../issues/{n}/assignees` |
+| `issueCreate` | journal | autonomous, journal, confirm | `gh issue create` (`gh issue new`); `gh api` POST to `.../issues` |
+| `merge` | confirm | confirm (floor) | `gh pr merge`; `gh api` PUT or POST to `.../pulls/{n}/merge` or `.../merges` |
+| `release` | confirm | confirm (floor) | `gh release create` (`gh release new`); `gh api` POST to `.../releases` |
+
+`merge` and `release` cannot be lowered: a value below `confirm` is ignored with one warning on stderr naming the setting, and the action still asks. A value outside the three for the other keys, or a setting the cascade cannot read, lets the action run with one warning.
 
 ## Timeout Settings
 

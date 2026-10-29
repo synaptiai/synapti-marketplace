@@ -43,7 +43,7 @@ Hard to reverse or high-impact. Always require human confirmation.
 
 ## Configuration
 
-Tiers are configurable in `settings.json` under `tiers`:
+Tiers are configurable under `tiers`, in any file of the settings cascade (`references/gate-configuration.md`). The plugin defaults:
 
 ```json
 {
@@ -58,14 +58,19 @@ Tiers are configurable in `settings.json` under `tiers`:
 }
 ```
 
-### Promotion Rules
+The `tier-gate.sh` PreToolUse hook applies these settings to every Bash command, whether a flow command or the agent wrote it:
 
-Actions can be **promoted** (more restrictive) but never **demoted**:
+| Value | What happens before the command runs |
+|-------|--------------------------------------|
+| `autonomous` | It runs. |
+| `journal` | It runs, and one line goes to the decision journal: the UTC time, the setting and the command (`- 2026-10-29T14:48:04Z tiers.push (journal): git push -u origin HEAD`). The line goes to `issue-{N}.md` on a branch that names issue N and to `session-{YYYY-MM-DD}.md` otherwise, and only in a repository that has a journal directory. |
+| `confirm` | Claude Code asks you first, with a reason naming the action, its setting and the command. |
 
-- `autonomous` → `journal` → `confirm` (allowed)
-- `confirm` → `journal` → `autonomous` (NEVER allowed)
+`push`, `prCreate`, `issueAssign` and `issueCreate` take any of the three values. `merge` and `release` have a floor of `confirm`: they always ask, and a lower value is ignored with a warning naming the setting.
 
-This ensures safety is never accidentally reduced.
+An ask is a prompt in an interactive session, including bypassPermissions mode. In `claude -p` there is no one to answer it, so it is a refusal: a merge or a release needs an interactive session, or a command you type yourself with `!` (which runs without PreToolUse hooks).
+
+When one command holds several actions (`git push && gh pr create`), the hook asks once for all of those set to `confirm`, and writes journal lines only when nothing needed asking.
 
 ## Hook Enforcement
 
@@ -77,12 +82,13 @@ Hooks provide structural enforcement for dangerous operations:
 | `block-destructive.sh` | `rm -rf`, `git reset --hard` | Exit 2 (block) |
 | `block-secrets.sh` | Inline credentials | Exit 2 (block) |
 | `ask-issue-create.sh` | `gh issue create` while a FlowGoal is active (and `minimalScope` is false) | JSON `permissionDecision: ask` (prompt names the goal and the fix-it-here rule) |
+| `tier-gate.sh` | `git push`, `gh pr create`, `gh issue edit --add-assignee`, `gh issue create`, `gh pr merge`, `gh release create`, and `gh api` writes to the same endpoints | `tiers.*`: `confirm` asks (merge and release always do), `journal` writes a journal line, `autonomous` allows |
 
-Merge and release confirmation is handled at the command level via AskUserQuestion (see `/flow:merge` and `/flow:release`).
+Merge and release confirmation is the tier hook's prompt. `/flow:merge` and `/flow:release` show their assessment as text and then run the command; the prompt appears when it runs. `ask-issue-create.sh` and `tier-gate.sh` both apply to `gh issue create`; Claude Code takes the more restrictive answer.
 
 ## Decision Journal Integration
 
-Tier 2 actions are recorded in two places, and only one of them is shared.
+A Tier 2 action set to `journal` gets one line in the tracked decision journal from `tier-gate.sh` (above). Apart from that, Tier 2 actions are recorded in two places, and only one of them is shared.
 
 The PostToolUse hooks write **local scratch**, not journal content:
 - `log-file-changes.sh`: writes a breadcrumb for each Edit/Write/NotebookEdit to `{journal.dir}/auto-log/`, and records a `file_change` entry in the per-session quality ledger

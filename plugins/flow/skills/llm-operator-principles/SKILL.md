@@ -68,7 +68,7 @@ Invalid:
 
 ## Autonomous Mode
 
-`settings.json` `autonomous: true` (or "autonomous mode"/"autonomous on" in-conversation): never use `AskUserQuestion` for decisions resolvable under these principles; reserve it for Tier 3 confirmations (merge, release) and the valid triggers above.
+`settings.json` `autonomous: true` (or "autonomous mode"/"autonomous on" in-conversation): never use `AskUserQuestion` for decisions resolvable under these principles; reserve it for the valid triggers above. Tier 3 confirmations (merge, release) are the tier hook's permission prompt, not an `AskUserQuestion`.
 
 ## Minimal-Scope Mode
 
