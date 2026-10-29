@@ -124,6 +124,44 @@ if [ "${#TEST_FILES[@]}" -eq 0 ]; then
   exit 2
 fi
 
+# FLOW_TEST_SHARD=K/N runs part K of N: the files at 0-based positions i in
+# the list above with i mod N = K-1. CI splits the Linux suite this way so
+# each part finishes well inside its time limit. A malformed value runs
+# nothing: a typo must not pass by running a part of the suite, or none of it.
+# The suites never see the variable.
+if [ -n "${FLOW_TEST_SHARD+x}" ]; then
+  _flow_shard=$FLOW_TEST_SHARD
+  unset FLOW_TEST_SHARD
+  _flow_k=${_flow_shard%%/*}
+  _flow_n=${_flow_shard#*/}
+  _flow_ok=1
+  case "$_flow_shard" in */*) ;; *) _flow_ok=0 ;; esac
+  # No leading zero, and at most four digits so the arithmetic cannot overflow.
+  case "$_flow_k" in ''|0*|*[!0-9]*|?????*) _flow_ok=0 ;; esac
+  case "$_flow_n" in ''|0*|*[!0-9]*|?????*) _flow_ok=0 ;; esac
+  if [ "$_flow_ok" = 1 ] && [ "$_flow_k" -gt "$_flow_n" ]; then
+    _flow_ok=0
+  fi
+  if [ "$_flow_ok" = 0 ]; then
+    echo "run.sh: FLOW_TEST_SHARD must be K/N with whole numbers 1 <= K <= N, got '$_flow_shard'" >&2
+    exit 2
+  fi
+  _flow_part=()
+  _flow_i=0
+  for _flow_f in "${TEST_FILES[@]}"; do
+    [ $((_flow_i % _flow_n)) -ne $((_flow_k - 1)) ] || _flow_part+=("$_flow_f")
+    _flow_i=$((_flow_i + 1))
+  done
+  echo "run.sh: shard $_flow_k/$_flow_n runs ${#_flow_part[@]} of ${#TEST_FILES[@]} files"
+  # A part with no file would pass having tested nothing.
+  if [ "${#_flow_part[@]}" -eq 0 ]; then
+    echo "run.sh: FLOW_TEST_SHARD=$_flow_shard selects no file; use fewer parts" >&2
+    exit 2
+  fi
+  TEST_FILES=("${_flow_part[@]}")
+  unset _flow_part _flow_i _flow_f _flow_k _flow_n _flow_ok _flow_shard
+fi
+
 TOTAL_PASS=0
 TOTAL_FAIL=0
 FAILED_FILES=()
