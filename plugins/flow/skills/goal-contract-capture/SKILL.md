@@ -9,7 +9,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no contract element invented: every specification element is lifted from the journal or escalated. Invoked by `/flow:start` (Phase 1, after the Spec Validation Gate), `/flow:goal create`, and `/flow:debug` (after the confirmed hypothesis) with a goal id, scope, source, and invocation reason (`start | goal-create | review | address | debug`). Returns the written goal path plus a `goal-created` journal artifact; the caller then invokes `goal-lifecycle`. Permitted skips: `review` and `address` invocations skip the specification block (they inherit the issue's capture); `goal-create` with no linked issue skips the journal artifact. Nothing else may be skipped.
+Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no contract element invented: every specification element is lifted from the journal or escalated. Invoked by `/flow:start` (Phase 1, after the Spec Validation Gate), `/flow:goal create`, and `/flow:debug` (after the confirmed hypothesis) with a goal id, scope, source, and invocation reason (`start | goal-create | review | address | debug`). Returns the written goal path plus a `goal-created` journal artifact; the caller then invokes `goal-lifecycle`. Permitted skips: `review` and `address` invocations skip the specification block (they inherit the issue's capture). Nothing else may be skipped: a `goal-create` with no linked issue records its `goal-created` artifact in the session journal instead of an issue journal.
 
 ## Inputs
 
@@ -20,7 +20,7 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 
 ## Outputs
 
-`.flow/goals/<id>.goal.yaml` conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated), plus `bin/journal-record.sh --issue {N} --type goal-created --metadata goal_id=<id> --metadata source=<src>`.
+`.flow/goals/<id>.goal.yaml` conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated), plus `bin/journal-record.sh --issue {N} --type goal-created --metadata goal_id=<id> --metadata source=<src>`. With no linked issue, `--session` replaces `--issue {N}`: the artifact goes to `<journal dir>/session-{YYYY-MM-DD}.md`, dated by the local calendar day.
 
 ## Workflow
 

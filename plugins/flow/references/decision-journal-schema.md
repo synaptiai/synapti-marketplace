@@ -7,7 +7,7 @@ Reference for the journal file format used by flow's audit trail and learning lo
 | Pattern | When Used |
 |---------|-----------|
 | `issue-{N}.md` | Branch matches `issue-{N}` pattern |
-| `session-{YYYY-MM-DD}.md` | No issue number in branch name |
+| `session-{YYYY-MM-DD}.md` | No issue number in branch name, or a goal with no linked issue. Dated by the local calendar day. Written by `bin/journal-record.sh --session` and `bin/journal-append.sh --session` |
 
 Journal files are stored in the journal directory (default: `.decisions/`, configurable via `journal.dir` setting).
 
@@ -124,6 +124,7 @@ The manifest is **append-only via `bin/journal-record.sh`**. Direct manual edits
 ```yaml
 ---
 issue: <integer>                 # the issue number (matches the file name)
+                                 # a session journal has `session: <YYYY-MM-DD>` here instead
 created: <ISO-8601 UTC>          # first timestamp the manifest was written
 branch: <string>                 # optional — set by /flow:start when the branch is created
 artifacts:

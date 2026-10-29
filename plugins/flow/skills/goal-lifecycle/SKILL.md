@@ -37,7 +37,7 @@ Non-terminal: `draft`, `active`, and the resumable `waiting_for_user`, `waiting_
        at: <ISO-8601 UTC now>
    ```
 3. **Write** — `bin/flow-goal-record.sh --update-lifecycle --goal-id <id> --lifecycle-file <fragment> --from-status <from>`. The helper takes an O_NOFOLLOW lock, replaces only the `lifecycle` block, validates against `schemas/v1/goal.schema.json` when `jsonschema` is installed, and writes tempfile + rename + fsync. Surface any non-zero exit with its stderr; do not retry blindly — a race means re-reading the state.
-4. **Journal** — draft → active: `bin/journal-record.sh --issue {N} --type goal-created --metadata goal_id=<id> --metadata source=<src>`. Otherwise: `bin/journal-record.sh --issue {N} --type goal-evaluation --metadata goal_id=<id> --metadata result=<to> --metadata reason=<short>`. Ad-hoc goals with no issue write to the session journal `.decisions/session-{YYYY-MM-DD}.md`.
+4. **Journal** — draft → active: `bin/journal-record.sh --issue {N} --type goal-created --metadata goal_id=<id> --metadata source=<src>`. Otherwise: `bin/journal-record.sh --issue {N} --type goal-evaluation --metadata goal_id=<id> --metadata result=<to> --metadata reason=<short>`. A goal with no issue (`scope.issue` unset) passes `--session` in place of `--issue {N}` in both commands: the artifact goes to the session journal, `<journal dir>/session-{YYYY-MM-DD}.md`, dated by the local calendar day.
 5. **Run event** — when `run_id` is set, append `{"at","type":"lifecycle_transition","goal_id","from","to"}` to `.flow/runs/<run-id>/events.jsonl`; `bin/flow-record-activity.sh` appends it as part of the FlowActivity the caller records for the phase boundary.
 
 ## Rules
