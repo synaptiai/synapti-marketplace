@@ -44,7 +44,80 @@ When `constraints.allowed_paths` is set, run `git diff --name-only`; any file ou
 
 ### Step 5: Judge (conditional)
 
-Dispatch `Agent(goal-evaluator-judge)` only when `evaluator.type == hybrid` and fuzzy criteria remain, or when `evaluator.type == flow_verdict_judge` and the user invoked `/flow:goal evaluate`. Pass the outcome + AC table, sidecar paths, the evidence bundle (`references/evidence-bundle-format.md`), and `denied_context` verbatim. The judge returns verdict, confidence, delta, next_step_hint.
+Dispatch `Agent(goal-evaluator-judge)` only when `evaluator.type == hybrid` and fuzzy criteria remain, or when `evaluator.type == flow_verdict_judge` and the user invoked `/flow:goal evaluate`. The judge gets the same input, the same instructions and the same model as the judge the Stop hook runs in evaluator-loop mode:
+
+- **Input**: the text `bin/_flow_evidence_bundle.py` assembles, the assembler the Stop hook uses: the goal contract, the deterministic check report, the run's evidence sidecars with their raw output, the previous verdict and the turn budget, each in its own `<<<UNTRUSTED_*>>>` fence. Nothing else goes in the prompt: no diff, no journal, no reasoning from this session, and no paths for the judge to open.
+- **Instructions**: the body of `agents/goal-evaluator-judge.md`, which the agent definition supplies; the Stop hook passes the same body as its system prompt.
+- **Model**: `flow.goals.judge.model`, resolved through the settings cascade with the hook's default (`haiku`) and the hook's allowed values (`haiku`, `sonnet`, `opus`); any other value is replaced by `haiku` with one line on stderr.
+
+Run this block with `GOAL_ID` set to the goal id and `RUN_ID` to the run id (empty for a goal without a run). It runs the deterministic checks the way the Stop hook does, so for a trusted goal the verification commands run again here, after Step 2: the report the judge reads is the one the hook would produce for the same tree.
+
+```bash
+# GOAL_JUDGE_INPUT_BEGIN
+# Keep the repository out of PYTHONPATH before python3 starts: the interpreter
+# imports sitecustomize from each element at startup. An isolated python3 (-I:
+# it reads neither PYTHONPATH nor the working directory) keeps only elements
+# that are directories outside the repository and not at or above the working
+# directory, comparing directories by identity, not by how the path is spelled;
+# tests/syspath-guard.test.sh has the reasons. FLOW_USER_PYTHONPATH keeps the
+# original for commands run for the user.
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
+case "${GOAL_ID:-}" in
+  ''|.|..|*/*|*..*) printf '%s\n' "JUDGE_STATE=blocked" "JUDGE_ERROR=GOAL_ID must be a goal id without '/' or '..'"; exit 1 ;;
+esac
+case "${RUN_ID:-}" in
+  .|..|*/*|*..*) printf '%s\n' "JUDGE_STATE=blocked" "JUDGE_ERROR=RUN_ID must be a run id without '/' or '..'"; exit 1 ;;
+esac
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+if [ ! -x "$FLOW_ROOT/bin/cascade-resolve.sh" ]; then
+  printf '%s\n' "JUDGE_STATE=blocked" "JUDGE_ERROR=flow plugin root not found (cascade-resolve.sh missing) — reinstall or upgrade the flow plugin"
+  exit 1
+fi
+# Never through a symlink: a goal or run reached through a link belongs to its
+# target, not to this repository.
+GOAL_FILE=".flow/goals/$GOAL_ID.goal.yaml"
+if ! "$FLOW_ROOT/bin/flow-mkdir.sh" --check -- .flow/goals >/dev/null 2>&1 || [ -L "$GOAL_FILE" ] || [ ! -f "$GOAL_FILE" ]; then
+  printf '%s\n' "JUDGE_STATE=blocked" "JUDGE_ERROR=no goal file to read at .flow/goals/<GOAL_ID>.goal.yaml (missing, or reached through a symlink)"
+  exit 1
+fi
+RUN_DIR=""
+if [ -n "${RUN_ID:-}" ]; then
+  if ! "$FLOW_ROOT/bin/flow-mkdir.sh" --check -- ".flow/runs/$RUN_ID" >/dev/null 2>&1; then
+    printf '%s\n' "JUDGE_STATE=blocked" "JUDGE_ERROR=the run directory is reached through a symlink or cannot be checked"
+    exit 1
+  fi
+  RUN_DIR=".flow/runs/$RUN_ID"
+fi
+# The model: the key, default and allowed values the Stop hook uses.
+JUDGE_MODEL=$("$FLOW_ROOT/bin/cascade-resolve.sh" --default "haiku" '.flow.goals.judge.model // empty' 2>/dev/null)
+[ -n "$JUDGE_MODEL" ] || JUDGE_MODEL="haiku"
+case "$JUDGE_MODEL" in
+  haiku|sonnet|opus) ;;
+  *) printf '%s\n' "goal-evaluator: unknown flow.goals.judge.model; using haiku" >&2; JUDGE_MODEL="haiku" ;;
+esac
+# The report, from the producer the Stop hook runs. No "checked" key, or a
+# non-zero exit, means the checks did not run.
+REPORT=$(CLAUDE_PLUGIN_ROOT="$FLOW_ROOT" "$FLOW_ROOT/hooks/scripts/flow-run-deterministic-checks.sh" "$GOAL_FILE" 2>/dev/null)
+CHECKS_RC=$?
+if [ "$CHECKS_RC" -ne 0 ] || ! printf '%s' "$REPORT" | jq -e 'has("checked")' >/dev/null 2>&1; then
+  printf '%s\n' "JUDGE_STATE=blocked" "JUDGE_ERROR=the deterministic checks did not run (exit $CHECKS_RC)"
+  exit 1
+fi
+BUNDLE_FILE=$(mktemp -t flow-judge-input.XXXXXX) || { printf '%s\n' "JUDGE_STATE=blocked" "JUDGE_ERROR=mktemp failed"; exit 1; }
+if ! PYTHONSAFEPATH=1 python3 "$FLOW_ROOT/bin/_flow_evidence_bundle.py" "$GOAL_FILE" "$REPORT" "$RUN_DIR" > "$BUNDLE_FILE" 2>/dev/null; then
+  rm -f "$BUNDLE_FILE"
+  printf '%s\n' "JUDGE_STATE=blocked" "JUDGE_ERROR=the evidence bundle could not be assembled (python3 or PyYAML missing, or a goal or sidecar the assembler refused)"
+  exit 1
+fi
+printf '%s\n' "JUDGE_STATE=ready" "JUDGE_MODEL=$JUDGE_MODEL" "JUDGE_AGENT=goal-evaluator-judge"
+cat "$BUNDLE_FILE"
+rm -f "$BUNDLE_FILE"
+# GOAL_JUDGE_INPUT_END
+```
+
+On `JUDGE_STATE=blocked`, do not dispatch the judge: report `JUDGE_ERROR` and return `needs_human_review`. On `JUDGE_STATE=ready`, dispatch `Agent(subagent_type: goal-evaluator-judge, model: <JUDGE_MODEL>)` with a prompt that is everything after the `JUDGE_AGENT=` line, verbatim: do not summarise it, add to it or wrap it. The judge returns verdict, confidence, delta, next_step_hint, criterion_results and reason.
 
 ### Step 6: Lifecycle update
 
