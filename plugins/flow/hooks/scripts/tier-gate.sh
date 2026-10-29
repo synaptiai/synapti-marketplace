@@ -330,14 +330,38 @@ _tg_emit() {   # $1 = key, $2 = index of the command word
 # journal target are judged there (TG_GDIR and TG_GARGS, the arguments every
 # lookup runs git with). When they name a repository that cannot be found,
 # or are given as a variable, the payload's repository is used and the push
-# asks if it could be a tag push (TG_UNRES=1).
+# asks if it could be a tag push (TG_UNRES=1). GIT_DIR= and GIT_WORK_TREE=
+# before git count as --git-dir and --work-tree.
+#
+# Configuration set for this one command can make a push send tags:
+# `-c remote.<name>.mirror`, `-c remote.<name>.push=<refspec>`, the same keys
+# through --config-env, and GIT_CONFIG_* before git. Each asks as a possible
+# tag push (cfg=1); push.followTags through --config-env is unknown.
 _tg_git() {   # $1 = index of git
-  local j=$(($1 + 1)) follow="" c v o base="$CWD" gd="" wt="" explicit=0
+  local j=$(($1 + 1)) follow="" c v o base="$CWD" gd="" wt="" explicit=0 cfg=0 k
+  for ((k = 0; k < $1; k++)); do
+    case "${TOK[k]}" in
+      GIT_CONFIG*=*) cfg=1 ;;
+      GIT_DIR=*) gd="${TOK[k]#GIT_DIR=}"; explicit=1 ;;
+      GIT_WORK_TREE=*) wt="${TOK[k]#GIT_WORK_TREE=}"; explicit=1 ;;
+    esac
+  done
+  [ -n "$gd" ] && case "$gd" in /*) ;; *) gd="$base/$gd" ;; esac
+  [ -n "$wt" ] && case "$wt" in /*) ;; *) wt="$base/$wt" ;; esac
   while [ "$j" -lt "$n" ]; do
     c=""
     case "${TOK[j]}" in
       -c) c="${TOK[j+1]:-}"; j=$((j + 2)) ;;
       -c?*) c="${TOK[j]#-c}"; j=$((j + 1)) ;;
+      --config-env=*)
+        # --config-env=<key>=<variable>: the value is in the environment.
+        c="${TOK[j]#--config-env=}"; c="${c%%=*}"; j=$((j + 1))
+        c=$(printf '%s' "$c" | LC_ALL=C tr 'A-Z' 'a-z')
+        case "$c" in
+          push.followtags) follow=unknown ;;
+          remote.*.mirror|remote.*.push) cfg=1 ;;
+        esac
+        continue ;;
       -C)
         v="${TOK[j+1]:-}"; j=$((j + 2)); explicit=1
         case "$v" in /*) base="$v" ;; *) base="$base/$v" ;; esac
@@ -362,6 +386,7 @@ _tg_git() {   # $1 = index of git
     case "$c" in
       push.followtags|push.followtags=true|push.followtags=yes|push.followtags=on|push.followtags=1) follow=1 ;;
       push.followtags=*) follow=0 ;;
+      remote.*.mirror|remote.*.mirror=*|remote.*.push|remote.*.push=*) cfg=1 ;;
     esac
   done
   [ "$j" -lt "$n" ] || return 0
@@ -388,7 +413,7 @@ _tg_git() {   # $1 = index of git
     else follow=0
     fi
   fi
-  _tg_git_push "$1" $((j + 1)) "$follow"
+  _tg_git_push "$1" $((j + 1)) "$follow" "$cfg"
   TG_ADIR=""
   return 0
 }
@@ -419,6 +444,41 @@ _tg_is_local_branch() {   # $1 = name
   _tg_git_in rev-parse -q --verify "refs/heads/$b" >/dev/null 2>&1
 }
 
+# The remote a push that names none goes to, found as git finds it:
+# branch.<branch>.pushRemote, remote.pushDefault, branch.<branch>.remote,
+# then origin.
+_tg_push_remote() {
+  local b r=""
+  b=$(_tg_git_in symbolic-ref -q --short HEAD 2>/dev/null) || b=""
+  [ -n "$b" ] && r=$(_tg_git_in config --get "branch.$b.pushRemote" 2>/dev/null)
+  [ -n "$r" ] || r=$(_tg_git_in config --get remote.pushDefault 2>/dev/null)
+  [ -n "$b" ] && [ -z "$r" ] && r=$(_tg_git_in config --get "branch.$b.remote" 2>/dev/null)
+  printf '%s' "${r:-origin}"
+}
+
+# Does a remote's configuration push tags? Prints mirror when
+# remote.<name>.mirror is true, and otherwise its remote.<name>.push
+# refspecs, one per line. An empty name (the remote is a variable) stands for
+# every remote: mirror when any of them mirrors, and every configured push
+# refspec.
+_tg_remote_config() {   # $1 = remote name, or empty for any
+  local line
+  if [ -n "$1" ]; then
+    [ "$(_tg_git_in config --type=bool --get "remote.$1.mirror" 2>/dev/null)" = true ] && { printf 'mirror\n'; return 0; }
+    _tg_git_in config --get-all "remote.$1.push" 2>/dev/null
+    return 0
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      *.mirror\ *) [ "$(_tg_git_in config --type=bool --get "${line%% *}" 2>/dev/null)" = true ] && { printf 'mirror\n'; return 0; } ;;
+    esac
+  done <<TG_RC_EOF
+$(_tg_git_in config --get-regexp '^remote\..*\.mirror$' 2>/dev/null)
+TG_RC_EOF
+  _tg_git_in config --get-regexp '^remote\..*\.push$' 2>/dev/null | sed 's/^[^ ]* //'
+  return 0
+}
+
 # git push's long options, read the way git reads them: any unambiguous
 # prefix counts (`--tag`, `--mirr`, `--follow-tag`, `--del`). Prints the
 # option's full name, or nothing for one this hook does not need.
@@ -445,8 +505,12 @@ _tg_push_long() {   # $1 = the word, without any =value
 # local branch (a name that does not exist yet, a commit, a glob such as
 # refs/*:refs/*, a remote-tracking branch) may be a tag, and a refspec this
 # hook cannot read may be one: both ask.
-_tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags (1, 0, unknown)
-  local j k t o c rest tag=0 unread=0 del=0 nofollow=0 words=() r src dst w name kind
+#
+# The remote's configuration counts too: remote.<name>.mirror makes every
+# push to it a tag push, and its remote.<name>.push refspecs are read as if
+# written when the command names none. -c settings of those keys ask ($4).
+_tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags (1, 0, unknown), $4 = 1 when -c sets a remote's mirror or push
+  local j k t o c rest tag=0 unread=0 del=0 nofollow=0 words=() specs=() r src dst w name kind remote line
   for ((k = $2; k < n; k++)); do
     t="${TOK[k]}"
     case "$t" in
@@ -478,10 +542,35 @@ _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followT
   if [ "$nofollow" = 0 ]; then
     case "$3" in 1) tag=1 ;; unknown) unread=1 ;; esac
   fi
+  [ "${4:-0}" = 1 ] && unread=1
   # words[0] is the remote; the rest are refspecs.
-  for ((w = 1; w < ${#words[@]}; w++)); do
-    r="${words[w]}"
-    if [ "$r" = tag ] && [ $((w + 1)) -lt ${#words[@]} ]; then tag=1; w=$((w + 1)); continue; fi
+  for ((w = 1; w < ${#words[@]}; w++)); do specs+=("${words[w]}"); done
+  if [ "${TG_UNRES:-0}" = 1 ]; then
+    # The repository is unknown, so its remotes' configuration is too.
+    unread=1
+  else
+    remote="${words[0]:-}"
+    [ -z "$remote" ] && remote=$(_tg_push_remote)
+    # A remote given as a variable may be any of them: a mirror among them,
+    # or a push refspec that is not plainly a branch's, may push a tag.
+    _tg_unreadable "$remote" && remote=""
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      if [ -z "$remote" ]; then
+        case "$line" in
+          mirror) unread=1 ;;
+          *) [ "${#words[@]}" -le 1 ] && case "${line#+}" in *refs/tags/*) unread=1 ;; *:refs/heads/*|refs/heads/*) ;; *) unread=1 ;; esac ;;
+        esac
+      elif [ "$line" = mirror ]; then tag=1
+      elif [ "${#words[@]}" -le 1 ]; then specs+=("$line")
+      fi
+    done <<TG_PUSH_EOF
+$(_tg_remote_config "$remote")
+TG_PUSH_EOF
+  fi
+  for ((w = 0; w < ${#specs[@]}; w++)); do
+    r="${specs[w]}"
+    if [ "$r" = tag ] && [ $((w + 1)) -lt ${#specs[@]} ]; then tag=1; w=$((w + 1)); continue; fi
     if _tg_unreadable "$r"; then unread=1; continue; fi
     r="${r#+}"
     src="${r%%:*}"

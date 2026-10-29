@@ -466,10 +466,72 @@ if _want tg-follow-tags-config; then
   e2e_expect_clean_edges
 fi
 
+# --- T21: a remote configured to mirror or to push tags ---------------------------
+if _want tg-remote-config; then
+  _tg_setup tg-remote-config feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
+    "push autonomous: -c remote.<name>.mirror or remote.<name>.push on the command line asks; remote.<name>.mirror in the repository's configuration makes a push to that remote a tag push, and so does a remote.<name>.push refspec naming tags or a glob when the command names no refspec; the remote a bare git push uses is found as git finds it (T21)"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      maybe) _expect_ask "may push or delete a tag" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+  done <<'EOF'
+maybe|git -c remote.origin.mirror=true push
+maybe|git -c remote.origin.push=refs/tags/*:refs/tags/* push
+maybe|git -c Remote.Origin.Push=HEAD push origin
+maybe|git -c remote.origin.mirror push origin HEAD
+maybe|git --config-env=remote.origin.mirror=M push origin HEAD
+maybe|git --config-env=push.followTags=F push origin HEAD
+maybe|GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.mirror GIT_CONFIG_VALUE_0=true git push origin HEAD
+silent|git -c remote.origin.pushurl=x push origin HEAD
+silent|git -c remote.pushDefault=origin push origin HEAD
+EOF
+  _tg_cfg() { ( _e2e_git_env; cd "$E2E_REPO" && git config "$@" ) || _flow_assert_fail "tg-remote-config: git config $*"; }
+  _tg_release_ask() { _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"; }
+  _tg_cfg remote.origin.mirror true
+  _tg_run 'git push origin'
+  _tg_release_ask
+  _tg_run 'git push'
+  _tg_release_ask
+  _tg_cfg --unset remote.origin.mirror
+  _tg_cfg remote.origin.push 'refs/tags/*:refs/tags/*'
+  _tg_run 'git push'
+  _tg_release_ask
+  _tg_run 'git push origin'
+  _tg_release_ask
+  _tg_run 'git push origin HEAD'
+  _expect_silent_allow
+  _tg_cfg --replace-all remote.origin.push 'refs/heads/*:refs/heads/*'
+  _tg_run 'git push origin'
+  _expect_silent_allow
+  _tg_cfg --add remote.origin.push 'refs/*:refs/*'
+  _tg_run 'git push origin'
+  _expect_ask "may push or delete a tag"
+  _tg_cfg --unset-all remote.origin.push
+  _tg_cfg remote.backup.mirror true
+  _tg_run 'git push backup'
+  _tg_release_ask
+  _tg_run 'git push origin HEAD'
+  _expect_silent_allow
+  _tg_run 'git push'
+  _expect_silent_allow
+  _tg_cfg remote.pushDefault backup
+  _tg_run 'git push'
+  _tg_release_ask
+  _tg_cfg --unset remote.pushDefault
+  _tg_cfg branch.feature/issue-42-x.pushRemote backup
+  _tg_run 'git push'
+  _tg_release_ask
+  _tg_run 'git push "$R"'
+  _expect_ask "may push or delete a tag"
+  e2e_expect_clean_edges
+fi
+
 # --- T16: git -C <dir>, --git-dir, --work-tree ----------------------------------
 if _want tg-git-dash-c; then
   _tg_setup tg-git-dash-c feature/issue-42-x '{"tiers":{"push":"journal"}}' \
-    "a second repository ../other (branch feature/issue-77-y, tag v7, a journal directory): a push into it through -C, --git-dir or --work-tree judges v7 there and writes its breadcrumb to other's trail; a -C that cannot be found asks unless the push is plainly a branch push with followTags off (T16)"
+    "a second repository ../other (branch feature/issue-77-y, tag v7, a journal directory): a push into it through -C, --git-dir, --work-tree, GIT_DIR= or GIT_WORK_TREE= judges v7 there and writes its breadcrumb to other's trail; a -C that cannot be found asks, since neither its tags nor its remotes' configuration can be read (T16)"
   OTHER="$E2E_DIR/other"
   mkdir -p "$OTHER"
   ( _e2e_git_env; cd "$OTHER" && git init -q && git config user.email e2e@example.invalid && git config user.name e2e \
@@ -502,7 +564,9 @@ other|git --work-tree=../other --git-dir=../other/.git push origin HEAD
 maybe|git -C ../missing push origin HEAD
 maybe|git -C "\$D" push origin HEAD
 maybe|git -C ../missing -c push.followTags=false push origin v7
-here|git -C ../missing -c push.followTags=false push origin HEAD
+maybe|git -C ../missing -c push.followTags=false push origin HEAD
+ask|GIT_DIR=../other/.git git push origin v7
+ask|env GIT_WORK_TREE=../other GIT_DIR=../other/.git git push origin v7
 EOF
   e2e_expect_equal "" "$(_tg_journals)" "tracked journal files here"
   e2e_expect_equal no "$([ -e "$OTHER/.decisions/issue-77.md" ] && echo yes || echo no)" "a tracked journal in other"
