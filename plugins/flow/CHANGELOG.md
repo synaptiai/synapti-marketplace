@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 3.10.0 (2026-10-29)
+
+A guard that refuses a merge or a branch delete now says why, with the
+evidence it used, and ends with the next step: a command the agent can run, or
+the exact command the user must type. The merge guard no longer refuses every
+merge of a pull request with no checks on a private repository on GitHub's
+free plan, and the branch-delete guard recognises a branch whose commits all
+reached the default branch through a merged pull request. Two System One
+features ship off: asking about several items in one request, which was
+measured and did not meet its bars, and a note beside issue and pull request
+text that holds instructions addressed to the agent.
 
 ### Added
 
