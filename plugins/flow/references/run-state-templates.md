@@ -14,7 +14,7 @@ metadata:
   workflow: ${WORKFLOW_ID}      # start-issue | debug | address-pr | review-pr | merge-pr | release
   workflow_version: 1
   goal: ${GOAL_ID:-null}        # linked FlowGoal id, or null
-  created_at: ${NOW}
+  created_at: '${NOW}'
 context:
   repo: ${REPO}
   branch: ${BRANCH}
@@ -22,16 +22,15 @@ context:
   pr: ${PR:-null}
   journal: ${JOURNAL}           # linked decision journal path
 state:
-  status: active                # active | completed | failed | blocked | cancelled
+  status: active                # active | completed | blocked | cancelled
   current_phase: ${INITIAL_PHASE}
-  current_activity: null
   completed_activities: []
   blocked_reason: null          # set only when status is blocked
 limits:
   max_iterations: 10
   max_runtime_minutes: null
 events:
-  - at: ${NOW}
+  - at: '${NOW}'
     type: run_started
 ```
 
@@ -87,7 +86,7 @@ state:
 
 ```yaml
 state:
-  status: completed                    # or failed | cancelled | blocked
+  status: completed                    # or cancelled | blocked
   current_phase: <last>
   current_activity: <last>
   completed_activities: [...]

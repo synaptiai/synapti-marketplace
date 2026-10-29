@@ -50,7 +50,7 @@ If it exits non-zero, create no run: say why — exit 1 is a refused symlink, ex
 
 2. **Record an activity at every phase boundary** (and significant sub-steps): compose the FlowActivity YAML to a temp file, then `bin/flow-record-activity.sh --run-id <id> --activity-file <path>`. The helper assigns the sequence number, validates against the schema, writes atomically (O_NOFOLLOW + flock + tempfile+rename), and appends to `events.jsonl`.
 3. **Update `state.current_*`** after each activity: advance `current_phase` at a boundary, set `current_activity`, append the recorded id to `completed_activities[]`. Read-merge-write through `bin/_journal_atomic.py` (`acquire_lock(run.yaml.lock)` + atomic write) — never a bare overwrite.
-4. **Terminal transition** when the command ends: `state.status` → `completed` (verdict PASS / action succeeded), `blocked` with `blocked_reason` (verdict FAIL or session ended mid-workflow), `failed`, or `cancelled`; then re-emit the `workflow-run` artifact with the final status.
+4. **Terminal transition** when the command ends: `state.status` → `completed` (verdict PASS / action succeeded), `blocked` with `blocked_reason` (verdict FAIL or session ended mid-workflow), or `cancelled`; then re-emit the `workflow-run` artifact with the final status.
 5. **SessionEnd** (`hooks/scripts/session-end-state.sh`, not this skill): appends a `session_end` event to each active run's `events.jsonl` and prints `flow: N active FlowRun(s) persisted` — it does not mutate `run.yaml`; status changes are the user's decision via `/flow:resume`.
 
 ## Rules
