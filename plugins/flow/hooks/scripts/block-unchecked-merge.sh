@@ -86,7 +86,7 @@ fi
 . "$_BD_LIB"
 # Readable is not the same as loaded. A truncated or broken library defines
 # nothing, every call below fails, no merge is found, and the hook allows.
-for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_is_redirection; do
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_unescape_tok _bd_is_redirection; do
   if ! type "$_bd_fn" >/dev/null 2>&1; then
     echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so merge readiness cannot be verified." >&2
     echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
@@ -383,6 +383,8 @@ while IFS= read -r SEG; do
   case "$SEG" in __BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
   TOK=()
   _rm_tokenise "$SEG"
+  # The words as bash passes them: `g\h pr mer\ge 7` runs gh pr merge 7.
+  _bd_unescape_tok
   n=${#TOK[@]}
   [ "$n" -gt 0 ] || continue
 

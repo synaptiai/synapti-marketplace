@@ -288,7 +288,7 @@ fi
 # --- T5b: behind a shell keyword or a group ------------------------------------
 if _want tg-keywords; then
   _tg_setup tg-keywords feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; the action follows if, then, else, elif, while, until, do, !, or {: each asks, naming its key, and a read-only gh command in the same place stays silent (T5b)"
+    "every tier confirm; the action follows if, then, else, elif, while, until, do, ! or {: each asks, naming its key, and a read-only gh command in the same place stays silent (T5b)"
   while IFS='|' read -r KEY C; do
     _tg_run "$C"
     _expect_ask "tiers.$KEY"
@@ -308,6 +308,36 @@ push|if make; then git push; fi
 prCreate|! { gh pr create --fill; }
 EOF
   for C in 'if gh pr view 3; then echo; fi' '{ gh release view v1; }' 'echo if gh release create v1'; do
+    _tg_run "$C"
+    _expect_silent_allow
+  done
+  e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
+# --- T18: backslashes inside a word ---------------------------------------------
+if _want tg-backslash; then
+  _tg_setup tg-backslash feature/issue-42-x "$ALL_CONFIRM" \
+    "every tier confirm; a backslash inside the program, a subcommand or an option, which bash removes before running it: each asks, naming its key; text that only mentions the action stays silent (T18)"
+  while IFS='|' read -r KEY C; do
+    _tg_run "$C"
+    _expect_ask "tiers.$KEY"
+  done <<'EOF'
+merge|g\h pr merge 1
+merge|gh pr mer\ge 1
+merge|gh p\r merge 1
+merge|\g\h pr merge 1
+merge|ba\sh -c 'gh pr merge 1'
+release|gh rel\ease create v9
+release|git pu\sh --tags
+release|git push origin --t\ags
+release|g\it -c push.follow\Tags=true push origin HEAD
+push|git pu\sh origin HEAD
+prCreate|gh pr cr\eate --fill
+issueAssign|gh issue edit 5 --add-as\signee @me
+merge|gh api -X P\UT repos/o/r/pulls/7/me\rge
+EOF
+  for C in 'echo g\h pr merge 1' 'git commit -m "gh pr mer\ge 1"' 'gh pr vi\ew 3'; do
     _tg_run "$C"
     _expect_silent_allow
   done
@@ -808,6 +838,8 @@ if _want tg-parser-fails; then
 _bd_segments() { :; }
 _bd_expand_interpreter_args() { :; }
 _rm_tokenise() { TOK=(); }
+_bd_unescape_tok() { :; }
+_bd_is_opt() { return 1; }
 _BD_SEG_AWK=x'
   _tg_run 'gh pr merge 7 --repo o/r --squash'
   _expect_ask "tiers.merge"

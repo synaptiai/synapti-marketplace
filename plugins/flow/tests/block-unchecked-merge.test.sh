@@ -424,6 +424,27 @@ S=$(_bum_stub "$QUEUED" "" "")
 _bum_run "$S" 'gh pr me""rge 7 --repo acme/widgets --squash'
 assert_exit 2 "$?" "me\"\"rge is merge"
 
+# bash removes a backslash inside a word before running it, so each of these is
+# gh pr merge: on a queued pull request each is refused, and on a green one the
+# same spelling merges, so it was read as the merge and not refused for its shape.
+_flow_test_begin "backslash spellings of a merge are read as the merge"
+S=$(_bum_stub "$QUEUED" "" "")
+G=$(_bum_stub "$GREEN" "" "")
+for CMD in \
+  'g\h pr merge 7 --repo acme/widgets --squash' \
+  'gh pr mer\ge 7 --repo acme/widgets --squash' \
+  'gh p\r merge 7 --repo acme/widgets --squash' \
+  '\g\h pr merge 7 --repo acme/widgets --squash' \
+  'gh pr merge 7 --re\po acme/widgets --sq\uash' \
+  'ba\sh -c "gh pr merge 7 --repo acme/widgets --squash"'; do
+  _bum_run "$S" "$CMD"
+  assert_exit 2 "$?" "queued: $CMD"
+  _bum_run "$G" "$CMD"
+  assert_exit 0 "$?" "green: $CMD"
+done
+_bum_run "$S" 'gh pr mer\ge 7'
+assert_exit 2 "$?" "a backslash spelling with no --repo is refused for its shape"
+
 # --- gh api and gh alias: refused, not parsed ----------------------------------
 _flow_test_begin "gh api on a merge is refused outright"
 for CMD in \

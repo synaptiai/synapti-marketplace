@@ -213,7 +213,7 @@ _TG_LIB="$SCRIPT_DIR/lib/command-parse.sh"
 [ -r "$_TG_LIB" ] || _tg_undecidable "$COMMAND" "the command parser $(basename "$_TG_LIB") is missing"
 # shellcheck source=lib/command-parse.sh
 . "$_TG_LIB" 2>/dev/null
-for _tg_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise; do
+for _tg_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_unescape_tok _bd_is_opt; do
   type "$_tg_fn" >/dev/null 2>&1 || _tg_undecidable "$COMMAND" "the command parser did not load"
 done
 [ -n "${_BD_SEG_AWK:-}" ] || _tg_undecidable "$COMMAND" "the command parser did not load"
@@ -678,6 +678,9 @@ _tg_actions() {
     case "$seg" in __BD_UNBALANCED__) continue ;; esac
     TOK=()
     _rm_tokenise "$seg"
+    # Every comparison below is on the words as bash passes them, with
+    # backslash escapes removed.
+    _bd_unescape_tok
     n=${#TOK[@]}
     [ "$n" -gt 0 ] || continue
     _tg_command_word
