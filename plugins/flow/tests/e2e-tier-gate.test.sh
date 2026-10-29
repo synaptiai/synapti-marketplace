@@ -40,6 +40,11 @@
 #      branch push, or a branch whose name looks like a version is read as a tag
 #   T14 gh release create --verify-tag is journaled although the tag is not on
 #      the remote, the check fails or hangs, or it asks although the tag is there
+#   T16 a push through git -C/--git-dir/--work-tree is judged (tags,
+#      push.followTags, the trail) in the payload's repository instead of the
+#      one named, or a -C that cannot be found lets a possible tag push through
+#   T17 deleting a tag (:<tag>, --delete/-d, gh api DELETE or PATCH on
+#      git/refs/tags) is read as a branch push, or a known branch is asked about
 #   T15 gh api PATCH on a release or an issue's assignees, or a GraphQL
 #      mutation (inline, query=@file, --input), is missed; a read or another
 #      mutation (createIssueType) is caught; an unreadable query is allowed
@@ -291,7 +296,7 @@ if _want tg-tag-push; then
     if [ "$WANT" = ask ]; then
       _expect_ask "tiers.release"
     elif [ "$WANT" = maybe ]; then
-      _expect_ask "may push a tag"
+      _expect_ask "may push or delete a tag"
     else
       _expect_silent_allow
       e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
@@ -357,6 +362,97 @@ if _want tg-follow-tags-config; then
   _expect_silent_allow
   _tg_run 'git push --no-follow-tags origin HEAD'
   _expect_silent_allow
+  e2e_expect_clean_edges
+fi
+
+# --- T16: git -C <dir>, --git-dir, --work-tree ----------------------------------
+if _want tg-git-dash-c; then
+  _tg_setup tg-git-dash-c feature/issue-42-x '{"tiers":{"push":"journal"}}' \
+    "a second repository ../other (branch feature/issue-77-y, tag v7, a journal directory): a push into it through -C, --git-dir or --work-tree judges v7 there and writes its breadcrumb to other's trail; a -C that cannot be found asks unless the push is plainly a branch push with followTags off (T16)"
+  OTHER="$E2E_DIR/other"
+  mkdir -p "$OTHER"
+  ( _e2e_git_env; cd "$OTHER" && git init -q && git config user.email e2e@example.invalid && git config user.name e2e \
+      && git config commit.gpgsign false && printf 'o\n' > o.txt && git add o.txt && git commit -q -m init \
+      && git checkout -q -b feature/issue-77-y && git tag -a v7 -m v7 ) >/dev/null 2>&1 \
+    || _flow_assert_fail "tg-git-dash-c: could not create the second repository"
+  mkdir -p "$OTHER/.decisions"
+  OTHER_TRAIL="$OTHER/.decisions/auto-log/issue-77.$(date +%Y-%m).md"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      ask) _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)" ;;
+      maybe) _expect_ask "may push or delete a tag" ;;
+      other) _expect_silent_allow
+             e2e_expect_equal yes "$(grep -qF "tiers.push (journal) \"$C\"" "$OTHER_TRAIL" 2>/dev/null && echo yes || echo no)" "breadcrumb in other's trail for: $C" ;;
+      here) _expect_silent_allow
+            e2e_expect_file_has "$(_tg_trail42)" "tiers.push (journal) \"$C\"" ;;
+    esac
+  done <<EOF
+ask|git -C ../other push origin v7
+ask|git -C $OTHER push origin v7
+ask|git -C .. -C other push origin v7
+ask|git --git-dir=../other/.git push origin v7
+ask|git --git-dir ../other/.git --work-tree ../other push origin refs/tags/v7
+here|git push origin v7
+other|git -C ../other push origin HEAD
+other|git -C .. -C other push origin refs/heads/feature/issue-77-y
+other|git -C $OTHER push origin HEAD:refs/heads/x
+other|git --work-tree=../other --git-dir=../other/.git push origin HEAD
+maybe|git -C ../missing push origin HEAD
+maybe|git -C "\$D" push origin HEAD
+maybe|git -C ../missing -c push.followTags=false push origin v7
+here|git -C ../missing -c push.followTags=false push origin HEAD
+EOF
+  e2e_expect_equal "" "$(_tg_journals)" "tracked journal files here"
+  e2e_expect_equal no "$([ -e "$OTHER/.decisions/issue-77.md" ] && echo yes || echo no)" "a tracked journal in other"
+  ( _e2e_git_env; git -C "$OTHER" config push.followTags true )
+  _tg_run 'git -C ../other push origin HEAD'
+  _expect_ask "tiers.release"
+  _tg_run 'git push origin HEAD'
+  _expect_silent_allow
+  ( _e2e_git_env; git -C "$OTHER" config push.followTags false )
+  printf '%s\n' '{"tiers":{"push":"journal","prCreate":"journal"}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _tg_run 'git -C ../other push origin HEAD && gh pr create --fill'
+  _expect_silent_allow
+  e2e_expect_equal yes "$(grep -qF 'tiers.prCreate (journal) "gh pr create --fill"' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null && echo yes || echo no)" "the pr create breadcrumb in this repository's trail"
+  e2e_expect_equal no "$(grep -qF 'tiers.prCreate' "$OTHER_TRAIL" 2>/dev/null && echo yes || echo no)" "a pr create breadcrumb in other's trail"
+  e2e_expect_clean_edges
+fi
+
+# --- T17: deleting a tag -------------------------------------------------------------
+if _want tg-tag-delete; then
+  _tg_setup tg-tag-delete feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
+    "deleting a tag on the remote asks under tiers.release: :<tag>, --delete/-d <tag>, gh api DELETE or PATCH on git/refs/tags; deleting a known branch is silent; deleting a name that is neither asks (T17)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m v1.2.0 && git branch feature-local \
+      && git update-ref refs/remotes/origin/feature-gone HEAD ) >/dev/null 2>&1 \
+    || _flow_assert_fail "tg-tag-delete: could not create the refs"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      ask) _expect_ask "tiers.release" ;;
+      maybe) _expect_ask "may push or delete a tag" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+  done <<'EOF'
+ask|git push origin :v1.2.0
+ask|git push origin :refs/tags/v9
+ask|git push origin --delete v1.2.0
+ask|git push -d origin v1.2.0
+ask|git push origin --delete refs/tags/v9
+ask|gh api -X DELETE repos/o/r/git/refs/tags/v1
+ask|gh api --method DELETE /repos/{owner}/{repo}/git/refs/tags/v1.2.0
+ask|gh api -X PATCH repos/o/r/git/refs/tags/v1 -f sha=abc -F force=true
+maybe|git push origin --delete v9
+maybe|git push origin :v9
+maybe|gh api -X DELETE repos/o/r/git/refs/$REF
+silent|git push origin :feature-local
+silent|git push origin --delete feature-gone
+silent|git push -d origin refs/heads/anything
+silent|gh api -X DELETE repos/o/r/git/refs/heads/feature-x
+silent|gh api -X DELETE repos/o/r/git/refs/heads/$B
+silent|gh api -X DELETE repos/o/r/issues/comments/5
+silent|gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc
+EOF
   e2e_expect_clean_edges
 fi
 

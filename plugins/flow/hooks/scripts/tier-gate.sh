@@ -21,6 +21,7 @@
 #   POST/PUT .../pulls/{n}/merge, .../merges              merge
 #   POST .../releases; PATCH .../releases/{id}            release
 #   POST .../git/refs with a refs/tags/ ref               release
+#   DELETE or PATCH .../git/refs/tags/{tag}               release
 #   POST .../pulls                                        prCreate
 #   POST .../issues                                       issueCreate
 #   POST .../issues/{n}/assignees; PATCH or PUT
@@ -40,7 +41,18 @@
 # it); `git push <remote> tag <name>`; a refspec with refs/tags/ on either
 # side (`HEAD:refs/tags/v1`); or a refspec whose source is a tag in this
 # repository (`git push origin v1.2.0` when v1.2.0 is a tag; a branch named
-# v1-fix is not). A command that pushes a branch and a tag is release.
+# v1-fix is not). Deleting a tag is release too: `:<tag>`, `:refs/tags/<tag>`,
+# or --delete/-d with a tag's name; a deleted name that is neither a tag nor
+# a known branch (local, or remote-tracking on that remote) may be a tag on
+# the remote, so it asks. A command that pushes a branch and a tag is
+# release.
+#
+# `git -C <dir>`, `--git-dir` and `--work-tree` name the repository a push
+# acts on: tags, push.followTags and the breadcrumb's trail are taken from
+# that repository, not the payload's. When it cannot be found (a missing
+# directory, a variable), the payload's repository is used and the push asks
+# if it could be a tag push (anything but HEAD or refs/heads/ refspecs with
+# push.followTags turned off by -c).
 #
 # `gh release create <tag> --verify-tag` creates a release for a tag that
 # must already be on GitHub, and that tag's push was already confirmed. So
@@ -85,9 +97,11 @@
 #     or a substitution, or a GraphQL query that
 #     cannot be read (a variable, stdin, a missing
 #     file)
-#   a push whose refspec is a variable or a           -> "ask": it may push a tag
-#     substitution, or a gh api git/refs POST whose
-#     ref cannot be read
+#   a push whose refspec is a variable or a           -> "ask": it may push or delete a tag
+#     substitution, a deleted name that is neither
+#     tag nor branch, a push into a -C/--git-dir
+#     repository that cannot be found, or a gh api
+#     git/refs request whose ref cannot be read
 #   cannot decide: jq missing, the command parser     -> text that mentions merge or release with gh:
 #     missing or failed                                    "ask"; other text that mentions push or gh:
 #                                                        exit 0, one stderr line; anything else:
@@ -113,8 +127,10 @@
 # git push` do.
 #
 # Not covered, by design: deliberate evasion (a command held in a variable
-# and run as `$CMD`, a gh alias, a script file, a quote inside the word),
-# and a GraphQL mutation not listed above. `--help` is not exempted: it costs a
+# and run as `$CMD`, a gh alias, a git alias, a script file, a quote inside
+# the word), a GraphQL mutation not listed above, and gh api DELETE requests
+# other than on tag refs. Branch protection and rulesets are the mechanism
+# against evasion; this hook reads commands written in good faith. `--help` is not exempted: it costs a
 # prompt, while exempting a value that happens to read `--help` would cost a
 # missed confirmation. For the same reason the parser reads every quoted
 # argument with a space in it, after env, sudo, timeout, xargs, nohup and the
@@ -266,7 +282,10 @@ _tg_command_word() {
   return 0
 }
 
-# Emit one action line: key, a tab, the command summary.
+# Emit one action line: key, a tab, the command summary, a tab, and the
+# top of the repository a `git -C <dir>` push names (TG_ADIR, empty for the
+# payload's own).
+TG_ADIR=""
 _tg_emit() {   # $1 = key, $2 = index of the command word
   # The words from the command word on; a word with a space in it is shown
   # in double quotes, so `--title "Add x"` does not read as two words.
@@ -280,21 +299,37 @@ _tg_emit() {   # $1 = key, $2 = index of the command word
   s="${s//__BD_SUBST__/\$(...)}"
   s=$(printf '%s' "$s" | LC_ALL=C tr '\000-\037\177' ' ' | tr -s ' ')
   if [ "${#s}" -gt 160 ]; then s="${s:0:160}..."; fi
-  printf '%s\t%s\n' "$1" "$s"
+  printf '%s\t%s\t%s\n' "$1" "$s" "$TG_ADIR"
 }
 
-# git: the subcommand past git's own options.
+# git: the subcommand past git's own options. -C, --git-dir and --work-tree
+# say which repository the push acts on; tags, push.followTags and the
+# journal target are judged there (TG_GDIR and TG_GARGS, the arguments every
+# lookup runs git with). When they name a repository that cannot be found,
+# or are given as a variable, the payload's repository is used and the push
+# asks if it could be a tag push (TG_UNRES=1).
 _tg_git() {   # $1 = index of git
-  local j=$(($1 + 1)) follow=0 c
-  # push.followTags from git's configuration in the repository the command
-  # runs in; a -c on the command line overrides it, as it does for git.
-  [ "$(git -C "$CWD" config --type=bool --get push.followTags 2>/dev/null)" = true ] && follow=1
+  local j=$(($1 + 1)) follow="" c v o base="$CWD" gd="" wt="" explicit=0
   while [ "$j" -lt "$n" ]; do
     c=""
     case "${TOK[j]}" in
       -c) c="${TOK[j+1]:-}"; j=$((j + 2)) ;;
       -c?*) c="${TOK[j]#-c}"; j=$((j + 1)) ;;
-      -C|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--list-cmds) j=$((j + 2)); continue ;;
+      -C)
+        v="${TOK[j+1]:-}"; j=$((j + 2)); explicit=1
+        case "$v" in /*) base="$v" ;; *) base="$base/$v" ;; esac
+        continue ;;
+      --git-dir|--git-dir=*|--work-tree|--work-tree=*)
+        o="${TOK[j]%%=*}"
+        case "${TOK[j]}" in
+          *=*) v="${TOK[j]#*=}"; j=$((j + 1)) ;;
+          *) v="${TOK[j+1]:-}"; j=$((j + 2)) ;;
+        esac
+        explicit=1
+        case "$v" in /*) ;; *) v="$base/$v" ;; esac
+        if [ "$o" = --git-dir ]; then gd="$v"; else wt="$v"; fi
+        continue ;;
+      --namespace|--config-env|--super-prefix|--list-cmds) j=$((j + 2)); continue ;;
       -*) j=$((j + 1)); continue ;;
       *) break ;;
     esac
@@ -308,34 +343,74 @@ _tg_git() {   # $1 = index of git
   done
   [ "$j" -lt "$n" ] || return 0
   [ "${TOK[j]}" = push ] || return 0
+
+  TG_GDIR="$base"; TG_GARGS=(); TG_UNRES=0; TG_ADIR=""
+  [ -n "$gd" ] && TG_GARGS+=("--git-dir=$gd")
+  [ -n "$wt" ] && TG_GARGS+=("--work-tree=$wt")
+  if [ "$explicit" = 1 ]; then
+    # A directory given as a variable or a substitution names a path that
+    # does not exist, so it is not found here either.
+    if [ -d "$base" ] \
+       && git -C "$base" ${TG_GARGS[@]+"${TG_GARGS[@]}"} rev-parse --git-dir >/dev/null 2>&1; then
+      TG_ADIR=$(git -C "$base" ${TG_GARGS[@]+"${TG_GARGS[@]}"} rev-parse --show-toplevel 2>/dev/null) || TG_ADIR=""
+    else
+      TG_GDIR="$CWD"; TG_GARGS=(); TG_UNRES=1
+    fi
+  fi
+  # push.followTags from git's configuration, unless a -c set it. Unknown when
+  # the repository could not be found.
+  if [ -z "$follow" ]; then
+    if [ "$TG_UNRES" = 1 ]; then follow=unknown
+    elif [ "$(_tg_git_in config --type=bool --get push.followTags 2>/dev/null)" = true ]; then follow=1
+    else follow=0
+    fi
+  fi
   _tg_git_push "$1" $((j + 1)) "$follow"
+  TG_ADIR=""
   return 0
 }
 
-# Is this name a tag in the repository the command runs in?
-_tg_is_tag() {
-  case "$1" in ''|*'*'*) return 1 ;; esac
-  git -C "$CWD" rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1
+# git, run in the repository the push acts on.
+_tg_git_in() { git -C "$TG_GDIR" ${TG_GARGS[@]+"${TG_GARGS[@]}"} "$@"; }
+
+# What a name is in the repository the push acts on: tag, branch (a local
+# branch, or a remote-tracking one on the remote being pushed to), or
+# unknown. Unknown too when that repository could not be found.
+_tg_ref_kind() {   # $1 = name, $2 = remote
+  case "$1" in ''|*'*'*) printf unknown; return 0 ;; esac
+  [ "${TG_UNRES:-0}" = 1 ] && { printf unknown; return 0; }
+  if _tg_git_in rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1; then printf tag
+  elif _tg_git_in rev-parse -q --verify "refs/heads/$1" >/dev/null 2>&1 \
+       || { [ -n "$2" ] && _tg_git_in rev-parse -q --verify "refs/remotes/$2/$1" >/dev/null 2>&1; }; then printf branch
+  else printf unknown
+  fi
 }
 
 # git push: a tag push is the release tier, a branch push the push tier.
-# A tag is pushed by --tags, --follow-tags, --mirror, -c push.followTags=true,
+# A tag is pushed by --tags, --follow-tags, --mirror, push.followTags,
 # `tag <name>`, a refspec naming refs/tags/ on either side, or a refspec whose
-# source is the name of a tag in this repository (a branch named v1-fix is not
-# a tag). A refspec this hook cannot read may be a tag, so it asks too.
-_tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags from -c
-  local k t tag="$3" unread=0 words=() r src dst w
+# source is the name of a tag in the repository (a branch named v1-fix is
+# not a tag). A tag is deleted by `:<tag>` or --delete/-d <tag>; a name
+# deleted that is neither a tag nor a known branch may be a tag on the
+# remote. A refspec this hook cannot read or resolve may be a tag, so it
+# asks too.
+_tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followTags (1, 0, unknown)
+  local k t tag=0 unread=0 del=0 nofollow=0 words=() r src dst w name kind
   for ((k = $2; k < n; k++)); do
     t="${TOK[k]}"
     case "$t" in
       --tags|--follow-tags|--mirror) tag=1 ;;
-      --no-follow-tags) [ "$3" = 1 ] && tag=0 ;;
+      --no-follow-tags) nofollow=1 ;;
+      --delete|-d) del=1 ;;
       -o|--push-option|--receive-pack|--exec|--repo) k=$((k + 1)) ;;
       --) for ((k = k + 1; k < n; k++)); do words+=("${TOK[k]}"); done ;;
       -*) ;;
       *) words+=("$t") ;;
     esac
   done
+  if [ "$nofollow" = 0 ]; then
+    case "$3" in 1) tag=1 ;; unknown) unread=1 ;; esac
+  fi
   # words[0] is the remote; the rest are refspecs.
   for ((w = 1; w < ${#words[@]}; w++)); do
     r="${words[w]}"
@@ -346,9 +421,16 @@ _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followT
     case "$r" in *:*) dst="${r#*:}" ;; *) dst="" ;; esac
     case "$src $dst" in *refs/tags/*) tag=1; continue ;; esac
     case "$dst" in refs/heads/*) continue ;; esac
-    # `:name` deletes the remote ref name; otherwise the source names it.
-    if [ -n "$src" ]; then _tg_is_tag "$src" && tag=1
-    else _tg_is_tag "$dst" && tag=1
+    if [ "$del" = 1 ] || [ -z "$src" ]; then
+      # A deletion names the remote ref: a tag, a branch, or unknown.
+      name="${dst:-$src}"
+      case "$name" in refs/heads/*) continue ;; esac
+      kind=$(_tg_ref_kind "$name" "${words[0]}")
+      case "$kind" in tag) tag=1 ;; unknown) unread=1 ;; esac
+    else
+      case "$src" in HEAD|HEAD~*|HEAD^*|@|refs/heads/*) continue ;; esac
+      kind=$(_tg_ref_kind "$src" "${words[0]}")
+      case "$kind" in tag) tag=1 ;; unknown) [ "${TG_UNRES:-0}" = 1 ] && unread=1 ;; esac
     fi
   done
   if [ "$tag" = 1 ]; then _tg_emit release "$1"
@@ -436,7 +518,7 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
   fi
   if ! _tg_unreadable "$method"; then
     method=$(printf '%s' "$method" | LC_ALL=C tr 'a-z' 'A-Z')
-    case "$method" in POST|PUT|PATCH) ;; *) return 0 ;; esac
+    case "$method" in POST|PUT|PATCH|DELETE) ;; *) return 0 ;; esac
   fi
   # A whole endpoint this hook cannot read may be a merge or a release. A
   # partly unreadable one is read by its literal parts: `/merge` would have
@@ -450,6 +532,17 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
   # are not part of the path.
   ep="${ep%%\?*}"
   while :; do case "$ep" in */) ep="${ep%/}" ;; *) break ;; esac; done
+
+  # A tag ref deleted or moved (DELETE or PATCH on .../git/refs/tags/<tag>)
+  # is a tag push. A ref whose last part cannot be read may be a tag.
+  if [ "$method" = DELETE ] || [ "$method" = PATCH ]; then
+    case "$ep" in
+      */git/refs/tags/*) _tg_emit release "$1"; return 0 ;;
+      */git/refs/*)
+        case "${ep##*/git/refs/}" in heads/*) ;; *) _tg_unreadable "$ep" && { _tg_emit tagUnread "$1"; return 0; } ;; esac ;;
+    esac
+    [ "$method" = DELETE ] && return 0
+  fi
 
   # PATCH: editing or publishing a release, and changing an issue's
   # assignees. (PUT on an issue is matched the same way.)
@@ -640,10 +733,10 @@ _tg_tag_on_remote() {   # $1 = tag, $2 = owner/name, host/owner/name, or empty
 REASONS=()
 # Each entry: the setting's label, a tab, the command summary.
 JOURNAL_LINES=()
-while IFS=$'\t' read -r KEY SUMMARY; do
+while IFS=$'\t' read -r KEY SUMMARY ADIR; do
   case "$KEY" in
     tagUnread)
-      REASONS+=("A push whose refs cannot be read from the command may push a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
+      REASONS+=("A push whose refs or repository cannot be read or resolved from the command may push or delete a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
       continue ;;
     unknown)
       REASONS+=("A gh api call whose endpoint or GraphQL query cannot be read from the command (a variable, a substitution, stdin or a missing file) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
@@ -658,7 +751,7 @@ while IFS=$'\t' read -r KEY SUMMARY; do
       VREST="${KEY#releaseVerified:}"
       VTAG="${VREST%%:*}"
       if _tg_tag_on_remote "$VTAG" "${VREST#*:}"; then
-        JOURNAL_LINES+=("tiers.release (--verify-tag, $VTAG already on the remote)"$'\t'"$SUMMARY")
+        JOURNAL_LINES+=("tiers.release (--verify-tag, $VTAG already on the remote)"$'\t'"$SUMMARY"$'\t'"$ADIR")
       else
         REASONS+=("Creating a release is a Tier 3 action (tiers.release). flow asks unless --verify-tag names a tag that is already on the remote, and $VTAG could not be found on $TG_REMOTE. Command: $SUMMARY")
       fi
@@ -684,7 +777,7 @@ while IFS=$'\t' read -r KEY SUMMARY; do
       fi
       case "$VALUE" in
         confirm) REASONS+=("$(_tg_phrase "$KEY") is a Tier 2 action set to confirm (tiers.$KEY), so it needs your approval. Command: $SUMMARY") ;;
-        journal) JOURNAL_LINES+=("tiers.$KEY (journal)"$'\t'"$SUMMARY") ;;
+        journal) JOURNAL_LINES+=("tiers.$KEY (journal)"$'\t'"$SUMMARY"$'\t'"$ADIR") ;;
         autonomous) ;;
         *) _tg_note "tiers.$KEY is \"$(printf '%s' "$VALUE" | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-40)\", not autonomous, journal or confirm; allowing $SUMMARY without a tier check" ;;
       esac
@@ -709,44 +802,8 @@ fi
 # otherwise session-{YYYY-MM-DD}.md. The path checks below are theirs (see
 # log-file-changes.sh, _flow_autolog). Written only where the repository keeps
 # a flow journal directory: a push in a repository that never ran /flow:setup
-# must not create .decisions/ in it.
-[ -n "$REPO_ROOT" ] || exit 0
-JOURNAL_DIR=$(cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/journal-dir.sh" 2>/dev/null) || JOURNAL_DIR=""
-[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-case "$JOURNAL_DIR" in
-  /*) JOURNAL_BASE="$JOURNAL_DIR" ;;
-  *) JOURNAL_BASE="$REPO_ROOT/$JOURNAL_DIR" ;;
-esac
-[ -d "$JOURNAL_BASE" ] || exit 0
-
-BRANCH=$(git -C "$CWD" branch --show-current 2>/dev/null) || BRANCH=""
-ISSUE_NUM=$(printf '%s' "$BRANCH" | grep -oE 'issue-[0-9]+' | head -n 1 | grep -oE '[0-9]+') || ISSUE_NUM=""
-if [ -n "$ISSUE_NUM" ]; then
-  AUTOLOG="$JOURNAL_BASE/auto-log/issue-$ISSUE_NUM.$(date +%Y-%m).md"
-else
-  AUTOLOG="$JOURNAL_BASE/auto-log/session-$(date +%Y-%m-%d).md"
-fi
-AUTOLOG_DIR=$(dirname "$AUTOLOG")
-
-_tg_trail_refused() {
-  _tg_note "could not write to the auto-log trail ($1); allowing"
-  exit 0
-}
-# A symlinked trail file or directory is refused: after `gh pr checkout` of a
-# hostile fork it could point anywhere. The directory is created by
-# bin/flow-mkdir.sh --contained at the repository top (nothing below the top
-# through a symlink); an absolute journal.dir from the user's own settings is
-# created as configured.
-[ -L "$AUTOLOG" ] && _tg_trail_refused "the trail file is a symlink"
-[ -L "$AUTOLOG_DIR" ] && _tg_trail_refused "the trail directory is a symlink"
-if ! (cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/flow-mkdir.sh" --contained -- "$AUTOLOG_DIR") >/dev/null 2>&1; then
-  USER_DIR=$(cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/journal-dir.sh" --user-owned 2>/dev/null) || USER_DIR=""
-  [ -n "$USER_DIR" ] || _tg_trail_refused "its directory could not be created inside the repository"
-  mkdir -p "$AUTOLOG_DIR" 2>/dev/null || _tg_trail_refused "its directory could not be created"
-fi
-# The trail directory ignores itself, so it never dirties the tree.
-[ -L "$AUTOLOG_DIR/.gitignore" ] && _tg_trail_refused "its .gitignore is a symlink"
-{ [ -f "$AUTOLOG_DIR/.gitignore" ] || printf '*\n' > "$AUTOLOG_DIR/.gitignore" 2>/dev/null; } || true
+# must not create .decisions/ in it. A `git -C <dir> push` is recorded in
+# <dir>'s repository, on <dir>'s branch.
 
 # One HTML-comment breadcrumb per action, as the other trail entries are,
 # with the comment terminators and control characters neutralized: the trail
@@ -756,18 +813,68 @@ _tg_crumb_safe() {
   v="${v//<!--/< !--}"
   printf '%s' "$v" | LC_ALL=C tr '\000-\037\177' ' '
 }
+
+_tg_trail_refused() { _tg_note "could not write to the auto-log trail ($1); allowing"; }
+
+_tg_write_trail() {   # $1 = repository top, $2 = breadcrumbs
+  local top="$1" jdir base branch issue autolog adir user err rc
+  [ -n "$top" ] || return 0
+  jdir=$(cd "$top" && "$PLUGIN_ROOT/bin/journal-dir.sh" 2>/dev/null) || jdir=""
+  [ -n "$jdir" ] || jdir=".decisions"
+  case "$jdir" in /*) base="$jdir" ;; *) base="$top/$jdir" ;; esac
+  [ -d "$base" ] || return 0
+  branch=$(git -C "$top" branch --show-current 2>/dev/null) || branch=""
+  issue=$(printf '%s' "$branch" | grep -oE 'issue-[0-9]+' | head -n 1 | grep -oE '[0-9]+') || issue=""
+  if [ -n "$issue" ]; then
+    autolog="$base/auto-log/issue-$issue.$(date +%Y-%m).md"
+  else
+    autolog="$base/auto-log/session-$(date +%Y-%m-%d).md"
+  fi
+  adir=$(dirname "$autolog")
+  # A symlinked trail file or directory is refused: after `gh pr checkout` of
+  # a hostile fork it could point anywhere. The directory is created by
+  # bin/flow-mkdir.sh --contained at the repository top (nothing below the
+  # top through a symlink); an absolute journal.dir from the user's own
+  # settings is created as configured.
+  [ -L "$autolog" ] && { _tg_trail_refused "the trail file is a symlink"; return 0; }
+  [ -L "$adir" ] && { _tg_trail_refused "the trail directory is a symlink"; return 0; }
+  if ! (cd "$top" && "$PLUGIN_ROOT/bin/flow-mkdir.sh" --contained -- "$adir") >/dev/null 2>&1; then
+    user=$(cd "$top" && "$PLUGIN_ROOT/bin/journal-dir.sh" --user-owned 2>/dev/null) || user=""
+    [ -n "$user" ] || { _tg_trail_refused "its directory could not be created inside the repository"; return 0; }
+    mkdir -p "$adir" 2>/dev/null || { _tg_trail_refused "its directory could not be created"; return 0; }
+  fi
+  # The trail directory ignores itself, so it never dirties the tree.
+  [ -L "$adir/.gitignore" ] && { _tg_trail_refused "its .gitignore is a symlink"; return 0; }
+  { [ -f "$adir/.gitignore" ] || printf '*\n' > "$adir/.gitignore" 2>/dev/null; } || true
+  err=$(printf '%s' "$2" | (cd "$top" && "$PLUGIN_ROOT/bin/journal-append.sh" --file "$autolog" -) 2>&1 >/dev/null)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    err=$(printf '%s' "$err" | head -n 1 | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-200)
+    _tg_trail_refused "journal-append.sh exit $rc${err:+: $err}"
+  fi
+  return 0
+}
+
 AGENT_TYPE=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null) || AGENT_TYPE=""
 AGENT_SAFE=""
 [ -n "$AGENT_TYPE" ] && AGENT_SAFE=" agent=$(_tg_crumb_safe "$AGENT_TYPE")"
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-TEXT=""
+# Group the breadcrumbs by repository, in the order the actions came.
+TOPS=()
 for J in "${JOURNAL_LINES[@]}"; do
-  TEXT="$TEXT<!-- auto-log: $NOW $(_tg_crumb_safe "${J%%$'\t'*}") \"$(_tg_crumb_safe "${J#*$'\t'}")\"$AGENT_SAFE -->"$'\n'
+  T="${J##*$'\t'}"; [ -n "$T" ] || T="$REPO_ROOT"
+  SEEN=0
+  for U in ${TOPS[@]+"${TOPS[@]}"}; do [ "$U" = "$T" ] && SEEN=1; done
+  [ "$SEEN" = 1 ] || TOPS+=("$T")
 done
-ERR=$(printf '%s' "$TEXT" | (cd "$REPO_ROOT" && "$PLUGIN_ROOT/bin/journal-append.sh" --file "$AUTOLOG" -) 2>&1 >/dev/null)
-RC=$?
-if [ "$RC" -ne 0 ]; then
-  ERR=$(printf '%s' "$ERR" | head -n 1 | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-200)
-  _tg_note "could not write to the auto-log trail (journal-append.sh exit $RC${ERR:+: $ERR}); allowing"
-fi
+for T in ${TOPS[@]+"${TOPS[@]}"}; do
+  TEXT=""
+  for J in "${JOURNAL_LINES[@]}"; do
+    JT="${J##*$'\t'}"; [ -n "$JT" ] || JT="$REPO_ROOT"
+    [ "$JT" = "$T" ] || continue
+    J="${J%$'\t'*}"
+    TEXT="$TEXT<!-- auto-log: $NOW $(_tg_crumb_safe "${J%%$'\t'*}") \"$(_tg_crumb_safe "${J#*$'\t'}")\"$AGENT_SAFE -->"$'\n'
+  done
+  _tg_write_trail "$T" "$TEXT"
+done
 exit 0
