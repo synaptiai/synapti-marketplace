@@ -219,7 +219,7 @@ Read-only deep dump:
 
 ### `/flow:goal evaluate <id>`
 
-Invoke `Skill(goal-evaluator)` with `trigger=command`. The skill runs deterministic checks, optionally dispatches `Agent(goal-evaluator-judge)`, and transitions lifecycle. This is the primary user-facing way to advance a goal's state. When it dispatches the judge (Step 5), the judge gets what the Stop hook's judge gets in evaluator-loop mode: the input assembled by `bin/_flow_evidence_bundle.py`, the instructions in `agents/goal-evaluator-judge.md`, and the model set by `flow.goals.judge.model` (default `haiku`).
+Invoke `Skill(goal-evaluator)` with `trigger=command`. The skill runs deterministic checks, optionally runs the goal judge, and transitions lifecycle. This is the primary user-facing way to advance a goal's state. The judge (Step 5) runs through `bin/flow-judge.sh --judge goal`, the helper the Stop hook runs in evaluator-loop mode: the claude CLI with every tool disallowed, the input assembled by `bin/_flow_evidence_bundle.py`, the body of `agents/goal-evaluator-judge.md` as its instructions, and the model set by `flow.goals.judge.model` (default `haiku`).
 
 After the skill produces a verdict, **the command (not the skill) persists it via `bin/flow-record-verdict.sh`**. The skill returns the structured verdict in-memory; the command is the single owner of the write. See `skills/goal-evaluator/SKILL.md` Step 8 for the current contract.
 
@@ -334,7 +334,7 @@ Filter via flag:
 
 This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `.flow/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no goal has `status: active`.
 
-When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates the active goal after every turn, with throttling and budget enforcement: it runs the deterministic checks and, when criteria without a command remain, runs the same judge `/flow:goal evaluate` dispatches (same input, instructions and model) through `claude --print` with no tools. It cannot ask, so it never writes `achieved`; run `/flow:goal evaluate <id>` to finalize.
+When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates the active goal after every turn, with throttling and budget enforcement: it runs the deterministic checks and, when criteria without a command remain, runs the same judge `/flow:goal evaluate` runs, through the same helper. It cannot ask, so it never writes `achieved`; run `/flow:goal evaluate <id>` to finalize.
 
 ## Critical references
 

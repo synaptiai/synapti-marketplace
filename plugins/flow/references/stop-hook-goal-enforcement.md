@@ -114,11 +114,12 @@ emit {"decision":"approve","reason":"achieved; run /flow:goal evaluate to finali
 
   ↓ deterministic all-pass + fuzzy criteria remain
   ↓ budget used up → emit {"decision":"approve","reason":"goal budget exhausted..."}, judge not run, goal left active
-spawn judge subprocess:
+spawn judge subprocess (bin/flow-judge.sh --judge goal < $PROMPT_FILE), which runs:
+  cd <home>/.claude/flow-goal-judge
   CLAUDE_HOOK_GOAL_JUDGE_MODE=true timeout $T claude --print \
-    --model "$M" --output-format json --json-schema "$S" \
-    --system-prompt "You are flow goal-evaluator-judge..." \
-    --disallowedTools '*' < $PROMPT_FILE
+    --output-format json --disallowedTools '*' \
+    --system-prompt "<body of agents/goal-evaluator-judge.md>" \
+    --model "$M" --json-schema "$S"
 
   ↓ judge returns achieved | not_achieved | blocked | needs_human_review
 case-by-case decision: emit appropriate {"decision":..., "reason":...};
@@ -341,7 +342,7 @@ The `goal-evaluator-judge` agent has an "Iron Law": it must judge based ONLY on 
 
 ### Layer 1 — Mechanical: no tool access
 
-`agents/goal-evaluator-judge.md` declares `tools: []` in frontmatter, and `flow-goal-evaluator.sh` invokes the judge with `--disallowedTools '*'`. The judge cannot Read, Bash, Grep, or use any other tool — even if its prompt told it to. This is the security boundary; everything else is defense-in-depth.
+`agents/goal-evaluator-judge.md` declares `tools: []` in frontmatter, and `bin/flow-judge.sh`, which both `flow-goal-evaluator.sh` and `/flow:goal evaluate` run, invokes the judge with `--disallowedTools '*'`. The judge cannot Read, Bash, Grep, or use any other tool — even if its prompt told it to. This is the security boundary; everything else is defense-in-depth.
 
 ### Layer 2 — Curated bundle from a dedicated assembler
 

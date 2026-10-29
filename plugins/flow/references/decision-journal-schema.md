@@ -145,7 +145,7 @@ artifacts:
 | `finding-dismissed` | `pr: <int>`, `cycle: <int>`, `finding_id: <string>`, `category: <string>`, `location: <string>`, `by: address`, `reason: <closed set, below>`, `evidence: <string>` | `address.md` Phase 3 (each Pushback item) | address.md Phase 3 |
 | `design-decision` | `decision: <string>`, `category: architecture` | `design.md` Phase 4 | design.md |
 | `brainstorm-decision` | `topic: <string>`, `chosen: <string>`, `options_considered: <int>` | `brainstorm.md` Phase 4 | brainstorm.md |
-| `verdict` | `result: PASS\|FAIL\|NEEDS-HUMAN-REVIEW`, `pr: <int>` (optional), `failures: [<criterion>...]` (optional) | `start.md` Phase 4 step 6 (after Agent(verdict-judge) returns) | start.md Phase 4 |
+| `verdict` | `result: PASS\|FAIL\|NEEDS-HUMAN-REVIEW`, `pr: <int>` (optional), `failures: [<criterion>...]` (optional) | `start.md` Phase 4 step 6 (after the verdict judge returns) | start.md Phase 4 |
 | `escalation-resolved` | `escalation_field: <string>` (one of the six canonical fields), `outcome: <string>` | manual or automated when an `AskUserQuestion` escalation closes | any |
 | `workflow-run` | `workflow: <string>` (e.g., `start-issue`), `run_id: <ISO-timestamp-id>`, `status: active\|completed\|blocked\|cancelled` | flow commands that initiate a FlowRun | `start.md`, `debug.md`, `address.md`, `review.md`, `pr.md`, `merge.md`, `release.md` |
 | `goal-created` | `goal_id: <string>`, `source: <string>` (e.g., `github_issue:42`) | `goal-contract-capture` skill via `bin/flow-goal-record.sh` | start.md after Spec Validation Gate; review.md, address.md, `/flow:goal create` |
