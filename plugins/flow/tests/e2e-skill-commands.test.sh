@@ -21,6 +21,13 @@
 #   G1 one --include holding a brace list, which grep does not expand, so no
 #      file matches and the search reports nothing
 #   G2 the search lists files of other types
+#
+# .env files in the security reviewer's secrets scan (agents/security-reviewer.md
+# Step 2), by the rule in references/classification-signals.md
+#   E1 a committable template (.env.example) with only placeholders is a hit,
+#      so every project that ships one reports a secret
+#   E2 a template holding a value that looks like a real secret is not a hit
+#   E3 .env.<environment> is not a hit
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -175,4 +182,28 @@ _run_text "skills/architecture-patterns/SKILL.md (coupling check)" "$IMPORT_GREP
 e2e_expect_line "./src/search.ts"
 e2e_expect_line "./src/tool.py"
 e2e_expect_no_out "notes.md"
+e2e_expect_clean_edges
+
+_flow_test_begin "security-reviewer: .env files are hits by name, templates only for a secret-looking value (E1, E2, E3)"
+e2e_new security-reviewer-env
+e2e_describe "the branch adds .env.production, a .env.example holding only placeholders, a .env.sample holding an sk- key and a .env.template holding a 22-character mixed-case value; origin/main is the commit before"
+e2e_repo feature/e2e
+e2e_gh_fixture repo '{"nameWithOwner":"o/r","defaultBranchRef":{"name":"main"}}'
+(
+  _e2e_git_env
+  cd "$E2E_REPO" || exit 1
+  git update-ref refs/remotes/origin/main HEAD
+  printf 'PORT=3000\n' > .env.production
+  printf 'DATABASE_URL=\nPORT=3000\nSTRIPE_KEY=changeme\nSIGNING=your-signing-value-goes-here\nREGION=<region>\n' > .env.example
+  printf 'STRIPE_KEY=sk-live-abc\n' > .env.sample
+  printf 'export SIGNING="AbCdEfGh12345678IjKlMn"\n' > .env.template
+  git add .env.production .env.example .env.sample .env.template
+  git commit -q -m env
+) || _flow_assert_fail "security-reviewer-env: could not commit the .env files"
+e2e_run_fence "$E2E_PLUGIN_DIR/agents/security-reviewer.md" '.env files in diff'
+e2e_expect_line "ENV_FILE=.env.production"
+e2e_expect_line "ENV_FILE=.env.sample (template holding a value that looks like a real secret)"
+e2e_expect_line "ENV_FILE=.env.template (template holding a value that looks like a real secret)"
+e2e_expect_no_out "ENV_FILE=.env.example"
+e2e_expect_line "SECRETS_STATE=ok"
 e2e_expect_clean_edges

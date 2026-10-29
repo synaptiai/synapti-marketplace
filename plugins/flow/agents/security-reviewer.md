@@ -61,9 +61,36 @@ HITS=$(git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origi
 HITS=$(git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFAULT_BRANCH"..HEAD | grep -oE '[A-Za-z0-9+/=]{32,}' | head -5)
 [ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
 
-# .env files in diff
-HITS=$(git -C "${REVIEW_TREE:-.}" diff --name-only "origin/$DEFAULT_BRANCH"..HEAD | grep -iE '\.env')
-[ -n "$HITS" ] && { printf '%s\n' "$HITS"; SECRETS_HITS=1; }
+# .env files in diff, by the rule in references/classification-signals.md:
+# .env, .env.<environment>, *.env and .envrc are hits by name. A template
+# (.env.example, .env.sample, .env.template) is committable, and is a hit only
+# when a value in it looks like a real secret: a known key prefix (sk-, ghp_,
+# github_pat_, AKIA, xox?-), a private-key block, or a string of 20 or more
+# letters and digits that mixes upper case, lower case and digits. Placeholders
+# such as changeme or <your-key> are none of these.
+ENV_NAMES=$(git -C "${REVIEW_TREE:-.}" -c core.quotePath=off diff --name-only "origin/$DEFAULT_BRANCH"..HEAD)
+while IFS= read -r ENV_PATH; do
+  [ -n "$ENV_PATH" ] || continue
+  ENV_BASE=$(printf '%s' "${ENV_PATH##*/}" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  case "$ENV_BASE" in
+    .env.example|.env.sample|.env.template)
+      if git -C "${REVIEW_TREE:-.}" show "HEAD:$ENV_PATH" 2>/dev/null | awk -v q="'" '
+          /-----BEGIN [A-Z ]*PRIVATE KEY-----/ { hit = 1 }
+          /^[ \t]*(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*=/ {
+            v = substr($0, index($0, "=") + 1)
+            gsub(q, "", v); gsub(/"/, "", v); gsub(/^[ \t]+|[ \t]+$/, "", v)
+            if (v ~ /^(sk-|ghp_|github_pat_|AKIA|xox[a-z]-)/) hit = 1
+            else if (length(v) >= 20 && v ~ /^[A-Za-z0-9+\/=_-]+$/ && v ~ /[0-9]/ && v ~ /[A-Z]/ && v ~ /[a-z]/) hit = 1
+          }
+          END { exit hit ? 0 : 1 }'; then
+        printf '%s\n' "ENV_FILE=$ENV_PATH (template holding a value that looks like a real secret)"
+        SECRETS_HITS=1
+      fi ;;
+    .env|.env.*|*.env|.envrc)
+      printf '%s\n' "ENV_FILE=$ENV_PATH"
+      SECRETS_HITS=1 ;;
+  esac
+done <<<"$ENV_NAMES"
 
 if [ "$SECRETS_HITS" = 1 ]; then
   printf '%s\n' "SECRETS_STATE=ok"
