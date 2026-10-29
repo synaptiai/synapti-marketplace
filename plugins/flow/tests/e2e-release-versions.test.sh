@@ -67,6 +67,14 @@
 #      bump (anything else staged) or leaves out the changelog file
 #   P2 anything is pushed to the default branch
 #   P3 a refused bump leaves the release branch behind
+#   P4 a new changelog file, not yet known to git, makes the commit fail
+#   P5 a failed commit or push leaves the run on the release branch with the
+#      versions bumped, or its cleanup loses the changelog edit or unstages
+#      what was staged before the run
+#   P6 a release branch left by an earlier failed run is reported as "cannot
+#      create the branch" with no way forward
+#   P7 a version file with changes of its own is bumped and committed with
+#      them, or restored over them on a failure
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
@@ -777,6 +785,116 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_equal "" "$(_git branch --list chore/release-4.18.0)" "the release branch (removed)"
   e2e_expect_equal "fixtures" "$(_head_subject)" "HEAD's subject"
   e2e_expect_equal "" "$(_status)" "the working tree"
+done
+
+# An npm package released as v1.2.3 and pushed, for the release pull request
+# block run with VERSION=1.3.0.
+_released_npm() {
+  e2e_repo main
+  _npm_fixture
+  _commit_all
+  _git tag -a v1.2.3 -m v1.2.3
+  _origin
+}
+_pr_block() {
+  e2e_run_block RELEASE_BRANCH=chore/release-1.3.0 DEFAULT_BRANCH=main VERSION=1.3.0 TAG_PREFIX=v "$@" "$RELEASE_MD" RELEASE_PR_BLOCK
+}
+# _left_as_before — the state the block found: on main, no release branch,
+# package.json at 1.2.3, the changelog edit and the staged file kept.
+_left_as_before() {
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=blocked"
+  e2e_expect_out "PR_CLEANUP="
+  e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "" "$(_git branch --list chore/release-1.3.0)" "the local release branch (removed)"
+  e2e_expect_equal "fixtures" "$(_head_subject)" "HEAD's subject"
+  e2e_expect_file_has package.json '"version": "1.2.3"'
+  e2e_expect_file_has CHANGELOG.md '## 1.3.0'
+  e2e_expect_equal "$(printf ' M CHANGELOG.md\nA  staged.txt')" "$(_status)" "the working tree (changelog edit kept, staged file still staged)"
+}
+
+_flow_test_begin "Phase 4 pr: a new changelog file is committed with the bump (P4)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-new-changelog-$E2E_FENCE_SHELLS"
+  e2e_describe "npm package released as v1.2.3; CHANGELOG.md written for the first time, not yet known to git; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  printf '# Changelog\n\n## 1.3.0\n- new\n' > "$E2E_REPO/CHANGELOG.md"
+  _pr_block CHANGELOG_FILE=CHANGELOG.md
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=pushed"
+  e2e_expect_equal "CHANGELOG.md package.json" "$(_head_files)" "the files in the bump commit"
+  e2e_expect_equal "" "$(_status)" "the working tree"
+done
+
+_flow_test_begin "Phase 4 pr: a failed commit or push puts everything back as it was (P5)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-commit-fails-$E2E_FENCE_SHELLS"
+  e2e_describe "a pre-commit hook that fails; CHANGELOG.md edited; an unrelated file staged; block under $E2E_FENCE_SHELLS"
+  e2e_repo main
+  _npm_fixture
+  printf '# Changelog\n' > "$E2E_REPO/CHANGELOG.md"
+  _commit_all
+  _git tag -a v1.2.3 -m v1.2.3
+  _origin
+  printf '# Changelog\n\n## 1.3.0\n- new\n' > "$E2E_REPO/CHANGELOG.md"
+  printf 'staged\n' > "$E2E_REPO/staged.txt"
+  _git add staged.txt
+  mkdir -p "$E2E_REPO/.git/hooks"
+  printf '#!/bin/sh\nexit 1\n' > "$E2E_REPO/.git/hooks/pre-commit"
+  chmod +x "$E2E_REPO/.git/hooks/pre-commit"
+  _pr_block CHANGELOG_FILE=CHANGELOG.md
+  _left_as_before
+  e2e_expect_out "git commit failed"
+done
+
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-push-fails-$E2E_FENCE_SHELLS"
+  e2e_describe "origin unreachable when the branch is pushed; CHANGELOG.md edited; an unrelated file staged; block under $E2E_FENCE_SHELLS"
+  e2e_repo main
+  _npm_fixture
+  printf '# Changelog\n' > "$E2E_REPO/CHANGELOG.md"
+  _commit_all
+  _git tag -a v1.2.3 -m v1.2.3
+  _origin
+  printf '# Changelog\n\n## 1.3.0\n- new\n' > "$E2E_REPO/CHANGELOG.md"
+  printf 'staged\n' > "$E2E_REPO/staged.txt"
+  _git add staged.txt
+  _git remote set-url origin "$E2E_DIR/missing.git"
+  _pr_block CHANGELOG_FILE=CHANGELOG.md
+  _left_as_before
+  e2e_expect_out "git push"
+done
+
+_flow_test_begin "Phase 4 pr: a release branch left by an earlier run is named, with both ways forward (P6)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-branch-exists-$E2E_FENCE_SHELLS"
+  e2e_describe "the local branch chore/release-1.3.0 already exists; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  _git branch chore/release-1.3.0
+  _pr_block
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=blocked"
+  e2e_expect_out "git push -u origin chore/release-1.3.0"
+  e2e_expect_out "git branch -D chore/release-1.3.0"
+  e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "fixtures" "$(_git log -1 --format=%s chore/release-1.3.0)" "the existing branch (untouched)"
+  e2e_expect_equal "" "$(_status)" "the working tree"
+done
+
+_flow_test_begin "Phase 4 pr: a version file with changes of its own stops the run before anything is written (P7)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-dirty-version-file-$E2E_FENCE_SHELLS"
+  e2e_describe "package.json has an uncommitted change of its own; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  sed 's/"test": "true"/"test": "make test"/' "$E2E_REPO/package.json" > "$E2E_DIR/p.json" && mv "$E2E_DIR/p.json" "$E2E_REPO/package.json"
+  _pr_block
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=blocked"
+  e2e_expect_out "package.json"
+  e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "" "$(_git branch --list chore/release-1.3.0)" "the release branch (never created)"
+  e2e_expect_file_has package.json '"test": "make test"'
+  e2e_expect_file_has package.json '"version": "1.2.3"'
 done
 
 _flow_test_begin "Phase 4 tag: an annotated tag on the merge commit, not pushed by the block (T1, T2)"

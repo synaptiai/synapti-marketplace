@@ -420,6 +420,8 @@ Show the assessment as text — this is not a question:
 
 Run the block below with `RELEASE_BRANCH`, `DEFAULT_BRANCH` and `TAG_PREFIX` from Phase 2, `VERSION` set to `NEW_VERSION`, `PLUGIN` to the plugin name and `MARKET_VERSION` to `NEW_MARKETPLACE_VERSION` (both empty outside a marketplace), `CHANGELOG_FILE` to the changelog file you edited (empty when none), and `CHANGELOG` to the generated changelog. It creates the release branch from the default branch, writes the bump, commits only the bumped files and the changelog file, pushes the branch and opens the pull request. Nothing is pushed to the default branch.
 
+It stops before creating anything when the release branch already exists in this clone (`PR_ERROR` names both ways forward) or when a version file it would bump has uncommitted changes of its own. When the bump, the commit or the push fails, it puts the repository back as it found it: the version files restored, the default branch checked out, the release branch deleted, and the changelog edit and anything staged before kept. `PR_CLEANUP` says what it did, or what it could not undo.
+
 The pull request title (also the commit subject) is `chore(release): <plugin> <version>, marketplace <marketplace version>` in a marketplace and `chore(release): <tag>` otherwise.
 
 ```bash
@@ -442,6 +444,64 @@ if [ ! -x "$VERSIONS" ]; then
   printf '%s\n' "PR_ERROR=\"flow-release-versions.sh missing or non-executable at $VERSIONS\""
   exit 1
 fi
+if git rev-parse -q --verify "refs/heads/$RELEASE_BRANCH" >/dev/null; then
+  printf '%s\n' "PR_STATE=blocked"
+  printf '%s\n' "PR_ERROR=\"the local branch $RELEASE_BRANCH is left from an earlier run; push it and open its pull request (git push -u origin $RELEASE_BRANCH, then gh pr create --base $DEFAULT_BRANCH --head $RELEASE_BRANCH), or delete it (git branch -D $RELEASE_BRANCH), then run /flow:release again\""
+  exit 1
+fi
+# The files the bump writes, from a plan with the same arguments. None may
+# hold a change of its own: the bump commit would carry it, and a failure
+# below restores these files from the last commit.
+if [ -n "${PLUGIN:-}" ] && [ -n "${MARKET_VERSION:-}" ]; then
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN" --market-to "$MARKET_VERSION")
+elif [ -n "${PLUGIN:-}" ]; then
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN")
+else
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION")
+fi
+# The script names only paths without spaces or quotes, one per line.
+VERSION_PATHS=$(printf '%s\n' "$PLAN_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
+DIRTY=""
+while IFS= read -r _p; do
+  [ -n "$_p" ] || continue
+  [ -z "$(git status --porcelain -- "$_p")" ] || DIRTY="$DIRTY $_p"
+done <<EOF
+$VERSION_PATHS
+EOF
+if [ -n "$DIRTY" ]; then
+  printf '%s\n' "PR_STATE=blocked"
+  printf '%s\n' "PR_ERROR=\"these version files have uncommitted changes of their own:$DIRTY; commit or stash them, then run /flow:release again\""
+  exit 1
+fi
+# _flow_undo: put the repository back as this block found it, and print
+# PR_CLEANUP with what it did or could not do. The version files go back to
+# the last commit (they were clean before the bump); the changelog edit and
+# anything staged before this block stay as they were.
+COMMITTED=0
+_flow_undo() {
+  _left=""
+  if [ "$COMMITTED" = 1 ] && ! git reset -q --soft HEAD~1; then
+    _left="$_left; the bump commit is still on $RELEASE_BRANCH"
+  fi
+  while IFS= read -r _p; do
+    [ -n "$_p" ] || continue
+    git reset -q -- "$_p" >/dev/null 2>&1
+    git checkout -q -- "$_p" || _left="$_left; $_p still holds the new version"
+  done <<EOF
+$VERSION_PATHS
+EOF
+  [ -z "${CHANGELOG_FILE:-}" ] || git reset -q -- "$CHANGELOG_FILE" >/dev/null 2>&1
+  if git switch -q "$DEFAULT_BRANCH"; then
+    git branch -q -D "$RELEASE_BRANCH" || _left="$_left; the local branch $RELEASE_BRANCH is still there (git branch -D $RELEASE_BRANCH)"
+  else
+    _left="$_left; still on $RELEASE_BRANCH (git switch $DEFAULT_BRANCH, then git branch -D $RELEASE_BRANCH)"
+  fi
+  if [ -z "$_left" ]; then
+    printf '%s\n' "PR_CLEANUP=\"the version files are restored, $DEFAULT_BRANCH is checked out and the local $RELEASE_BRANCH is deleted; the changelog edit and anything staged before are kept\""
+  else
+    printf '%s\n' "PR_CLEANUP=\"cleanup incomplete$_left\""
+  fi
+}
 if ! git switch -q -c "$RELEASE_BRANCH"; then
   printf '%s\n' "PR_STATE=blocked"
   printf '%s\n' "PR_ERROR=\"cannot create the branch $RELEASE_BRANCH\""
@@ -455,32 +515,46 @@ else
   BUMP_OUT=$("$VERSIONS" --write --to "$VERSION"); BUMP_RC=$?
 fi
 printf '%s\n' "$BUMP_OUT"
-# The script names only paths without spaces or quotes, one per line.
-BUMP_FILES=$(printf '%s\n' "$BUMP_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
-if [ -n "${CHANGELOG_FILE:-}" ]; then
-  if git diff --quiet -- "$CHANGELOG_FILE" 2>/dev/null && ! git ls-files --others --exclude-standard -- "$CHANGELOG_FILE" | grep -q .; then
-    printf '%s\n' "PR_WARN=\"$CHANGELOG_FILE has no change; the release pull request carries no changelog entry\""
-  else
-    BUMP_FILES=$(printf '%s\n%s\n' "$BUMP_FILES" "$CHANGELOG_FILE")
-  fi
-fi
 if [ "$BUMP_RC" -ne 0 ] || ! printf '%s\n' "$BUMP_OUT" | grep -qx 'VERSIONS_STATE=written'; then
-  # The script writes nothing unless every file can be written, so there is
-  # nothing to undo but the branch.
-  git switch -q "$DEFAULT_BRANCH" && git branch -q -d "$RELEASE_BRANCH"
+  # The script writes every file or none, and names any it could not put
+  # back on a WRITTEN_PATH line; the undo restores them all either way.
+  _flow_undo
   printf '%s\n' "PR_STATE=blocked"
   printf '%s\n' "PR_ERROR=\"the version files were not bumped; see VERSIONS_STATE\""
   exit 1
 fi
-# Paths given to git commit commit those files alone, whatever else is staged.
-if ! printf '%s\n' "$BUMP_FILES" | sed '/^$/d' | xargs git commit -q -m "$PR_TITLE" --; then
+COMMIT_FILES=$(printf '%s\n' "$BUMP_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
+if [ -n "${CHANGELOG_FILE:-}" ]; then
+  if git diff --quiet -- "$CHANGELOG_FILE" 2>/dev/null && ! git ls-files --others --exclude-standard -- "$CHANGELOG_FILE" | grep -q .; then
+    printf '%s\n' "PR_WARN=\"$CHANGELOG_FILE has no change; the release pull request carries no changelog entry\""
+  else
+    COMMIT_FILES=$(printf '%s\n%s\n' "$COMMIT_FILES" "$CHANGELOG_FILE")
+  fi
+fi
+# git add first: git commit's paths match only files git already knows, so a
+# changelog file written for the first time would fail the commit. Paths
+# given to git commit commit those files alone, whatever else is staged.
+set --
+ADD_OK=1
+while IFS= read -r _p; do
+  [ -n "$_p" ] || continue
+  git add -- "$_p" || ADD_OK=0
+  set -- "$@" "$_p"
+done <<EOF
+$COMMIT_FILES
+EOF
+if [ "$ADD_OK" = 1 ] && git commit -q -m "$PR_TITLE" -- "$@"; then
+  COMMITTED=1
+else
+  _flow_undo
   printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"git commit failed on $RELEASE_BRANCH\""
+  printf '%s\n' "PR_ERROR=\"git add or git commit failed on $RELEASE_BRANCH, so nothing was committed; see the git output above\""
   exit 1
 fi
 if ! git push -q -u origin "$RELEASE_BRANCH"; then
+  _flow_undo
   printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"git push of $RELEASE_BRANCH failed; the commit is on the local branch\""
+  printf '%s\n' "PR_ERROR=\"git push of $RELEASE_BRANCH failed, so the bump commit was undone; check that origin is reachable, then run /flow:release again\""
   exit 1
 fi
 printf '%s\n' "PR_STATE=pushed"
