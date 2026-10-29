@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Tests that the flow CI workflow reaches everything it is meant to test.
 #
 # Each of these is a way for coverage to disappear without anything turning
@@ -72,71 +73,115 @@ else
   _flow_assert_fail "the pattern matches no suite, or not e2e-system-one.test.sh: the macOS job would run the stub suites again"
 fi
 
-_flow_test_begin "every part of the split suite has a matrix entry, and each job runs its own part"
-# The flow suite runs in parts (run.sh, FLOW_TEST_SHARD=K/N). A matrix that
-# lists parts 1, 2 and 4 of 4 skips a quarter of the suite with every check
-# green, so for each OS the parts must be exactly 1 to N.
-SHARD_ROWS=$(sed -nE 's/^[[:space:]]*- \{ os: ([a-z0-9.-]+), shard: ([0-9]+), shards: ([0-9]+), timeout: [0-9]+ \}[[:space:]]*$/\1 \2 \3/p' "$WF")
-SHARD_BAD=$(printf '%s\n' "$SHARD_ROWS" | awk '
-  NF == 3 { if (!os[$1]++) nos++; if (n[$1] == "") n[$1] = $3; else if (n[$1] != $3) bad = bad " " $1 ":mixed-counts"
-            if (seen[$1 " " $2]++) bad = bad " " $1 ":duplicate-" $2; k[$1]++ }
-  END { for (o in os) { if (k[o] != n[o]) bad = bad " " o ":" k[o] "-of-" n[o]
-                        for (i = 1; i <= n[o]; i++) if (!seen[o " " i]) bad = bad " " o ":missing-" i }
-        if (nos == 0) bad = " no-rows"
-        print bad }')
-if [ -z "$SHARD_BAD" ] && printf '%s\n' "$SHARD_ROWS" | grep -q '^ubuntu-latest ' && printf '%s\n' "$SHARD_ROWS" | grep -q '^macos-latest '; then
-  _flow_assert_pass "the matrix lists parts 1 to N for each OS: $(printf '%s\n' "$SHARD_ROWS" | tr '\n' ';')"
+_flow_test_begin "the split suite: every part has a matrix row and a long enough limit, and each job runs its own part"
+# The flow suite runs in parts (run.sh, FLOW_TEST_SHARD=K/N). The workflow is
+# read as YAML, not as lines of text: a commented-out line, a row written in
+# another layout or a value set in a second place would pass a text match.
+# Each of these would leave CI green while it tested less than the suite, or
+# cancel runs that were still passing:
+# - a matrix that lists parts 1, 2 and 4 of 4, or part 1 twice;
+# - FLOW_TEST_SHARD not reaching run.sh, set again elsewhere, or overridden
+#   on the run.sh command line;
+# - one artifact name for every part (upload-artifact refuses a second
+#   upload of a name);
+# - a fixed limit in the job, a step-level limit, or a row below the floor.
+#   Linux parts took about 5 to 12 minutes of tests each by the per-file
+#   times of one run on main (2026-10-29), and macOS 15 to 24 minutes in one
+#   job (2026-10), so the floors are 20 and 45 minutes.
+if ! python3 -c "import yaml" >/dev/null 2>&1; then
+  _flow_assert_pass "SKIP: PyYAML not installed (apt install python3-yaml / pip install pyyaml)"
+  WF_LINUX_N=""
 else
-  _flow_assert_fail "the matrix parts do not cover 1 to N for each OS (${SHARD_BAD# }); rows: $(printf '%s\n' "$SHARD_ROWS" | tr '\n' ';')"
-fi
-# _wf_step <name> — the text of one step of the test job, from its `- name:`
-# line to the next step or job, so a line elsewhere in the file does not count.
-_wf_step() {
-  awk -v want="      - name: $1" '
-    /^  [A-Za-z_][A-Za-z0-9_-]*:[[:space:]]*$/ { job = $1 }
-    job == "test:" && $0 == want { on = 1; print; next }
-    on && (/^      - name: / || /^  [A-Za-z_]/) { on = 0 }
-    on { print }' "$WF"
-}
-WF_RUN=$(_wf_step "Run flow tests")
-WF_UPLOAD=$(_wf_step "Upload end-to-end artifacts")
-if printf '%s\n' "$WF_RUN" | grep -qF 'FLOW_TEST_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}' \
-   && printf '%s\n' "$WF_UPLOAD" | grep -qF 'name: flow-e2e-${{ matrix.os }}-${{ matrix.shard }}-of-${{ matrix.shards }}'; then
-  _flow_assert_pass "the test step passes its part to run.sh and the upload step names its artifact after it"
-else
-  _flow_assert_fail "the Run flow tests step does not set FLOW_TEST_SHARD from the matrix, or the upload step's artifact name is not unique per part"
-fi
-
-_flow_test_begin "each part's time limit comes from its matrix row and is long enough for its OS"
-# Linux parts take about 6 to 14 minutes (2026-10-29) and macOS 15 to 24
-# minutes in one job. A fixed limit in the job, or a row below these floors,
-# cancels runs that are still passing.
-WF_TEST_JOB=$(awk '/^  [A-Za-z_][A-Za-z0-9_-]*:[[:space:]]*$/ { job = $1 } job == "test:"' "$WF")
-if printf '%s\n' "$WF_TEST_JOB" | grep -qE '^    timeout-minutes: \$\{\{ matrix\.timeout \}\}[[:space:]]*$'; then
-  _flow_assert_pass "the test job takes timeout-minutes from matrix.timeout"
-else
-  _flow_assert_fail "the test job does not take timeout-minutes from matrix.timeout"
-fi
-LOW_TIMEOUTS=$(sed -nE 's/^[[:space:]]*- \{ os: ([a-z0-9.-]+), shard: [0-9]+, shards: [0-9]+, timeout: ([0-9]+) \}[[:space:]]*$/\1 \2/p' "$WF" \
-  | awk '($1 == "ubuntu-latest" && $2 < 20) || ($1 == "macos-latest" && $2 < 45) || ($1 != "ubuntu-latest" && $1 != "macos-latest") { print }' | tr '\n' ';')
-if [ -z "$LOW_TIMEOUTS" ]; then
-  _flow_assert_pass "every Linux part has at least 20 minutes and macOS at least 45"
-else
-  _flow_assert_fail "matrix rows with too short a limit, or an unknown OS: $LOW_TIMEOUTS"
+  WF_CHECK=$(python3 - "$WF" <<'PY' 2>&1
+import sys, yaml
+wf = yaml.safe_load(open(sys.argv[1]))
+out = []
+def bad(m): out.append("BAD " + m)
+job = (wf.get("jobs") or {}).get("test") or {}
+rows = ((job.get("strategy") or {}).get("matrix") or {}).get("include")
+if not isinstance(rows, list) or not rows:
+    bad("jobs.test.strategy.matrix.include is not a list of rows")
+    rows = []
+if set((job.get("strategy") or {}).get("matrix") or {}) - {"include"}:
+    bad("the matrix has keys besides include, which multiply the rows")
+floor = {"ubuntu-latest": 20, "macos-latest": 45}
+parts = {}
+for r in rows:
+    if not isinstance(r, dict) or set(r) != {"os", "shard", "shards", "timeout"} \
+       or not all(isinstance(r[k], int) and not isinstance(r[k], bool) for k in ("shard", "shards", "timeout")):
+        bad("a matrix row is not {os, shard, shards, timeout} with whole numbers: %r" % (r,))
+        continue
+    if r["os"] not in floor:
+        bad("a matrix row names an unknown OS: %r" % (r["os"],))
+        continue
+    if r["timeout"] < floor[r["os"]]:
+        bad("%s part %d has a %d-minute limit, below %d" % (r["os"], r["shard"], r["timeout"], floor[r["os"]]))
+    parts.setdefault(r["os"], []).append((r["shard"], r["shards"]))
+for os_ in floor:
+    p = parts.get(os_, [])
+    counts = {n for _, n in p}
+    if len(counts) != 1:
+        bad("%s rows give part counts %s, not one count" % (os_, sorted(counts) or "none"))
+        continue
+    n = counts.pop()
+    if sorted(k for k, _ in p) != list(range(1, n + 1)):
+        bad("%s rows list parts %s of %d, not 1 to %d once each" % (os_, sorted(k for k, _ in p), n, n))
+if job.get("timeout-minutes") != "${{ matrix.timeout }}":
+    bad("jobs.test.timeout-minutes is %r, not ${{ matrix.timeout }}" % (job.get("timeout-minutes"),))
+steps = job.get("steps") or []
+named = {s.get("name"): s for s in steps if isinstance(s, dict)}
+for s in steps:
+    if isinstance(s, dict) and "timeout-minutes" in s:
+        bad("step %r sets its own timeout-minutes" % (s.get("name"),))
+want = "${{ matrix.shard }}/${{ matrix.shards }}"
+run = named.get("Run flow tests") or {}
+if (run.get("env") or {}).get("FLOW_TEST_SHARD") != want:
+    bad("the Run flow tests step does not set FLOW_TEST_SHARD to %s" % want)
+places = [("the workflow", wf.get("env")), ("jobs.test", job.get("env"))]
+places += [("step %r" % s.get("name"), s.get("env")) for s in steps if isinstance(s, dict) and s is not run]
+for where, env in places:
+    if isinstance(env, dict) and "FLOW_TEST_SHARD" in env:
+        bad("%s also sets FLOW_TEST_SHARD" % where)
+script = run.get("run") or ""
+if "FLOW_TEST_SHARD" in script:
+    bad("the Run flow tests script names FLOW_TEST_SHARD, which could override the part")
+calls = [l.strip() for l in script.splitlines() if "tests/run.sh" in l]
+if "plugins/flow/tests/run.sh" not in calls \
+   or any(c not in ("plugins/flow/tests/run.sh", 'plugins/flow/tests/run.sh "${files[@]}"') for c in calls):
+    bad("the Run flow tests script calls run.sh as %r, not as plugins/flow/tests/run.sh with the whole list" % (calls,))
+up = (named.get("Upload end-to-end artifacts") or {}).get("with") or {}
+if up.get("name") != "flow-e2e-${{ matrix.os }}-${{ matrix.shard }}-of-${{ matrix.shards }}":
+    bad("the upload step's artifact name %r is not unique per part" % (up.get("name"),))
+if not out:
+    out.append("OK " + "; ".join("%s %d part(s)" % (o, len(p)) for o, p in sorted(parts.items())))
+lin = parts.get("ubuntu-latest") or []
+if lin:
+    out.append("LINUX_N=%d" % lin[0][1])
+print("\n".join(out))
+PY
+)
+  WF_LINUX_N=$(printf '%s\n' "$WF_CHECK" | sed -n 's/^LINUX_N=\([0-9][0-9]*\)$/\1/p')
+  if printf '%s\n' "$WF_CHECK" | grep -q '^OK '; then
+    _flow_assert_pass "the matrix, the limits, FLOW_TEST_SHARD and the artifact name hold: $(printf '%s\n' "$WF_CHECK" | sed -n 's/^OK //p')"
+  else
+    _flow_assert_fail "the split suite is misconfigured in flow-tests.yml: $(printf '%s\n' "$WF_CHECK" | grep -v '^LINUX_N=' | tr '\n' ';')"
+  fi
 fi
 
 _flow_test_begin "every Linux part runs a suite that writes end-to-end artifacts"
-# The upload step fails when a part wrote no artifact. The suites that source
-# tests/lib/e2e.sh write one file per scenario; each of the four parts, taken
-# as run.sh takes them, must hold one.
-WF_LINUX_N=$(sed -nE 's/^[[:space:]]*- \{ os: ubuntu-latest, shard: [0-9]+, shards: ([0-9]+), timeout: [0-9]+ \}[[:space:]]*$/\1/p' "$WF" | head -n 1)
+# The upload step fails when a part wrote no artifact. A suite that loads
+# tests/lib/e2e.sh writes one file per scenario; each Linux part, taken as
+# run.sh takes it (this file runs under run.sh, after the same locale pin),
+# must hold one. Only the line that loads the library counts: a comment, a
+# message or a quoted pattern naming the file does not.
+WF_E2E_RE='^[[:space:]]*(&&[[:space:]]*)?source "\$REPO_ROOT/plugins/flow/tests/lib/e2e\.sh"'
 WF_EMPTY=""
-if [ -n "$WF_LINUX_N" ]; then
+if [ -n "${WF_LINUX_N:-}" ]; then
   _wf_k=1
   while [ "$_wf_k" -le "$WF_LINUX_N" ]; do
     _wf_i=0 _wf_hit=0
     for _wf_f in "$REPO_ROOT"/plugins/flow/tests/*.test.sh; do
-      if [ $((_wf_i % WF_LINUX_N)) -eq $((_wf_k - 1)) ] && grep -q 'tests/lib/e2e\.sh"' "$_wf_f"; then
+      if [ $((_wf_i % WF_LINUX_N)) -eq $((_wf_k - 1)) ] && grep -qE "$WF_E2E_RE" "$_wf_f"; then
         _wf_hit=1
       fi
       _wf_i=$((_wf_i + 1))
@@ -144,9 +189,13 @@ if [ -n "$WF_LINUX_N" ]; then
     [ "$_wf_hit" = 1 ] || WF_EMPTY="$WF_EMPTY $_wf_k/$WF_LINUX_N"
     _wf_k=$((_wf_k + 1))
   done
-fi
-if [ -n "$WF_LINUX_N" ] && [ -z "$WF_EMPTY" ]; then
-  _flow_assert_pass "each of the $WF_LINUX_N Linux parts holds a suite that sources tests/lib/e2e.sh"
+  if [ -z "$WF_EMPTY" ]; then
+    _flow_assert_pass "each of the $WF_LINUX_N Linux parts holds a suite that loads tests/lib/e2e.sh"
+  else
+    _flow_assert_fail "Linux parts with no end-to-end suite, whose artifact upload would fail:$WF_EMPTY"
+  fi
+elif python3 -c "import yaml" >/dev/null 2>&1; then
+  _flow_assert_fail "no Linux part count was read from the matrix"
 else
-  _flow_assert_fail "Linux parts with no end-to-end suite, whose artifact upload would fail:${WF_EMPTY:- no Linux rows}"
+  _flow_assert_pass "SKIP: PyYAML not installed, so the Linux part count was not read"
 fi
