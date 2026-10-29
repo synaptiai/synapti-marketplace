@@ -1842,12 +1842,12 @@ fi
    - TaskCreate("Post review comment", "Post structured review findings to PR via gh pr review")
    - On an external review, LOW-confidence findings at any priority go to a `#### Needs investigation` section and are excluded from the review decision and from the `FLOW_REVIEW_CYCLE` marker; their priority is shown there and never changed. Each entry names what triggered it (`Pattern:`) and what would settle it (`Confirm or refute:`). `bin/flow-finding-route.sh --mode external` decides this in step 7; the rules below apply to HIGH and MEDIUM findings.
    - P1/P2/P3 in already-touched files → REQUEST_CHANGES (P1/P2) or COMMENT with fix-expected language (P3) — the author must fix
-   - Cosmetic P3 in untouched files → COMMENT with fix-if-bounded-or-document-inline language (default mode) OR follow-up issue workflow (only when `minimalScope: true` or the PR author has explicitly invoked minimal scope)
+   - Cosmetic P3 in untouched files → COMMENT asking for the fix in this PR (default mode) OR follow-up issue workflow (only when `minimalScope: true` or the PR author has explicitly invoked minimal scope)
    - P1/P2 in untouched files → REQUEST_CHANGES; author must address in-PR (finding triage is NEVER a valid escalation trigger; see `skills/llm-operator-principles/SKILL.md`)
 
    Findings in files the PR already modifies are NEVER out-of-scope — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
 
-   **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend "fix if bounded (<10 lines) or document inline in the PR body" in the review comment.
+   **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend fixing them in this PR with an `improve:` commit in the review comment.
 
    **Minimal-scope mode (`settings.json` → `minimalScope: true`):** for cosmetic P3 findings in untouched files only, use the follow-up issue workflow:
 

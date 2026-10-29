@@ -47,12 +47,12 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | branch-and-task-management | dispatched | 401 | Create feature branches with naming conventions, load full issue context and impact analysis, and decompo... |
 | capability-discovery | dispatched | 552 | Discover available agents, skills, quality commands (lint, test, typecheck), tech stack, verification cap... |
 | change-classification | dispatched | 528 | Classify code changes as in-context, uncertain, or out-of-context using primary signals (branch diff, iss... |
-| code-quality-principles | ambient | 589 | Enforce code quality through the Boy Scout Rule (leave code better than found), secret-free commits, prod... |
+| code-quality-principles | ambient | 585 | Enforce code quality through the Boy Scout Rule (leave code better than found), secret-free commits, prod... |
 | code-review-methodology | dispatched | 564 | Conduct two-stage code review: Stage 1 verifies spec compliance (criterion-to-code mapping), Stage 2 eval... |
 | convention-enforcement | dispatched | 434 | Validate git conventions (commit messages, branch naming, PR format, issue linkage) by detecting project-... |
 | criterion-verification-map | dispatched | 600 | Transform acceptance criteria into plan-time runnable verification commands (behavioral, API, UI, error... |
 | debugging-patterns | dispatched | 578 | Isolate root causes through structured evidence gathering, pattern analysis, hypothesis testing (max 3 at... |
-| evidence-based-development | ambient | 441 | Enforce evidence-based claims through file:line citations, P1/P2/P3 prioritization proportional to eviden... |
+| evidence-based-development | ambient | 439 | Enforce evidence-based claims through file:line citations, P1/P2/P3 prioritization proportional to eviden... |
 | feedback-resolution | dispatched | 595 | Address PR review feedback through surgical fixes traceable to specific comments, apply the Boy Scout Rul... |
 | goal-contract-capture | dispatched | 596 | Capture a FlowGoal contract as `.flow/goals/<id>.goal.yaml` — outcome, acceptance criteria with verificat... |
 | goal-evaluator | dispatched | 594 | Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, disp... |
@@ -63,7 +63,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | llm-operator-principles | ambient | 594 | Frame Claude's identity as an LLM operator that does not tire, treats convergence as zero findings (not e... |
 | merge-and-release | dispatched · reference-only | 598 | Reference document describing merge prerequisites (approval, CI checks, mergeable, conversations resolved... |
 | merge-conflict-resolution | dispatched | 551 | Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolv... |
-| pr-lifecycle | dispatched · reference-only | 584 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
+| pr-lifecycle | dispatched · reference-only | 581 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
 | preflight-checks | dispatched · reference-only | 543 | Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue e... |
 | run-state-management | dispatched | 580 | Manage FlowRun state at `.flow/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry, write ac... |
 | runtime-verification | dispatched | 597 | Verify code works at runtime through build verification (mandatory), LSP diagnostics, ad-hoc verification... |

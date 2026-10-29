@@ -8,7 +8,7 @@ When the System One decision point `address.category` is on, `/flow:address` ask
 
 ## Findings outside the feedback
 
-A finding in a touched file is never out-of-scope. P1/P2 anywhere: fix in this PR. Cosmetic P3 in an untouched file: fix if bounded (<10 lines) or document inline under `### Known cosmetic notes`; a follow-up issue only under `minimalScope` mode.
+A finding in a touched file is never out-of-scope. P1/P2 anywhere: fix in this PR. Cosmetic P3 in an untouched file: fix in this PR with an `improve:` commit; a follow-up issue only under `minimalScope` mode.
 
 ## Escalation
 

@@ -952,7 +952,7 @@ Prove everything works with fix-forward:
    **Fix-forward** (bounded by `fixForwardMaxIterations`, default 10 — safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately; you wrote this code in this PR, so "pre-existing" is not available as a disposition
    - P2 findings → fix immediately
-   - P3 findings → fix immediately (same disposition as P1/P2 — the proximity test is not a deferral mechanism). Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Finding triage is NEVER a valid escalation trigger.
+   - P3 findings → fix immediately (same disposition as P1/P2 — the proximity test is not a deferral mechanism). This includes cosmetic P3 in untouched files (an `improve:` commit). Finding triage is NEVER a valid escalation trigger.
    - After fixes: re-run quality commands, then targeted re-review on files changed by fixes
    - Approaching the iteration ceiling without convergence is a signal to re-check understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence for the one terminal case.
 4. **Holdout validation** — invoke `holdout-validation` skill to cross-reference self-review claims against actual file state:
@@ -966,7 +966,7 @@ Prove everything works with fix-forward:
    **Blocking treatment:**
    - P1/P2 findings from holdout-validation → fix immediately before proceeding (same fix-forward loop as step 3)
    - After fixes: re-run holdout-validation to confirm the conflict is resolved
-   - P3 findings → fix in-PR as part of the same convergence loop. Only cosmetic P3 in untouched files may be documented inline in the PR body under `### Known cosmetic notes` instead of fixed. Do NOT defer fixable P3 to the PR body.
+   - P3 findings → fix in-PR as part of the same convergence loop, cosmetic P3 in untouched files included. Do NOT list a finding in the PR body instead of fixing it.
    - Only proceed to step 5 when holdout-validation returns PASS or no fixable findings remain
 
    The holdout-validation output is passed to the verdict-judge in step 6 as a required input.

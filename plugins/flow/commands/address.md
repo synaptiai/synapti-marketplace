@@ -910,9 +910,9 @@ A finding in a file the PR already modifies is NEVER out-of-scope — it must be
 
 P1 or P2 findings in untouched files must be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded). They MUST NOT be filed as a six-field Proactive-Autonomy escalation — finding triage is not a decision, it is work. See `skills/llm-operator-principles/SKILL.md`.
 
-**Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed if bounded (<10 lines) or documented inline in the PR body under a `### Known cosmetic notes` section. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
+**Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed in this PR with an `improve:` commit. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
 
-**Minimal-scope mode (`settings.json` → `minimalScope: true`, or user said "minimal scope" in-conversation):** for cosmetic P3 findings in truly untouched files only, the original follow-up workflow is restored:
+**Minimal-scope mode (`settings.json` → `minimalScope: true`, or user said "minimal scope" in-conversation):** for cosmetic P3 findings in truly untouched files only, use the follow-up issue workflow:
 
 1. Use the AskUserQuestion tool with contextual options: "This cosmetic P3 finding is in an untouched file. Create a follow-up issue to track it?"
 2. If yes, create a GitHub issue using issue-crafting skill knowledge:
@@ -997,7 +997,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    - P2 in touched files → fix NOW
    - P3 in touched files → fix NOW (same disposition as P1/P2 — the proximity test is not a deferral mechanism)
    - P1/P2 in untouched files → fix in-PR (expand scope with `improve:` commits). Finding triage is NEVER a valid escalation trigger.
-   - Cosmetic P3 in untouched files → fix if bounded (<10 lines) or document inline in PR body. Default mode does not create follow-up issues. (Only `minimalScope` mode restores the follow-up workflow for this case.)
+   - Cosmetic P3 in untouched files → fix in this PR (`improve:` commit). Default mode does not create follow-up issues; only `minimalScope` mode uses the follow-up issue workflow for this case.
    - After fixes: re-run quality commands, re-review changed files, re-run holdout-validation
    - Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
    - **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
