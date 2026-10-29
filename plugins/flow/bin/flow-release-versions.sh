@@ -5,6 +5,9 @@
 # bin/_flow_release_versions.py has the arguments, the output lines and the
 # exit statuses. /flow:release runs it in Phase 2 (--plan) and Phase 4
 # (--write).
+#
+# Usage: flow-release-versions.sh (--plan | --write) [--bump patch|minor|major | --to VERSION]
+#          [--plugin NAME [--market-bump patch|minor|major | --market-to V]] [--root DIR]
 set -uo pipefail
 unset CDPATH
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter

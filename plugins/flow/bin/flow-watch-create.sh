@@ -5,6 +5,9 @@
 # and the trigger-policy rules. /flow:watch issue <N> and /flow:watch branch
 # run it. bin/_flow_watch_create.py has the arguments, the output lines and
 # the exit statuses.
+#
+# Usage: flow-watch-create.sh --kind issue --repo OWNER/NAME --now TIME --issue N
+#        flow-watch-create.sh --kind branch --repo OWNER/NAME --now TIME --branch NAME --default-branch NAME
 set -uo pipefail
 unset CDPATH
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
