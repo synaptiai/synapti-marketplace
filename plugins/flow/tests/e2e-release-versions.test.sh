@@ -49,6 +49,18 @@
 #      tagged or bumped without asking
 #   S6 a repository with no version file cannot release at all
 #   S7 the plan runs off the default branch or behind origin
+#   S8 the current version counts as released when its tag is only in this
+#      clone (a tag push that failed), or when the tag is on origin but the
+#      GitHub release was never created (a release create that failed), so
+#      the run plans the next version and that release is never published
+#   S9 gh failing to answer whether the release exists is taken for "no
+#      release", and the run re-creates one
+#   S10 the release branch name is built from a version or a branch pattern
+#      that does not make a valid branch name
+#
+# release.md Phase 1
+#   C1 a merged pull request's title holding a quote or a line break prints
+#      output lines of its own
 #
 # release.md Phase 4
 #   P1 the release pull request's commit carries files the script did not
@@ -464,6 +476,7 @@ _released_marketplace() {
   _git tag -a v4.17.0 -m "v4.17.0"
   _origin
   _repo_gh
+  e2e_gh_fixture release-v4.17.0 '{"tag_name":"v4.17.0"}'
 }
 
 _flow_test_begin "Phase 2: the current version is tagged, so this run opens a release pull request (S1, S2)"
@@ -560,11 +573,122 @@ e2e_repo main
 _git tag -a v2.4.9 -m v2.4.9
 _origin
 _repo_gh
+e2e_gh_fixture release-v2.4.9 '{"tag_name":"v2.4.9"}'
 e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
 e2e_expect_line "VERSIONS_STATE=none"
 e2e_expect_line "RELEASE_RUN=tag"
 e2e_expect_line "TAG=v2.4.10"
 e2e_expect_line "TAG_COMMIT=$(_git rev-parse HEAD)"
+e2e_expect_clean_edges
+
+_flow_test_begin "Phase 2: a tag on origin with no GitHub release publishes that tag; a tag only in this clone stops (S8, S9)"
+e2e_new release-plan-publish
+e2e_describe "marketplace at v4.17.0, tagged and pushed, but GitHub has no release for v4.17.0"
+_released_marketplace
+e2e_gh_not_found release-v4.17.0
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "RELEASE_RUN=publish"
+e2e_expect_line "TAG=v4.17.0"
+e2e_expect_no_out "RELEASE_BRANCH="
+e2e_expect_no_out "NEW_VERSION="
+e2e_expect_clean_edges
+
+e2e_new release-plan-release-unknown
+e2e_describe "the same, but gh fails when asked for the release"
+_released_marketplace
+e2e_gh_fail release-v4.17.0
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=unavailable"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-local-tag
+e2e_describe "marketplace at 4.17.0, pushed, tagged v4.17.0 in this clone only"
+e2e_repo main
+_marketplace_fixture 3.10.0
+_commit_all
+_origin
+_git tag -a v4.17.0 -m "v4.17.0"
+_repo_gh
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_out "git push origin v4.17.0"
+e2e_expect_out "git tag -d v4.17.0"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-no-files-publish
+e2e_describe "no version file; v2.4.9 pushed with no GitHub release"
+e2e_repo main
+_git tag -a v2.4.9 -m v2.4.9
+_origin
+_repo_gh
+e2e_gh_not_found release-v2.4.9
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
+e2e_expect_line "RELEASE_RUN=publish"
+e2e_expect_line "TAG=v2.4.9"
+e2e_expect_no_out "TAG=v2.4.10"
+e2e_expect_clean_edges
+
+e2e_new release-plan-no-files-local-tag
+e2e_describe "no version file; v2.4.9 in this clone only"
+e2e_repo main
+_origin
+_git tag -a v2.4.9 -m v2.4.9
+_repo_gh
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'patch'
+e2e_expect_line "STATE=blocked"
+e2e_expect_out "git tag -d v2.4.9"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+_flow_test_begin "Phase 2: a release branch name that is not a valid branch name stops the run (S10)"
+e2e_new release-plan-bad-pattern
+e2e_describe "conventions.branchPatterns.release set to 'release {version}', with a space"
+_released_marketplace
+mkdir -p "$E2E_REPO/.claude"
+printf '%s\n' '{"conventions":{"branchPatterns":{"release":"release {version}"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_out "not a valid branch name"
+e2e_expect_no_out "RELEASE_BRANCH="
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-bad-next-version
+e2e_describe "a version script that answers with a next version holding a slash"
+_released_marketplace
+e2e_plugin_copy bin/flow-release-versions.sh '#!/bin/sh
+case " $* " in *" --bump "*) printf "%s\n" "CURRENT_TAG_VERSION=4.17.0" "TAG_VERSION=4.18.0/../x" "VERSIONS_STATE=planned" ;;
+  *) printf "%s\n" "CURRENT_TAG_VERSION=4.17.0" "VERSIONS_STATE=planned" ;; esac'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_no_out "RELEASE_BRANCH="
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-plan-bad-current-version
+e2e_describe "a version script that answers with a current version holding a slash"
+_released_marketplace
+e2e_plugin_copy bin/flow-release-versions.sh '#!/bin/sh
+printf "%s\n" "CURRENT_TAG_VERSION=4.17.0/x" "VERSIONS_STATE=planned"'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+_flow_test_begin "Phase 2: a local release branch left by an earlier run is named, with both ways forward (P6)"
+e2e_new release-plan-local-branch
+e2e_describe "the released marketplace with a local chore/release-4.18.0 branch and no pull request or branch on origin"
+_released_marketplace
+_git branch chore/release-4.18.0
+e2e_gh_fixture prs-all-chore_release-4.18.0-main '[]'
+e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+e2e_expect_line "STATE=blocked"
+e2e_expect_out "git push -u origin chore/release-4.18.0"
+e2e_expect_out "git branch -D chore/release-4.18.0"
+e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 
 _flow_test_begin "Phase 2: refused off the default branch, behind origin, or with a bad argument (S7)"

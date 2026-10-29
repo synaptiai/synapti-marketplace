@@ -120,10 +120,13 @@ The first word of `$ARGUMENTS` is the bump type. In a plugin marketplace, the se
 
 The block below works out which run this is, from the state of the repository and its pull requests. It never writes:
 
-- `RELEASE_RUN=pr` — the current version is tagged, so this run plans the next one: it bumps the version files on a release branch and opens the release pull request.
+- `RELEASE_RUN=pr` — the current version is released (its tag is on origin and GitHub has a release for it), so this run plans the next one: it bumps the version files on a release branch and opens the release pull request.
 - `RELEASE_RUN=waiting` — the release pull request for the next version is open. Nothing to do until it is merged; show `RELEASE_PR` and stop.
 - `RELEASE_RUN=tag` — the default branch carries a version that has no tag, and its release pull request is merged: this run tags that merge commit (`TAG_COMMIT`) and publishes the GitHub release. With no version file at all, it tags the default branch's head with the last tag's version bumped.
 - `RELEASE_RUN=untagged` — the default branch carries a version that has no tag and no merged release pull request (a version bumped by hand, or a first release).
+- `RELEASE_RUN=publish` — the current version's tag (`TAG`) is on origin but GitHub has no release for it, as when an earlier run pushed the tag and the release was not created. This run creates only the GitHub release.
+
+The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `ERROR` names the tag, how to push it (after which the next run publishes it) and how to delete it. It stops the same way when a local release branch is left from an earlier run with no pull request, naming the branch, how to push it and open its pull request, and how to delete it. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
 
 The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`).
 
@@ -190,6 +193,51 @@ else
   CUR_STATE=$(printf '%s\n' "$CUR_OUT" | sed -n 's/^VERSIONS_STATE=//p')
   CUR_TAG_VERSION=$(printf '%s\n' "$CUR_OUT" | sed -n 's/^CURRENT_TAG_VERSION=//p')
   ORIGIN_HEAD=$(git rev-parse "refs/remotes/origin/$DEFAULT_BRANCH")
+  # _flow_tag_state: where the tag CHECK_TAG is. TAG_WHERE is remote (on
+  # origin), local (in this clone only), absent, or error (origin did not
+  # answer); with remote, GH_RELEASE is yes, no (GitHub answers 404) or error.
+  # A tag in this clone alone does not make a release: a tag push that failed
+  # leaves one, and so does a GitHub release that was never created.
+  _flow_tag_state() {
+    TAG_WHERE=absent
+    GH_RELEASE=""
+    git ls-remote --exit-code --tags origin "refs/tags/$CHECK_TAG" >/dev/null 2>&1
+    _ls_rc=$?
+    if [ "$_ls_rc" -eq 0 ]; then
+      TAG_WHERE=remote
+      if _gh_err=$(gh api "repos/{owner}/{repo}/releases/tags/$CHECK_TAG" --jq .tag_name 2>&1 >/dev/null); then
+        GH_RELEASE=yes
+      else
+        case "$_gh_err" in *"(HTTP 404)"*) GH_RELEASE=no ;; *) GH_RELEASE=error ;; esac
+      fi
+    elif [ "$_ls_rc" -ne 2 ]; then
+      TAG_WHERE=error
+    elif git rev-parse -q --verify "refs/tags/$CHECK_TAG" >/dev/null; then
+      TAG_WHERE=local
+    fi
+  }
+  # _flow_tag_done: when CHECK_TAG is not a published release and that decides
+  # this run, print the state and set TAG_DONE=1: publish the tag that is on
+  # origin, or stop.
+  _flow_tag_done() {
+    TAG_DONE=1
+    if [ "$TAG_WHERE" = error ]; then
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "ERROR=\"git could not list the tags on origin\""
+    elif [ "$TAG_WHERE" = local ]; then
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "ERROR=\"the tag $CHECK_TAG is in this clone but not on origin; push it to publish it (git push origin $CHECK_TAG) or delete it (git tag -d $CHECK_TAG), then run /flow:release again\""
+    elif [ "$GH_RELEASE" = error ]; then
+      printf '%s\n' "STATE=unavailable"
+      printf '%s\n' "ERROR=\"gh could not say whether GitHub has a release for $CHECK_TAG\""
+    elif [ "$GH_RELEASE" = no ]; then
+      printf '%s\n' "RELEASE_RUN=publish"
+      printf '%s\n' "TAG=$CHECK_TAG"
+    else
+      TAG_DONE=0
+    fi
+  }
+  TAG_DONE=0
   UNTAGGED=0
   if [ "$CUR_STATE" = "mismatch" ] || [ "$CUR_STATE" = "refused" ]; then
     printf '%s\n' "$CUR_OUT"
@@ -199,6 +247,11 @@ else
     # No version file: a tag-only release of the head of the default branch.
     printf '%s\n' "$CUR_OUT"
     LAST=$(git describe --tags --abbrev=0 "$ORIGIN_HEAD" 2>/dev/null)
+    if [ -n "$LAST" ]; then
+      CHECK_TAG="$LAST"
+      _flow_tag_state
+      _flow_tag_done
+    fi
     LAST_V=${LAST#"$TAG_PREFIX"}
     case "$LAST_V" in
       '') NEXT_V="1.0.0" ;;
@@ -212,7 +265,9 @@ else
         esac ;;
       *) NEXT_V="" ;;
     esac
-    if [ -z "$NEXT_V" ]; then
+    if [ "$TAG_DONE" = 1 ]; then
+      :
+    elif [ -z "$NEXT_V" ]; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"the last tag $LAST is not $TAG_PREFIX + MAJOR.MINOR.PATCH\""
     else
@@ -221,7 +276,23 @@ else
       printf '%s\n' "TAG_COMMIT=$ORIGIN_HEAD"
     fi
   else
-    if git rev-parse -q --verify "refs/tags/$TAG_PREFIX$CUR_TAG_VERSION" >/dev/null; then
+    # The script prints only semantic versions; this keeps any other value
+    # out of the tag and branch names below.
+    case "$CUR_TAG_VERSION" in
+      ''|*[!0-9A-Za-z.+-]*) CUR_STATE=badversion ;;
+    esac
+    if [ "$CUR_STATE" = badversion ]; then
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "ERROR=\"the version script named a current version that is not a semantic version\""
+      LOOKUP_VERSION=""
+      TAG_DONE=1
+    else
+      CHECK_TAG="$TAG_PREFIX$CUR_TAG_VERSION"
+      _flow_tag_state
+    fi
+    if [ "$TAG_DONE" = 1 ]; then
+      :
+    elif [ "$TAG_WHERE" = remote ] && [ "$GH_RELEASE" = yes ]; then
       # The current version is released: plan the next one.
       if [ -n "$RELEASE_PLUGIN" ] && [ -n "$MARKET_TYPE" ]; then
         PLAN_OUT=$("$VERSIONS" --plan --bump "$RELEASE_TYPE" --plugin "$RELEASE_PLUGIN" --market-bump "$MARKET_TYPE")
@@ -236,15 +307,25 @@ else
       [ "$PLAN_RC" -eq 0 ] || LOOKUP_VERSION=""
     else
       printf '%s\n' "$CUR_OUT"
-      PLAN_RC=0
+      _flow_tag_done
       LOOKUP_VERSION="$CUR_TAG_VERSION"
       UNTAGGED=1
     fi
-    if [ -z "$LOOKUP_VERSION" ]; then
+    case "$LOOKUP_VERSION" in
+      *[!0-9A-Za-z.+-]*) LOOKUP_VERSION="" ;;
+    esac
+    # The branch pattern comes from settings; {version} is replaced by
+    # parameter expansion, which reads nothing in the version as syntax.
+    RELEASE_BRANCH=${BRANCH_PATTERN//\{version\}/$LOOKUP_VERSION}
+    if [ "$TAG_DONE" = 1 ]; then
+      :
+    elif [ -z "$LOOKUP_VERSION" ]; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"the next version cannot be worked out; see REFUSED\""
+    elif ! git check-ref-format --branch "$RELEASE_BRANCH" >/dev/null 2>&1; then
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "ERROR=\"conventions.branchPatterns.release, with {version} replaced, is not a valid branch name\""
     else
-      RELEASE_BRANCH=$(printf '%s\n' "$BRANCH_PATTERN" | sed "s/{version}/$LOOKUP_VERSION/g")
       printf '%s\n' "TAG=$TAG_PREFIX$LOOKUP_VERSION"
       printf '%s\n' "RELEASE_BRANCH=$RELEASE_BRANCH"
       if ! PR_LINE=$(gh pr list --state all --head "$RELEASE_BRANCH" --base "$DEFAULT_BRANCH" \
@@ -273,6 +354,9 @@ else
         elif git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" >/dev/null 2>&1; then
           printf '%s\n' "STATE=blocked"
           printf '%s\n' "ERROR=\"origin already has $RELEASE_BRANCH with no open pull request; open one for it or delete the branch\""
+        elif git rev-parse -q --verify "refs/heads/$RELEASE_BRANCH" >/dev/null; then
+          printf '%s\n' "STATE=blocked"
+          printf '%s\n' "ERROR=\"the local branch $RELEASE_BRANCH is left from an earlier run; push it and open its pull request (git push -u origin $RELEASE_BRANCH, then gh pr create --base $DEFAULT_BRANCH --head $RELEASE_BRANCH), or delete it (git branch -D $RELEASE_BRANCH), then run /flow:release again\""
         else
           printf '%s\n' "RELEASE_RUN=pr"
         fi
