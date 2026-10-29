@@ -34,10 +34,10 @@ Any prerequisite fails, stale approval, unresolved conversations > 0, unfinished
 
 ## Merge Execution (Phases 2–4)
 
-Display the Merge Assessment table (each prerequisite's status, strategy, branch-delete decision), then ask; proceed only on a clear "yes".
+Display the Merge Assessment table (each prerequisite's status, strategy, branch-delete decision) as text, then run the merge. The confirmation is the `tier-gate.sh` hook's permission prompt on the `gh pr merge` command (`tiers.merge` is always `confirm`), which shows that command; do not ask a separate yes/no question first. A merge declined at the prompt stops the command.
 
 - `merge.strategy`: `squash` | `merge` | `rebase` (default `squash`)
-- `merge.deleteBranch`: default `true`, bundled into the merge confirmation
+- `merge.deleteBranch`: default `true`; `--delete-branch` is part of the command the prompt shows
 - `merge.markerTrust.allowedAssociations`: default `["OWNER","MEMBER","COLLABORATOR"]`; filters whose ledger markers are honored, pinned to the plugin tier rather than the settings cascade (`references/finding-ledger-parser.md`)
 
 Post-merge: `gh pr view $PR_NUM --json state` must return `MERGED`; then suggest switching to the default branch and pulling.
