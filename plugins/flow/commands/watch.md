@@ -165,7 +165,7 @@ On each iteration:
 1. Check CI status (gh pr checks <N>)
 2. Check unresolved review comments (gh pr view <N> --json reviewThreads)
 3. If CI failed, diagnose: fetch failing job logs, propose a fix
-4. If review comments exist, run /flow:address <N>
+4. If CI failed or review comments exist, run /flow:run trigger <id>: it checks the trigger's policy and runs the trigger's target (/flow:address <N>) once
 5. If changes were made, run the workflow's verification from the FlowGoal contract
 6. Commit and push only if the trigger's policy.allowed_actions permits
 7. **Never merge**. **Never release**. Tier 3 actions are forbidden by trigger policy.
@@ -174,7 +174,7 @@ On each iteration:
    - <stop_condition_1>
    - <stop_condition_2>
    - ...
-10. Record each iteration via /flow:run trigger <id> (writes a trigger-fired artifact)
+10. Each /flow:run trigger <id> writes a trigger-fired artifact; an iteration with nothing to do runs nothing
 
 When all stop conditions are met, exit cleanly with a summary.
 ```

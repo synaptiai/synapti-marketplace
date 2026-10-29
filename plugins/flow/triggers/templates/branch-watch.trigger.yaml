@@ -28,7 +28,9 @@ trigger:
   user_starts_loop_manually: true
 
 target:
-  command: '/flow:run trigger branch-${BRANCH_SLUG}-watch'
+  # The keep-green step: merge the default branch in and resolve conflicts.
+  # The loop prompt runs it through /flow:run trigger branch-${BRANCH_SLUG}-watch.
+  command: '/flow:resolve ${BRANCH}'
 
 context:
   repo: '${REPO}'

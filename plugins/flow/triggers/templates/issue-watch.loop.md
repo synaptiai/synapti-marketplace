@@ -18,9 +18,10 @@ On each iteration:
    ```
 
    When nothing changed, print one line saying so and write nothing.
-4. Save what you read in step 1 to `.flow/watch/issue-${ISSUE}.json` (create `.flow/watch` if needed; not through a symbolic link).
+4. Save what you read in step 1 to `.flow/watch/issue-${ISSUE}.json` (`.flow/watch` holds a `.gitignore` of `*`, so nothing there is committed; do not write through a symbolic link).
 5. When the issue is assigned to you (`gh api user --jq .login`) and no branch for it exists (`git branch --all --list '*issue-${ISSUE}-*'` prints nothing), suggest `/flow:start ${ISSUE}` to the user. Only suggest it; do not run it.
-6. **Never merge**. **Never release**. Tier 3 actions are forbidden by trigger policy.
-7. **Never create or modify triggers**. Recursion is denied by default.
+6. Run `/flow:run trigger issue-${ISSUE}-watch`: it checks the trigger's policy, runs its read-only target (`/flow:status`) once, and records the iteration.
+7. **Never merge**. **Never release**. Tier 3 actions are forbidden by trigger policy.
+8. **Never create or modify triggers**. Recursion is denied by default.
 
 Stop when the issue is closed: print a final summary, then tell the user to end the loop (Ctrl-C) and run `/flow:trigger disable issue-${ISSUE}-watch`.

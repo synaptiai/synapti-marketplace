@@ -20,7 +20,7 @@ trigger:
 
 target:
   workflow: debug
-  command: '/flow:run trigger nightly-maintenance'
+  command: '/flow:debug "nightly maintenance: dependency updates and documentation sync"'
 
 context:
   repo: '${REPO}'

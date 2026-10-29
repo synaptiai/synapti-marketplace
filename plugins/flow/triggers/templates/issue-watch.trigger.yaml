@@ -25,7 +25,9 @@ trigger:
   user_starts_loop_manually: true
 
 target:
-  command: '/flow:run trigger issue-${ISSUE}-watch'
+  # The read-only report each iteration ends with; the loop prompt runs it
+  # through /flow:run trigger issue-${ISSUE}-watch.
+  command: '/flow:status'
 
 context:
   repo: '${REPO}'
