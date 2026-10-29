@@ -33,7 +33,7 @@ For each AC with a `verification_command`: run `bash -c "<command>"`, capture st
 
 ### Step 3: Deterministic verdict
 
-All `must_pass` ACs exit 0 → `pass`; any `must_pass` AC non-zero → `fail`; any AC without a command → `incomplete` (judge required).
+All `must_pass` ACs exit 0 → `pass`; any `must_pass` AC non-zero → `fail`; any AC without a command → `incomplete`.
 
 ### Step 4: Path boundary
 
@@ -41,7 +41,7 @@ When `constraints.allowed_paths` is set, run `git diff --name-only`; any file ou
 
 ### Step 5: Judge (conditional)
 
-Run the goal judge only when `evaluator.type == hybrid` and fuzzy criteria remain, or when `evaluator.type == flow_verdict_judge` and the user invoked `/flow:goal evaluate`. Run this block with `GOAL_ID` and `RUN_ID` (empty without a run) set. The judge gets what the Stop hook gives it (`references/goal-evaluator.md`).
+Run the goal judge only when `evaluator.type == hybrid` and fuzzy criteria remain, or when `evaluator.type == flow_verdict_judge` and the user invoked `/flow:goal evaluate`. Run this block with `GOAL_ID` and `RUN_ID` (empty without a run) set and the Bash tool's `timeout` at `flow.goals.judge.timeoutSeconds` (default 60) × 1000 + 60000, at most 600000. The judge gets the Stop hook's input (`references/goal-evaluator.md`).
 
 ```bash
 # GOAL_JUDGE_RUN_BEGIN
@@ -58,7 +58,7 @@ On `JUDGE_STATE=blocked` or `unavailable`, report `JUDGE_ERROR` and use `needs_h
 
 ### Step 6: Lifecycle update
 
-Map the candidate and judge verdict to a status with the table in `references/goal-lifecycle-transitions.md`.
+Map the candidate and judge verdict to a status per `references/goal-lifecycle-transitions.md`.
 
 **Non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`): set `lifecycle.status`, increment `turns_evaluated`, set `last_evaluation = {result, reason, at}`, and write immediately via `bin/flow-goal-record.sh --update-lifecycle`.
 
@@ -70,7 +70,7 @@ Map the candidate and judge verdict to a status with the table in `references/go
 
 ### Step 8: Return the verdict
 
-Return the verdict. The caller writes `last-verdict.json` with `bin/flow-record-verdict.sh` and treats a helper failure as non-fatal.
+The caller writes `last-verdict.json` with `bin/flow-record-verdict.sh` and treats a helper failure as non-fatal.
 
 ## Rules
 

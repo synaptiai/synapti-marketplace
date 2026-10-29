@@ -35,6 +35,9 @@
 #   P1 with the setting absent from every source, the command is turned off,
 #      because the pre-flight's fallback is false instead of true
 #   P2 a user who sets the switch to false still gets the command
+#   P3 a setting that could not be read (cascade-resolve.sh exits non-zero)
+#      is reported as false, or the command goes on, instead of saying it
+#      could not be read and stopping (watch.md, resume.md and goal.md too)
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -292,6 +295,32 @@ e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_err "flow.workflows.enabled is false — /flow:workflow is turned off in your settings."
 e2e_expect_out "Turn it back on"
 e2e_expect_clean_edges
+
+# _cascade_fails <command> <marker> <key> — the pre-flight against a plugin
+# copy whose cascade-resolve.sh prints an error and exits 2.
+_cascade_fails() {
+  _flow_test_begin "/flow:$1 pre-flight: a $3 that cannot be read is reported and stops the command (P3)"
+  e2e_new "$1-preflight-cascade-fails"
+  e2e_describe "the plugin copy's cascade-resolve.sh prints 'cascade-resolve: ERROR: test failure' on stderr and exits 2"
+  e2e_repo feature/e2e
+  e2e_plugin_copy bin/cascade-resolve.sh '#!/usr/bin/env bash
+printf "%s\n" "cascade-resolve: ERROR: test failure" >&2
+exit 2'
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/$1.md" "$2"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_err "cascade-resolve: ERROR: test failure"
+  e2e_expect_err "$3 could not be read (cascade-resolve.sh exited 2; its message is above), so /flow:$1 stops here"
+  e2e_expect_err_lacks "is false"
+  e2e_expect_no_out "is false"
+  e2e_expect_equal no "$([ -d "$E2E_REPO/.flow/triggers" ] && echo yes || echo no)" "whether .flow/triggers was created"
+  e2e_expect_clean_edges
+}
+_cascade_fails trigger '.flow.triggers.enabled' flow.triggers.enabled
+_cascade_fails workflow '.flow.workflows.enabled' flow.workflows.enabled
+_cascade_fails watch '.flow.triggers.enabled' flow.triggers.enabled
+_cascade_fails run '.flow.triggers.enabled' flow.triggers.enabled
+_cascade_fails resume '.flow.runtime.enabled' flow.runtime.enabled
+_cascade_fails goal '.flow.goals.enabled' flow.goals.enabled
 
 _flow_test_begin "/flow:run pre-flight: with flow.triggers.enabled set nowhere, the command runs (P1)"
 e2e_new run-preflight-default-on

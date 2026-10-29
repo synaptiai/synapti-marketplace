@@ -20,4 +20,4 @@ A push without the resolution comment is incomplete: the reviewer cannot see wha
 
 ## Collecting
 
-`bin/flow-pr-feedback.sh <pr-number>` prints each inline review comment as `{id, path, line, body, author}` and then each review as `{state, body, author}`, one JSON object per line. It exits 1 when a gh call fails and 2 when the PR number is missing or not a positive whole number.
+`bin/flow-pr-feedback.sh <pr-number>` prints each inline review comment as `{id, path, line, body, author}`, then each review as `{state, body, author}`, then each conversation comment (on the pull request itself, not on a line) as `{id, kind: "conversation", body, author}`, one JSON object per line, every page of each list. It exits 1 when a gh call fails and 2 when the PR number is missing or not a positive whole number.

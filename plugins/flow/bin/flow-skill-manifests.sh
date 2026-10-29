@@ -89,8 +89,13 @@ for f in sorted(os.listdir(os.path.join(root, "commands"))):
     if not f.endswith(".md"):
         continue
     text = open(os.path.join(root, "commands", f), encoding="utf-8").read()
-    m = re.search(r"^## Required Skills\n(.*?)(?=^#)", text, re.S | re.M)
+    # The section runs to the next "## " heading or the end of the file; a
+    # line that only starts with "#" (a comment in the inlining fence) does
+    # not end it. A section must list a skill or say "_None".
+    m = re.search(r"^## Required Skills\n(.*?)(?=^## |\Z)", text, re.S | re.M)
     names = re.findall(r"^- `([a-z0-9-]+)`", m.group(1), re.M) if m else []
+    if m and not names and not re.search(r"^_None", m.group(1), re.M):
+        fail("commands/%s: the Required Skills section lists no skill and has no _None line" % f)
     amb = con = words = 0
     if names:
         # This plugin's skills, whatever CLAUDE_PLUGIN_ROOT names.

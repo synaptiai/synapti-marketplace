@@ -40,7 +40,17 @@ ls plugins/gh-workflow/.claude-plugin/plugin.json .claude/settings.gh-workflow.j
 # 4. Git remote
 git remote -v | head -2
 gh auth status 2>&1 | head -3
+
+# 5. timeout(1) or gtimeout (GNU coreutils), which the verdict judge
+# (/flow:start Phase 4) and the goal judge run under; stock macOS has neither
+if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1; then
+  printf '%s\n' "TIMEOUT_BIN=found"
+else
+  printf '%s\n' "TIMEOUT_BIN=missing — the verdict judge and the goal judge need timeout(1) or gtimeout (install GNU coreutils; on macOS: brew install coreutils)"
+fi
 ```
+
+On `TIMEOUT_BIN=missing`, add the coreutils install to **Manual Steps Required** in the Phase 6 summary: without it the verdict judge and the goal judge report that they could not start (exit 4).
 
 **Skill(capability-discovery)**: Detect tech stack, quality commands, existing agents/skills, and LSP capabilities.
 
@@ -385,8 +395,9 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 |----------|--------|--------|-------------|
 | {language} | {server} | {Installed/Missing/Skipped} | {available features} |
 
-{If any servers need manual steps:}
+{If any servers need manual steps, or Phase 1 printed TIMEOUT_BIN=missing:}
 ### Manual Steps Required
+- [ ] {TIMEOUT_BIN=missing only} Install GNU coreutils (`brew install coreutils` on macOS) so the verdict judge and the goal judge can run
 - [ ] Add `export ENABLE_LSP_TOOL=1` to shell profile and restart Claude Code
 - [ ] Run `{install command}` to install {server}
 - [ ] Restart Claude Code after plugin installation

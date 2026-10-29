@@ -64,10 +64,13 @@ HITS=$(git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origi
 # .env files in diff, by the rule in references/classification-signals.md:
 # .env, .env.<environment>, *.env and .envrc are hits by name. A template
 # (.env.example, .env.sample, .env.template) is committable, and is a hit only
-# when a value in it looks like a real secret: a known key prefix (sk-, ghp_,
-# github_pat_, AKIA, xox?-), a private-key block, or a string of 20 or more
-# letters and digits that mixes upper case, lower case and digits. Placeholders
-# such as changeme or <your-key> are none of these.
+# when a value in it looks like a real secret: a known key prefix (sk-,
+# sk_live_, sk_test_, ghp_, github_pat_, glpat-, AKIA, AIza, xox?-), a value
+# starting -----BEGIN, a private-key block, a hex string of 32 or more
+# characters holding both a digit and a letter, or a string of 20 or more
+# letters and digits that mixes upper case, lower case and digits.
+# Placeholders such as changeme, <your-key>, xxxx or all zeros are none of
+# these. Such a template is BLOCKED like any other secret.
 ENV_NAMES=$(git -C "${REVIEW_TREE:-.}" -c core.quotePath=off diff --name-only "origin/$DEFAULT_BRANCH"..HEAD)
 while IFS= read -r ENV_PATH; do
   [ -n "$ENV_PATH" ] || continue
@@ -75,11 +78,12 @@ while IFS= read -r ENV_PATH; do
   case "$ENV_BASE" in
     .env.example|.env.sample|.env.template)
       if git -C "${REVIEW_TREE:-.}" show "HEAD:$ENV_PATH" 2>/dev/null | awk -v q="'" '
-          /-----BEGIN [A-Z ]*PRIVATE KEY-----/ { hit = 1 }
+          /-----BEGIN [A-Z0-9 ]*PRIVATE KEY/ { hit = 1 }
           /^[ \t]*(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*=/ {
             v = substr($0, index($0, "=") + 1)
             gsub(q, "", v); gsub(/"/, "", v); gsub(/^[ \t]+|[ \t]+$/, "", v)
-            if (v ~ /^(sk-|ghp_|github_pat_|AKIA|xox[a-z]-)/) hit = 1
+            if (v ~ /^(sk-|sk_live_|sk_test_|ghp_|github_pat_|glpat-|AKIA|AIza|xox[a-z]-|-----BEGIN)/) hit = 1
+            else if (length(v) >= 32 && v ~ /^[0-9A-Fa-f]+$/ && v ~ /[0-9]/ && v ~ /[A-Fa-f]/) hit = 1
             else if (length(v) >= 20 && v ~ /^[A-Za-z0-9+\/=_-]+$/ && v ~ /[0-9]/ && v ~ /[A-Z]/ && v ~ /[a-z]/) hit = 1
           }
           END { exit hit ? 0 : 1 }'; then

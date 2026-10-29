@@ -48,9 +48,13 @@
 # passes a TERM on to the CLI, so a caller that stops its judge on a signal
 # (flow-goal-evaluator.sh's EXIT trap) stops the CLI.
 #
-# Exits: 0 and the reply; 2 usage; 3 already inside a judge; 4 claude or
-# timeout(1) unavailable; otherwise timeout(1)'s status (124 on timeout) or
-# the CLI's.
+# Exits: 0 and the reply; 2 usage; 3 already inside a judge; 4 the judge
+# could not start: claude, or both timeout(1) and gtimeout (GNU coreutils; on
+# macOS brew install coreutils), are missing, or the per-user working
+# directory could not be created, made mode 0700 or entered (the judge never
+# runs anywhere else); otherwise timeout(1)'s status (124 on timeout) or the
+# CLI's. Every exit but 0 comes with one flow-judge line on stderr, except a
+# status from timeout(1) or the CLI.
 
 set -uo pipefail
 unset CDPATH
@@ -85,7 +89,7 @@ if command -v timeout >/dev/null 2>&1; then
 elif command -v gtimeout >/dev/null 2>&1; then
   TIMEOUT_BIN="gtimeout"
 else
-  printf '%s\n' "flow-judge: timeout(1) unavailable (install coreutils); a judge is never run without a time limit" >&2
+  printf '%s\n' "flow-judge: neither timeout(1) nor gtimeout is installed (install GNU coreutils; on macOS: brew install coreutils); a judge is never run without a time limit" >&2
   exit 4
 fi
 
@@ -183,8 +187,16 @@ if [ -x "$CASCADE" ]; then
 fi
 case "$USER_HOME" in /*) ;; *) USER_HOME=/nonexistent ;; esac
 EVAL_DIR="${USER_HOME}/.claude/flow-goal-judge"
-mkdir -p "$EVAL_DIR" 2>/dev/null || EVAL_DIR="/tmp"
-chmod 0700 "$EVAL_DIR" 2>/dev/null
+# No fallback: a shared directory such as /tmp could hold a .claude/settings.json
+# or CLAUDE.md another user planted, which the judge's session would load.
+if ! mkdir -p "$EVAL_DIR" 2>/dev/null; then
+  printf '%s\n' "flow-judge: cannot create the judge's working directory $EVAL_DIR; the judge is not run anywhere else" >&2
+  exit 4
+fi
+if ! chmod 0700 "$EVAL_DIR" 2>/dev/null; then
+  printf '%s\n' "flow-judge: cannot make the judge's working directory $EVAL_DIR private (chmod 0700); the judge is not run" >&2
+  exit 4
+fi
 cd "$EVAL_DIR" || { printf '%s\n' "flow-judge: cannot enter $EVAL_DIR" >&2; exit 4; }
 
 set -- --print --output-format json --disallowedTools '*' --system-prompt "$SYSTEM_PROMPT"

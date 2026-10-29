@@ -26,8 +26,15 @@ true
 ## Pre-flight
 
 ```bash
+# A non-zero exit means the setting could not be read (cascade-resolve.sh
+# says why on stderr): that is not the same as false, so say so and stop.
+__cr_rc=0
 ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" \
-  --default "true" '.flow.triggers.enabled')
+  --default "true" '.flow.triggers.enabled') || __cr_rc=$?
+if [ "$__cr_rc" -ne 0 ]; then
+  printf '%s\n' "flow.triggers.enabled could not be read (cascade-resolve.sh exited $__cr_rc; its message is above), so /flow:trigger stops here." >&2
+  exit 1
+fi
 if [ "$ENABLED" != "true" ]; then
   printf '%s\n' "flow.triggers.enabled is false — /flow:trigger is turned off in your settings." >&2
   printf '%s\n' "Turn it back on in .claude/settings.flow.local.json: { \"flow\": { \"triggers\": { \"enabled\": true } } }"

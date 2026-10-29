@@ -132,6 +132,8 @@ See [gate-configuration.md](references/gate-configuration.md) for full gate deta
 | `git` | branch, commit and diff operations | flow does not run |
 | `gh` (GitHub CLI, authenticated) | issues, pull requests, reviews, merges | any command that touches GitHub fails |
 | `jq` | reading settings and GitHub JSON | commands fall back to a narrower path or stop |
+| `timeout` or `gtimeout` (GNU coreutils; stock macOS has neither: `brew install coreutils`) | the time limit on the verdict judge in `/flow:start` Phase 4, the goal judge in `/flow:goal evaluate`, and the Stop hook's evaluator-loop judge | no judge runs without a time limit: the verdict and goal judges report that they could not start (exit 4), and the evaluator-loop Stop hook approves with a message naming the install. `/flow:setup` checks for it |
+| `claude` (the Claude Code CLI) on `PATH` | running those judges with every tool disallowed | the judges report that they could not start (exit 4) |
 | `python3` 3.12 to 3.14 with **PyYAML** | the decision journal, FlowRun state, FlowGoal contracts and evidence bundles | those writes are skipped; commands still run, but the history they would have left is lost |
 | `python3` with `jsonschema` | strict validation of evidence and skill input against `schemas/` | validation falls back to a narrower structural check |
 | `jscpd` (optional) | the duplication scan in review and in `/flow:start`'s per-task gate | the scan reports that it did not run and prints `npm install -g jscpd@5.3.1`; flow never installs it for you |
@@ -273,7 +275,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-clone-scan.sh    — lists duplicated blocks a branch introduced, using jscpd against the merge base
   ├── flow-pr-linked-issue.sh — prints the issue GitHub lists as closed by a pull request
   ├── flow-check-resolution-body.sh — refuses a resolution comment the merge finding-ledger gate would misread
-  └── flow-pr-feedback.sh   — prints a pull request's inline review comments and reviews, one JSON object per line
+  └── flow-pr-feedback.sh   — prints a pull request's inline review comments, reviews and conversation comments, every page, one JSON object per line
   Goals, runs and the quality ledger
   ├── flow-active-goal.sh   — finds the FlowGoal for the current branch and prints its status, criteria or JSON
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)

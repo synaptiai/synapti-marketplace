@@ -34,8 +34,15 @@ Before any subcommand:
 
 ```bash
 # Resolve flow.goals.enabled (default true)
+# A non-zero exit means the setting could not be read (cascade-resolve.sh
+# says why on stderr): that is not the same as false, so say so and stop.
+__cr_rc=0
 ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" \
-  --default "true" '.flow.goals.enabled')
+  --default "true" '.flow.goals.enabled') || __cr_rc=$?
+if [ "$__cr_rc" -ne 0 ]; then
+  printf '%s\n' "flow.goals.enabled could not be read (cascade-resolve.sh exited $__cr_rc; its message is above), so /flow:goal stops here." >&2
+  exit 1
+fi
 if [ "$ENABLED" != "true" ]; then
   printf '%s\n' "flow.goals.enabled is false — /flow:goal is disabled in this project's settings cascade." >&2
   exit 0
@@ -219,7 +226,7 @@ Read-only deep dump:
 
 ### `/flow:goal evaluate <id>`
 
-Invoke `Skill(goal-evaluator)` with `trigger=command`. The skill runs deterministic checks, optionally runs the goal judge, and transitions lifecycle. This is the primary user-facing way to advance a goal's state. The judge (Step 5) runs through `bin/flow-judge.sh --judge goal`, the helper the Stop hook runs in evaluator-loop mode: the claude CLI with every tool disallowed, the input assembled by `bin/_flow_evidence_bundle.py`, the body of `agents/goal-evaluator-judge.md` as its instructions, and the model set by `flow.goals.judge.model` (default `haiku`).
+Invoke `Skill(goal-evaluator)` with `trigger=command`. Its Step 5 block runs the judge: give the Bash tool a `timeout` of (`flow.goals.judge.timeoutSeconds`, default 60, + 60) × 1000 milliseconds, at most 600000, so the tool does not stop the block while the judge is still inside its own limit. The skill runs deterministic checks, optionally runs the goal judge, and transitions lifecycle. This is the primary user-facing way to advance a goal's state. The judge (Step 5) runs through `bin/flow-judge.sh --judge goal`, the helper the Stop hook runs in evaluator-loop mode: the claude CLI with every tool disallowed, the input assembled by `bin/_flow_evidence_bundle.py`, the body of `agents/goal-evaluator-judge.md` as its instructions, and the model set by `flow.goals.judge.model` (default `haiku`). It needs the `claude` CLI and `timeout` or `gtimeout` (GNU coreutils; on macOS `brew install coreutils`): without them the helper exits 4 and Step 5 reports `JUDGE_STATE=unavailable` with `the judge could not start (exit 4)`, and the flow-judge line on stderr names which is missing.
 
 After the skill produces a verdict, **the command (not the skill) persists it via `bin/flow-record-verdict.sh`**. The skill returns the structured verdict in-memory; the command is the single owner of the write. See `skills/goal-evaluator/SKILL.md` Step 8 for the current contract.
 
