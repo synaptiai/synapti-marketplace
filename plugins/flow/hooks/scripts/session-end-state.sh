@@ -28,6 +28,10 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Inside a judge's session (bin/flow-judge.sh runs the judge with
+# CLAUDE_HOOK_GOAL_JUDGE_MODE=true, no tools, in a per-user directory) this
+# hook has nothing to do: the session is not the user's work.
+if [ "${CLAUDE_HOOK_GOAL_JUDGE_MODE:-}" = "true" ]; then exit 0; fi
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
 # imports sitecustomize from each element at startup. An isolated python3 (-I:
 # it reads neither PYTHONPATH nor the working directory) keeps only elements

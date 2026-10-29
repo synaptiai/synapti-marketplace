@@ -19,7 +19,7 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, TaskCreate, TaskList,
    a. **Static**: lint/test/typecheck in parallel. With `lsp.diagnosticsAsQuality`, LSP diagnostics add a signal (errors P1, warnings P2), never replace CLI checks.
    b. **Runtime**: build, start, verify; on failure enter the debug-fix-retest loop (bounded by `closedLoop.maxDebugIterations`).
    c. **Review**: self-review with fix-forward; fix P1/P2 immediately.
-   d. **Verdict**: when `verdict.enabled`, dispatch verdict-judge with acceptance criteria, evidence bundle and holdout-validation output only (no diff, rationale, journal). Per criterion PASS/FAIL/NEEDS-HUMAN-REVIEW; FAIL enters a fix loop, NEEDS-HUMAN-REVIEW escalates.
+   d. **Verdict**: when `verdict.enabled`, run the verdict judge through the claude CLI with no tools (`/flow:start` Phase 4 step 6, `bin/flow-judge.sh --judge verdict`) with acceptance criteria, evidence bundle and holdout-validation output only (no diff, rationale, journal). Per criterion PASS/FAIL/NEEDS-HUMAN-REVIEW; FAIL enters a fix loop, NEEDS-HUMAN-REVIEW escalates.
 
 ## Task-Tool Contract
 

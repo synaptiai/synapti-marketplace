@@ -296,6 +296,18 @@
           "type": "boolean",
           "default": true,
           "description": "When true, ALL criteria must PASS for the completion gate. When false, NEEDS-HUMAN-REVIEW verdicts can be user-approved."
+        },
+        "model": {
+          "enum": ["", "haiku", "sonnet", "opus"],
+          "default": "",
+          "description": "Claude model the verdict judge runs on (bin/flow-judge.sh, through the claude CLI with every tool disallowed). Empty passes no --model, so the CLI's own default model applies."
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "default": 300,
+          "minimum": 5,
+          "maximum": 600,
+          "description": "Time limit on one verdict judge run. Longer than the goal judge's 60 because the verdict judge reads the whole evidence bundle for every criterion. A value outside 5..600 is replaced by 300. On timeout /flow:start treats the verdict as NEEDS-HUMAN-REVIEW."
         }
       }
     },

@@ -79,7 +79,7 @@ The evaluator:
 1. Runs each AC's `verification_command` (because `executeVerificationCommands: true`).
 2. Captures stdout/stderr/exit_code as evidence sidecars at `.flow/runs/<run-id>/evidence/`.
 3. Decides per-AC status: `pass` (deterministic command succeeded), `evidence_collected` (output captured, judge needed), or `fail`.
-4. If any ACs are fuzzy (no `verification_command`), dispatches `Agent(goal-evaluator-judge)` with the evidence bundle.
+4. If any ACs are fuzzy (no `verification_command`), runs the goal judge (`bin/flow-judge.sh --judge goal`, the claude CLI with every tool disallowed) on the evidence bundle.
 5. Transitions lifecycle: all-pass → `achieved`; any-fail → stays `active` with `last_evaluation.reason` set; blocked → `blocked`.
 
 You'll see a per-AC table and the verdict.
