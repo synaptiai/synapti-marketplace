@@ -19,8 +19,9 @@ docs/flow-team-session/*.pdf
 # .flow/goals/*.goal.yaml, .flow/workflows/*.workflow.yaml and
 # .flow/review-exceptions.md remain tracked so teams can share goal contracts,
 # workflow overrides and the review exceptions their reviews are held to;
-# runs/evidence/local-triggers are gitignored to avoid noise.
+# runs/watch state/evidence/local-triggers are gitignored to avoid noise.
 .flow/runs/
+.flow/watch/
 .flow/evidence/
 .flow/triggers/*.local.yaml
 # promote-proposal.sh builds the exceptions file beside the target and moves it

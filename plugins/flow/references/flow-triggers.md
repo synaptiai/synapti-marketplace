@@ -48,6 +48,10 @@ A trigger doesn't have its own state machine — `metadata.enabled` is the only 
 plugins/flow/triggers/templates/         # Plugin-shipped templates
 ├── pr-watch.trigger.yaml                  # Template for /flow:watch pr <N>
 ├── ci-failure.trigger.yaml                # Template for /flow:watch ci
+├── issue-watch.trigger.yaml               # Template for /flow:watch issue <N> (read-only on GitHub)
+├── issue-watch.loop.md                    # Its loop prompt
+├── branch-watch.trigger.yaml              # Template for /flow:watch branch (merge the default branch in)
+├── branch-watch.loop.md                   # Its loop prompt
 └── nightly-maintenance.trigger.yaml       # Template for /flow:watch (manual setup)
 
 .flow/triggers/                          # Project-local trigger artifacts
