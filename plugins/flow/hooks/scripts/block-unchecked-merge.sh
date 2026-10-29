@@ -51,9 +51,13 @@
 # mutation is refused outright, as is one whose whole endpoint is a variable, or
 # a GraphQL call whose query comes from a file.
 #
+# Words are read as bash passes them: quotes and backslash escapes removed, so
+# `gh pr me""rge 7` and `g\h pr mer\ge 7` are gh pr merge 7 and are checked as
+# such.
+#
 # Not covered, by design. This hook catches merges written in good faith, or
 # misdirected by a variable or a directory. It does not stop deliberate
-# evasion: a quote or backslash inside the word (`m\erge`), a command held in a
+# evasion: an ANSI-C quoted word (`$'m\x65rge'`), a whole command held in a
 # variable and run as `$CMD`, a gh alias defined in an earlier call, a script
 # piped into a shell, a gh extension, or curl to the REST API. Branch protection
 # with required checks is the mechanism for that, as #170 says.

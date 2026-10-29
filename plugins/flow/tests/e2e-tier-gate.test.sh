@@ -19,7 +19,8 @@
 #      is read as the action
 #   T5 an action after &&, ;, |, inside $(...), inside bash -c '...', behind
 #      VAR=value, env, timeout, xargs, a path to the program, or a line
-#      continuation is missed
+#      continuation is missed; T5b: after a shell keyword, a group opener, a
+#      function definition, coproc, or builtin
 #   T6 gh api: a POST/PUT to a tiered endpoint is missed (explicit method,
 #      --method=, -XPOST, lower case, implied by -f, a leading /, a full URL,
 #      {owner}/{repo}), or a GET or a write to another endpoint is caught
@@ -32,7 +33,8 @@
 #      the person has approved it
 #   T10 a value that is not autonomous|journal|confirm, a cascade that fails,
 #      or a journal write that fails stops the command or says nothing
-#   T11 when the hook cannot read the command (jq missing, parser missing),
+#   T11 when the hook cannot read the command (jq missing, a payload jq
+#      cannot parse, parser missing),
 #      a merge or release is allowed, or anything else is refused
 #   T12 the hook is not registered on PreToolUse for Bash
 #   T13 a tag push (--tags, --follow-tags, -c push.followTags, a refs/tags/
@@ -46,8 +48,25 @@
 #   T17 deleting a tag (:<tag>, --delete/-d, gh api DELETE or PATCH on
 #      git/refs/tags) is read as a branch push, or a known branch is asked about
 #   T15 gh api PATCH on a release or an issue's assignees, or a GraphQL
-#      mutation (inline, query=@file, --input), is missed; a read or another
+#      mutation (inline, query=@file, --input), is missed, a mutation whose
+#      name holds Ref, Release or Merge among them; a read or another
 #      mutation (createIssueType) is caught; an unreadable query is allowed
+#   T18 a backslash inside the program, a subcommand or an option, which bash
+#      removes, hides the action
+#   T19 a git push option written as an abbreviation git accepts (--tag,
+#      --mirr, --del) or in a short bundle (-qd) is missed, or the value of
+#      -o, --recurse-submodules, --repo is read as the remote or a refspec
+#   T20 a push source that is not a local branch (a tag made in the same
+#      command, a glob, tags/<name>, a commit) is read as a branch push
+#   T21 a remote that mirrors, or whose push refspecs send tags, set in the
+#      repository or for one command, is read as a branch push
+#   T22 gh release edit, delete, upload or delete-asset, or the gh api
+#      equivalents, run without the release ask
+#   T23 a Tier 3 action behind a program the hook does not know runs without
+#      an ask, or a Tier 2 action there, echo, or printf asks
+#   T24 --verify-tag is journaled when gh would create the release in another
+#      repository than origin's (-R, GH_REPO, GH_HOST, a cd, a default chosen
+#      on another remote)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {

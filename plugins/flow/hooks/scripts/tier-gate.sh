@@ -11,7 +11,13 @@
 #   tiers.issueAssign  gh issue edit --add-assignee              default journal
 #   tiers.issueCreate  gh issue create                           default journal
 #   tiers.merge        gh pr merge                               always confirm
-#   tiers.release      gh release create, and a tag push         always confirm
+#   tiers.release      gh release create, edit, delete, upload   always confirm
+#                      and delete-asset, and a tag push
+#
+# gh release edit publishes a draft (--draft=false) or moves a release's tag,
+# and delete removes a release (and its tag, with --cleanup-tag). upload and
+# delete-asset are the release tier too: on a published release they change
+# the files people download at once, and --clobber replaces one.
 #
 # `new` is gh's alias for `create` (`gh pr new`, `gh issue new`, `gh release
 # new`) and counts the same. `gh api` counts as follows. A leading `/`, a full
@@ -19,7 +25,9 @@
 # the method is -X/--method, or POST when a -f/-F/--field/--raw-field/--input
 # parameter is given (gh's own rule), or GET.
 #   POST/PUT .../pulls/{n}/merge, .../merges              merge
-#   POST .../releases; PATCH .../releases/{id}            release
+#   POST .../releases; PATCH .../releases/{id}; DELETE
+#     .../releases/{id} or .../releases/assets/{id};
+#     POST .../releases/{id}/assets                       release
 #   POST .../git/refs with a refs/tags/ ref               release
 #   DELETE or PATCH .../git/refs/tags/{tag}               release
 #   POST .../pulls                                        prCreate
@@ -32,34 +40,66 @@
 #   graphql with createPullRequest                        prCreate
 #   graphql with createIssue                              issueCreate
 #   graphql with addAssigneesToAssignable                 issueAssign
+#   graphql mutation with any other field whose name
+#     holds Merge (any case), or enqueuePullRequest       merge
+#   graphql mutation with any other field whose name
+#     holds Release or Ref (any case): createRef,
+#     updateRef, deleteRef, updateRefs, deleteRelease     release
 # The GraphQL query is read from -f/-F query=..., query=@file and --input
-# file (relative to the command's directory).
+# file (relative to the command's directory). A field is a name followed by
+# its arguments, and only a document with a mutation in it is read for the
+# Merge/Release/Ref names: a query that reads refs or mergeable changes
+# nothing.
 #
 # Pushing a tag is the release tier, not push: `git push` with --tags,
 # --follow-tags, --mirror, `-c push.followTags=true`, or push.followTags true
 # in the repository's git configuration (a -c on the command line overrides
 # it); `git push <remote> tag <name>`; a refspec with refs/tags/ on either
-# side (`HEAD:refs/tags/v1`); or a refspec whose source is a tag in this
-# repository (`git push origin v1.2.0` when v1.2.0 is a tag; a branch named
-# v1-fix is not). Deleting a tag is release too: `:<tag>`, `:refs/tags/<tag>`,
-# or --delete/-d with a tag's name; a deleted name that is neither a tag nor
-# a known branch (local, or remote-tracking on that remote) may be a tag on
-# the remote, so it asks. A command that pushes a branch and a tag is
+# side (`HEAD:refs/tags/v1`); a refspec whose source or destination is a tag
+# in this repository (`git push origin v1.2.0` when v1.2.0 is a tag; a branch
+# named v1-fix is not); or a `tags/<name>` source. Deleting a tag is release
+# too: `:<tag>`, `:refs/tags/<tag>`, or --delete/-d with a tag's name; a
+# deleted name that is neither a tag nor a known branch (local, or
+# remote-tracking on that remote) may be a tag on the remote, so it asks. Any
+# other source that is not a local branch (HEAD, @ and refs/heads/ count as
+# branches) may be a tag, so it asks too: a name that does not exist yet (`git
+# tag v7 && git push origin v7`), a glob (`refs/*:refs/*`), a commit, a
+# remote-tracking branch. A command that pushes a branch and a tag is
 # release.
 #
-# `git -C <dir>`, `--git-dir` and `--work-tree` name the repository a push
-# acts on: tags, push.followTags and the breadcrumb's trail are taken from
-# that repository, not the payload's. When it cannot be found (a missing
-# directory, a variable), the payload's repository is used and the push asks
-# if it could be a tag push (anything but HEAD or refs/heads/ refspecs with
-# push.followTags turned off by -c).
+# git push's options are read as git reads them: any unambiguous prefix of a
+# long option counts (`--tag`, `--mirr`, `--follow-tag`, `--del`,
+# `--no-fol`), and a bundle of short options is read letter by letter (`-qd`
+# deletes; `-o` takes the rest of the bundle, or the next word, as its value).
+#
+# The remote's configuration counts as well: remote.<name>.mirror makes every
+# push to that remote a tag push, and its remote.<name>.push refspecs are read
+# as if written when the command names no refspec. A push that names no
+# remote goes where git sends it (branch.<branch>.pushRemote,
+# remote.pushDefault, branch.<branch>.remote, then origin); a remote given as
+# a variable may be any of them. Setting those keys for one command (`-c
+# remote.<name>.mirror`, `-c remote.<name>.push=...`, the same through
+# --config-env, or GIT_CONFIG_* before git) asks.
+#
+# `git -C <dir>`, `--git-dir`, `--work-tree`, and GIT_DIR= or GIT_WORK_TREE=
+# before git name the repository a push acts on: tags, push.followTags, the
+# remotes' configuration and the breadcrumb's trail are taken from that
+# repository, not the payload's. When it cannot be found (a missing
+# directory, a variable), the push asks: none of that can be read.
 #
 # `gh release create <tag> --verify-tag` creates a release for a tag that
-# must already be on GitHub, and that tag's push was already confirmed. So
-# when `git ls-remote --tags` finds the tag on the remote (origin, or the
-# GitHub repository -R/--repo names), within TG_REMOTE_TIMEOUT seconds
-# (default 5), it is journaled instead of asked. Without --verify-tag, with a
-# tag absent from the remote, or when the check fails, it asks.
+# must already be on GitHub, and that tag's push was already confirmed. So it
+# is journaled instead of asked when gh creates the release in origin's
+# repository and `git ls-remote --tags origin` finds the tag there within
+# TG_REMOTE_TIMEOUT seconds (default 5). The repository gh uses is -R/--repo,
+# else GH_REPO before gh or in this hook's environment, else gh's default:
+# the remote `gh repo set-default` chose (remote.<name>.gh-resolved), or the
+# only remote. It has to be origin's: the same host/owner/name as
+# remote.origin.url, in any case, for a named repository; origin itself for
+# the default. Without --verify-tag, with a tag absent from origin, when the
+# check fails, when the repository cannot be confirmed to be origin's, with
+# GH_HOST set, after a cd or a GH_REPO/GH_HOST setting earlier in the same
+# command, or behind a program this hook does not know, it asks.
 #
 # Values: confirm asks (permissionDecision "ask", with a reason naming the
 # action, the setting and the command); journal writes one breadcrumb to the
@@ -76,9 +116,11 @@
 #     always do)                                         naming each such action; no breadcrumb is
 #                                                        written, since the person may refuse
 #   merge or release set below confirm                -> as above, plus one stderr line naming the setting
-#   gh release create --verify-tag, tag on the remote -> journaled, as below
-#   gh release create --verify-tag, tag not found or  -> "ask"
-#     the check failed or timed out
+#   gh release create --verify-tag, in origin's       -> journaled, as below
+#     repository, tag on origin
+#   gh release create --verify-tag, tag not found,    -> "ask"
+#     the check failed or timed out, or the
+#     repository is not confirmed to be origin's
 #   otherwise, journal-tier actions                   -> one breadcrumb per action in the auto-log
 #                                                        trail (<journal dir>/auto-log/issue-{N}.{YYYY-MM}.md
 #                                                        on a branch naming issue N, otherwise
@@ -98,12 +140,15 @@
 #     cannot be read (a variable, stdin, a missing
 #     file)
 #   a push whose refspec is a variable or a           -> "ask": it may push or delete a tag
-#     substitution, a deleted name that is neither
-#     tag nor branch, a push into a -C/--git-dir
-#     repository that cannot be found, or a gh api
-#     git/refs request whose ref cannot be read
-#   cannot decide: jq missing, the command parser     -> text that mentions merge or release with gh:
-#     missing or failed                                    "ask"; other text that mentions push or gh:
+#     substitution, whose source is not a local
+#     branch, a deleted name that is neither tag nor
+#     branch, a push into a -C/--git-dir repository
+#     that cannot be found, a -c/--config-env/
+#     GIT_CONFIG_* setting of a remote's mirror or
+#     push, or a gh api git/refs request whose ref
+#     cannot be read
+#   cannot decide: jq missing, a payload jq cannot    -> text that mentions merge or release with gh:
+#     parse, the command parser missing or failed        "ask"; other text that mentions push or gh:
 #                                                        exit 0, one stderr line; anything else:
 #                                                        exit 0, no output
 #
@@ -114,29 +159,53 @@
 # block-unchecked-merge.sh and block-destructive.sh use
 # (lib/command-parse.sh). `#` comments and heredoc bodies fed to cat, tee,
 # echo, printf or gh are removed; the text is split into simple commands at
-# `;`, `|`, `&`, newlines and command substitutions, outside quotes; each
-# simple command is split into words with quotes removed; and a quoted
-# argument handed to something that runs it (`bash -c '...'`, `eval`, `ssh`)
-# is read as a command too. An action counts only when its program is the
-# command word: first in its simple command, after any VAR=value
-# assignments, and after any of these, which run the rest of the line as a
-# command: command, exec, env, nohup, time, nice, timeout, sudo, doas, xargs
-# (with their options). `gh` and `git` may carry a path. So `echo gh pr merge
-# 1`, `git commit -m "then gh pr merge 1"` and `npm run git push` name no
-# action, while `make && git push`, `x=$(gh pr create ...)` and `timeout 60
-# git push` do.
+# `;`, `|`, `&`, `(`, `)`, newlines and command substitutions, outside
+# quotes; each simple command is split into words with quotes removed and
+# backslash escapes removed, as bash passes them (`g\h pr mer\ge 1` is gh pr
+# merge 1); and a quoted argument handed to something that runs it (`bash -c
+# '...'`, `eval`, `ssh`) is read as a command too.
 #
-# Not covered, by design: deliberate evasion (a command held in a variable
-# and run as `$CMD`, a gh alias, a git alias, a script file, a quote inside
-# the word), a GraphQL mutation not listed above, and gh api DELETE requests
-# other than on tag refs. Branch protection and rulesets are the mechanism
-# against evasion; this hook reads commands written in good faith. `--help` is not exempted: it costs a
+# Every action counts when its program is the command word: first in its
+# simple command, after any VAR=value assignments; after a shell keyword or
+# group opener (if, then, elif, else, while, until, do, !, {), `function
+# NAME`, or coproc (and its NAME before a body); and after any of these,
+# which run the rest of the line as a command: command, builtin, exec, env,
+# nohup, time, nice, timeout, sudo, doas, xargs (with their options). `gh`
+# and `git` may carry a path. So `make && git push`, `x=$(gh pr create ...)`
+# and `timeout 60 git push` count.
+#
+# A Tier 3 action counts anywhere after a command word that is none of
+# those, because a program this hook does not know may run the rest of its
+# line (caffeinate, stdbuf, setsid, watch, `find -exec`, parallel, `script -q
+# /dev/null`): the words after it are read for gh and git, and a merge, a
+# release, a tag push or a possible one, or an unreadable gh api call there
+# asks. A command word that is a variable or a substitution (`$GH pr merge
+# 7`) is read as possibly gh or git for the same Tier 3 actions. echo and
+# printf are exempt, since they print their arguments. So `echo gh pr merge
+# 1`, `git commit -m "then gh pr merge 1"` and `npm run git push` ask nothing.
+#
+# Not covered, by design. A Tier 2 action (push, prCreate, issueAssign,
+# issueCreate) behind a program this hook does not know, or under a command
+# word that is a variable: `caffeinate git push` is neither asked about nor
+# journaled, since a prompt for every script that
+# mentions git would cost more than the setting saves. And what text cannot
+# show: a whole command held in a variable or built at run time (`$CMD`,
+# `eval "$CMD"`), an ANSI-C quoted word (`$'g\x68'`), a gh or git alias, a
+# gh extension, a script file or a make target, another program that talks
+# to GitHub (curl, git send-pack), GIT_DIR or GIT_WORK_TREE set by export
+# rather than before git, GH_REPO or GH_HOST exported in an earlier Bash
+# call, a GraphQL mutation whose field names hold none of
+# Merge, Release or Ref (createCommitOnBranch), and gh api DELETE or PATCH
+# requests other than those above (deleting a branch ref). Branch protection,
+# rulesets and tag protection are the mechanism against those; this hook
+# reads the commands an agent writes. `--help` is not exempted: it costs a
 # prompt, while exempting a value that happens to read `--help` would cost a
 # missed confirmation. For the same reason the parser reads every quoted
 # argument with a space in it, after env, sudo, timeout, xargs, nohup and the
 # other words it treats as running a script, as a command too: so `timeout 60
-# gh pr create --body "git push later"` also counts as a push. That costs an
-# extra prompt or journal line, never a missed one.
+# gh pr create --body "git push later"` also counts as a push, and a
+# backslash inside quotes is removed as if it were outside them. That costs
+# an extra prompt or journal line, never a missed one.
 #
 # ask-issue-create.sh is a separate hook and both apply to `gh issue create`:
 # Claude Code takes the most restrictive answer, so an ask from either wins.
