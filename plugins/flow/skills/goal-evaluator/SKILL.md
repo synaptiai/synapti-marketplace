@@ -133,7 +133,7 @@ Map the candidate and judge verdict to a status with the table in `references/go
 
 ### Step 7: Journal
 
-`bin/journal-record.sh --issue {N} --type goal-evaluation --metadata goal_id=<id> --metadata result=<status> --metadata evidence_bundle=<run-dir> --metadata failures=<comma-list or none>`.
+`bin/journal-record.sh --issue {N} --type goal-evaluation --metadata goal_id=<id> --metadata result=<status> --metadata evidence_bundle=<run-dir> --metadata failures=<comma-list or none>`. When the goal has no linked issue, pass `--session` in place of `--issue {N}`: the entry goes to that day's session journal.
 
 ### Step 8: Return the verdict (the skill does NOT write `last-verdict.json`)
 
