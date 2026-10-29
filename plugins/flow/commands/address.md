@@ -830,10 +830,7 @@ case "$CYCLE_NUMBER" in ''|*[!0-9]*) printf '%s\n' "FINDING_DISMISSED=skipped (C
 #
 # It is NOT about glob expansion. status.md's containment check writes the id as
 # `*",$ID,"*`, where the quotes make it a literal, and commands/merge.md has no
-# glob at all — its gate is `comm` over sorted lists. An earlier version of this
-# comment claimed an id of `*` "matches every RESOLVED list"; that was never
-# true of any consumer, and the same claim was corrected in
-# bin/_journal_manifest.py in the same round.
+# glob at all — its gate is `comm` over sorted lists.
 if ! ( LC_ALL=C
        case "$FINDING_ID" in [A-Za-z]*) ;; *) exit 1 ;; esac
        case "$FINDING_ID" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ); then

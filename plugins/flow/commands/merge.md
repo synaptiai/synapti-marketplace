@@ -377,9 +377,7 @@ fi
 # Surface "untrusted-only" markers as a block reason rather than silently
 # treating them as no markers at all. This is the marker-forgery defense.
 # Render the trust list as a comma-separated string for the user-facing
-# message — the `$TRUST_REGEX` variable used to appear here was a leftover
-# from an earlier revision and never assigned, producing the empty-parens string
-# "trusted authors ()" in messages or aborting under `set -u`.
+# message.
 #
 # Derive the fallback from $TRUST_DEFAULT rather than hard-coding the value:
 # if $TRUST_DEFAULT changes (e.g., adding CONTRIBUTOR), the display string
@@ -586,9 +584,8 @@ fi
 # back to squash/true; a setting that could not be READ — cascade-resolve.sh
 # refuses a value carrying a control character, exit 2 — must not, or this gate
 # prints MERGE_SETTINGS_STATE=ok for a settings file it could not read, which is
-# the same answer it prints for a valid one. That is the defect class this whole
-# change is about, so the two are told apart here: exit 2 is blocked, empty is
-# absent.
+# the same answer it prints for a valid one. So the two are told apart here:
+# exit 2 is blocked, empty is absent.
 # stderr is CAPTURED, not discarded. cascade-resolve.sh has three ways to fail to
 # hand back a value, and only one of them is an exit code: a refusal exits 2, but
 # a settings file that cannot be opened or cannot be PARSED is skipped with a
@@ -597,16 +594,15 @@ fi
 # look like "you did not set it". For an irreversible merge, any warning is
 # treated as unreadable.
 #
-# No temp file: `rm` is a destructive verb and this repository forbids those
-# inside an inline-bang block, with a test that enforces it. Merging the streams
+# No temp file: an inline-bang block may not run `rm`. Merging the streams
 # is enough because the two are disjoint — a clean resolve prints the value and
 # nothing else, and every warning cascade-resolve emits is prefixed with its own
 # name, which no value accepted below can contain.
 MERGE_OUT=$("$CASCADE" '.merge.strategy' 2>&1); RC_STRATEGY=$?
 # Collapsed to one line: cascade-resolve emits one warning per source it had to
 # skip, so this is multi-line as soon as two are unreadable, and a multi-line
-# value here re-opens through the error path exactly the forgery this block was
-# hardened against.
+# value printed through the error path could forge a line of this block's
+# output.
 MERGE_OUT=$(printf '%s' "$MERGE_OUT" | tr '\n\r' '  ')
 case "$MERGE_OUT" in
   *cascade-resolve:*)

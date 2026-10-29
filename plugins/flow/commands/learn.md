@@ -388,10 +388,8 @@ import sys
 
 # The reader lives in the bin/ directory of the plugin, and takes its fence
 # predicate from bin/_journal_atomic.py — the module every journal write goes
-# through. This block used to carry its own copy. The copies drifted every
-# review round: this one never gained the O_NONBLOCK that stops a FIFO in the
-# journal directory hanging the read forever, and the comment here claimed the
-# sibling reader "opens the same way" while the two had already diverged.
+# through. This block keeps no copy of either: a copy here would drift from the
+# reader it copies.
 sys.path.insert(0, sys.argv[1])
 
 import errno
@@ -418,24 +416,18 @@ dismissed = []
 dropped = []
 unreadable = []
 
-# os.listdir, not glob. Two reasons, both the same defect class this issue
-# exists to remove — an unreadable input answering like a legitimately absent
-# one:
+# os.listdir, not glob, for two reasons:
 #
-#   1. glob SWALLOWS the OSError from a directory it cannot read, returning an
-#      empty list. A directory holding recorded dismissals that the process may
-#      not list therefore reported DISMISSED_COUNT=0 / STATE=empty, byte for
-#      byte what a project with nothing recorded reports.
-#   2. glob reads [ ? and * inside the pattern as syntax. The revision right
-#      before this one passed the directory through glob.escape, so that was
-#      handled there — but the escaping only existed because glob was the wrong
-#      tool, and the revision before THAT reported a project with no dismissals
-#      for a directory that genuinely held journals.
+#   1. glob swallows the OSError from a directory it cannot read and returns an
+#      empty list, so a directory holding recorded dismissals that the process
+#      may not list would report DISMISSED_COUNT=0 / STATE=empty, the same
+#      answer a project with nothing recorded gives.
+#   2. glob reads [ ? and * inside the pattern as syntax, so a directory name
+#      holding one of them would need escaping.
 #
-# listdir raises for the first and needs no escaping for the second. The
-# leading-dot skip preserves the behaviour glob had: `*` does not match a
-# leading dot, so a `.hidden.md` in the journal directory was and remains
-# ignored.
+# listdir raises for the first and needs no escaping for the second. Names
+# starting with a dot are skipped, as `*` skips them in glob, so a
+# `.hidden.md` in the journal directory is ignored.
 try:
     _entries = sorted(os.listdir(journal_dir))
 except OSError as exc:
