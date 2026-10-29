@@ -20,47 +20,14 @@ The invoking command MUST pass:
 
 ## Output
 
-```json
-{
-  "trigger_id": "pr-123-watch",
-  "schema_valid": true,
-  "tier3_violations": [],
-  "recursion_violations": [],
-  "missing_required_forbidden": [],
-  "cross_reference_violations": [],
-  "concurrency_violations": [],
-  "overall": "pass"
-}
-```
+A JSON report: `trigger_id`, `schema_valid`, one list per violation kind (`tier3_violations`, `recursion_violations`, `missing_required_forbidden`, `cross_reference_violations`, `concurrency_violations`) and `overall` (step 8). Example: `references/flow-triggers.md`.
 
 ## Steps
 
-1. **Schema validation**: load the YAML and validate it against the trigger schema. Exit 2 → `overall: schema_invalid`.
+1. **Schema validation**: validate the YAML against `schemas/v1/trigger.schema.json` (one `SCHEMA_ERROR=` line per error). Exit 2 → `overall: schema_invalid`; exit 1 means the check could not run: stop.
 
    ```bash
-   # PYTHONPATH and sys.path are cleaned first: the trigger comes with the
-   # repository, and so could a planted jsonschema.py or sitecustomize.py.
-   [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
-   _flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
-   if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
-   python3 - "${TRIGGER_YAML}" "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/schemas/v1/trigger.schema.json" <<'PYEOF'
-   import os, sys
-   try:
-       _flow_cwd = os.path.realpath(os.getcwd())
-   except OSError:
-       _flow_cwd = None
-   sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-   import json, yaml, jsonschema
-   with open(sys.argv[1], encoding="utf-8") as f:
-       doc = yaml.safe_load(f)
-   with open(sys.argv[2], encoding="utf-8") as f:
-       schema = json.load(f)
-   validator = jsonschema.validators.validator_for(schema)(schema)
-   errors = sorted(validator.iter_errors(doc), key=lambda e: list(e.path))
-   for e in errors:
-       print("SCHEMA_ERROR=%s: %s" % ("/".join(map(str, e.path)) or "(root)", e.message))
-   sys.exit(2 if errors else 0)
-   PYEOF
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-trigger-schema-check.sh" "${TRIGGER_YAML}"
    ```
 2. **Tier 3 absolute deny**: `policy.forbidden_actions` must contain both `merge` AND `release`. Missing either → `tier3_violations.append({"action": "merge_or_release", "reason": "must be forbidden"})`. Hard fail.
 3. **Recursion policy**: `recursion_policy.triggered_runs_may_create_triggers`, `triggered_runs_may_modify_triggers`, and `triggered_runs_may_enable_triggers` must be `false` or unset (default false). Any `true` → `recursion_violations`; enabling it requires explicit Tier 3 authorization via AskUserQuestion at `/flow:trigger create` time.
@@ -78,10 +45,3 @@ The invoking command MUST pass:
 | `cross_reference_violations` non-empty | `cross_reference_failed` (exit 1; HARD FAIL — missing target workflow) |
 | `concurrency_violations` non-empty | `concurrency_warning` (exit 0 — soft warning) |
 | else | `pass` (exit 0) |
-
-## Reuse map
-
-- `plugins/flow/schemas/v1/trigger.schema.json` — schema validated against.
-- `plugins/flow/triggers/templates/` — plugin-shipped templates.
-- `plugins/flow/commands/trigger.md`, `watch.md`, `run.md` — invoking commands.
-- `plugins/flow/references/flow-triggers.md` — user-facing trigger documentation.

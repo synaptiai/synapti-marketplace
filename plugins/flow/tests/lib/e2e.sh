@@ -161,6 +161,8 @@ case "$args" in
     n=${args%/replies}; f=reply-${n##*/} ;;
   # The merge guard's calls, and the branch-delete guard's.
   "pr view "*" --json number,baseRefName,statusCheckRollup") n=${args#pr view }; f=pr-${n%% *} ;;
+  # bin/flow-pr-feedback.sh's review list.
+  "pr view "*" --json reviews") n=${args#pr view }; f=pr-reviews-${n%% *} ;;
   # Each is keyed on the values the guard passes, so a call that asks about
   # another branch, or compares the two commits the other way round, has no
   # fixture: protection-<branch>, rules-<branch>, merged-prs-<head>-<base>
@@ -315,7 +317,9 @@ e2e_judge_says() {
 
 # e2e_gh_fixture <name> <json> — the answer gh gives for one call. Names:
 # user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>, pull-comment-<id>
-# (one pull request review comment), reply-<id> (the answer to a reply posted
+# (one pull request review comment), pull-comments-<pr> (a pull request's
+# inline review comments), pr-reviews-<pr> (gh pr view <pr> --json reviews),
+# reply-<id> (the answer to a reply posted
 # in the thread of comment <id>; the posted text is appended to
 # $E2E_GH/reply-<id>.posted), pr-<n> (gh pr view <n> with its checks),
 # protection-<branch> and rules-<branch> (a base branch's required checks),

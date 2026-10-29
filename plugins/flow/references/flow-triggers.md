@@ -98,6 +98,25 @@ you're watching this PR; the prompt file gives /loop the per-iteration
 instructions.
 ```
 
+## Policy report
+
+The report the `trigger-policy` skill returns, in `validate` and `enforce` mode:
+
+```json
+{
+  "trigger_id": "pr-123-watch",
+  "schema_valid": true,
+  "tier3_violations": [],
+  "recursion_violations": [],
+  "missing_required_forbidden": [],
+  "cross_reference_violations": [],
+  "concurrency_violations": [],
+  "overall": "pass"
+}
+```
+
+`bin/flow-trigger-schema-check.sh <trigger.yaml>` is the skill's step 1: it validates the trigger against `schemas/v1/trigger.schema.json` in the plugin it ships in, prints one `SCHEMA_ERROR=` line per error, and exits 0 (valid), 2 (schema errors) or 1 (the trigger or the schema could not be read, or python3, PyYAML or jsonschema is missing).
+
 ## References
 
 - `plugins/flow/schemas/v1/trigger.schema.json` — schema definition
