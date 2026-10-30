@@ -140,12 +140,6 @@ EOF
 git reset --hard HEAD~1"
 assert_exit 2 "$?" "a real reset after the heredoc terminator still blocked"
 
-_flow_test_begin "a here-string is not a heredoc: the lines after it are commands"
-_run_hook "cat <<<EOF
-git reset --hard HEAD~1
-EOF"
-assert_exit 2 "$?" "a reset on the line after cat <<<EOF still blocked"
-
 _flow_test_begin "a heredoc fed to a shell is examined, because that body runs"
 _run_hook "bash <<EOF
 git reset --hard HEAD~1

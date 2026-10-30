@@ -43,8 +43,7 @@ assert_contains "FlowRun terminal transition" "$CONTENT" "terminal-transition st
 assert_contains "status=completed" "$CONTENT" "updates workflow-run artifact to completed"
 assert_contains "cancelled" "$CONTENT" "cancels the run on aborted merge (not left resumable)"
 
-# The merge asks its own question before the merge command runs; the tier
-# hook's prompt on that command is a second check, not the only one. Line
+# The merge asks its own question before the merge command runs. Line
 # numbers within Phase 3: the first AskUserQuestion, the sentence that gates
 # the merge on the answer, and the gh pr merge line the model runs.
 _flow_test_begin "merge.md asks with AskUserQuestion before the merge command runs"
