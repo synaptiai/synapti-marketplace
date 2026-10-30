@@ -136,7 +136,8 @@
 # earlier in the command is followed: a cd to a directory of the payload's
 # repository changes nothing, while a cd into another repository, or one
 # whose target cannot be read (a variable, `cd -`, popd, pushd +N, a name
-# an exported CDPATH may resolve, a substitution), makes a later push ask as
+# an exported CDPATH may resolve, a substitution, a home directory: `cd`
+# alone, `cd ~`, `cd ~/src`), makes a later push ask as
 # a possible tag push. Two more are followed: a cd into another worktree of
 # the payload's repository (the same common directory), which shares its tags,
 # branches and configuration, so a push there is judged there, and asks only
@@ -1501,7 +1502,8 @@ _tg_config_write() {   # $1 = index of git
 # cd, pushd or popd: where the rest of the command runs. TG_CDBASE becomes
 # the directory when it can be read; TG_CDOTHER=1 when it cannot (a variable,
 # `cd -`, popd, pushd +N, a name CDPATH may resolve, a directory that is not
-# there, a substitution other than `$(git rev-parse --show-toplevel)`) or
+# there, a substitution other than `$(git rev-parse --show-toplevel)`, a home
+# directory: `cd` alone or `~`) or
 # when it is in another repository than the payload's. A git push after
 # TG_CDOTHER=1 asks as a possible tag push: that repository's tags and
 # remotes are not the ones this hook would read, and a cd inside a subshell
@@ -1529,12 +1531,11 @@ _tg_cd() {   # $1 = index of cd, pushd or popd
     esac
     break
   done
-  if [ "$k" -ge "$n" ]; then
-    # cd alone goes home; pushd alone swaps the top two directories.
-    if [ "$w" = cd ] && [ -n "${HOME:-}" ]; then d="$HOME"; else TG_CDOTHER=1; return 0; fi
-  else
-    d="${TOK[k]}"
-  fi
+  # cd alone goes home and pushd alone swaps the top two directories. The
+  # home directory is the shell's, which only cascade-resolve.sh may read
+  # (and a repository's settings can move), so it is not read here.
+  [ "$k" -lt "$n" ] || { TG_CDOTHER=1; return 0; }
+  d="${TOK[k]}"
   case "$d" in '') return 0 ;; -) TG_CDOTHER=1; return 0 ;; esac
   case "$d" in
     __BD_SUBST__|' __BD_SUBST__ ')
@@ -1544,14 +1545,9 @@ _tg_cd() {   # $1 = index of cd, pushd or popd
       fi ;;
   esac
   _tg_unreadable "$d" && { TG_CDOTHER=1; return 0; }
-  # The word is as the shell received it, so a leading ~ is still a ~; with
-  # no HOME the path stays `~...`, which is not a directory here.
-  # shellcheck disable=SC2088
-  case "$d" in
-    '~') d="${HOME:-~}" ;;
-    '~/'*) d="${HOME:-~}/${d#\~/}" ;;
-    '~'*) TG_CDOTHER=1; return 0 ;;
-  esac
+  # The word is as the shell received it, so a leading ~ is still a ~: a
+  # home directory, which is not read here either.
+  case "$d" in '~'*) TG_CDOTHER=1; return 0 ;; esac
   case "$d" in
     /*) ;;
     .|..|./*|../*) d="${TG_CDBASE:-$CWD}/$d" ;;

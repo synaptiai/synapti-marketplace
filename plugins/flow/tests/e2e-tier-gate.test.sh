@@ -625,6 +625,9 @@ maybe|cd .. && git push origin v1-fix
 maybe|cd "$D" && git push origin v1-fix
 maybe|cd - && git push origin v1-fix
 maybe|popd && git push origin v1-fix
+maybe|cd && git push origin v1-fix
+maybe|cd ~ && git push origin v1-fix
+maybe|cd ~/src && git push origin v1-fix
 silent|cd . && git push origin v1-fix
 silent|cd sub && git push origin v1-fix
 silent|git status && git push origin v1-fix
