@@ -424,6 +424,39 @@ S=$(_bum_stub "$QUEUED" "" "")
 _bum_run "$S" 'gh pr me""rge 7 --repo acme/widgets --squash'
 assert_exit 2 "$?" "me\"\"rge is merge"
 
+# A shell reads a here-string as its script, with or without a space after
+# <<<, with a file descriptor before it, or fed through a pipe; a shell inside
+# a substitution runs its -c argument; a backquote inside double quotes runs
+# its command; and 2>&1 is a redirection, not the end of a command. On a queued pull request each is refused. The same text given
+# to a program that only reads it, or a merge-free command with 2>&1, is not.
+_flow_test_begin "a merge handed to a shell on its input or in a substitution is read"
+S=$(_bum_stub "$QUEUED" "" "")
+for CMD in \
+  "bash <<< 'gh pr merge 7 --repo acme/widgets --squash'" \
+  "bash <<<'gh pr merge 7 --repo acme/widgets --squash'" \
+  'sh <<<"gh pr merge 7 --repo acme/widgets --squash"' \
+  "bash 0<<<'gh pr merge 7 --repo acme/widgets --squash'" \
+  "<<<'gh pr merge 7 --repo acme/widgets --squash' bash" \
+  "cat <<<'gh pr merge 7 --repo acme/widgets --squash' | bash" \
+  'bash <<<gh\ pr\ merge\ 7\ --repo\ acme/widgets\ --squash' \
+  "x=\$(bash -c 'gh pr merge 7 --repo acme/widgets --squash')" \
+  "y=\`sh -c 'gh pr merge 7 --repo acme/widgets --squash'\`" \
+  'x="`gh pr merge 7 --repo acme/widgets --squash`"' \
+  'gh pr 2>&1 merge 7 --repo acme/widgets --squash' \
+  'gh pr merge 2>&1 7 --repo acme/widgets --squash'; do
+  _bum_run "$S" "$CMD"
+  assert_exit 2 "$?" "refused: $CMD"
+done
+for CMD in \
+  "cat <<<'gh pr merge 7 --repo acme/widgets --squash'" \
+  "grep -c merge <<<'gh pr merge 7 --repo acme/widgets --squash'" \
+  'gh pr view 7 2>&1' \
+  'gh pr view 7 &>/dev/null' \
+  'git commit -m "run \`gh pr merge 7 --repo acme/widgets --squash\` later"'; do
+  _bum_run "$S" "$CMD"
+  assert_exit 0 "$?" "allowed: $CMD"
+done
+
 # bash removes a backslash inside a word before running it, so each of these is
 # gh pr merge: on a queued pull request each is refused, and on a green one the
 # same spelling merges, so it was read as the merge and not refused for its shape.

@@ -78,13 +78,26 @@
 #   T27 a quoted argument after a program the hook does not know (watch,
 #      script -c, trap, awk system()) runs a Tier 3 action unasked, or one
 #      after grep or jq asks
-#   T28 a cd, an export of GIT_CONFIG_*/GIT_DIR/HOME, an include.path, or
+#   T28 a cd, an export of GIT_CONFIG_*/GIT_DIR/HOME, an include.path, a git
+#      config or git remote earlier in the command (also inside bash -c), or
 #      words xargs appends change which repository, configuration or refspec
-#      a later push uses, and the push is read as the payload's
+#      a later push uses, and the push is read as the payload's; or a word
+#      that only names such a variable (echo HOME) or a config read asks
+#   T25b a redirection glued to a word (--tags>/dev/null) hides the option,
+#      or a quoted target (> "push log.txt") is read as a refspec
 #   T29 a forced push to a destination that may be a tag only on the remote
 #      is read as a branch push
 #   T30 a GraphQL name inside a string or a comment is read as a field, or a
 #      comment hides the field after it
+#   T31 a command a shell reads from a here-string, a shell's -c argument
+#      inside a substitution, a backquote inside double quotes, or an action
+#      with 2>&1 in the middle of it is missed; text that cat or grep only
+#      reads is read as a command; quoted words after a program the hook
+#      does not know are read without limit, or past the limit unasked
+#   T32 a cd into another worktree of the same repository, or to
+#      $(git rev-parse --show-toplevel), asks about a branch push; a cd into
+#      another repository, a worktree with its own configuration, or a push
+#      whose remote the branch picks there does not ask
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -487,7 +500,9 @@ merge|watch 'g\h pr merge 1 --body aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 release|watch 'x\y ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' 'gh rel\ease create v9 --notes aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 merge|gh api -X PUT repos/o/r/pulls/7/me\rge?per_page=100aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -f b\ody=ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 EOF
-  for C in 'echo g\h pr merge 1' 'git commit -m "gh pr mer\ge 1"' 'gh pr vi\ew 3'; do
+  # Inside double quotes bash keeps a backslash before any character but $, `,
+  # " and \, so gh is handed mer\ge, which is not merge.
+  for C in 'echo g\h pr merge 1' 'git commit -m "gh pr mer\ge 1"' 'gh pr vi\ew 3' 'gh pr "mer\ge" 1'; do
     _tg_run "$C"
     _expect_silent_allow
   done
@@ -498,7 +513,7 @@ fi
 # --- T13: a tag push is the release tier ------------------------------------------
 if _want tg-tag-push; then
   _tg_setup tg-tag-push feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
-    "push autonomous, the repository has tag v1.2.0 and branches v1-fix and main: every push that sends a tag asks under tiers.release (options abbreviated or bundled as git accepts them included), a source that is not a local branch asks as a possible tag, a forced push to a destination that is not a known branch asks, a push after a cd elsewhere, an export of git's configuration variables, an include.path or under xargs asks, every branch-only push is silent with or without redirections (T13, T19, T20, T25, T26, T28, T29)"
+    "push autonomous, the repository has tag v1.2.0 and branches v1-fix and main: every push that sends a tag asks under tiers.release (options abbreviated or bundled as git accepts them included, a redirection glued to the option), a source that is not a local branch asks as a possible tag, a forced push to a destination that is not a known branch asks, a push after a cd elsewhere, an export of git's configuration variables, an include.path, a git config or git remote that may change what it sends (also inside bash -c), or under xargs asks, every branch-only push is silent with or without redirections, after a git config of another key or a read of one, and after a word that only names a variable (T13, T19, T20, T25, T25b, T26, T28, T29)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix && git branch -f main HEAD ) \
     || _flow_assert_fail "tg-tag-push: could not create the tag and branch"
   mkdir -p "$E2E_REPO/sub"
@@ -610,6 +625,9 @@ maybe|cd .. && git push origin v1-fix
 maybe|cd "$D" && git push origin v1-fix
 maybe|cd - && git push origin v1-fix
 maybe|popd && git push origin v1-fix
+maybe|cd && git push origin v1-fix
+maybe|cd ~ && git push origin v1-fix
+maybe|cd ~/src && git push origin v1-fix
 silent|cd . && git push origin v1-fix
 silent|cd sub && git push origin v1-fix
 silent|git status && git push origin v1-fix
@@ -622,6 +640,58 @@ ask|git push -o \>x origin v1.2.0
 ask|sudo -u '>x' git push --tags
 maybe|printf 'v1.2.0\n' | xargs -I '>x' git push origin '>x'
 silent|git push -q 2>/dev/null origin v1-fix
+ask|git push --tags>/dev/null
+ask|git push --follow-tags>/dev/null
+ask|git push --mirror>/dev/null
+ask|git push --tags</dev/null
+ask|git push --tags&>/dev/null
+ask|git push origin v1.2.0>/dev/null
+ask|git -c push.followTags=true push>/dev/null
+maybe|git push origin '2>&1'
+silent|git push origin v1-fix>/dev/null
+silent|git push origin v1-fix 2>/dev/null>out.log
+silent|git push origin v1-fix > "push log.txt"
+silent|git push origin v1-fix 2>"err log.txt"
+silent|git push origin v1-fix >| out.log
+silent|git push origin v1-fix 2>&1>/dev/null
+maybe|git config push.followTags true && git push
+maybe|git config --local push.followTags true; git push origin v1-fix
+maybe|git config remote.origin.mirror true && git push
+maybe|git config --add remote.origin.push 'refs/tags/*' && git push
+maybe|git config remote.pushDefault mir && git push
+maybe|git config Branch.v1-fix.pushRemote mir && git push
+maybe|git config include.path /tmp/x && git push origin v1-fix
+maybe|git -C . config --global push.followTags true && git push origin v1-fix
+maybe|git config --file .git/config push.followTags true && git push origin v1-fix
+maybe|git config set push.followTags true && git push origin v1-fix
+maybe|git config -e && git push origin v1-fix
+maybe|git config "$K" true && git push origin v1-fix
+maybe|git remote add m2 ../remote.git --mirror=push && git push m2
+maybe|git remote set-url origin ../x.git && git push origin v1-fix
+maybe|git remote rename origin old && git push origin v1-fix
+maybe|git config push.followTags true && cd sub && git push origin v1-fix
+silent|git config user.name x && git push origin v1-fix
+silent|git config core.editor vim; git push origin v1-fix
+silent|git config --get push.followTags && git push origin v1-fix
+silent|git config get remote.origin.url && git push origin v1-fix
+silent|git config --list && git push origin v1-fix
+silent|git remote -v && git push origin v1-fix
+silent|git remote get-url origin && git push origin v1-fix
+silent|git push origin v1-fix && git config push.followTags true
+maybe|bash -c 'git config push.followTags true' && git push origin v1-fix
+maybe|sh -c "git remote add m2 ../repo.git --mirror=push" && git push m2
+maybe|eval 'git config remote.origin.mirror true' && git push
+maybe|bash <<<'git config push.followTags true' && git push origin v1-fix
+silent|bash -c 'git config user.name x' && git push origin v1-fix
+silent|echo git config push.followTags true && git push origin v1-fix
+silent|echo HOME && git push origin v1-fix
+silent|echo GIT_DIR=x && git push origin v1-fix
+silent|unset GIT_DIR; git push origin v1-fix
+silent|printf '%s\n' GIT_CONFIG_COUNT; git push origin v1-fix
+maybe|GIT_DIR=../x/.git; export GIT_DIR; git push origin v1-fix
+maybe|export GIT_CONFIG_GLOBAL; git push origin v1-fix
+maybe|declare -x HOME=/tmp/h; git push origin v1-fix
+maybe|env HOME=/tmp/h git push origin v1-fix
 EOF
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
   e2e_expect_clean_edges
@@ -988,7 +1058,7 @@ fi
 # --- T15: gh api PATCH and GraphQL ---------------------------------------------
 if _want tg-api-patch-graphql; then
   _tg_setup tg-api-patch-graphql feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them; reads and other mutations do not (T15)"
+    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them, also after a string with an escaped quote in single or double quotes; reads and other mutations do not; a double-quoted query in which the shell expands something asks as unreadable (T15)"
   printf '%s\n' 'mutation { enablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }' > "$E2E_REPO/q.graphql"
   printf '%s\n' '{"query":"mutation { createRelease(input:{repositoryId:\"r\", tagName:\"v1\"}) { release { id } } }"}' > "$E2E_REPO/body.json"
   printf '%s\n' '{"query":"query { viewer { login } }"}' > "$E2E_REPO/read.json"
@@ -1041,6 +1111,16 @@ silent|gh api -X PATCH repos/o/r/releases/assets/5 -f name=x
 silent|gh api -X PUT repos/o/r/releases/123 -f name=x
 silent|gh api -X GET repos/o/r/releases/123
 silent|gh api -X PATCH repos/o/r/issues/4/comments -f assignees=x
+release|gh api graphql -f query='mutation { updatePullRequest(input:{pullRequestId:"x", title:"Say \"hi"}) { clientMutationId } createRelease(input:{repositoryId:"x", tagName:"v9"}) { clientMutationId } }'
+merge|gh api graphql -f query='mutation { updatePullRequest(input:{pullRequestId:"x", body:"use a 6\" cable"}) { clientMutationId } mergePullRequest(input:{pullRequestId:"x"}) { clientMutationId } }'
+release|gh api graphql -f query='mutation { updatePullRequest(input:{pullRequestId:"x", body:"C:\\"}) { clientMutationId } createRelease(input:{repositoryId:"x", tagName:"v9"}) { clientMutationId } }'
+merge|gh api graphql -f query="mutation { updatePullRequest(input:{pullRequestId:\"x\", body:\"use a 6\\\" cable\"}) { clientMutationId } mergePullRequest(input:{pullRequestId:\"x\"}) { clientMutationId } }"
+release|gh api graphql -f query="mutation { updatePullRequest(input:{pullRequestId:\"x\", title:\"Say \\\"hi\"}) { clientMutationId } createRelease(input:{repositoryId:\"x\", tagName:\"v9\"}) { clientMutationId } }"
+silent|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"say \"hi\" then merge(x) and release(y)"}) { clientMutationId } }'
+silent|gh api graphql -f query="mutation { addComment(input:{subjectId:\"x\", body:\"say \\\"hi\\\" then merge(x) and release(y)\"}) { clientMutationId } }"
+silent|gh api graphql -f query="mutation(\$id: ID!) { addComment(input:{subjectId:\$id, body:\"x\"}) { clientMutationId } }"
+unknown|gh api graphql -f query="mutation { $FIELD(input:{}) { clientMutationId } }"
+unknown|gh api graphql -f query="mutation { addComment(input:{subjectId:\"x\", body:\"`cat b`\"}) { clientMutationId } }"
 EOF
   # A comment runs to the end of its line: a quote inside it opens no string,
   # and the mutation on the next line is read.
@@ -1121,7 +1201,7 @@ fi
 # --- T6: every way gh reads an option of gh api --------------------------------
 if _want tg-api-forms; then
   _tg_setup tg-api-forms feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api's method and fields are read as gh reads them (-X=VALUE, -XVALUE, -X VALUE, a bundle such as -iX=POST, -f=key=value); a method that is not a known verb, or a variable, asks for an endpoint that a write would make a merge or a release; a ref read from a file (-F ref=@file) asks; a raw -f value starting with @ is text (T6, T7)"
+    "every tier confirm; gh api's method and fields are read as gh reads them (-X=VALUE, -XVALUE, -X VALUE, a bundle such as -iX=POST, -f=key=value); a method that is not a known verb, or a variable, asks for an endpoint that a write would make a merge or a release; a ref read from a file (-F ref=@file) asks; a raw -f value starting with @ is text; an endpoint is read percent-decoded and without a redirection glued to it (T6, T7)"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
@@ -1160,6 +1240,12 @@ silent|gh api -X OPTIONS repos/o/r/issues
 unknown|printf '%s\n' repos/o/r/pulls/1/merge | xargs gh api -X PUT
 unknown|xargs -n1 gh api --method=POST < endpoints.txt
 merge|gh api -q '1>0' -X PUT repos/o/r/pulls/1/merge
+merge|gh api -X PUT repos/o/r/pulls/1/merge>/dev/null
+release|gh api -X DELETE repos/o/r/git/refs/tags%2Fv1
+release|gh api -X POST repos/o/r/%72eleases -f tag_name=v9
+merge|gh api -X PUT repos/o/r/pulls/1%2Fmerge
+silent|gh api -X DELETE repos/o/r/git/refs/heads%2Fx
+release|gh api repos/o/r/releases -f tag_name=v9>/dev/null
 EOF
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
   e2e_expect_clean_edges
@@ -1174,6 +1260,98 @@ if _want tg-api-unreadable; then
   _expect_ask "may merge a pull request or create a release"
   _tg_run 'gh api "$EP"'
   _expect_silent_allow
+  e2e_expect_clean_edges
+fi
+
+# --- T31: a command on a shell's input, in a substitution, around 2>&1 ---------
+if _want tg-shell-input; then
+  _tg_setup tg-shell-input feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, tag v1.2.0 and branch v1-fix: a here-string a shell reads as its script (any spacing, a file descriptor before <<<, before the command word, through a pipe, escaped spaces) or one given to a program the hook does not know, a shell's -c argument inside a substitution, a backquote inside double quotes, and an action with 2>&1 or >&2 in the middle of it ask; the same text read by cat or grep, an escaped or single-quoted backquote, a branch push with 2>&1, and up to 16 quoted words after one program that name no Tier 3 action do not; a 17th quoted word that names one asks (T31)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix ) \
+    || _flow_assert_fail "tg-shell-input: could not create the tag and branch"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      maybe) _expect_ask "may push or delete a tag" ;;
+      unknown) _expect_ask "may merge a pull request or create a release" ;;
+      *) _expect_ask "is a Tier 3 action (tiers.$WANT)" ;;
+    esac
+  done <<'EOF'
+release|bash <<<'gh release create v9'
+release|bash <<< 'gh release create v9'
+release|sh <<<"git push --tags"
+merge|bash 0<<<'gh pr merge 1'
+merge|<<<'gh pr merge 1' bash
+merge|cat <<<'gh pr merge 1' | bash
+merge|bash <<<gh\ pr\ merge\ 1
+merge|bash -c gh\ pr\ merge\ 1
+merge|x=$(bash -c 'gh pr merge 1')
+release|x=$(sh -c "git push --tags")
+merge|y=`bash -c 'gh pr merge 1'`
+merge|x="`gh pr merge 1`"
+release|echo "v: `git push --tags`"
+merge|gh pr comment 1 --body "`gh pr merge 1`"
+silent|git commit -m "run \`gh pr merge 1\` later"
+silent|git commit -m 'run `gh pr merge 1` later'
+silent|cat <<<'gh pr merge 1'
+silent|grep -c merge <<<'gh pr merge 1'
+release|git push 2>&1 --tags
+release|git push origin 2>&1 v1.2.0
+release|git push origin >&2 v1.2.0
+release|gh release 2>&1 create v9
+release|gh api 2>&1 -X POST repos/o/r/releases -f tag_name=v9
+merge|gh api -X PUT 2>&1 repos/o/r/pulls/1/merge
+silent|git push -u origin HEAD 2>&1 | tail -3
+silent|git push origin v1-fix 2>&1 >/dev/null
+silent|git push origin 2>&1 v1-fix
+merge|script -q /dev/null <<<'gh pr merge 1'
+release|mytool 0<<<"git push --tags"
+silent|mytool <<<'gh pr view 1'
+silent|mytool 'gh pr view 1' 'gh pr view 2' 'gh pr view 3' 'gh pr view 4' 'gh pr view 5' 'gh pr view 6' 'gh pr view 7' 'gh pr view 8' 'gh pr view 9' 'gh pr view 10' 'gh pr view 11' 'gh pr view 12' 'gh pr view 13' 'gh pr view 14' 'gh pr view 15' 'gh pr view 16' 'gh pr view 17' 'gh pr view 18' 'gh pr view 19' 'gh pr view 20'
+unknown|mytool 'gh release view v1' 'gh release view v2' 'gh release view v3' 'gh release view v4' 'gh release view v5' 'gh release view v6' 'gh release view v7' 'gh release view v8' 'gh release view v9' 'gh release view v10' 'gh release view v11' 'gh release view v12' 'gh release view v13' 'gh release view v14' 'gh release view v15' 'gh release view v16' 'gh release view v17'
+merge|mytool 'gh pr view 1' 'gh pr view 2' 'gh pr view 3' 'gh pr view 4' 'gh pr view 5' 'gh pr view 6' 'gh pr view 7' 'gh pr view 8' 'gh pr view 9' 'gh pr view 10' 'gh pr view 11' 'gh pr view 12' 'gh pr view 13' 'gh pr view 14' 'gh pr view 15' 'gh pr view 16' 'gh pr merge 9'
+EOF
+  e2e_expect_clean_edges
+fi
+
+# --- T32: a cd into another worktree of the same repository ---------------------
+if _want tg-cd-worktree; then
+  _tg_setup tg-cd-worktree feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "a worktree ../wt of this repository (branch wt-branch), a separate repository ../other, tag v1.2.0: a cd into the worktree reads the push there as a branch push when it names its remote, asks when the remote is left to the branch's configuration or the worktree has its own configuration; a cd to \$(git rev-parse --show-toplevel) is a cd to the top of this repository; a cd to a variable, to another repository, or to any other substitution asks (T32)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix \
+      && git worktree add -q -b wt-branch "$E2E_DIR/wt" && git init -q "$E2E_DIR/other" ) >/dev/null 2>&1 \
+    || _flow_assert_fail "tg-cd-worktree: could not create the worktree"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      ask) _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)" ;;
+      maybe) _expect_ask "may push or delete a tag" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+  done <<'EOF'
+silent|cd ../wt && git push -u origin HEAD
+silent|cd ../wt && git push origin wt-branch
+silent|cd ../wt && gh pr create --title t --body b
+silent|git -C ../wt push -u origin HEAD
+ask|cd ../wt && git push origin v1.2.0
+maybe|cd ../wt && git push
+maybe|cd ../other && git push -u origin HEAD
+silent|cd "$(git rev-parse --show-toplevel)" && git push -u origin HEAD
+silent|cd "$(git rev-parse --show-toplevel)" && git push
+silent|cd $(git rev-parse --show-toplevel) && git push origin v1-fix
+silent|cd "`git rev-parse --show-toplevel`" && git push origin v1-fix
+maybe|cd "$(git rev-parse --show-toplevel)/sub" && git push origin v1-fix
+maybe|cd "$(git -C ../other rev-parse --show-toplevel)" && git push origin v1-fix
+maybe|cd "$(git rev-parse --show-toplevel)" && cd .. && git push origin v1-fix
+maybe|cd $REPO_ROOT && git push origin v1-fix
+EOF
+  # A worktree with configuration of its own may push tags where this one
+  # does not.
+  ( _e2e_git_env; git -C "$E2E_REPO" config extensions.worktreeConfig true ) >/dev/null 2>&1 \
+    || _flow_assert_fail "tg-cd-worktree: could not set extensions.worktreeConfig"
+  _tg_run 'cd ../wt && git push -u origin HEAD'
+  _expect_ask "may push or delete a tag"
   e2e_expect_clean_edges
 fi
 
@@ -1359,8 +1537,27 @@ if _want tg-parser-fails; then
   e2e_plugin_copy hooks/scripts/lib/command-parse.sh '_bd_strip_noncode() { echo "BLOCKED: could not scan the command (awk failed)" >&2; exit 2; }
 _bd_segments() { :; }
 _bd_expand_interpreter_args() { :; }
-_rm_tokenise() { TOK=(); }
-_bd_unescape_tok() { :; }
+_bd_words() { TOK=(); TOKE=(); BD_HSTR=(); }
+_bd_is_interpreter() { return 1; }
+_bd_is_opt() { return 1; }
+_BD_SEG_AWK=x'
+  _tg_run 'gh pr merge 7 --repo o/r --squash'
+  _expect_ask "tiers.merge"
+  _tg_run 'git push'
+  _expect_silent_allow
+  e2e_expect_err "could not read the command (the command parser failed)"
+  e2e_expect_err_lacks "BLOCKED"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-parser-words-fails; then
+  _tg_setup tg-parser-words-fails feature/issue-42-x '{"tiers":{"push":"confirm"}}' \
+    "the command parser fails while splitting a simple command into words (it exits 2, as it does when awk fails): gh pr merge asks, git push is allowed with one stderr line and no BLOCKED text (T11)"
+  e2e_plugin_copy hooks/scripts/lib/command-parse.sh '_bd_strip_noncode() { BD_CODE="$1"; BD_KEPT_BODY=0; }
+_bd_segments() { printf "%s\n" "$1"; }
+_bd_expand_interpreter_args() { :; }
+_bd_words() { echo "BLOCKED: could not split a command into words (awk failed)" >&2; exit 2; }
+_bd_is_interpreter() { return 1; }
 _bd_is_opt() { return 1; }
 _BD_SEG_AWK=x'
   _tg_run 'gh pr merge 7 --repo o/r --squash'

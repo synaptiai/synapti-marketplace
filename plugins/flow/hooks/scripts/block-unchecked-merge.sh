@@ -224,6 +224,12 @@ _bum_subwords() {
     t="${TOK[j]}"
     if _bum_takes_value "$t"; then j=$((j + 2)); continue; fi
     case "$t" in -*) j=$((j + 1)); continue ;; esac
+    # A redirection between the words (`gh pr 2>&1 merge 7`) is not one of
+    # them; a bare operator takes the next word as its target.
+    case "$t" in
+      '>'|'>>'|'<'|'<<<'|[0-9]'>'|[0-9]'>>'|[0-9]'<') j=$((j + 2)); continue ;;
+    esac
+    if _bd_is_redirection "$t"; then j=$((j + 1)); continue; fi
     SUB+=("$t")
     j=$((j + 1))
   done
