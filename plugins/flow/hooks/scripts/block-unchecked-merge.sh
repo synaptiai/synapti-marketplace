@@ -392,8 +392,8 @@ while IFS= read -r SEG; do
   # substitutions removed (_bd_segments). PREV_MERGE=1: that segment was
   # already read as a merge.
   SEG_ALT=0
-  case "$SEG" in __BD_ALT__*) SEG_ALT=1; SEG="${SEG#__BD_ALT__}" ;; *) PREV_MERGE=0 ;; esac
-  SEG="${SEG#__BD_PIPE__}"
+  case "$SEG" in __BD_ALT__*) SEG_ALT=1; SEG="${SEG:10}" ;; *) PREV_MERGE=0 ;; esac
+  case "$SEG" in __BD_PIPE__*) SEG="${SEG:11}" ;; esac
   # The words as bash passes them to the program (_bd_words, the reader every
   # hook shares): `g\h pr mer\ge 7` runs gh pr merge 7, `$"merge"` is merge,
   # and a redirection is set aside wherever it stands, with or without a space

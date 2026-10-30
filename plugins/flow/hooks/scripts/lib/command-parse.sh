@@ -281,7 +281,7 @@ _bd_words() {
 # generous — `cat <<EOF | bash` keeps the body too. Examining something harmless
 # costs a comparison; skipping something real costs the tree.
 #
-# Quoting, word splitting and redirections are left to _rm_tokenise below.
+# Quoting, word splitting and redirections are left to _bd_words above.
 # ---------------------------------------------------------------------------
 # Does this word name something that will run a script handed to it? Used for
 # the quoted-argument expansion below, not for heredoc stripping — the heredoc
@@ -289,8 +289,9 @@ _bd_words() {
 # with a much shorter list, because there "keep" is the safe default and here
 # "examine" is.
 _bd_is_interpreter() {
+  _bd_is_shell "$1" && return 0
   case "${1##*/}" in
-    sh|bash|zsh|ksh|dash|ash|busybox|python|python2|python3|perl|ruby|node|deno|bun)
+    python|python2|python3|perl|ruby|node|deno|bun)
       return 0 ;;
     eval|source|.|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at)
       return 0 ;;
@@ -298,9 +299,27 @@ _bd_is_interpreter() {
   return 1
 }
 
+# The shells, the one list every reader of a command uses: _bd_is_shell,
+# _bd_shell_reads_stdin, _bd_is_interpreter, and the piped-into-a-shell pass
+# of _bd_expand_interpreter_args (_BD_SHELL_RE).
+_BD_SHELLS="sh bash zsh ksh dash ash mksh busybox"
+_BD_SHELL_RE="(^|[^A-Za-z0-9_.-])(${_BD_SHELLS// /|})([^A-Za-z0-9_.-]|\$)"
+
+# _bd_is_shell <word>
+# Is the word a shell, in any case (a case-insensitive filesystem runs
+# `BASH`) and with any directory?
+_bd_is_shell() {
+  local b="${1##*/}" r=1 nc=0
+  case "$b" in ''|*[[:space:]]*) return 1 ;; esac
+  shopt -q nocasematch && nc=1
+  shopt -s nocasematch
+  case " $_BD_SHELLS " in *" $b "*) r=0 ;; esac
+  [ "$nc" = 1 ] || shopt -u nocasematch
+  return "$r"
+}
+
 # _bd_shell_reads_stdin <index>
-# Is TOK[index] a shell (sh, bash, zsh, ksh, dash, ash, mksh, in any case and
-# with any directory) that reads its script from its input? It does when it
+# Is TOK[index] a shell (_bd_is_shell) that reads its script from its input? It does when it
 # is given neither -c nor a script file: `bash`, `bash -s arg`, `sh -x`,
 # `bash --`, `sh -`. Its options are read as the shell reads them: c or s
 # anywhere in a bundle of short options (`-xc`, `-es`), -o and -O (and +o,
@@ -310,10 +329,7 @@ _bd_shell_reads_stdin() {
   local i="$1" n=${#TOK[@]} t
   [ "$i" -lt "$n" ] || return 1
   [ "${#TOK[i]}" -le 4096 ] || return 1
-  case "${TOK[i]##*/}" in
-    [Ss][Hh]|[Bb][Aa][Ss][Hh]|[Zz][Ss][Hh]|[Kk][Ss][Hh]|[Dd][Aa][Ss][Hh]|[Aa][Ss][Hh]|[Mm][Kk][Ss][Hh]) ;;
-    *) return 1 ;;
-  esac
+  _bd_is_shell "${TOK[i]}" || return 1
   i=$((i + 1))
   while [ "$i" -lt "$n" ]; do
     t="${TOK[i]}"
@@ -634,8 +650,12 @@ _BD_SEG_AWK='
     # _bd_segments). A marker that is a whole word, or the whole of a
     # double-quoted word, hides nothing and stays: `git checkout "$(x)"` has
     # no second reading.
-    function emit(s,   t, u, pre, post, a, b, keep, cut) {
-      print s
+    # With mark=1 a simple command a pipe feeds (after `|` or `|&`, not `||`)
+    # starts with `__BD_PIPE__`, and so does its second reading.
+    function emit(s,   t, u, pre, post, a, b, keep, cut, p) {
+      p = (mark == 1 && pipe[depth]) ? "__BD_PIPE__" : ""
+      pipe[depth] = 0
+      print p s
       if (alt != 1 || !index(s, "__BD_SUBST__")) return
       t = s; u = ""; cut = 0
       while (match(t, /__BD_SUBST__/)) {
@@ -652,7 +672,7 @@ _BD_SEG_AWK='
         t = post
       }
       u = u t
-      if (cut && u ~ /[^ \t]/) print ((mark == 1) ? "__BD_ALT__" : "") u
+      if (cut && u ~ /[^ \t]/) print ((mark == 1) ? "__BD_ALT__" : "") p u
     }
     function flush(   i) {
       if (buf[depth] != "") { emit(buf[depth]); buf[depth] = "" }
@@ -682,12 +702,12 @@ _BD_SEG_AWK='
           # `$(` re-opens code inside a double-quoted string, and so does a
           # backquote: `x="`gh pr merge 1`"` runs the merge.
           if (q[depth] == "\"" && c == "$" && substr(line, i + 1, 1) == "(") {
-            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0
+            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0; pipe[depth] = 0
             i++
             continue
           }
           if (q[depth] == "\"" && c == "`") {
-            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1
+            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1; pipe[depth] = 0
             continue
           }
           buf[depth] = buf[depth] c
@@ -702,13 +722,13 @@ _BD_SEG_AWK='
         if (c == "\"" || c == SQ) { q[depth] = c; buf[depth] = buf[depth] c; continue }
 
         if (c == "$" && substr(line, i + 1, 1) == "(") {
-          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0
+          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0; pipe[depth] = 0
           i++
           continue
         }
         if (c == "`") {
           if (depth > 0 && tick[depth]) { flush(); depth--; buf[depth] = buf[depth] "__BD_SUBST__"; continue }
-          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1
+          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1; pipe[depth] = 0
           continue
         }
         if (c == ")") {
@@ -733,7 +753,17 @@ _BD_SEG_AWK='
         # A | right after an unquoted > is the clobber redirection >|, not a
         # pipe: splitting `gh pr >| log merge 7` there hid the merge.
         if (c == "|" && pra && substr(line, i - 1, 1) == ">") { buf[depth] = buf[depth] c; continue }
-        if (c == ";" || c == "|" || c == "&") { flush(); continue }
+        # `||` and `|&`: one operator each. A pipe (`|`, `|&`) feeds the next
+        # simple command; `;`, `&`, `&&` and `||` do not.
+        if (c == "|") {
+          flush()
+          d = substr(line, i + 1, 1)
+          if (d == "|") { i++; pipe[depth] = 0; continue }
+          if (d == "&") i++
+          pipe[depth] = 1
+          continue
+        }
+        if (c == ";" || c == "&") { flush(); pipe[depth] = 0; continue }
 
         buf[depth] = buf[depth] c
         ra = (c == "<" || c == ">")
@@ -810,12 +840,24 @@ BD_EXPAND_EOF
   # segments do not say whether a `|` or a `;` stood between the two, so a
   # shell with no script after `;` costs the same reading; that is only a
   # second look at text, never a missed one.
+  # Started only when a shell's name is a whole word somewhere after a `|`
+  # (_BD_SHELL_RE, any case): this pass segments the whole text again, and a
+  # long text piped into tee or grep that holds the letters sh (push,
+  # should) paid for it on every call.
+  local nc=0 piped=0
   case "$BD_CODE" in
-    *'|'*[Ss][Hh]*)
+    *'|'*)
+      shopt -q nocasematch && nc=1
+      shopt -s nocasematch
+      [[ "${BD_CODE#*|}" =~ $_BD_SHELL_RE ]] && piped=1
+      [ "$nc" = 1 ] || shopt -u nocasematch ;;
+  esac
+  case "$piped" in
+    1)
       prev=""
       while IFS= read -r seg; do
         case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
-        seg="${seg#__BD_ALT__}"; seg="${seg#__BD_PIPE__}"
+        case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
         _bd_words "$seg"
         n=${#TOK[@]}
         # The shell is the command word: past assignments, and past the

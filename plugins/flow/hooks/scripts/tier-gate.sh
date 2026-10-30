@@ -1499,7 +1499,7 @@ _tg_scan() {   # $1 = index of the command word
           [Gg][Hh]) out=$(_tg_gh "$k") ;;
           [Gg][Ii][Tt]) out=$(_tg_git "$k") ;;
           *)
-            if [ "$k" -gt "$1" ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$k"; then
+            if [ "$k" -gt "$1" ] && [ "${TG_PIPED:-0}" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$k"; then
               _tg_emit shell "$k"; continue
             fi
             [ "$k" = "$1" ] || continue
@@ -1512,9 +1512,10 @@ _tg_scan() {   # $1 = index of the command word
   # The words joined, as ssh, watch or `sudo -s` hand them to a shell. Not
   # after a shell or a language's own interpreter: `bash -c '...' a b` runs
   # its one script, already read as a command, with a and b as arguments.
-  [ "${#TOK[$1]}" -le 4096 ] && case "${TOK[$1]##*/}" in
-    sh|bash|zsh|ksh|dash|ash|mksh|busybox|python|python[23]|perl|ruby|node|deno|bun) join=0 ;;
-  esac
+  if [ "${#TOK[$1]}" -le 4096 ]; then
+    _bd_is_shell "${TOK[$1]}" && join=0
+    case "${TOK[$1]##*/}" in python|python[23]|perl|ruby|node|deno|bun) join=0 ;; esac
+  fi
   if [ "$join" = 1 ]; then
     for ((k = $1; k < n; k++)); do joined="$joined${joined:+ }${TOK[k]}"; done
     if _tg_may_run "$joined"; then
@@ -1872,7 +1873,7 @@ _tg_state_prescan() {   # $1 = the segments
   local seg
   while IFS= read -r seg; do
     case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
-    seg="${seg#__BD_ALT__}"; seg="${seg#__BD_PIPE__}"
+    case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
     case "$seg" in
       *eval*|*source*|*exec*|*alias*|*hash*|*enable*|*trap*|*declare*|*typeset*|*local*|\
       *'$'*|*'`'*|*__BD_SUBST__*|*[\'\"\\]*|.|.[[:space:]]*|*[[:space:]].|*[[:space:]].[[:space:]]*) ;;
@@ -1992,7 +1993,7 @@ _tg_config_prescan() {   # $1 = the text, $2 = 1 to leave out git push -u
   segs=$(_bd_segments "$1")
   while IFS= read -r seg; do
     case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
-    seg="${seg#__BD_ALT__}"; seg="${seg#__BD_PIPE__}"
+    case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
     _bd_words "$seg"
     n=${#TOK[@]}
     TG_RDIR=(${BD_RDIR[@]+"${BD_RDIR[@]}"})
@@ -2016,6 +2017,9 @@ TG_PRESCAN_EOF
 # changes for the simple commands after it (pend, gpend, bpend, its caller's).
 _tg_read_seg() {   # $1 = the segment
   local seg="$1"
+  # TG_PIPED=1: a pipe feeds this simple command (_bd_segments).
+  TG_PIPED=0
+  case "$seg" in __BD_PIPE__*) TG_PIPED=1; seg="${seg:11}" ;; esac
   [ -z "$seg" ] && return 0
   case "$seg" in __BD_UNBALANCED__) return 0 ;; esac
   # Every comparison below is on the words as bash passes them to the
@@ -2066,8 +2070,9 @@ _tg_read_seg() {   # $1 = the segment
   esac
   # A shell that reads its script from a pipe (`echo '...' | bash`) runs
   # text this hook cannot read; with the input redirected it reads a
-  # here-string or a heredoc, which is read as commands, or a file.
-  if [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$TG_I"; then _tg_emit shell "$TG_I"; return 0; fi
+  # here-string or a heredoc, which is read as commands, or a file. A shell
+  # no pipe feeds (`which bash`, `x; bash`) reads nothing this command wrote.
+  if [ "$TG_PIPED" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$TG_I"; then _tg_emit shell "$TG_I"; return 0; fi
   # eval of text this hook cannot read (`eval "$CMD"`, `eval "$(...)"`), and
   # source or . of no file, of stdin with no here-string, or of a file named
   # by a variable (`. <(...)`, `cmd | source /dev/stdin`), run commands it
@@ -2158,7 +2163,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     # substitution and has already counted it as unreadable where that asks.
     case "$seg" in
       __BD_ALT__*)
-        t=$(_tg_read_seg "${seg#__BD_ALT__}")
+        t=$(_tg_read_seg "${seg:10}")
         [ -n "$t" ] && _tg_tier3 "$t"
         continue ;;
     esac

@@ -479,6 +479,8 @@ for CMD in \
 done
 _bum_run "$G" 'gh pr merge 7 --repo acme/widgets --squash --body "$(cat notes.md)"'
 assert_exit 0 "$?" "a merge with a substitution as its --body, on a green pull request, is allowed"
+_bum_run "$G" 'gh pr merge 7 --repo acme/widgets --squash --subject "Release $(date +%F)"'
+assert_exit 0 "$?" "a merge with a substitution inside its --subject, on a green pull request, is allowed"
 
 # bash removes a backslash inside a word before running it, so each of these is
 # gh pr merge: on a queued pull request each is refused, and on a green one the

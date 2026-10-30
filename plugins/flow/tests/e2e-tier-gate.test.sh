@@ -1573,6 +1573,40 @@ EOF
   e2e_expect_clean_edges
 fi
 
+# A shell asks as one that reads its script from its input only when a pipe
+# feeds it; named as an argument (`which bash`) it runs nothing.
+if _want tg-shell-argument; then
+  _tg_setup tg-shell-argument feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, branch v1-fix: a shell named as an argument (which, command -v, type, ls, file, docker run, direnv export) or after || is silent; a shell a pipe feeds (|, |&, through sudo or an unknown program) asks (T33)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix ) || _flow_assert_fail "tg-shell-argument: could not create the branch"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      shell) _expect_ask "reads its script from its input"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+silent|which bash && gh pr view 1
+silent|command -v bash && gh pr list
+silent|type bash; gh pr list
+silent|ls /bin/sh && gh pr list
+silent|file /bin/bash && gh pr list
+silent|docker run --rm img bash && gh pr list
+silent|direnv export bash && gh pr view 1
+silent|x=$(direnv export bash) && gh pr view 1
+silent|docker compose run app sh && git push origin v1-fix
+silent|gh pr view 1 || bash
+shell|echo x | sudo bash; gh pr list
+shell|cat f | sh -s; gh pr list
+shell|echo x |& bash; gh pr list
+shell|gh pr view 1 | tee log | bash
+shell|echo x | docker run -i img bash; gh pr list
+EOF
+  _tg_run "$(printf 'gh pr view 1 |\nbash')"
+  _expect_ask "reads its script from its input"
+  e2e_expect_clean_edges
+fi
+
 # --- T8, T9: where the journal line goes ----------------------------------------
 if _want tg-journal-session; then
   _tg_setup tg-journal-session feature/no-number '{"tiers":{"push":"journal"}}' \
