@@ -482,6 +482,31 @@ assert_exit 0 "$?" "a merge with a substitution as its --body, on a green pull r
 _bum_run "$G" 'gh pr merge 7 --repo acme/widgets --squash --subject "Release $(date +%F)"'
 assert_exit 0 "$?" "a merge with a substitution inside its --subject, on a green pull request, is allowed"
 
+# bash splits an unquoted ${...} that holds whitespace into words, so a merge
+# inside its default is a gh whose name is a parameter expansion: refused on
+# a green pull request too.
+_flow_test_begin "a merge inside an unquoted \${...} default is read"
+G=$(_bum_stub "$GREEN" "" "")
+for CMD in \
+  '${X:-gh pr merge 7}' \
+  '${X:-gh pr merge 7 --repo acme/widgets --squash}' \
+  '${X:-gh} pr merge 7 --repo acme/widgets --squash'; do
+  _bum_run "$G" "$CMD"
+  assert_exit 2 "$?" "refused on a green pull request: $CMD"
+done
+
+# Text printed into a pipe or a process substitution that a shell reads is a
+# command, wherever the shell stands in the command.
+_flow_test_begin "a merge piped into a shell in a group or subshell is checked"
+S=$(_bum_stub "$QUEUED" "" "")
+for CMD in \
+  "echo 'gh pr merge 7 --repo acme/widgets --squash' | { :; bash; }" \
+  "echo 'gh pr merge 7 --repo acme/widgets --squash' | (bash)" \
+  "echo 'gh pr merge 7 --repo acme/widgets --squash' > >(bash)"; do
+  _bum_run "$S" "$CMD"
+  assert_exit 2 "$?" "refused on a queued pull request: $CMD"
+done
+
 # bash removes a backslash inside a word before running it, so each of these is
 # gh pr merge: on a queued pull request each is refused, and on a green one the
 # same spelling merges, so it was read as the merge and not refused for its shape.

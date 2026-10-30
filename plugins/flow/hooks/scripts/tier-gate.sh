@@ -126,7 +126,9 @@
 # --global, --file, `set`, --add, --unset, a key given as a variable, or -e),
 # or renames or removes one of those sections, with or without a subsection
 # (`--rename-section x push`, `rename-section`); a `git remote add`,
-# `set-url` or `rename` (`--mirror=push`); under xargs, which appends words
+# `set-url` or `rename` (`--mirror=push`); a moved or copied branch (`git
+# branch -m`, `-M`, `-c`, `-C`, `--move`, `--copy`), which carries its
+# configuration to a name a later push may send; under xargs, which appends words
 # this hook cannot see, a git config that is not a read, a git remote that
 # is not show or get-url, a git branch, a git push, or a git with no
 # subcommand; a git whose subcommand is a variable; and a write to a file
@@ -134,9 +136,8 @@
 # as `>> .git/config`, or an argument of a program that does not only print
 # or search it: `cp ../other/.git/config .git/config`, `tee -a .git/config`,
 # `ln -s ../other/.git .git`). An upstream or tracking change (`git branch
-# -u`, `--set-upstream-to`, `--unset-upstream`, `-t`/`--track`, a moved or
-# copied branch, `git checkout -b <name> <start>`, `-t`/`--track` on
-# checkout or switch, `git push -u`) writes only the branch's own keys, so
+# -u`, `--set-upstream-to`, `--unset-upstream`, `-t`/`--track`, `git
+# checkout -b <name> <start>`, `-t`/`--track` on checkout or switch, `git push -u`) writes only the branch's own keys, so
 # it makes a later push that names no remote or no refspec ask. A git
 # checkout or switch that may change the branch (not `git checkout --
 # <paths>`), or a git symbolic-ref of HEAD, makes a later push that names
@@ -254,17 +255,21 @@
 #     source or . of stdin or of a process
 #     substitution (`. <(...)`), or a command word
 #     that is a variable with nothing after it
-#     (`$CMD`, `""$CMD`, `${CMD%/}`; not a word that
-#     is one quoted string, `"$CMD"`, one program
-#     name; not one with a / outside ${...},
+#     (`$CMD`, `""$CMD`, `${CMD%/}`, `"$@"`,
+#     `"${A[@]}"`; not a word that is one quoted
+#     string, `"$CMD"`, one program name; not one
+#     with a / outside ${...},
 #     `"$ROOT/bin/x.sh"`, a file; not a line of a
 #     heredoc body read by a program other than a
 #     shell that is not also a command outside it)
-#   a shell a pipe feeds, reading its script from it  -> "ask": it may merge or release
-#     (`echo '...' | bash`, `| sh -s`, `| sudo bash`,
-#     `| xargs bash`): no -c, no script file, and no
-#     here-string, heredoc or < on it; a shell no
-#     pipe feeds (`which bash`) is an argument
+#   a shell that reads its script from its input,     -> "ask": it may merge or release
+#     in a command with a pipe or a process
+#     substitution anywhere (`echo '...' | bash`,
+#     `| sh -s`, `| sudo bash`, `| xargs bash`,
+#     `| { :; bash; }`, `> >(bash)`): no -c, no
+#     script file, and no here-string, heredoc or <
+#     on it; in a command with neither (`which bash`,
+#     `x || bash`) it is not read as fed
 #   a push whose refspec, remote or option is a       -> "ask": it may push or delete a tag
 #     variable or a substitution (or left to xargs),
 #     whose source is not a local branch, a forced
@@ -352,10 +357,11 @@
 # create v9`; not after a shell or a language's interpreter (`bash -c '...'
 # a b` runs only its script, which is read already). At most 16 such readings are made per simple command, and one
 # more asks as an unreadable gh call. A shell among the words that reads its
-# script from a pipe asks. A command word that is a variable or a
+# script from its input asks when the command has a pipe or a process
+# substitution anywhere. A command word that is a variable or a
 # substitution (`$GH pr merge 7`) is read as possibly gh or git for the same
-# Tier 3 actions, and with nothing after it (`$CMD`) asks unless it is one
-# quoted string, when the command gets past the cheap reject below (its text
+# Tier 3 actions, and with nothing after it (`$CMD`, `"${A[@]}"`) asks unless
+# it is one quoted string that expands to one word, when the command gets past the cheap reject below (its text
 # names gh, push, merge or release somewhere). A
 # substitution is one word with the text around it (`D=$(gh repo view)` is an
 # assignment, and the gh in it is read as a command of its own). Programs that
@@ -564,15 +570,20 @@ TG_BODY_EOF
 # "NAME=\${$NAME:-DEFAULT}"`, with DEFAULT made only of letters, digits and
 # _ . , / @ % + - (nothing the shell reads specially)? eval then assigns the
 # value of the variable NAME names and runs nothing (unless that variable
-# holds shell text rather than a name: not covered). Any other text after
-# eval may be commands.
+# holds shell text rather than a name: not covered). Redirections after it
+# to a target written out (`>/dev/null`, `2>&1`) are allowed; any other text
+# after eval may be commands.
 _tg_eval_read_by_name() {   # $1 = the simple command's text
   local t="$1" re
   # A substitution, which the parser has replaced by its marker, inserts
   # text this hook cannot read.
   case "$t" in *__BD_SUBST__*) return 1 ;; esac
+  local rd='^(.*[^[:space:]])[[:space:]]+[0-9]*(>>?|&>>?|<)[[:space:]]*([A-Za-z0-9_./@%+-]+|&[0-9]+|&-)$'
   re='^eval[[:space:]]+"[A-Za-z_][A-Za-z0-9_]*=\\\$\{\$[A-Za-z_][A-Za-z0-9_]*(:-[A-Za-z0-9_.,/@%+-]*)?\}"$'
   t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+  # Redirections after it to a target written out (`>/dev/null`, `2>&1`)
+  # change where its output goes, not what it runs.
+  while [[ $t =~ $rd ]]; do t="${BASH_REMATCH[1]}"; done
   [[ $t =~ $re ]]
 }
 
@@ -1534,7 +1545,8 @@ _tg_scan() {   # $1 = index of the command word
     # word splitting turns into a program and its arguments. Not when the
     # word is one quoted string (`"$CMD"` is one program name, and a quoted
     # case pattern such as `"git@github.com:$R")` is left as a segment of its
-    # own; `""$CMD` and `"$A"$B` are split), and not when it has a / of its
+    # own; `""$CMD` and `"$A"$B` are split, and `"$@"` and `"${A[@]}"` expand
+    # to one word per element: TOKQ, _bd_words), and not when it has a / of its
     # own outside ${...}: it names a file to run (`"$ROOT/bin/x.sh"`; not
     # `${CMD%/}`). Nor when it is a line of a heredoc body that a program
     # other than a shell reads, such as `$PATHS` in `while read -r p; do ...;
@@ -1743,9 +1755,10 @@ _tg_set_names() {
 # read, or the editor; --rename-section and --remove-section (or the
 # subcommands) naming one of those sections, with or without a subsection
 # (`git config --rename-section x push`); `git remote add`, `set-url` or
-# `rename`, which create or move a remote (`--mirror=push`); an upstream or
-# tracking change: `git branch -u`, `--set-upstream-to`, `--unset-upstream`,
-# `-t`/`--track`, a moved or copied branch (-m, -M, -c, -C), `git checkout -b
+# `rename`, which create or move a remote (`--mirror=push`); a moved or
+# copied branch (`git branch -m`, -M, -c, -C, --move, --copy); an upstream
+# or tracking change: `git branch -u`, `--set-upstream-to`,
+# `--unset-upstream`, `-t`/`--track`, `git checkout -b
 # <name> <start>` (a remote-tracking start sets the upstream), `-t`/`--track`
 # on checkout or switch, `git push -u` (not counted with $2 = 1: it changes
 # only the pushes after it); and, under xargs, which appends words this hook
@@ -1817,10 +1830,17 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
         case "$t" in
           --) break ;;
           --*)
-            for c in --set-upstream-to:--set-u --unset-upstream:--uns --track:--tr --no-track:--no-t --move:--mov --copy:--cop; do
+            for c in --set-upstream-to:--set-u --unset-upstream:--uns --track:--tr --no-track:--no-t; do
               _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && up=1
+            done
+            # A moved or copied branch takes the old one's configuration,
+            # under a name a later push may send: a change of configuration.
+            for c in --move:--mov --copy:--cop; do
+              _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && hit=1
             done ;;
-          -?*) case "${t#-}" in *[utmMcC]*) up=1 ;; esac ;;
+          -?*)
+            case "${t#-}" in *[ut]*) up=1 ;; esac
+            case "${t#-}" in *[mMcC]*) hit=1 ;; esac ;;
         esac
       done ;;
     checkout|switch)
@@ -2102,8 +2122,10 @@ TG_PRESCAN_EOF
 # changes for the simple commands after it (pend, gpend, bpend, its caller's).
 _tg_read_seg() {   # $1 = the segment
   local seg="$1"
-  # TG_PIPED=1: a pipe feeds this simple command (_bd_segments).
-  TG_PIPED=0
+  # TG_PIPED=1: the command has a pipe or a process substitution anywhere
+  # (TG_ANYPIPE, _tg_read_text), so a shell in this simple command that reads
+  # its input may be reading text this hook cannot see.
+  TG_PIPED="${TG_ANYPIPE:-0}"
   case "$seg" in __BD_PIPE__*) TG_PIPED=1; seg="${seg:11}" ;; esac
   [ -z "$seg" ] && return 0
   case "$seg" in __BD_UNBALANCED__) return 0 ;; esac
@@ -2155,10 +2177,12 @@ _tg_read_seg() {   # $1 = the segment
       [ "$TG_PB" = 1 ] && bpend=1
       [ "$TG_UPW" = 1 ] && upend=1 ;;
   esac
-  # A shell that reads its script from a pipe (`echo '...' | bash`) runs
-  # text this hook cannot read; with the input redirected it reads a
-  # here-string or a heredoc, which is read as commands, or a file. A shell
-  # no pipe feeds (`which bash`, `x; bash`) reads nothing this command wrote.
+  # A shell that reads its script from its input, in a command with a pipe
+  # or a process substitution anywhere (`echo '...' | bash`, `echo '...' |
+  # { :; bash; }`, `> >(bash)`), may run text this hook cannot read; with the
+  # input redirected it reads a here-string or a heredoc, which is read as
+  # commands, or a file. In a command with neither (`which bash`, `x ||
+  # bash`) it reads nothing this command wrote.
   if [ "$TG_PIPED" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$TG_I"; then _tg_emit shell "$TG_I"; return 0; fi
   # eval of text this hook cannot read (`eval "$CMD"`, `eval "$(...)"`), and
   # source or . of no file, of stdin with no here-string, or of a file named
@@ -2232,6 +2256,10 @@ _tg_read_text() {   # $1 = the text, $2 = depth
   # eval, source, exec and the rest anywhere in the text: from its start,
   # the directory, the environment and git's configuration are unreadable.
   _tg_state_prescan "$segs"
+  # A pipe or a process substitution anywhere in the text (a simple command
+  # marked __BD_PIPE__ by _bd_segments): a shell in it that reads its script
+  # from its input may be reading what that pipe carries (TG_PIPED).
+  case "$segs" in *__BD_PIPE__*) TG_ANYPIPE=1 ;; esac
   while IFS= read -r seg; do
     # pend: an earlier simple command changed directory or set GH_REPO or
     # GH_HOST, so a later gh may act on another repository (TG_GHMOVED).
@@ -2260,7 +2288,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
 
 # Every action the command names.
 _tg_actions() {
-  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_UPSTREAM=0; TG_CDBASE="$CWD"; TG_CURW=""
+  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_UPSTREAM=0; TG_ANYPIPE=0; TG_CDBASE="$CWD"; TG_CURW=""
   _tg_read_text "$COMMAND" 0
 }
 

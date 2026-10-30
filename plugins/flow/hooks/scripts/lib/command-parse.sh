@@ -151,7 +151,11 @@ _rm_tokenise() {
 #   - an unquoted ;, |, &, (, ) or backquote ends a word, so a whole line can
 #     be read too (`x=$(bash` is the words `x=$` and `bash`).
 #   - a parameter expansion `${...}` is one piece of its word up to its
-#     closing brace, spaces and all, as bash reads it (`${CMD//_/ }`).
+#     closing brace, spaces and all, as bash reads it (`${CMD//_/ }`). With
+#     BD_SPLIT_EXP=1, an unquoted one that holds whitespace is read character
+#     by character instead, so its pieces are words of their own, as bash's
+#     word splitting makes the expansion (`rm ${X:- -rf} src` is rm -rf src);
+#     inside double quotes it stays one word.
 # Text with none of the characters that need this is split by the shell
 # builtin, with no subprocess. An awk that fails refuses the command (exit 2),
 # as _rm_tokenise does.
@@ -168,14 +172,16 @@ _bd_words() {
       done
       return 0 ;;
   esac
-  if ! _w_out=$(printf '%s' "$1" | LC_ALL=C awk '
+  if ! _w_out=$(printf '%s' "$1" | LC_ALL=C awk -v splitexp="${BD_SPLIT_EXP:-0}" '
     # qs=1 while the word is one quoted string and nothing else: `"$CMD"`,
-    # not `""$CMD` or `"$A"$B`.
+    # not `""$CMD` or `"$A"$B`, and not one that expands to several words
+    # however it is quoted (`"$@"`, `"${@:2}"`, `"${A[@]}"`, `"${!A[@]}"`).
     function emit() {
       if (!inw) return
+      if (qs && (index(cur, "$@") || cur ~ /[$][{][^}]*@/)) qs = 0
       gsub(/\n/, RSN, cur)
       if (pend == "H" || pend == "I" || pend == "R") print pend cur
-      else if (pend == "") print "W" ((xp || index(cur, "__BD_SUBST__")) ? 1 : 0) (qs ? 1 : 0) cur
+      else if (pend == "") print "W" ((xp || inexp || index(cur, "__BD_SUBST__")) ? 1 : 0) (qs ? 1 : 0) cur
       cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0
     }
     # Does the quote at i open a dollar-quoted string? Only when the character
@@ -189,9 +195,12 @@ _bd_words() {
     BEGIN { SQ = sprintf("%c", 39); RSN = sprintf("%c", 30); s = "" }
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
-      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0
+      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0; inexp = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
+        # The closing brace of a ${...} read in pieces (splitexp=1, below)
+        # ends the expansion and is no part of the last piece.
+        if (c == "}" && (i in cb)) { delete cb[i]; inexp = 0; continue }
         if (c == " " || c == "\t" || c == "\r" || c == "\n") { emit(); continue }
         if (c == "\\") {
           qs = 0
@@ -254,7 +263,12 @@ _bd_words() {
         }
         if (c == ";" || c == "|" || c == "&" || c == "(" || c == ")" || c == "`") { emit(); pend = ""; continue }
         # ${...}: to its closing brace, nested ${...} counted; one with no
-        # closing brace is read character by character as before.
+        # closing brace is read character by character. With splitexp=1 one
+        # that holds whitespace is read in pieces, the words bash may split
+        # it into: `${NAME:-` (or :+ := :? - + = ?) as a word of its own,
+        # then the words of the rest up to the closing brace, which is
+        # dropped (`${X:- -rf}` is `${X:-` and `-rf`). Each piece is flagged
+        # as an expansion (inexp).
         if (c == "$" && substr(s, i + 1, 1) == "{") {
           d = 1
           for (k = i + 2; k <= n && d > 0; k++) {
@@ -262,7 +276,13 @@ _bd_words() {
             if (e == "$" && substr(s, k + 1, 1) == "{") { d++; k++ }
             else if (e == "}") d--
           }
-          if (d == 0) { cur = cur substr(s, i, k - i); inw = 1; qs = 0; xp = 1; i = k - 1; continue }
+          if (d == 0 && splitexp == 1 && substr(s, i, k - i) ~ /[ \t\r\n]/) {
+            cb[k - 1] = 1; inexp = 1; xp = 1
+            if (match(substr(s, i, k - i), /^[$][{][!#]?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?:?[-+=?]/)) {
+              cur = cur substr(s, i, RLENGTH); inw = 1; qs = 0; emit(); i = i + RLENGTH - 1; continue
+            }
+          }
+          else if (d == 0) { cur = cur substr(s, i, k - i); inw = 1; qs = 0; xp = 1; i = k - 1; continue }
         }
         if (c == "$" && substr(s, i + 1, 1) ~ /[A-Za-z_{(0-9@*#?$!-]/) xp = 1
         cur = cur c; inw = 1; qs = 0
@@ -577,6 +597,29 @@ _bd_strip_noncode() {
           if (d != "") { inhd = 1; delim = d; buf = "" }
         }
       }
+      # With blank=1 only: an introducer followed by redirections or a pipe
+      # (`cat <<EOF > body.md`, `gh pr comment 5 --body-file - <<EOF
+      # >/dev/null`, `cat <<EOF | gh pr create --body-file -`) is dropped too
+      # when reader_ok finds no shell, interpreter or variable command word
+      # anywhere on the line, the text after the introducer included: `cat
+      # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies.
+      if (!inhd && blank == 1 && hits == 1 && q == "" &&
+          (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|])/) ||
+           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])")) &&
+          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+        pre = substr(out, 1, RSTART - 1)
+        rest = substr(out, RSTART)
+        match(rest, "^<<-?[\"" SQ "]?[A-Za-z_][A-Za-z0-9_]*[\"" SQ "]?")
+        d = substr(rest, 1, RLENGTH)
+        post = substr(rest, RLENGTH + 1)
+        if (reader_ok(pre " " post)) {
+          sub(/^<</, "", d)
+          tabs = 0
+          if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
+          gsub("[\"" SQ "]", "", d)
+          if (d != "") { inhd = 1; delim = d; buf = "" }
+        }
+      }
       # A heredoc this pass did not drop keeps its body in the output, and that
       # body is text, not shell: its quotes do not pair with anything. Say so,
       # so the segmenter does not read one apostrophe in it as a quote that
@@ -801,7 +844,10 @@ _BD_SEG_AWK='
           flush()
           continue
         }
-        if (c == "(" ) { flush(); continue }
+        # `>(` and `<(`: a process substitution, whose commands read or
+        # write through a pipe, so the first one in it is marked as one a
+        # pipe feeds.
+        if (c == "(" ) { flush(); if (pra) pipe[depth] = 1; continue }
         # An & right after an unquoted < or > (2>&1, <&3, >&-) or right before
         # a > (&>, &>>) is part of a redirection, not the end of a command:
         # splitting `git push 2>&1 --tags` there made `1 --tags` a command of
@@ -892,37 +938,38 @@ $h"
 $BD_CODE
 BD_EXPAND_EOF
   # Text printed into a pipe that a shell reads as its script (`echo '...' |
-  # bash`, `printf ... | sudo sh -s`): the quoted words of the simple command
-  # before the shell are read as commands too, as a here-string to it is. The
-  # segments do not say whether a `|` or a `;` stood between the two, so a
-  # shell with no script after `;` costs the same reading; that is only a
-  # second look at text, never a missed one.
-  # Started only when a shell's name is a whole word somewhere after a `|`
+  # bash`, `printf ... | { read -r _; sudo sh -s; }`, `echo '...' >
+  # >(bash)`): when a shell that reads its script from its input is anywhere
+  # in a text with a pipe or a process substitution, the quoted words of
+  # every simple command in it are read as commands too, as a here-string to
+  # it is. Where the shell stands (a group, a subshell, a loop, after `;`)
+  # does not matter; that is only a second look at text, never a missed one.
+  # Started only when a shell's name is a whole word in such a text
   # (_BD_SHELL_RE, any case): this pass segments the whole text again, and a
   # long text piped into tee or grep that holds the letters sh (push,
   # should) paid for it on every call.
-  local nc=0 piped=0
+  local nc=0 piped=0 quoted="" fed=0
   case "$BD_CODE" in
-    *'|'*)
+    *'|'*|*'>('*|*'<('*)
       shopt -q nocasematch && nc=1
       shopt -s nocasematch
-      [[ "${BD_CODE#*|}" =~ $_BD_SHELL_RE ]] && piped=1
+      [[ "$BD_CODE" =~ $_BD_SHELL_RE ]] && piped=1
       [ "$nc" = 1 ] || shopt -u nocasematch ;;
   esac
   case "$piped" in
     1)
-      prev=""
       while IFS= read -r seg; do
         case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
         case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
         _bd_words "$seg"
         n=${#TOK[@]}
-        # The shell is the command word: past assignments, and past the
-        # programs that run the rest of the line (and their options).
+        # The shell is the command word: past assignments, shell keywords
+        # (`if true; then bash; fi`), and the programs that run the rest of
+        # the line (and their options).
         i=0
         while [ "$i" -lt "$n" ]; do
           case "${TOK[i]}" in
-            [A-Za-z_]*=*) i=$((i + 1)); continue ;;
+            [A-Za-z_]*=*|if|then|elif|else|while|until|do|'!'|'{') i=$((i + 1)); continue ;;
           esac
           case "${TOK[i]##*/}" in
             sudo|doas|env|nohup|nice|time|command|builtin|exec|timeout|xargs)
@@ -932,17 +979,15 @@ BD_EXPAND_EOF
           esac
           break
         done
-        if [ "$BD_RIN" = 0 ] && [ -n "$prev" ] && _bd_shell_reads_stdin "$i"; then
-          extra="$extra$prev"
-        fi
-        prev=""
+        if [ "$BD_RIN" = 0 ] && _bd_shell_reads_stdin "$i"; then fed=1; fi
         for ((i = 0; i < n; i++)); do
-          case "${TOK[i]}" in *[[:space:]]*) prev="$prev
+          case "${TOK[i]}" in *[[:space:]]*) quoted="$quoted
 ${TOK[i]}" ;; esac
         done
       done <<BD_EXPAND_EOF
 $(_bd_segments "$BD_CODE")
 BD_EXPAND_EOF
+      [ "$fed" = 1 ] && extra="$extra$quoted"
       ;;
   esac
   if [ -n "$extra" ]; then BD_CODE="$BD_CODE$extra"; fi

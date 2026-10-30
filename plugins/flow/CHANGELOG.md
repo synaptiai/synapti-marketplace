@@ -39,7 +39,9 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
   `--repo` or by configuration, a `git config`, `git remote` or upstream
   change earlier in the command, or `alias`, `exec` or `source` before the
   push), a program or gh subcommand it cannot read (a variable, a
-  substitution, `eval` of one, `source` of stdin), text piped into a shell, a
+  substitution, `"$@"` or `"${A[@]}"`, `eval` of one, `source` of stdin), a
+  shell reading its script from its input in a command with a pipe or a
+  process substitution anywhere (`| bash`, `| { :; bash; }`, `> >(bash)`), a
   push option it cannot read, and a merge, release or tag push in a quoted
   command another program runs or in a here-string handed to a shell. A
   substitution glued to a word (`.../merge$(true)`) is read both with and
@@ -134,10 +136,16 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
   `$(bash -c '...')`, in a backquote inside double quotes, after a `2>&1`
   in the middle of the command, with a substitution glued to a word
   (`gh pr merge 1$(true)`), and on the line after a here-string
-  (`cat <<<EOF`), which it had read as the start of a heredoc body.
+  (`cat <<<EOF`), which it had read as the start of a heredoc body. A merge
+  printed into a shell that stands in a group, a subshell, a compound command
+  or a process substitution (`echo '...' | { :; bash; }`, `> >(bash)`) is
+  checked as one piped straight into it.
 - `block-destructive.sh` blocks `git reset --hard` and the other commands it
-  guards when a substitution is glued to a word (`git reset --hard$(true)`)
-  and on the line after a here-string.
+  guards when a substitution is glued to a word (`git reset --hard$(true)`),
+  on the line after a here-string, when the text is printed into a shell in
+  a group, a subshell, a compound command or a process substitution, and
+  when the option or the command sits in an unquoted `${...}` default
+  (`git reset ${X:- --hard}`, `${X:-git reset --hard}`).
 - The goal judge runs in its per-user directory or not at all; when that
   directory could not be created it ran in `/tmp`, where another user's
   `.claude/settings.json` or `CLAUDE.md` would load.

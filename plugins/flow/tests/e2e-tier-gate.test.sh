@@ -1590,7 +1590,15 @@ if _want tg-upstream-named-push; then
   done <<'EOF'
 silent|git checkout -b feat2 origin/main && git push -u origin HEAD
 silent|git branch -u origin/main && git push origin v1-fix
+silent|git branch --set-upstream-to=origin/main && git push origin v1-fix
+silent|git branch --unset-upstream && git push origin v1-fix
 silent|git push -u origin HEAD && git push origin v1-fix
+maybe|git branch -m v1-fix tmp && git tag v1-fix && git push origin v1-fix
+maybe|git branch -M v1-fix tmp && git push origin v1-fix
+maybe|git branch -c v1-fix tmp && git push origin v1-fix
+maybe|git branch -C v1-fix tmp && git push origin v1-fix
+maybe|git branch --move v1-fix tmp && git push origin v1-fix
+maybe|git branch --copy v1-fix tmp && git push origin v1-fix
 maybe|git checkout main && git push
 maybe|git checkout -b feat2 origin/main && git push
 maybe|git checkout -b feat2 origin/main && git push -u origin
@@ -1622,6 +1630,12 @@ unread|eval "v=\${$name:-$X}"; gh pr list
 silent|eval "v=\${$name}"; gh pr list
 silent|eval "v=\${$name:-}"; gh pr list
 silent|  eval "__value=\${$__name:-}"; gh pr list
+silent|n=PR; eval "v=\${$n}" >/dev/null; gh pr list
+silent|eval "v=\${$name:-}" 2>&1; gh pr list
+silent|eval "v=\${$name}" 2>/dev/null >/dev/null; gh pr list
+unread|eval "v=\${$name}" "$X" >/dev/null; gh pr list
+unread|eval "v=\${$name}" >/dev/null "$X"; gh pr list
+unread|eval "v=\${$name}" >$(x); gh pr list
 EOF
   e2e_expect_clean_edges
 fi
@@ -1655,10 +1669,20 @@ unread|CMD='gh release create v9'; ${CMD%/}
 unread|CMD=gh_release_create_v9; ${CMD//_/ }
 unread|CMD='gh pr merge 1'; ${CMD%/}
 unread|CMD='gh pr merge 1'; ${CMD#*/}
+unread|${X:-gh pr merge 7}
+unread|A=(gh pr); A+=(merge 7); "${A[@]}"
+unread|A=(gh pr); A+=(merge 7); command "${A[@]}"
+unread|A=(gh pr); A+=(merge 7); X=1 "${A[@]}"
+unread|A=(gh pr); A+=(merge 7); sudo "${A[@]}"
+unread|A=(gh pr); A+=(merge 7); command "${A[@]:0}"
+unread|set -- gh pr; set -- "$@" merge 7; X=1 "$@"
+unread|set -- gh pr; set -- "$@" merge 7; "$@"
 maybe|CD=cdx; ${CD/x/} ../other && git push origin v1-fix
 maybe|E=eval; ${E%/} 'cd ../other' && git push origin v1-fix
 silent|"$CMD"; gh pr list
 silent|X=1 "$CMD"; gh pr list
+silent|"$*"; gh pr list
+silent|"${A[*]}"; gh pr list
 silent|"$CMD" 2>/dev/null; gh pr list
 silent|"$ROOT/bin/x.sh"; gh pr list
 silent|${ROOT}/bin/x.sh; gh pr list
@@ -1685,12 +1709,50 @@ EOF
   for C in \
     "$(printf 'cat <<<EOF\ngh pr merge 1\nEOF')" \
     "$(printf "cat <<<'EOF'\ngh pr merge 1\nEOF")" \
-    "$(printf 'cat <<< EOF\ngh pr merge 1\nEOF')"; do
+    "$(printf 'cat <<<"EOF"\ngh pr merge 1\nEOF')"; do
     _tg_run "$C"
     _expect_ask "tiers.merge"
   done
   e2e_expect_clean_edges
 fi
+
+# A heredoc whose introducer is followed by a redirection or a pipe into a
+# program that is not a shell or an interpreter is data: a body line such as
+# `$SUMMARY` is not a command held in a variable. The same body handed to a
+# shell is commands.
+for TG_HR_MODE in journal autonomous; do
+  if _want "tg-heredoc-redirect-$TG_HR_MODE"; then
+    _tg_setup "tg-heredoc-redirect-$TG_HR_MODE" feature/issue-42-x "{\"tiers\":{\"push\":\"$TG_HR_MODE\",\"prCreate\":\"$TG_HR_MODE\"}}" \
+      "tiers.push and tiers.prCreate $TG_HR_MODE: a heredoc body line \$SUMMARY is silent when the introducer is followed by a redirection or a pipe into gh; it asks when the body goes to a shell (T33)"
+    for C in \
+      "$(printf "gh pr comment 5 --body-file - <<'EOF' >/dev/null\n\$SUMMARY\nEOF")" \
+      "$(printf 'cat <<EOF | gh pr create --title t --body-file -\n$SUMMARY\nEOF')" \
+      "$(printf 'cat <<EOF > body.md\n$SUMMARY\nEOF\ngh pr create --title t --body-file body.md')" \
+      "$(printf 'cat <<EOF >&2\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf "cat <<'EOF' 2>/dev/null | gh pr comment 5 --body-file -\n\$SUMMARY\nEOF")"; do
+      _tg_run "$C"
+      _expect_silent_allow
+      e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
+    done
+    for C in \
+      "$(printf 'bash <<EOF\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'bash <<EOF >/dev/null\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'cat <<EOF | sudo env X=1 git status\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'cat <<EOF | xargs -0 echo\n$SUMMARY\nEOF\ngh pr view 1')"; do
+      _tg_run "$C"
+      _expect_ask "flow cannot read from the command text"
+      e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+    done
+    for C in \
+      "$(printf 'cat <<EOF | bash\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'cat <<EOF > >(bash)\n$SUMMARY\nEOF\ngh pr view 1')"; do
+      _tg_run "$C"
+      _expect_ask "Tier 3"
+      e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+    done
+    e2e_expect_clean_edges
+  fi
+done
 
 # A shell asks as one that reads its script from its input only when a pipe
 # feeds it; named as an argument (`which bash`) it runs nothing.
@@ -1720,9 +1782,29 @@ shell|cat f | sh -s; gh pr list
 shell|echo x |& bash; gh pr list
 shell|gh pr view 1 | tee log | bash
 shell|echo x | docker run -i img bash; gh pr list
+silent|false || bash; gh pr list
 EOF
   _tg_run "$(printf 'gh pr view 1 |\nbash')"
   _expect_ask "reads its script from its input"
+  # In a command with a pipe or a process substitution anywhere, a shell that
+  # reads its input asks wherever it stands: in a group, a subshell, a
+  # compound command, or after another command the pipe feeds.
+  while IFS= read -r C; do
+    _tg_run "$C"
+    _expect_ask "reads its script from its input"
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+echo 'gh pr merge 7' | { :; bash; }
+echo 'gh pr merge 7' | (bash)
+echo 'gh pr merge 7' | ( cd /tmp && bash )
+echo 'gh pr merge 7' | if true; then bash; fi
+echo 'gh pr merge 7' | for i in 1; do bash; done
+echo 'gh pr merge 7' | case x in x) bash ;; esac
+printf 'x\ngh pr merge 7\n' | { read -r _; bash; }
+echo 'gh pr merge 7' > >(bash)
+echo 'gh pr merge 7' | tee >(bash)
+echo 'git push origin --delete v1' | { :; bash; }
+EOF
   e2e_expect_clean_edges
 fi
 
