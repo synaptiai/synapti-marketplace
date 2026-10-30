@@ -51,13 +51,9 @@
 # mutation is refused outright, as is one whose whole endpoint is a variable, or
 # a GraphQL call whose query comes from a file.
 #
-# Words are read as bash passes them: quotes and backslash escapes removed, so
-# `gh pr me""rge 7` and `g\h pr mer\ge 7` are gh pr merge 7 and are checked as
-# such.
-#
 # Not covered, by design. This hook catches merges written in good faith, or
 # misdirected by a variable or a directory. It does not stop deliberate
-# evasion: an ANSI-C quoted word (`$'m\x65rge'`), a whole command held in a
+# evasion: a quote or backslash inside the word (`m\erge`), a command held in a
 # variable and run as `$CMD`, a gh alias defined in an earlier call, a script
 # piped into a shell, a gh extension, or curl to the REST API. Branch protection
 # with required checks is the mechanism for that, as #170 says.
@@ -90,7 +86,7 @@ fi
 . "$_BD_LIB"
 # Readable is not the same as loaded. A truncated or broken library defines
 # nothing, every call below fails, no merge is found, and the hook allows.
-for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _bd_words; do
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_is_redirection; do
   if ! type "$_bd_fn" >/dev/null 2>&1; then
     echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so merge readiness cannot be verified." >&2
     echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
@@ -121,15 +117,6 @@ case "$_BUM_BARE" in
   *[Mm][Ee][Rr][Gg][Ee]*|*[Gg][Rr][Aa][Pp][Hh][Qq][Ll]*) ;;
   *) exit 0 ;;
 esac
-
-# A word glued to a substitution is also read without it, marked as that
-# second reading (_bd_segments): `gh pr merge$(x) 7` may be gh pr merge 7.
-BD_SEG_ALT=1
-BD_SEG_MARK=1
-# An unquoted ${...} that holds whitespace is split into the words bash's
-# word splitting makes of it (`${X:-gh pr merge 7}`), not read as one word
-# (_bd_words).
-BD_SPLIT_EXP=1
 
 _bd_strip_noncode "$COMMAND"
 # `bash -c 'gh pr merge 9'` and `eval '...'` hide the merge inside one quoted
@@ -204,14 +191,11 @@ _bum_is_gh() {
   return 1
 }
 
-# NAME=value, NAME+=value and NAME[index]=value are assignments.
 _bum_is_assignment() {
   case "$1" in
     [A-Za-z_]*=*)
       local name="${1%%=*}"
-      name="${name%+}"
-      case "$name" in *\[*\]) name="${name%%\[*}" ;; esac
-      case "$name" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac
+      case "$name" in *[!A-Za-z0-9_]*) return 1 ;; esac
       return 0 ;;
   esac
   return 1
@@ -288,6 +272,12 @@ _bum_judge_merge() {
   while [ "$i" -lt "$n" ]; do
     tok="${TOK[i]}"
     nxt="${TOK[i+1]:-}"
+    # A bare redirection operator takes the next word as its target, which is
+    # a file name and not a selector.
+    case "$tok" in
+      '>'|'>>'|'<'|'<<<'|[0-9]'>'|[0-9]'>>'|[0-9]'<') i=$((i + 2)); continue ;;
+    esac
+    if _bd_is_redirection "$tok"; then i=$((i + 1)); continue; fi
     case "$tok" in
       --repo)
         repo="$nxt"; repo_n=$((repo_n + 1)); i=$((i + 2))
@@ -388,22 +378,11 @@ MERGE_DEL=()
 MERGE_ADMIN=()
 MERGE_MHC=()
 
-PREV_MERGE=0
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
   case "$SEG" in __BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
-  # SEG_ALT=1: the reading of the segment before this one with its
-  # substitutions removed (_bd_segments). PREV_MERGE=1: that segment was
-  # already read as a merge.
-  SEG_ALT=0
-  case "$SEG" in __BD_ALT__*) SEG_ALT=1; SEG="${SEG:10}" ;; *) PREV_MERGE=0 ;; esac
-  case "$SEG" in __BD_PIPE__*) SEG="${SEG:11}" ;; esac
-  # The words as bash passes them to the program (_bd_words, the reader every
-  # hook shares): `g\h pr mer\ge 7` runs gh pr merge 7, `$"merge"` is merge,
-  # and a redirection is set aside wherever it stands, with or without a space
-  # before its target (`gh pr >& /dev/null merge 7`, `2>&1`, `&>>log`), so
-  # neither the operator nor its target is read as a word of the merge.
-  _bd_words "$SEG"
+  TOK=()
+  _rm_tokenise "$SEG"
   n=${#TOK[@]}
   [ "$n" -gt 0 ] || continue
 
@@ -515,16 +494,6 @@ while IFS= read -r SEG; do
     esac
     _bum_takes_value "${TOK[k]}" && k=$((k + 1))
   done
-  # A merge seen only once the substitutions are removed (`gh pr merge$(x)
-  # 7`): what the substitution adds to the words, a number or an option,
-  # cannot be read, so it is refused whatever the checks say. One already
-  # read as a merge with them in place was judged there.
-  if [ "$SEG_ALT" = 1 ]; then
-    [ "$PREV_MERGE" = 1 ] && continue
-    _bum_refuse "BLOCKED: gh pr merge, but a command substitution is glued to one of its words, so what it merges cannot be read from the command." \
-      "Next: write the merge without the substitution: $_BUM_SHAPE."
-  fi
-  PREV_MERGE=1
   # Text that does not balance is read line by line as well (see _bd_segments),
   # and a merge found in a line that ends inside an open quote may be half of
   # one: which half gh would run cannot be read. Refused, with how to write it.

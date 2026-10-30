@@ -42,14 +42,6 @@ is not journal content.
 <!-- auto-log: YYYY-MM-DD HH:MM Edit|Write path/relative/to/repo/root -->
 ```
 
-### Tier Entry
-
-Written by the `tier-gate.sh` PreToolUse hook before a Bash command runs an action whose tier is `journal` (`references/three-tier-safety.md`), or a `gh release create --verify-tag` whose tag is already on the remote. The time is UTC; the quoted text is the command from its command word on (quoted words keep their quotes, at most 160 characters). Not written when the same command also needed asking, nor in a repository with no journal directory.
-
-```
-<!-- auto-log: 2026-10-29T14:48:04Z tiers.push (journal) "git push -u origin HEAD" -->
-```
-
 ### Commit Entry
 
 ```

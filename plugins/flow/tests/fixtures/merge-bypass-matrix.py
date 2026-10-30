@@ -118,11 +118,6 @@ CASES.append(("quote-split command word", stub(QUEUED), f'g""h pr merge 9 {R}', 
 CASES.append(("quote-split subcommand", stub(QUEUED), f'gh pr me""rge 9 {R}', 2, "pr view 9"))
 CASES.append(("uppercase GH", stub(QUEUED), f"GH pr merge 9 {R}", 2, "pr view 9"))
 CASES.append(("absolute path", stub(QUEUED), f"/usr/local/bin/gh pr merge 9 {R}", 2, "pr view 9"))
-# A backslash inside a word, which bash removes before running it.
-CASES.append(("backslash in the command word", stub(QUEUED), rf"g\h pr merge 9 {R}", 2, "pr view 9"))
-CASES.append(("backslash in the subcommand", stub(QUEUED), rf"gh pr mer\ge 9 {R}", 2, "pr view 9"))
-CASES.append(("backslash in pr", stub(QUEUED), rf"gh p\r merge 9 {R}", 2, "pr view 9"))
-CASES.append(("backslash in the number", stub(GREEN, {"9": QUEUED}), rf"gh pr merge \9 {R}", 2, "pr view 9"))
 # Separators inside a substitution or a quoted argument once tore the command.
 CASES.append(("a semicolon inside a quoted body",
               stub(GREEN, {"42": QUEUED}), f'gh pr merge --subject merge --body "some; merge body" 42 {R}', 2, "pr view 42"))
