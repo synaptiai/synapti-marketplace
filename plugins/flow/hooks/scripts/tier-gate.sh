@@ -126,7 +126,9 @@
 # --global, --file, `set`, --add, --unset, a key given as a variable, or -e),
 # or renames or removes one of those sections, with or without a subsection
 # (`--rename-section x push`, `rename-section`); a `git remote add`,
-# `set-url` or `rename` (`--mirror=push`); under xargs, which appends words
+# `set-url` or `rename` (`--mirror=push`); a moved or copied branch (`git
+# branch -m`, `-M`, `-c`, `-C`, `--move`, `--copy`), which carries its
+# configuration to a name a later push may send; under xargs, which appends words
 # this hook cannot see, a git config that is not a read, a git remote that
 # is not show or get-url, a git branch, a git push, or a git with no
 # subcommand; a git whose subcommand is a variable; and a write to a file
@@ -134,9 +136,8 @@
 # as `>> .git/config`, or an argument of a program that does not only print
 # or search it: `cp ../other/.git/config .git/config`, `tee -a .git/config`,
 # `ln -s ../other/.git .git`). An upstream or tracking change (`git branch
-# -u`, `--set-upstream-to`, `--unset-upstream`, `-t`/`--track`, a moved or
-# copied branch, `git checkout -b <name> <start>`, `-t`/`--track` on
-# checkout or switch, `git push -u`) writes only the branch's own keys, so
+# -u`, `--set-upstream-to`, `--unset-upstream`, `-t`/`--track`, `git
+# checkout -b <name> <start>`, `-t`/`--track` on checkout or switch, `git push -u`) writes only the branch's own keys, so
 # it makes a later push that names no remote or no refspec ask. A git
 # checkout or switch that may change the branch (not `git checkout --
 # <paths>`), or a git symbolic-ref of HEAD, makes a later push that names
@@ -1749,9 +1750,10 @@ _tg_set_names() {
 # read, or the editor; --rename-section and --remove-section (or the
 # subcommands) naming one of those sections, with or without a subsection
 # (`git config --rename-section x push`); `git remote add`, `set-url` or
-# `rename`, which create or move a remote (`--mirror=push`); an upstream or
-# tracking change: `git branch -u`, `--set-upstream-to`, `--unset-upstream`,
-# `-t`/`--track`, a moved or copied branch (-m, -M, -c, -C), `git checkout -b
+# `rename`, which create or move a remote (`--mirror=push`); a moved or
+# copied branch (`git branch -m`, -M, -c, -C, --move, --copy); an upstream
+# or tracking change: `git branch -u`, `--set-upstream-to`,
+# `--unset-upstream`, `-t`/`--track`, `git checkout -b
 # <name> <start>` (a remote-tracking start sets the upstream), `-t`/`--track`
 # on checkout or switch, `git push -u` (not counted with $2 = 1: it changes
 # only the pushes after it); and, under xargs, which appends words this hook
@@ -1823,10 +1825,17 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
         case "$t" in
           --) break ;;
           --*)
-            for c in --set-upstream-to:--set-u --unset-upstream:--uns --track:--tr --no-track:--no-t --move:--mov --copy:--cop; do
+            for c in --set-upstream-to:--set-u --unset-upstream:--uns --track:--tr --no-track:--no-t; do
               _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && up=1
+            done
+            # A moved or copied branch takes the old one's configuration,
+            # under a name a later push may send: a change of configuration.
+            for c in --move:--mov --copy:--cop; do
+              _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && hit=1
             done ;;
-          -?*) case "${t#-}" in *[utmMcC]*) up=1 ;; esac ;;
+          -?*)
+            case "${t#-}" in *[ut]*) up=1 ;; esac
+            case "${t#-}" in *[mMcC]*) hit=1 ;; esac ;;
         esac
       done ;;
     checkout|switch)
