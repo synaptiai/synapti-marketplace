@@ -457,6 +457,29 @@ for CMD in \
   assert_exit 0 "$?" "allowed: $CMD"
 done
 
+# A substitution's output can be empty, so `merge$(x)` may be merge: a merge
+# seen only once the substitution is removed is refused on a green pull
+# request too, since what the substitution adds (a number, --admin) cannot be
+# read. A merge endpoint glued to one is refused like any merge endpoint. A
+# merge whose --body is a substitution was read as a merge with it in place,
+# and is judged as before.
+_flow_test_begin "a merge word glued to a substitution is read"
+S=$(_bum_stub "$QUEUED" "" "")
+G=$(_bum_stub "$GREEN" "" "")
+for CMD in \
+  'gh pr merge$(true) 7' \
+  'gh pr merge$(true) 7 --repo acme/widgets --squash' \
+  'gh pr merge`true` 7 --repo acme/widgets --squash' \
+  'gh api -X PUT repos/acme/widgets/pulls/7/merge$(true)' \
+  'gh api -X PUT repos/acme/widgets/pulls/7/merge"$(true)"'; do
+  _bum_run "$S" "$CMD"
+  assert_exit 2 "$?" "refused on a queued pull request: $CMD"
+  _bum_run "$G" "$CMD"
+  assert_exit 2 "$?" "refused on a green pull request: $CMD"
+done
+_bum_run "$G" 'gh pr merge 7 --repo acme/widgets --squash --body "$(cat notes.md)"'
+assert_exit 0 "$?" "a merge with a substitution as its --body, on a green pull request, is allowed"
+
 # bash removes a backslash inside a word before running it, so each of these is
 # gh pr merge: on a queued pull request each is refused, and on a green one the
 # same spelling merges, so it was read as the merge and not refused for its shape.

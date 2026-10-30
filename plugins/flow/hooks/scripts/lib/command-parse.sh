@@ -555,6 +555,16 @@ _bd_strip_noncode() {
 # argument did the same to the selector: `gh pr merge -b "a; b" 42` lost the 42,
 # and a probe that wants to know WHICH pull request asked about another one.
 #
+# A substitution's output can be empty, so a word glued to one may be just
+# the text around it: `git reset --hard$(true)` is git reset --hard, and
+# `gh pr merge$(x) 7` may be gh pr merge 7. With BD_SEG_ALT=1 a segment that
+# holds the marker is followed by a second reading of it, the same text with
+# every marker removed. The first reading still has the marker, for a rule
+# that must treat the word as unreadable (`git push origin v1$(x)`), and the
+# second lets a rule match the words as they may run. With BD_SEG_MARK=1 that
+# second reading starts with `__BD_ALT__`, for a caller that must tell it
+# from a command written that way.
+#
 # Two marker lines can appear among the segments: `__BD_UNBALANCED__` when the
 # text ends inside a quote or an unclosed substitution, and `__BD_SEG_FAIL__`
 # when the parse itself failed. BD_UNBALANCED is also set, for a caller that
@@ -590,12 +600,12 @@ _bd_segments() {
   # A failed awk prints `__BD_SEG_FAIL__`. The caller reads this through
   # `$(...)`, and an empty result would read as "no commands", so the marker is
   # how a failure reaches it.
-  joined=$(printf '%s\n' "$1" | awk -v join=1 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+  joined=$(printf '%s\n' "$1" | awk -v join=1 -v alt="${BD_SEG_ALT:-0}" -v mark="${BD_SEG_MARK:-0}" "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
   case "$joined" in
     *__BD_UNBALANCED__*) BD_UNBALANCED=1 ;;
   esac
   if [ "$BD_UNBALANCED" = "1" ] || [ "${BD_KEPT_BODY:-0}" = "1" ]; then
-    perline=$(printf '%s\n' "$1" | awk -v join=0 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+    perline=$(printf '%s\n' "$1" | awk -v join=0 -v alt="${BD_SEG_ALT:-0}" -v mark="${BD_SEG_MARK:-0}" "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
     { printf '%s\n' "$joined"; printf '%s\n' "$perline"; } | grep -v '^__BD_UNBALANCED__$' | awk '!seen[$0]++' \
       || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
     [ "$BD_UNBALANCED" = "1" ] && printf '%s\n' "__BD_UNBALANCED__"
@@ -619,8 +629,33 @@ _BD_SEG_AWK='
       return (b % 2) == 0
     }
     BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; depth = 0; unbal = 0 }
+    # One simple command, and with alt=1, when a substitution marker in it is
+    # glued to other text, its reading with those markers removed (see
+    # _bd_segments). A marker that is a whole word, or the whole of a
+    # double-quoted word, hides nothing and stays: `git checkout "$(x)"` has
+    # no second reading.
+    function emit(s,   t, u, pre, post, a, b, keep, cut) {
+      print s
+      if (alt != 1 || !index(s, "__BD_SUBST__")) return
+      t = s; u = ""; cut = 0
+      while (match(t, /__BD_SUBST__/)) {
+        pre = substr(t, 1, RSTART - 1); post = substr(t, RSTART + RLENGTH)
+        a = (length(pre) > 0) ? substr(pre, length(pre), 1) : ""
+        b = substr(post, 1, 1)
+        if (a == "\"" && b == "\"") {
+          a = (length(pre) > 1) ? substr(pre, length(pre) - 1, 1) : ""
+          b = substr(post, 2, 1)
+        }
+        keep = (a == "" || a == " " || a == "\t") && (b == "" || b == " " || b == "\t" || b == "<" || b == ">")
+        if (!keep) cut = 1
+        u = u pre (keep ? "__BD_SUBST__" : "")
+        t = post
+      }
+      u = u t
+      if (cut && u ~ /[^ \t]/) print ((mark == 1) ? "__BD_ALT__" : "") u
+    }
     function flush(   i) {
-      if (buf[depth] != "") { print buf[depth]; buf[depth] = "" }
+      if (buf[depth] != "") { emit(buf[depth]); buf[depth] = "" }
     }
     {
       line = $0
@@ -707,8 +742,8 @@ _BD_SEG_AWK='
       else flush()
     }
     END {
-      while (depth > 0) { if (buf[depth] != "") print buf[depth]; depth-- ; unbal = 1 }
-      if (buf[0] != "") print buf[0]
+      while (depth > 0) { if (buf[depth] != "") emit(buf[depth]); depth-- ; unbal = 1 }
+      if (buf[0] != "") emit(buf[0])
       if (unbal || q[0] != "") print "__BD_UNBALANCED__"
     }
 '
@@ -780,6 +815,7 @@ BD_EXPAND_EOF
       prev=""
       while IFS= read -r seg; do
         case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+        seg="${seg#__BD_ALT__}"; seg="${seg#__BD_PIPE__}"
         _bd_words "$seg"
         n=${#TOK[@]}
         # The shell is the command word: past assignments, and past the

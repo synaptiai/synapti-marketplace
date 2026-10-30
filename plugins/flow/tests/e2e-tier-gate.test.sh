@@ -1541,6 +1541,38 @@ gh pr view 1"
   e2e_expect_clean_edges
 fi
 
+# A substitution's output can be empty, so the word it is glued to may be only
+# the text around it: each of these may run the action without the
+# substitution.
+if _want tg-glued-substitution; then
+  _tg_setup tg-glued-substitution feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, branch v1-fix: a substitution glued to the endpoint, method, option or subcommand of a merge, a release or a tag push (\$(...), backquotes, inside double quotes) does not hide it; a branch push or a read with a substitution in it stays silent (T33)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix ) || _flow_assert_fail "tg-glued-substitution: could not create the branch"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      *) _expect_ask "is a Tier 3 action (tiers.$WANT)"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+merge|gh api -X PUT repos/o/r/pulls/1/merge$(true)
+merge|gh api -X PUT repos/o/r/pulls/1/merge`true`
+merge|gh api -X PUT repos/o/r/pulls/1/merge"$(true)"
+merge|gh api -X POST repos/o/r/merges$(true) -f base=main -f head=x
+release|gh api repos/o/r/releases$(true) -f tag_name=v9
+release|gh api -X POST repos/o/r/releases$(true) -f tag_name=v9
+release|gh api --method$(true) POST repos/o/r/releases
+release|gh api -X$(true) POST repos/o/r/releases -f tag_name=v9
+merge|gh api graphql -f query$(true)='mutation{mergePullRequest(input:{pullRequestId:"x"}){clientMutationId}}'
+release|git push$(true) --tags
+merge|gh pr merge$(true) 1
+silent|gh pr view "$(git branch --show-current)"
+silent|x=$(gh pr view 1 --json title -q .title); git push origin v1-fix
+silent|gh pr create --title "$(git log -1 --format=%s)" --body "$(cat notes.md)"
+EOF
+  e2e_expect_clean_edges
+fi
+
 # --- T8, T9: where the journal line goes ----------------------------------------
 if _want tg-journal-session; then
   _tg_setup tg-journal-session feature/no-number '{"tiers":{"push":"journal"}}' \
