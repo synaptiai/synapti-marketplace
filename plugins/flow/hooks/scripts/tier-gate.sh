@@ -260,11 +260,14 @@
 #     `"$ROOT/bin/x.sh"`, a file; not a line of a
 #     heredoc body read by a program other than a
 #     shell that is not also a command outside it)
-#   a shell a pipe feeds, reading its script from it  -> "ask": it may merge or release
-#     (`echo '...' | bash`, `| sh -s`, `| sudo bash`,
-#     `| xargs bash`): no -c, no script file, and no
-#     here-string, heredoc or < on it; a shell no
-#     pipe feeds (`which bash`) is an argument
+#   a shell that reads its script from its input,     -> "ask": it may merge or release
+#     in a command with a pipe or a process
+#     substitution anywhere (`echo '...' | bash`,
+#     `| sh -s`, `| sudo bash`, `| xargs bash`,
+#     `| { :; bash; }`, `> >(bash)`): no -c, no
+#     script file, and no here-string, heredoc or <
+#     on it; in a command with neither (`which bash`,
+#     `x || bash`) it is not read as fed
 #   a push whose refspec, remote or option is a       -> "ask": it may push or delete a tag
 #     variable or a substitution (or left to xargs),
 #     whose source is not a local branch, a forced
@@ -352,7 +355,8 @@
 # create v9`; not after a shell or a language's interpreter (`bash -c '...'
 # a b` runs only its script, which is read already). At most 16 such readings are made per simple command, and one
 # more asks as an unreadable gh call. A shell among the words that reads its
-# script from a pipe asks. A command word that is a variable or a
+# script from its input asks when the command has a pipe or a process
+# substitution anywhere. A command word that is a variable or a
 # substitution (`$GH pr merge 7`) is read as possibly gh or git for the same
 # Tier 3 actions, and with nothing after it (`$CMD`) asks unless it is one
 # quoted string, when the command gets past the cheap reject below (its text
@@ -2102,8 +2106,10 @@ TG_PRESCAN_EOF
 # changes for the simple commands after it (pend, gpend, bpend, its caller's).
 _tg_read_seg() {   # $1 = the segment
   local seg="$1"
-  # TG_PIPED=1: a pipe feeds this simple command (_bd_segments).
-  TG_PIPED=0
+  # TG_PIPED=1: the command has a pipe or a process substitution anywhere
+  # (TG_ANYPIPE, _tg_read_text), so a shell in this simple command that reads
+  # its input may be reading text this hook cannot see.
+  TG_PIPED="${TG_ANYPIPE:-0}"
   case "$seg" in __BD_PIPE__*) TG_PIPED=1; seg="${seg:11}" ;; esac
   [ -z "$seg" ] && return 0
   case "$seg" in __BD_UNBALANCED__) return 0 ;; esac
@@ -2155,10 +2161,12 @@ _tg_read_seg() {   # $1 = the segment
       [ "$TG_PB" = 1 ] && bpend=1
       [ "$TG_UPW" = 1 ] && upend=1 ;;
   esac
-  # A shell that reads its script from a pipe (`echo '...' | bash`) runs
-  # text this hook cannot read; with the input redirected it reads a
-  # here-string or a heredoc, which is read as commands, or a file. A shell
-  # no pipe feeds (`which bash`, `x; bash`) reads nothing this command wrote.
+  # A shell that reads its script from its input, in a command with a pipe
+  # or a process substitution anywhere (`echo '...' | bash`, `echo '...' |
+  # { :; bash; }`, `> >(bash)`), may run text this hook cannot read; with the
+  # input redirected it reads a here-string or a heredoc, which is read as
+  # commands, or a file. In a command with neither (`which bash`, `x ||
+  # bash`) it reads nothing this command wrote.
   if [ "$TG_PIPED" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$TG_I"; then _tg_emit shell "$TG_I"; return 0; fi
   # eval of text this hook cannot read (`eval "$CMD"`, `eval "$(...)"`), and
   # source or . of no file, of stdin with no here-string, or of a file named
@@ -2232,6 +2240,10 @@ _tg_read_text() {   # $1 = the text, $2 = depth
   # eval, source, exec and the rest anywhere in the text: from its start,
   # the directory, the environment and git's configuration are unreadable.
   _tg_state_prescan "$segs"
+  # A pipe or a process substitution anywhere in the text (a simple command
+  # marked __BD_PIPE__ by _bd_segments): a shell in it that reads its script
+  # from its input may be reading what that pipe carries (TG_PIPED).
+  case "$segs" in *__BD_PIPE__*) TG_ANYPIPE=1 ;; esac
   while IFS= read -r seg; do
     # pend: an earlier simple command changed directory or set GH_REPO or
     # GH_HOST, so a later gh may act on another repository (TG_GHMOVED).
@@ -2260,7 +2272,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
 
 # Every action the command names.
 _tg_actions() {
-  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_UPSTREAM=0; TG_CDBASE="$CWD"; TG_CURW=""
+  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_UPSTREAM=0; TG_ANYPIPE=0; TG_CDBASE="$CWD"; TG_CURW=""
   _tg_read_text "$COMMAND" 0
 }
 

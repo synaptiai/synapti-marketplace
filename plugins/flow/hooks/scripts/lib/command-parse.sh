@@ -801,7 +801,10 @@ _BD_SEG_AWK='
           flush()
           continue
         }
-        if (c == "(" ) { flush(); continue }
+        # `>(` and `<(`: a process substitution, whose commands read or
+        # write through a pipe, so the first one in it is marked as one a
+        # pipe feeds.
+        if (c == "(" ) { flush(); if (pra) pipe[depth] = 1; continue }
         # An & right after an unquoted < or > (2>&1, <&3, >&-) or right before
         # a > (&>, &>>) is part of a redirection, not the end of a command:
         # splitting `git push 2>&1 --tags` there made `1 --tags` a command of
@@ -892,37 +895,38 @@ $h"
 $BD_CODE
 BD_EXPAND_EOF
   # Text printed into a pipe that a shell reads as its script (`echo '...' |
-  # bash`, `printf ... | sudo sh -s`): the quoted words of the simple command
-  # before the shell are read as commands too, as a here-string to it is. The
-  # segments do not say whether a `|` or a `;` stood between the two, so a
-  # shell with no script after `;` costs the same reading; that is only a
-  # second look at text, never a missed one.
-  # Started only when a shell's name is a whole word somewhere after a `|`
+  # bash`, `printf ... | { read -r _; sudo sh -s; }`, `echo '...' >
+  # >(bash)`): when a shell that reads its script from its input is anywhere
+  # in a text with a pipe or a process substitution, the quoted words of
+  # every simple command in it are read as commands too, as a here-string to
+  # it is. Where the shell stands (a group, a subshell, a loop, after `;`)
+  # does not matter; that is only a second look at text, never a missed one.
+  # Started only when a shell's name is a whole word in such a text
   # (_BD_SHELL_RE, any case): this pass segments the whole text again, and a
   # long text piped into tee or grep that holds the letters sh (push,
   # should) paid for it on every call.
-  local nc=0 piped=0
+  local nc=0 piped=0 quoted="" fed=0
   case "$BD_CODE" in
-    *'|'*)
+    *'|'*|*'>('*|*'<('*)
       shopt -q nocasematch && nc=1
       shopt -s nocasematch
-      [[ "${BD_CODE#*|}" =~ $_BD_SHELL_RE ]] && piped=1
+      [[ "$BD_CODE" =~ $_BD_SHELL_RE ]] && piped=1
       [ "$nc" = 1 ] || shopt -u nocasematch ;;
   esac
   case "$piped" in
     1)
-      prev=""
       while IFS= read -r seg; do
         case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
         case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
         _bd_words "$seg"
         n=${#TOK[@]}
-        # The shell is the command word: past assignments, and past the
-        # programs that run the rest of the line (and their options).
+        # The shell is the command word: past assignments, shell keywords
+        # (`if true; then bash; fi`), and the programs that run the rest of
+        # the line (and their options).
         i=0
         while [ "$i" -lt "$n" ]; do
           case "${TOK[i]}" in
-            [A-Za-z_]*=*) i=$((i + 1)); continue ;;
+            [A-Za-z_]*=*|if|then|elif|else|while|until|do|'!'|'{') i=$((i + 1)); continue ;;
           esac
           case "${TOK[i]##*/}" in
             sudo|doas|env|nohup|nice|time|command|builtin|exec|timeout|xargs)
@@ -932,17 +936,15 @@ BD_EXPAND_EOF
           esac
           break
         done
-        if [ "$BD_RIN" = 0 ] && [ -n "$prev" ] && _bd_shell_reads_stdin "$i"; then
-          extra="$extra$prev"
-        fi
-        prev=""
+        if [ "$BD_RIN" = 0 ] && _bd_shell_reads_stdin "$i"; then fed=1; fi
         for ((i = 0; i < n; i++)); do
-          case "${TOK[i]}" in *[[:space:]]*) prev="$prev
+          case "${TOK[i]}" in *[[:space:]]*) quoted="$quoted
 ${TOK[i]}" ;; esac
         done
       done <<BD_EXPAND_EOF
 $(_bd_segments "$BD_CODE")
 BD_EXPAND_EOF
+      [ "$fed" = 1 ] && extra="$extra$quoted"
       ;;
   esac
   if [ -n "$extra" ]; then BD_CODE="$BD_CODE$extra"; fi
