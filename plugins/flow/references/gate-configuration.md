@@ -32,8 +32,8 @@ The schema accepts `autonomous`, `journal` or `confirm` for each key. No flow co
 
 | Key | Default | Action | What flow does |
 |-----|---------|--------|----------------|
-| `push` | journal | `git push` to remote | `/flow:pr`, `/flow:address` and `/flow:release` push without asking |
-| `prCreate` | journal | `gh pr create` | `/flow:pr` and `/flow:release` open the pull request without asking |
+| `push` | journal | `git push` to remote | `/flow:pr`, `/flow:address`, `/flow:release`, the `/flow:watch branch` loop and `bin/promote-proposal.sh` (run for `/flow:learn` proposals) push without asking |
+| `prCreate` | journal | `gh pr create` | `/flow:pr`, `/flow:release` and `bin/promote-proposal.sh` (a draft pull request) open the pull request without asking |
 | `issueAssign` | journal | `gh issue edit --add-assignee` | `/flow:start` assigns the issue without asking |
 | `issueCreate` | journal | `gh issue create` | `/flow:issue`, and the follow-up issues `/flow:review` and `/flow:address` file, create the issue without asking; while a FlowGoal is active, `ask-issue-create.sh` asks first (below) |
 | `merge` | confirm | `gh pr merge` | `/flow:merge` asks via `AskUserQuestion` before it merges, in autonomous mode too |

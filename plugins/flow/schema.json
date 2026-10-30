@@ -24,7 +24,7 @@
       "description": "Safety tier for each action that leaves the machine. No flow command or hook reads these values: each command's Tier Classification table sets what it does, and nothing applies them to Bash commands run outside flow's commands. See references/three-tier-safety.md.",
       "properties": {
         "push": {
-          "description": "git push to a remote. /flow:pr, /flow:address and /flow:release push without asking.",
+          "description": "git push to a remote. /flow:pr, /flow:address, /flow:release, the /flow:watch branch loop and bin/promote-proposal.sh push without asking.",
           "enum": [
             "autonomous",
             "journal",
@@ -33,7 +33,7 @@
           "default": "journal"
         },
         "prCreate": {
-          "description": "gh pr create. /flow:pr and /flow:release open the pull request without asking.",
+          "description": "gh pr create. /flow:pr, /flow:release and bin/promote-proposal.sh (a draft) open the pull request without asking.",
           "enum": [
             "autonomous",
             "journal",
