@@ -625,13 +625,15 @@ _bd_strip_noncode() {
 #
 # A substitution's output can be empty, so a word glued to one may be just
 # the text around it: `git reset --hard$(true)` is git reset --hard, and
-# `gh pr merge$(x) 7` may be gh pr merge 7. With BD_SEG_ALT=1 a segment that
-# holds the marker is followed by a second reading of it, the same text with
-# every marker removed. The first reading still has the marker, for a rule
-# that must treat the word as unreadable (`git push origin v1$(x)`), and the
-# second lets a rule match the words as they may run. With BD_SEG_MARK=1 that
-# second reading starts with `__BD_ALT__`, for a caller that must tell it
-# from a command written that way.
+# `gh pr merge$(x) 7` may be gh pr merge 7. With BD_SEG_ALT=1 a segment in
+# which a marker is glued to other text is followed by a second reading of
+# it, the same text with those markers removed; a marker that is a whole
+# word, or the whole of a double-quoted word, stays, and a segment with only
+# such markers has no second reading. The first reading still has every
+# marker, for a rule that must treat the word as unreadable (`git push
+# origin v1$(x)`), and the second lets a rule match the words as they may
+# run. With BD_SEG_MARK=1 that second reading starts with `__BD_ALT__`, for
+# a caller that must tell it from a command written that way.
 #
 # Two marker lines can appear among the segments: `__BD_UNBALANCED__` when the
 # text ends inside a quote or an unclosed substitution, and `__BD_SEG_FAIL__`

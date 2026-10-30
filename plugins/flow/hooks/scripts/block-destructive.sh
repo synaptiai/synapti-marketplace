@@ -158,8 +158,9 @@ _rm_segment_is_destructive() {
 }
 
 # A word glued to a substitution is also read without it (`git reset
-# --hard$(true)` is git reset --hard): each segment that holds one is followed
-# by that second reading (_bd_segments), which every rule below reads too.
+# --hard$(true)` is git reset --hard): each segment with a substitution glued
+# to other text is followed by that second reading (_bd_segments), which
+# every rule below reads too.
 BD_SEG_ALT=1
 
 # Strip comments and heredoc bodies once; every rule below reads BD_CODE.
