@@ -1487,7 +1487,7 @@ _tg_scan() {   # $1 = index of the command word
   # after a shell or a language's own interpreter: `bash -c '...' a b` runs
   # its one script, already read as a command, with a and b as arguments.
   [ "${#TOK[$1]}" -le 4096 ] && case "${TOK[$1]##*/}" in
-    sh|bash|zsh|ksh|dash|ash|mksh|busybox|python|python2|python3|perl|ruby|node|deno|bun) join=0 ;;
+    sh|bash|zsh|ksh|dash|ash|mksh|busybox|python|python[23]|perl|ruby|node|deno|bun) join=0 ;;
   esac
   if [ "$join" = 1 ]; then
     for ((k = $1; k < n; k++)); do joined="$joined${joined:+ }${TOK[k]}"; done
@@ -1945,8 +1945,10 @@ _tg_common_dir() {   # $1 = a directory
 # (_tg_gitpath_write)? Then TG_GITENV=1: every push in the command asks. A
 # branch change there (TG_PB) makes a push that names no remote ask
 # (TG_CDWT). The words of the command being read are kept: this runs in the
-# middle of reading one (_tg_scan).
-_tg_config_prescan() {   # $1 = the text
+# middle of reading one (_tg_scan). With $2 = 1 a `git push -u` is left out:
+# the text handed to a shell is also read in order as commands, and its own
+# push must not ask because of the upstream it sets.
+_tg_config_prescan() {   # $1 = the text, $2 = 1 to leave out git push -u
   local segs seg k n TG_I TG_XARGS TG_EXECW TG_PB=0 TG_RIN TG_AN
   local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=() TG_RDIR=()
   local BD_RIN=0
@@ -1962,7 +1964,7 @@ _tg_config_prescan() {   # $1 = the text
     for ((k = TG_I; k < n; k++)); do
       [ "${#TOK[k]}" -le 4096 ] || continue
       case "${TOK[k]##*/}" in
-        [Gg][Ii][Tt]) _tg_config_write "$k" 1 && { TG_GITENV=1; return 0; } ;;
+        [Gg][Ii][Tt]) _tg_config_write "$k" "${2:-0}" && { TG_GITENV=1; return 0; } ;;
       esac
     done
     [ "$TG_PB" = 1 ] && TG_CDWT=1
@@ -1999,7 +2001,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
   # changes the repository's configuration for good, so it counts from the
   # start (_tg_config_prescan).
   added="${BD_CODE:${#code0}}"
-  [ -n "$added" ] && _tg_persist_hint "$added" && _tg_config_prescan "$added"
+  [ -n "$added" ] && _tg_persist_hint "$added" && _tg_config_prescan "$added" 1
   segs=$(_bd_segments "$BD_CODE")
   case "$segs" in
     *__BD_SEG_FAIL__*)

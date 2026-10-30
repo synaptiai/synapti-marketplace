@@ -1461,6 +1461,8 @@ maybe|git switch main; git push
 maybe|watch 'git config push.followTags true'; git push origin v1-fix
 maybe|watch 'git branch -u mir/main'; git push origin v1-fix
 maybe|watch -n 9 'git checkout main'; git push
+maybe|watch 'git push -u mir v1-fix'; git push
+silent|bash -c 'git push -u origin v1-fix'
 maybe|echo push.followTags true | xargs git config && git push origin v1-fix
 maybe|xargs -I{} git config {} true < keys && git push origin v1-fix
 silent|git checkout main && git push origin v1-fix
