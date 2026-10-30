@@ -19,6 +19,9 @@
 #   _bd_unescape <word>           -> sets BD_UNESC to the word with its backslash
 #                                    escapes removed
 #   _bd_unescape_tok              -> applies _bd_unescape to every word of TOK
+#   _bd_words <text>              -> fills TOK with the words bash hands the program
+#                                    (redirections dropped), TOKE with an expansion
+#                                    flag per word, BD_HSTR with here-string texts
 #   _bd_git_parse <simple-command> -> sets GIT_SUB, GIT_ARGS, GIT_ARGN; 1 if not git
 #   _bd_is_whole_tree <pathspec>  -> 0 when the pathspec is the whole tree
 #   _bd_is_redirection <token>    -> 0 when the token is a redirection
@@ -186,6 +189,140 @@ BD_UE_EOF
       TOK[_ue_i]="$BD_UNESC"
     done
   fi
+}
+
+# _bd_words <text>
+# Fills the caller's TOK with the words bash would hand the program, TOKE with
+# one flag per word (1 when bash would expand something in it: a `$` outside
+# single quotes, a backquote, a substitution), and BD_HSTR with the text of
+# every here-string (`<<<word`), as the program reads it on its input.
+#
+# Read as bash reads them, not approximated:
+#   - quotes are removed; inside single quotes every character is literal;
+#     inside double quotes a backslash is removed only before $, `, ", \ and
+#     a line end; outside quotes a backslash is removed and the next character
+#     kept (`gh\ pr` is one word, `mer\ge` is merge, `\>x` is the word >x)
+#   - an unquoted < or > starts a redirection wherever it stands, also inside
+#     a word (`--tags>/dev/null` is the word --tags and a redirection); digits
+#     or {name} that make up the whole word before it are its file descriptor
+#     (`2>&1`), any other text before it is a word of its own (`x2>y` is x2).
+#     The operator (<, >, >>, >|, <>, <&, >&, <<, <<-, <<<, &>, &>>) and the
+#     word after it are not arguments: they are dropped, and a here-string's
+#     word goes to BD_HSTR. A quoted < or > is text.
+#   - `$'...'` keeps its `$` and its text as written, so the word still reads
+#     as something only a shell can work out.
+#   - an unquoted ;, |, &, (, ) or backquote ends a word, so a whole line can
+#     be read too (`x=$(bash` is the words `x=$` and `bash`).
+# Text with none of the characters that need this is split by the shell
+# builtin, with no subprocess. An awk that fails refuses the command (exit 2),
+# as _rm_tokenise does.
+_bd_words() {
+  TOK=(); TOKE=(); BD_HSTR=()
+  local _w_out _w_line _w_i
+  case "$1" in
+    *[\'\"\\\<\>\&\(\)\;\|\`]*|*$'\n'*) ;;
+    *)
+      read -r -a TOK <<< "$1"
+      for ((_w_i = 0; _w_i < ${#TOK[@]}; _w_i++)); do
+        case "${TOK[_w_i]}" in *'$'*|*__BD_SUBST__*) TOKE[_w_i]=1 ;; *) TOKE[_w_i]=0 ;; esac
+      done
+      return 0 ;;
+  esac
+  if ! _w_out=$(printf '%s' "$1" | LC_ALL=C awk '
+    function emit() {
+      if (!inw) return
+      gsub(/\n/, RSN, cur)
+      if (pend == "H") print "H" cur
+      else if (pend == "") print "W" ((xp || index(cur, "__BD_SUBST__")) ? 1 : 0) cur
+      cur = ""; inw = 0; plain = 1; xp = 0; pend = ""
+    }
+    # Does the quote at i open a dollar-quoted string? Only when the character
+    # before it is a dollar sign that no backslash escapes.
+    function dq_open(s, i,   j, b) {
+      if (i < 2 || substr(s, i - 1, 1) != "$") return 0
+      b = 0
+      for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
+      return (b % 2) == 0
+    }
+    BEGIN { SQ = sprintf("%c", 39); RSN = sprintf("%c", 30); s = "" }
+    { s = (NR > 1) ? s "\n" $0 : $0 }
+    END {
+      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (c == " " || c == "\t" || c == "\r" || c == "\n") { emit(); continue }
+        if (c == "\\") {
+          if (i == n) { cur = cur c; inw = 1; plain = 0; continue }
+          d = substr(s, i + 1, 1); i++
+          if (d != "\n") { cur = cur d; inw = 1; plain = 0 }
+          continue
+        }
+        if (c == SQ) {
+          inw = 1; plain = 0
+          if (dq_open(s, i)) {
+            # $'...': kept as written, the $ included; a backslash escapes
+            # the quote.
+            xp = 1
+            for (k = i + 1; k <= n; k++) {
+              d = substr(s, k, 1)
+              if (d == "\\" && k < n) { cur = cur d substr(s, k + 1, 1); k++; continue }
+              if (d == SQ) break
+              cur = cur d
+            }
+            i = k; continue
+          }
+          k = index(substr(s, i + 1), SQ)
+          if (k == 0) { cur = cur substr(s, i + 1); i = n; continue }
+          cur = cur substr(s, i + 1, k - 1); i += k; continue
+        }
+        if (c == "\"") {
+          inw = 1; plain = 0
+          for (k = i + 1; k <= n; k++) {
+            d = substr(s, k, 1)
+            if (d == "\\" && k < n) {
+              e = substr(s, k + 1, 1)
+              if (e == "$" || e == "`" || e == "\"" || e == "\\") { cur = cur e; k++; continue }
+              if (e == "\n") { k++; continue }
+              cur = cur d; continue
+            }
+            if (d == "\"") break
+            if (d == "`") xp = 1
+            if (d == "$" && substr(s, k + 1, 1) ~ /[A-Za-z_{(0-9@*#?$!-]/) xp = 1
+            cur = cur d
+          }
+          i = k; continue
+        }
+        if (c == "<" || c == ">" || (c == "&" && substr(s, i + 1, 1) == ">")) {
+          if (inw && plain && pend == "" && (cur ~ /^[0-9]+$/ || cur ~ /^\{[A-Za-z_][A-Za-z0-9_]*\}$/) && c != "&") { cur = ""; inw = 0; xp = 0 }
+          else emit()
+          t = substr(s, i, 3)
+          if (t == "<<<") { op = "H"; l = 3 }
+          else if (t == "<<-" || t == "&>>") { op = "R"; l = 3 }
+          else {
+            t = substr(s, i, 2)
+            op = "R"
+            l = (t == "<<" || t == "<>" || t == "<&" || t == ">>" || t == ">|" || t == ">&" || t == "&>") ? 2 : 1
+          }
+          i += l - 1; pend = op; continue
+        }
+        if (c == ";" || c == "|" || c == "&" || c == "(" || c == ")" || c == "`") { emit(); pend = ""; continue }
+        if (c == "$" && substr(s, i + 1, 1) ~ /[A-Za-z_{(0-9@*#?$!-]/) xp = 1
+        cur = cur c; inw = 1
+      }
+      emit()
+    }
+  '); then
+    echo "BLOCKED: could not split a command into words (awk failed) — refusing rather than guessing." >&2
+    exit 2
+  fi
+  [ -n "$_w_out" ] || return 0
+  while IFS= read -r _w_line; do
+    case "$_w_line" in *$'\036'*) _w_line="${_w_line//$'\036'/$'\n'}" ;; esac
+    case "$_w_line" in
+      W*) TOKE+=("${_w_line:1:1}"); TOK+=("${_w_line:2}") ;;
+      H*) BD_HSTR+=("${_w_line:1}") ;;
+    esac
+  done <<< "$_w_out"
 }
 
 # ---------------------------------------------------------------------------
@@ -427,8 +564,10 @@ _bd_strip_noncode() {
 # _bd_segments <text>
 # Prints one simple command per line.
 #
-# Splits on `;` `|` `&` where the shell would — outside quotes — and treats a
-# command substitution as BOTH things it is: a command in its own right, emitted
+# Splits on `;` `|` `&` where the shell would — outside quotes, and not at the
+# `&` of a redirection (`2>&1`, `<&3`, `&>file`) — and treats a command
+# substitution (`$(...)`, or backquotes, also inside double quotes) as BOTH
+# things it is: a command in its own right, emitted
 # as its own segment, and a word in the command containing it, which therefore
 # survives as `__BD_SUBST__` rather than being torn in half.
 #
@@ -511,8 +650,12 @@ _BD_SEG_AWK='
       n = length(line)
       # The per-line reading forgets quotes at each line end.
       if (!join) q[depth] = ""
+      ra = 0
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
+        # pra: the character before this one was an unquoted, unescaped < or
+        # >, so an & here is part of a redirection (2>&1, <&3, >&-).
+        pra = ra; ra = 0
 
         # A backslash escapes the next character everywhere but inside single
         # quotes.
@@ -524,10 +667,15 @@ _BD_SEG_AWK='
         }
 
         if (q[depth] != "") {
-          # `$(` re-opens code inside a double-quoted string.
+          # `$(` re-opens code inside a double-quoted string, and so does a
+          # backquote: `x="`gh pr merge 1`"` runs the merge.
           if (q[depth] == "\"" && c == "$" && substr(line, i + 1, 1) == "(") {
-            depth++; buf[depth] = ""; q[depth] = ""
+            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0
             i++
+            continue
+          }
+          if (q[depth] == "\"" && c == "`") {
+            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1
             continue
           }
           buf[depth] = buf[depth] c
@@ -542,7 +690,7 @@ _BD_SEG_AWK='
         if (c == "\"" || c == SQ) { q[depth] = c; buf[depth] = buf[depth] c; continue }
 
         if (c == "$" && substr(line, i + 1, 1) == "(") {
-          depth++; buf[depth] = ""; q[depth] = ""
+          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0
           i++
           continue
         }
@@ -562,9 +710,15 @@ _BD_SEG_AWK='
           continue
         }
         if (c == "(" ) { flush(); continue }
+        # An & right after an unquoted < or > (2>&1, <&3, >&-) or right before
+        # a > (&>, &>>) is part of a redirection, not the end of a command:
+        # splitting `git push 2>&1 --tags` there made `1 --tags` a command of
+        # its own and hid the --tags from the push.
+        if (c == "&" && (pra || substr(line, i + 1, 1) == ">")) { buf[depth] = buf[depth] c; continue }
         if (c == ";" || c == "|" || c == "&") { flush(); continue }
 
         buf[depth] = buf[depth] c
+        ra = (c == "<" || c == ">")
       }
       if (join && q[depth] != "") buf[depth] = buf[depth] " "
       else flush()
@@ -578,7 +732,7 @@ _BD_SEG_AWK='
 
 # _bd_expand_interpreter_args
 # Appends to BD_CODE the contents of every quoted argument handed to something
-# that runs it.
+# that runs it, and of every here-string on a line that names one.
 #
 # An interpreter handed its script as a single quoted argument — `bash -c "git
 # reset --hard"`, `sh -c '...'`, `ssh host "..."`, `eval "..."` — is one word to
@@ -589,26 +743,27 @@ _BD_SEG_AWK='
 # Shared because every hook that reads commands has the same blind spot: the
 # merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
 _bd_expand_interpreter_args() {
-  local seg tok base i n found
-  local -a TOK=()
+  local seg tok base i n found h
+  local -a TOK=() TOKE=() BD_HSTR=()
   local extra=""
   while IFS= read -r seg; do
     [ -z "$seg" ] && continue
-    case "$seg" in *[\'\"]*) ;; *) continue ;; esac
-    _rm_tokenise "$seg"
+    # A word with a space in it comes from quotes or a backslash, and a
+    # here-string from <<<; a line with none of them has nothing to add.
+    case "$seg" in *[\'\"\\]*|*'<<<'*) ;; *) continue ;; esac
+    # The words as bash hands them over (_bd_words): `ba\sh -c '...'` runs
+    # bash, `x=$(bash -c '...')` has bash as a word of its own, and
+    # `bash -c gh\ pr\ merge\ 1` hands bash one word with spaces in it.
+    _bd_words "$seg"
     n=${#TOK[@]}
     found=0
     for ((i = 0; i < n; i++)); do
       tok="${TOK[i]}"
-      # `ba\sh -c '...'` runs bash: the word is compared as the shell passes it.
-      # Only its last path component can name an interpreter, and an
-      # interpreter's name is at most seven letters, fourteen characters
-      # with every letter escaped: a longer component is none, and is not
-      # unescaped (a sed for each long word made a command of many long
-      # quoted words slow).
+      # Only the last path component of a word can name an interpreter, and
+      # a name longer than sixteen characters is none.
       if [ "${#tok}" -le 4096 ]; then
         base="${tok##*/}"
-        if [ "${#base}" -le 16 ] && { _bd_unescape "$base"; _bd_is_interpreter "$BD_UNESC"; }; then found=1; continue; fi
+        if [ "${#base}" -le 16 ] && _bd_is_interpreter "$base"; then found=1; continue; fi
       fi
       if [ "$found" = "1" ]; then
         case "$tok" in
@@ -617,6 +772,16 @@ $tok" ;;
         esac
       fi
     done
+    # A here-string is the input of the command it is written on, and an
+    # interpreter reads its input as a script: `bash <<<'...'`, `<<<'...'
+    # bash`, and, as with a heredoc body, a line that names an interpreter
+    # anywhere (`cat <<<'...' | bash`). Each one is read as a command.
+    if [ "$found" = "1" ] && [ "${#BD_HSTR[@]}" -gt 0 ]; then
+      for h in "${BD_HSTR[@]}"; do
+        extra="$extra
+$h"
+      done
+    fi
   done <<BD_EXPAND_EOF
 $BD_CODE
 BD_EXPAND_EOF
@@ -715,10 +880,11 @@ _bd_is_opt() {
   return 1
 }
 
-# A redirection is not an argument to the command.
+# A redirection is not an argument to the command. `&>file` and `2>&1` reach
+# here as one word: _bd_segments does not split a command at their `&`.
 _bd_is_redirection() {
   case "$1" in
-    '>'|'>>'|'<'|[0-9]'>'|[0-9]'>>'|'>'*|'<'*|[0-9]'>'*) return 0 ;;
+    '>'|'>>'|'<'|[0-9]'>'|[0-9]'>>'|'>'*|'<'*|[0-9]'>'*|[0-9]'<'*|'&>'*) return 0 ;;
   esac
   return 1
 }
