@@ -1525,7 +1525,18 @@ silent|gh pr view 1 | bash scripts/fmt.sh
 silent|gh pr view 1 | bash -c 'cat'
 silent|bash <<<'gh pr view 1'
 silent|gh pr view 12 | less
+silent|$ROOT/bin/x.sh; gh pr view 1
+silent|$ROOT/bin/x.sh --check && git push origin v1-fix
+silent|case "$r" in x|.|..) echo dot ;; esac; git push origin v1-fix
+maybe|. <(echo cd ../other); git push origin v1-fix
 EOF
+  # A line of a heredoc body read by a loop is data, not a command held in a
+  # variable.
+  _tg_run "while read -r p; do echo \"\$p\"; done <<EOF
+\$PATHS
+EOF
+gh pr view 1"
+  _expect_silent_allow
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
   e2e_expect_clean_edges
 fi
