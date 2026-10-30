@@ -162,6 +162,10 @@ _rm_segment_is_destructive() {
 # to other text is followed by that second reading (_bd_segments), which
 # every rule below reads too.
 BD_SEG_ALT=1
+# An unquoted ${...} that holds whitespace is split into the words bash's
+# word splitting makes of it (`rm ${X:- -rf} src`, `git clean ${X:- -f}`),
+# not read as one word (_bd_words).
+BD_SPLIT_EXP=1
 
 # Strip comments and heredoc bodies once; every rule below reads BD_CODE.
 _bd_strip_noncode "$COMMAND"

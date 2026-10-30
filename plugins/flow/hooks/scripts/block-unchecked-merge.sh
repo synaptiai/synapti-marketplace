@@ -126,6 +126,10 @@ esac
 # second reading (_bd_segments): `gh pr merge$(x) 7` may be gh pr merge 7.
 BD_SEG_ALT=1
 BD_SEG_MARK=1
+# An unquoted ${...} that holds whitespace is split into the words bash's
+# word splitting makes of it (`${X:-gh pr merge 7}`), not read as one word
+# (_bd_words).
+BD_SPLIT_EXP=1
 
 _bd_strip_noncode "$COMMAND"
 # `bash -c 'gh pr merge 9'` and `eval '...'` hide the merge inside one quoted

@@ -151,7 +151,11 @@ _rm_tokenise() {
 #   - an unquoted ;, |, &, (, ) or backquote ends a word, so a whole line can
 #     be read too (`x=$(bash` is the words `x=$` and `bash`).
 #   - a parameter expansion `${...}` is one piece of its word up to its
-#     closing brace, spaces and all, as bash reads it (`${CMD//_/ }`).
+#     closing brace, spaces and all, as bash reads it (`${CMD//_/ }`). With
+#     BD_SPLIT_EXP=1, an unquoted one that holds whitespace is read character
+#     by character instead, so its pieces are words of their own, as bash's
+#     word splitting makes the expansion (`rm ${X:- -rf} src` is rm -rf src);
+#     inside double quotes it stays one word.
 # Text with none of the characters that need this is split by the shell
 # builtin, with no subprocess. An awk that fails refuses the command (exit 2),
 # as _rm_tokenise does.
@@ -168,7 +172,7 @@ _bd_words() {
       done
       return 0 ;;
   esac
-  if ! _w_out=$(printf '%s' "$1" | LC_ALL=C awk '
+  if ! _w_out=$(printf '%s' "$1" | LC_ALL=C awk -v splitexp="${BD_SPLIT_EXP:-0}" '
     # qs=1 while the word is one quoted string and nothing else: `"$CMD"`,
     # not `""$CMD` or `"$A"$B`, and not one that expands to several words
     # however it is quoted (`"$@"`, `"${@:2}"`, `"${A[@]}"`, `"${!A[@]}"`).
@@ -177,7 +181,7 @@ _bd_words() {
       if (qs && (index(cur, "$@") || cur ~ /[$][{][^}]*@/)) qs = 0
       gsub(/\n/, RSN, cur)
       if (pend == "H" || pend == "I" || pend == "R") print pend cur
-      else if (pend == "") print "W" ((xp || index(cur, "__BD_SUBST__")) ? 1 : 0) (qs ? 1 : 0) cur
+      else if (pend == "") print "W" ((xp || inexp || index(cur, "__BD_SUBST__")) ? 1 : 0) (qs ? 1 : 0) cur
       cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0
     }
     # Does the quote at i open a dollar-quoted string? Only when the character
@@ -191,9 +195,12 @@ _bd_words() {
     BEGIN { SQ = sprintf("%c", 39); RSN = sprintf("%c", 30); s = "" }
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
-      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0
+      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0; inexp = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
+        # The closing brace of a ${...} read in pieces (splitexp=1, below)
+        # ends the expansion and is no part of the last piece.
+        if (c == "}" && (i in cb)) { delete cb[i]; inexp = 0; continue }
         if (c == " " || c == "\t" || c == "\r" || c == "\n") { emit(); continue }
         if (c == "\\") {
           qs = 0
@@ -256,7 +263,12 @@ _bd_words() {
         }
         if (c == ";" || c == "|" || c == "&" || c == "(" || c == ")" || c == "`") { emit(); pend = ""; continue }
         # ${...}: to its closing brace, nested ${...} counted; one with no
-        # closing brace is read character by character as before.
+        # closing brace is read character by character. With splitexp=1 one
+        # that holds whitespace is read in pieces, the words bash may split
+        # it into: `${NAME:-` (or :+ := :? - + = ?) as a word of its own,
+        # then the words of the rest up to the closing brace, which is
+        # dropped (`${X:- -rf}` is `${X:-` and `-rf`). Each piece is flagged
+        # as an expansion (inexp).
         if (c == "$" && substr(s, i + 1, 1) == "{") {
           d = 1
           for (k = i + 2; k <= n && d > 0; k++) {
@@ -264,7 +276,13 @@ _bd_words() {
             if (e == "$" && substr(s, k + 1, 1) == "{") { d++; k++ }
             else if (e == "}") d--
           }
-          if (d == 0) { cur = cur substr(s, i, k - i); inw = 1; qs = 0; xp = 1; i = k - 1; continue }
+          if (d == 0 && splitexp == 1 && substr(s, i, k - i) ~ /[ \t\r\n]/) {
+            cb[k - 1] = 1; inexp = 1; xp = 1
+            if (match(substr(s, i, k - i), /^[$][{][!#]?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?:?[-+=?]/)) {
+              cur = cur substr(s, i, RLENGTH); inw = 1; qs = 0; emit(); i = i + RLENGTH - 1; continue
+            }
+          }
+          else if (d == 0) { cur = cur substr(s, i, k - i); inw = 1; qs = 0; xp = 1; i = k - 1; continue }
         }
         if (c == "$" && substr(s, i + 1, 1) ~ /[A-Za-z_{(0-9@*#?$!-]/) xp = 1
         cur = cur c; inw = 1; qs = 0

@@ -802,6 +802,7 @@ git clean ${X:- -f}
 git clean ${X:- -fdx} .
 git branch ${X:- -D} feat
 git reset ${X:- --hard}
+${X:-git reset --hard}
 ROWS
 while IFS= read -r C; do
   e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
