@@ -570,15 +570,20 @@ TG_BODY_EOF
 # "NAME=\${$NAME:-DEFAULT}"`, with DEFAULT made only of letters, digits and
 # _ . , / @ % + - (nothing the shell reads specially)? eval then assigns the
 # value of the variable NAME names and runs nothing (unless that variable
-# holds shell text rather than a name: not covered). Any other text after
-# eval may be commands.
+# holds shell text rather than a name: not covered). Redirections after it
+# to a target written out (`>/dev/null`, `2>&1`) are allowed; any other text
+# after eval may be commands.
 _tg_eval_read_by_name() {   # $1 = the simple command's text
   local t="$1" re
   # A substitution, which the parser has replaced by its marker, inserts
   # text this hook cannot read.
   case "$t" in *__BD_SUBST__*) return 1 ;; esac
+  local rd='^(.*[^[:space:]])[[:space:]]+[0-9]*(>>?|&>>?|<)[[:space:]]*([A-Za-z0-9_./@%+-]+|&[0-9]+|&-)$'
   re='^eval[[:space:]]+"[A-Za-z_][A-Za-z0-9_]*=\\\$\{\$[A-Za-z_][A-Za-z0-9_]*(:-[A-Za-z0-9_.,/@%+-]*)?\}"$'
   t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+  # Redirections after it to a target written out (`>/dev/null`, `2>&1`)
+  # change where its output goes, not what it runs.
+  while [[ $t =~ $rd ]]; do t="${BASH_REMATCH[1]}"; done
   [[ $t =~ $re ]]
 }
 
