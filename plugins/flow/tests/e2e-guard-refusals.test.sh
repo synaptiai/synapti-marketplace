@@ -743,7 +743,7 @@ git log | bash scripts/fmt.sh
 ROWS
 # Text piped into a shell that reads its script from its input is a command.
 for C in "echo 'git reset --hard' | bash" "printf '%s\n' 'rm -rf src' | sh -s" "echo 'git checkout -- .' | sudo bash -x" \
-  "echo 'git reset --hard' | { :; bash; }" "echo 'git reset --hard' | (bash)" "printf 'x\ngit reset --hard\n' | { read -r _; bash; }" \
+  "echo 'git reset --hard' | { :; bash; }" "echo 'git reset --hard' | (bash)" "printf '%s\n' x 'git reset --hard' | { read -r _; bash; }" \
   "echo 'rm -rf src' > >(bash)" "echo 'rm -rf src' | tee >(bash)"; do
   e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
   e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
