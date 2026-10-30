@@ -742,7 +742,9 @@ echo 'git status' | bash
 git log | bash scripts/fmt.sh
 ROWS
 # Text piped into a shell that reads its script from its input is a command.
-for C in "echo 'git reset --hard' | bash" "printf '%s\n' 'rm -rf src' | sh -s" "echo 'git checkout -- .' | sudo bash -x"; do
+for C in "echo 'git reset --hard' | bash" "printf '%s\n' 'rm -rf src' | sh -s" "echo 'git checkout -- .' | sudo bash -x" \
+  "echo 'git reset --hard' | { :; bash; }" "echo 'git reset --hard' | (bash)" "printf 'x\ngit reset --hard\n' | { read -r _; bash; }" \
+  "echo 'rm -rf src' > >(bash)" "echo 'rm -rf src' | tee >(bash)"; do
   e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
   e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
 done
@@ -780,5 +782,33 @@ git clean -n$(true)
 git checkout "$(git rev-parse --abbrev-ref HEAD)"
 git restore --staged "$(git diff --name-only | head -n 1)"
 x=$(git rev-parse HEAD) && git status
+ROWS
+e2e_expect_clean_edges
+
+# --- D3: an unquoted ${...} with whitespace in it is split ----------------------
+
+_flow_test_begin "discard-split-expansion"
+e2e_new discard-split-expansion
+e2e_describe "every discard block-destructive refuses, with its option inside an unquoted \${...} default that holds whitespace (\${X:- -rf}): bash splits the expansion into words, so each is still refused (D3); a non-discarding option in the same place is allowed"
+e2e_repo work
+( _e2e_git_env; cd "$E2E_REPO" && git branch feat ) || _flow_assert_fail "discard-split-expansion: could not create the branch"
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+rm ${X:- -rf} src
+rm ${X:- -r -f} src
+git clean ${X:- -f}
+git clean ${X:- -fdx} .
+git branch ${X:- -D} feat
+git reset ${X:- --hard}
+ROWS
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+git clean ${X:- -n}
+rm ${X:- -f} a.txt
+git reset ${X:- --soft} HEAD~1
 ROWS
 e2e_expect_clean_edges
