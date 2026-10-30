@@ -78,16 +78,22 @@
 #   T27 a quoted argument after a program the hook does not know (watch,
 #      script -c, trap, awk system()) runs a Tier 3 action unasked, or one
 #      after grep or jq asks
-#   T28 a cd, an export of GIT_CONFIG_*/GIT_DIR/HOME, an include.path, or
+#   T28 a cd, an export of GIT_CONFIG_*/GIT_DIR/HOME, an include.path, a git
+#      config or git remote earlier in the command (also inside bash -c), or
 #      words xargs appends change which repository, configuration or refspec
-#      a later push uses, and the push is read as the payload's
+#      a later push uses, and the push is read as the payload's; or a word
+#      that only names such a variable (echo HOME) or a config read asks
+#   T25b a redirection glued to a word (--tags>/dev/null) hides the option,
+#      or a quoted target (> "push log.txt") is read as a refspec
 #   T29 a forced push to a destination that may be a tag only on the remote
 #      is read as a branch push
 #   T30 a GraphQL name inside a string or a comment is read as a field, or a
 #      comment hides the field after it
 #   T31 a command a shell reads from a here-string, a shell's -c argument
-#      inside a substitution, or an action with 2>&1 in the middle of it is
-#      missed; text that cat or grep only reads is read as a command
+#      inside a substitution, a backquote inside double quotes, or an action
+#      with 2>&1 in the middle of it is missed; text that cat or grep only
+#      reads is read as a command; quoted words after a program the hook
+#      does not know are read without limit, or past the limit unasked
 #   T32 a cd into another worktree of the same repository, or to
 #      $(git rev-parse --show-toplevel), asks about a branch push; a cd into
 #      another repository, a worktree with its own configuration, or a push
@@ -507,7 +513,7 @@ fi
 # --- T13: a tag push is the release tier ------------------------------------------
 if _want tg-tag-push; then
   _tg_setup tg-tag-push feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
-    "push autonomous, the repository has tag v1.2.0 and branches v1-fix and main: every push that sends a tag asks under tiers.release (options abbreviated or bundled as git accepts them included), a source that is not a local branch asks as a possible tag, a forced push to a destination that is not a known branch asks, a push after a cd elsewhere, an export of git's configuration variables, an include.path or under xargs asks, every branch-only push is silent with or without redirections (T13, T19, T20, T25, T26, T28, T29)"
+    "push autonomous, the repository has tag v1.2.0 and branches v1-fix and main: every push that sends a tag asks under tiers.release (options abbreviated or bundled as git accepts them included, a redirection glued to the option), a source that is not a local branch asks as a possible tag, a forced push to a destination that is not a known branch asks, a push after a cd elsewhere, an export of git's configuration variables, an include.path, a git config or git remote that may change what it sends (also inside bash -c), or under xargs asks, every branch-only push is silent with or without redirections, after a git config of another key or a read of one, and after a word that only names a variable (T13, T19, T20, T25, T25b, T26, T28, T29)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix && git branch -f main HEAD ) \
     || _flow_assert_fail "tg-tag-push: could not create the tag and branch"
   mkdir -p "$E2E_REPO/sub"
@@ -669,6 +675,11 @@ silent|git config --list && git push origin v1-fix
 silent|git remote -v && git push origin v1-fix
 silent|git remote get-url origin && git push origin v1-fix
 silent|git push origin v1-fix && git config push.followTags true
+maybe|bash -c 'git config push.followTags true' && git push origin v1-fix
+maybe|sh -c "git remote add m2 ../repo.git --mirror=push" && git push m2
+maybe|eval 'git config remote.origin.mirror true' && git push
+maybe|bash <<<'git config push.followTags true' && git push origin v1-fix
+silent|bash -c 'git config user.name x' && git push origin v1-fix
 silent|echo git config push.followTags true && git push origin v1-fix
 silent|echo HOME && git push origin v1-fix
 silent|echo GIT_DIR=x && git push origin v1-fix
@@ -1044,7 +1055,7 @@ fi
 # --- T15: gh api PATCH and GraphQL ---------------------------------------------
 if _want tg-api-patch-graphql; then
   _tg_setup tg-api-patch-graphql feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them; reads and other mutations do not (T15)"
+    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them, also after a string with an escaped quote in single or double quotes; reads and other mutations do not; a double-quoted query in which the shell expands something asks as unreadable (T15)"
   printf '%s\n' 'mutation { enablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }' > "$E2E_REPO/q.graphql"
   printf '%s\n' '{"query":"mutation { createRelease(input:{repositoryId:\"r\", tagName:\"v1\"}) { release { id } } }"}' > "$E2E_REPO/body.json"
   printf '%s\n' '{"query":"query { viewer { login } }"}' > "$E2E_REPO/read.json"
@@ -1187,7 +1198,7 @@ fi
 # --- T6: every way gh reads an option of gh api --------------------------------
 if _want tg-api-forms; then
   _tg_setup tg-api-forms feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api's method and fields are read as gh reads them (-X=VALUE, -XVALUE, -X VALUE, a bundle such as -iX=POST, -f=key=value); a method that is not a known verb, or a variable, asks for an endpoint that a write would make a merge or a release; a ref read from a file (-F ref=@file) asks; a raw -f value starting with @ is text (T6, T7)"
+    "every tier confirm; gh api's method and fields are read as gh reads them (-X=VALUE, -XVALUE, -X VALUE, a bundle such as -iX=POST, -f=key=value); a method that is not a known verb, or a variable, asks for an endpoint that a write would make a merge or a release; a ref read from a file (-F ref=@file) asks; a raw -f value starting with @ is text; an endpoint is read percent-decoded and without a redirection glued to it (T6, T7)"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
@@ -1252,7 +1263,7 @@ fi
 # --- T31: a command on a shell's input, in a substitution, around 2>&1 ---------
 if _want tg-shell-input; then
   _tg_setup tg-shell-input feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous, tag v1.2.0 and branch v1-fix: a here-string a shell reads as its script (any spacing, a file descriptor before <<<, before the command word, through a pipe, escaped spaces), a shell's -c argument inside a substitution, and an action with 2>&1 or >&2 in the middle of it ask; the same text read by cat or grep, and a branch push with 2>&1, do not (T31)"
+    "every Tier 2 action autonomous, tag v1.2.0 and branch v1-fix: a here-string a shell reads as its script (any spacing, a file descriptor before <<<, before the command word, through a pipe, escaped spaces) or one given to a program the hook does not know, a shell's -c argument inside a substitution, a backquote inside double quotes, and an action with 2>&1 or >&2 in the middle of it ask; the same text read by cat or grep, an escaped or single-quoted backquote, a branch push with 2>&1, and up to 16 quoted words after one program that name no Tier 3 action do not; a 17th quoted word that names one asks (T31)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix ) \
     || _flow_assert_fail "tg-shell-input: could not create the tag and branch"
   while IFS='|' read -r WANT C; do

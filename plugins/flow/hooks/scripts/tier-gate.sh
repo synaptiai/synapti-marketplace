@@ -120,8 +120,9 @@
 # remote., branch., include. or includeIf. (any form: -C, --global, --file,
 # `set`, --add, --unset, a key given as a variable, or -e), and a `git remote
 # add`, `set-url` or `rename` (`--mirror=push`), make every later push in it
-# ask; reading configuration (--get, --list, `get`) and other keys
-# (user.name) do not.
+# ask, and so does one in a quoted argument or here-string handed to a shell
+# anywhere in the command (`bash -c 'git config ...' && git push`); reading
+# configuration (--get, --list, `get`) and other keys (user.name) do not.
 # Under xargs, words appended from its input may be refspecs, so the push
 # asks.
 #
@@ -1585,6 +1586,30 @@ _tg_common_dir() {   # $1 = a directory
   return 0
 }
 
+# Does a text handed to a shell hold a git config or git remote that changes
+# what a push sends (_tg_config_write)? Then TG_GITENV=1: every push in the
+# command asks.
+_tg_config_prescan() {   # $1 = the text
+  local segs seg k
+  segs=$(_bd_segments "$1")
+  while IFS= read -r seg; do
+    case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+    _bd_words "$seg"
+    n=${#TOK[@]}
+    [ "$n" -gt 0 ] || continue
+    _tg_command_word
+    for ((k = TG_I; k < n; k++)); do
+      [ "${#TOK[k]}" -le 4096 ] || continue
+      case "${TOK[k]##*/}" in
+        [Gg][Ii][Tt]) _tg_config_write "$k" && { TG_GITENV=1; return 0; } ;;
+      esac
+    done
+  done <<TG_PRESCAN_EOF
+$segs
+TG_PRESCAN_EOF
+  return 0
+}
+
 # Every action a command text names, one `key<TAB>summary<TAB>dir` line each.
 # $2 is how deep this text sits inside quoted arguments read as commands
 # (_tg_scan): past four levels, a text that mentions gh, push, merge or
@@ -1592,7 +1617,7 @@ _tg_common_dir() {   # $1 = a directory
 # exits 2 when awk fails, and that must reach the caller as "cannot decide",
 # not end this hook with a refusal.
 _tg_read_text() {   # $1 = the text, $2 = depth
-  local segs seg pend=0 gpend=0 k t bare
+  local segs seg pend=0 gpend=0 k t bare code0 added
   TG_DEPTH=$2
   bare=$(printf '%s' "$1" | LC_ALL=C tr -d "'\"\\\\") || bare=gh
   case "$bare" in
@@ -1604,7 +1629,17 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     return 0
   fi
   _bd_strip_noncode "$1"
+  code0="$BD_CODE"
   _bd_expand_interpreter_args
+  # The arguments and here-strings handed to a shell are appended to the end
+  # of the text, so they are read after every command in it. A git config
+  # among them (`bash -c 'git config push.followTags true' && git push`)
+  # changes the repository's configuration for good, so it counts from the
+  # start (_tg_config_prescan).
+  added="${BD_CODE:${#code0}}"
+  case "$added" in
+    *[Cc][Oo][Nn][Ff][Ii][Gg]*|*[Rr][Ee][Mm][Oo][Tt][Ee]*) _tg_config_prescan "$added" ;;
+  esac
   segs=$(_bd_segments "$BD_CODE")
   case "$segs" in
     *__BD_SEG_FAIL__*)
@@ -1777,10 +1812,10 @@ JOURNAL_LINES=()
 while IFS=$'\t' read -r KEY SUMMARY ADIR; do
   case "$KEY" in
     tagUnread)
-      REASONS+=("A push whose refs or repository cannot be read or resolved from the command may push or delete a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
+      REASONS+=("A push whose refs, repository or configuration cannot be read or resolved from the command (or that the command changes first) may push or delete a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
       continue ;;
     unknown)
-      REASONS+=("A gh api call whose method, endpoint or GraphQL query cannot be read from the command (a variable, a substitution, stdin, a missing file, a method that is not GET, HEAD, POST, PUT, PATCH or DELETE, or a quoted command nested too deep) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
+      REASONS+=("A gh api call whose method, endpoint or GraphQL query cannot be read from the command (a variable, a substitution, stdin, a missing file, a query in which the shell expands something, a method that is not GET, HEAD, POST, PUT, PATCH or DELETE, a quoted command nested too deep, or more quoted commands after one program than flow reads) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
       continue ;;
     assignUnread)
       _tg_note "could not read whether $SUMMARY changes an issue's assignees (its body is a file); allowing it without a tier check"
