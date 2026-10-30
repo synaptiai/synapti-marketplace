@@ -153,7 +153,8 @@
 # commands too, but an evaluated variable or a sourced file is not), exec
 # with a command, alias, `hash -p`, enable with arguments, a DEBUG, RETURN
 # or ERR trap, a nameref (declare, typeset or local -n), and a command word
-# that is a variable or a substitution (`CD=cd; $CD ../other`). One anywhere
+# that is a variable or a substitution (`CD=cd; $CD ../other`; not one with a
+# / of its own, `"$ROOT/bin/x.sh"`, which names a file). One anywhere
 # in the command, before a push or after it (a loop or a function can run
 # the push again), makes the directory, the environment and git's
 # configuration unreadable from the start of the command: every push in it
@@ -240,14 +241,18 @@
 #     missing file, a double-quoted query in which
 #     bash expands something), a method that is a variable or
 #     not a verb on a merge or release endpoint, a
-#     gh pr or gh release whose subcommand is a
+#     quoted command nested more than four deep, or
+#     more quoted commands after one program than
+#     flow reads
+#   a gh pr or gh release whose subcommand is a       -> "ask": it may merge or release
 #     variable (`gh pr $A 7`, `gh $SUB merge 7`), an
-#     eval of a variable or a substitution, a source
-#     or . of stdin or of no file (`. <(...)`), a
-#     command word that is a variable with nothing
-#     after it (`$CMD`), a quoted command nested more
-#     than four deep, or more quoted commands after
-#     one program than flow reads
+#     eval of a variable or a substitution (not an
+#     assignment that reads a variable by name:
+#     `eval "v=\${$name}"`), a source or . of stdin
+#     or of a process substitution (`. <(...)`), or
+#     an unquoted command word that is a variable
+#     with nothing after it (`$CMD`; not `"$CMD"`, one
+#     program name, nor `"$ROOT/bin/x.sh"`, a file)
 #   a shell that reads its script from its input      -> "ask": it may merge or release
 #     (`echo '...' | bash`, `| sh -s`, `| sudo bash`,
 #     xargs bash): no -c, no script file, and no
@@ -337,7 +342,9 @@
 # more asks as an unreadable gh call. A shell among the words that reads its
 # script from its input asks. A command word that is a variable or a
 # substitution (`$GH pr merge 7`) is read as possibly gh or git for the same
-# Tier 3 actions, and with nothing after it (`$CMD`) asks. Programs that
+# Tier 3 actions, and unquoted with nothing after it (`$CMD`) asks. A
+# substitution is one word with the text around it (`D=$(gh repo view)` is an
+# assignment, and the gh in it is read as a command of its own). Programs that
 # only print, search or compare their arguments are exempt: echo, printf,
 # grep, egrep, fgrep, zgrep, rg, jq, cat, tee, test, `[`, `[[` and `:`. So
 # `echo gh pr merge 1`, `grep "gh pr merge" log`, `git commit -m "then gh pr
@@ -358,8 +365,9 @@
 # Bash call, a CDPATH set in the shell but not exported to this hook (`cd
 # name` is then read as a directory under the current one), a GraphQL
 # mutation whose field names hold none of Merge, Release or Ref
-# (createCommitOnBranch), and gh api DELETE or PATCH requests other than
-# those above (deleting a branch ref). Branch protection,
+# (createCommitOnBranch), gh api DELETE or PATCH requests other than those
+# above (deleting a branch ref), and an `eval "v=\${$name}"` whose name
+# variable holds shell text rather than a name. Branch protection,
 # rulesets and tag protection are the mechanism against those; this hook
 # reads the commands an agent writes. `--help` is not exempted: it costs a
 # prompt, while exempting a value that happens to read `--help` would cost a
@@ -1384,9 +1392,9 @@ _tg_gh() {   # $1 = index of gh
   # program itself is a variable read as possibly gh (`$EDITOR "$f"`): that is
   # a whole command this hook cannot read, which it does not guess at.
   if ! _tg_unreadable "${TOK[$1]}"; then
-    if _tg_unreadable "$w1"; then _tg_emit unknown "$1"; return 0; fi
+    if _tg_unreadable "$w1"; then _tg_emit cmdUnread "$1"; return 0; fi
     case "$w1" in
-      pr|release) _tg_unreadable "$w2" && { _tg_emit unknown "$1"; return 0; } ;;
+      pr|release) _tg_unreadable "$w2" && { _tg_emit cmdUnread "$1"; return 0; } ;;
     esac
   fi
   case "$w1 $w2" in
@@ -1439,7 +1447,21 @@ _tg_scan() {   # $1 = index of the command word
   local k t p out line start=$(($1 + 1)) interp=0 reads=0 over=0 joined="" join=0 texts=()
   if _tg_unreadable "${TOK[$1]}"; then
     start=$1
-    [ "$(($1 + 1))" -ge "$n" ] && { _tg_emit unknown "$1"; return 0; }
+    # Alone, it may be a whole command held in a variable (`$CMD`), which
+    # word splitting turns into a program and its arguments. Not when it is
+    # quoted (`"$CMD"` is one program name, and a quoted case pattern such as
+    # `"git@github.com:$R")` is left as a segment of its own), and not when
+    # it has a / of its own: it names a file to run (`"$ROOT/bin/x.sh"`).
+    # Nor in a text whose heredoc body was kept: a line of the body such as
+    # `$PATHS` in `while read -r p; do ...; done <<EOF` is data the loop reads.
+    if [ "$(($1 + 1))" -ge "$n" ] && [ "${TG_KEPT:-0}" = 0 ]; then
+      case "${TOK[$1]}" in */*) ;; *)
+        case "${TG_SEGTXT#"${TG_SEGTXT%%[![:space:]]*}"}" in
+          \"*|\'*) ;;
+          *) _tg_emit cmdUnread "$1"; return 0 ;;
+        esac ;;
+      esac
+    fi
   fi
   # interp=1 once a word the parser treats as running a script has been
   # passed: every quoted word after it is already a command of its own.
@@ -1530,7 +1552,7 @@ _tg_tier3() {   # $1 = the lines
   local line
   while IFS= read -r line; do
     case "${line%%$'\t'*}" in
-      merge|release|tagUnread|unknown|shell) printf '%s\n' "$line" ;;
+      merge|release|tagUnread|unknown|cmdUnread|shell) printf '%s\n' "$line" ;;
       releaseVerified:*) printf 'release\t%s\n' "${line#*$'\t'}" ;;
     esac
   done <<TG_T3_EOF
@@ -1805,9 +1827,18 @@ _tg_unmodeled() {
   [ "$TG_I" -lt "$n" ] || return 1
   [ "${TG_EXECW:-0}" = 1 ] && return 0
   w="${TOK[TG_I]}"
-  _tg_unreadable "$w" && return 0
+  # A variable or substitution as the command word may expand to cd, eval or
+  # export; one with a / of its own (`"$ROOT/bin/x.sh"`) names a file, and
+  # bash never runs a builtin for a word with a /.
+  case "$w" in */*) ;; *) _tg_unreadable "$w" && return 0 ;; esac
   case "$w" in
-    eval|source|.|alias) return 0 ;;
+    # With nothing after them they run nothing, unless what they read comes
+    # from a redirection or a process substitution (`. <(...)`): a bare `.`
+    # is also what a case pattern (`.|..)`) leaves as a segment.
+    eval|source|.)
+      [ $((TG_I + 1)) -lt "$n" ] && return 0
+      case "${TG_SEGTXT:-}" in *'<'*) return 0 ;; esac ;;
+    alias) [ $((TG_I + 1)) -lt "$n" ] && return 0 ;;
     enable) [ $((TG_I + 1)) -lt "$n" ] && return 0 ;;
     hash)
       for ((k = TG_I + 1; k < n; k++)); do
@@ -1844,6 +1875,7 @@ _tg_state_prescan() {   # $1 = the segments
     esac
     _bd_words "$seg"
     n=${#TOK[@]}
+    TG_SEGTXT="$seg"
     [ "$n" -gt 0 ] || continue
     _tg_command_word
     if _tg_unmodeled; then
@@ -1993,6 +2025,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     return 0
   fi
   _bd_strip_noncode "$1"
+  TG_KEPT="$BD_KEPT_BODY"
   code0="$BD_CODE"
   _bd_expand_interpreter_args
   # The arguments and here-strings handed to a shell are appended to the end
@@ -2034,6 +2067,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     TG_HSTR=(${BD_HSTR[@]+"${BD_HSTR[@]}"})
     TG_RDIR=(${BD_RDIR[@]+"${BD_RDIR[@]}"})
     TG_RIN="$BD_RIN"
+    TG_SEGTXT="$seg"
     # The words of the simple command before this one (a substitution comes
     # just before the command that holds it): _tg_cd.
     TG_LASTW="${TG_CURW:-}"; TG_CURW="${TOK[*]:-}"
@@ -2079,15 +2113,22 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     # cannot see.
     case "${TOK[TG_I]}" in
       eval)
-        for ((k = TG_I + 1; k < n; k++)); do
-          _tg_unreadable "${TOK[k]}" && { _tg_emit unknown "$TG_I"; break; }
-        done ;;
+        # An assignment whose value reads a variable indirectly (`eval
+        # "v=\${$name}"`, the bash 3.2 way to read a variable by name) runs
+        # no command, as long as no substitution is written in it.
+        if [ $((TG_I + 2)) -eq "$n" ] && _tg_is_assignment "${TOK[TG_I + 1]}"; then
+          case "${TOK[TG_I + 1]}" in *__BD_SUBST__*|*'`'*|*'$('*) _tg_emit cmdUnread "$TG_I" ;; esac
+        else
+          for ((k = TG_I + 1; k < n; k++)); do
+            _tg_unreadable "${TOK[k]}" && { _tg_emit cmdUnread "$TG_I"; break; }
+          done
+        fi ;;
       source|.)
         t="${TOK[TG_I + 1]:-}"
-        if [ -z "$t" ] || _tg_unreadable "$t" \
+        if { [ -z "$t" ] && case "$seg" in *'<'*) true ;; *) false ;; esac; } || _tg_unreadable "$t" \
            || { case "$t" in /dev/stdin|/dev/fd/*|-) true ;; *) false ;; esac \
                 && [ "${#TG_HSTR[@]}" -eq 0 ] && [ "$TG_RIN" = 0 ]; }; then
-          _tg_emit unknown "$TG_I"
+          _tg_emit cmdUnread "$TG_I"
         fi ;;
     esac
     case "${TOK[TG_I]}" in cd|pushd|popd) pend=1; _tg_cd "$TG_I" ;; esac
@@ -2215,6 +2256,9 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
       continue ;;
     unknown)
       REASONS+=("A gh api call whose method, endpoint or GraphQL query cannot be read from the command (a variable, a substitution, stdin, a missing file, a query in which the shell expands something, a method that is not GET, HEAD, POST, PUT, PATCH or DELETE, a quoted command nested too deep, or more quoted commands after one program than flow reads) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
+      continue ;;
+    cmdUnread)
+      REASONS+=("A command whose program, subcommand or script flow cannot read from the command text (a variable or a substitution, eval of one, or source of stdin or of no file) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
       continue ;;
     shell)
       REASONS+=("A shell that reads its script from its input (a pipe, or words xargs appends) runs commands flow cannot read, which may merge a pull request or create a release (tiers.merge, tiers.release; Tier 3): flow asks. Command: $SUMMARY")

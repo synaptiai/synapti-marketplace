@@ -543,7 +543,10 @@ _bd_strip_noncode() {
 # substitution (`$(...)`, or backquotes, also inside double quotes) as BOTH
 # things it is: a command in its own right, emitted
 # as its own segment, and a word in the command containing it, which therefore
-# survives as `__BD_SUBST__` rather than being torn in half.
+# survives as `__BD_SUBST__` rather than being torn in half. The marker takes
+# the substitution's place exactly, with no space added around it: `x$(y)z`
+# is the one word `x__BD_SUBST__z`, and `D=$(gh repo view)` the one
+# assignment `D=__BD_SUBST__`.
 #
 # That second half matters. `tr ';|&()\`' '\n'`, and a first attempt that merely
 # respected quoting, both split `gh --repo $(gh repo view -q .n) pr merge 42`
@@ -669,15 +672,18 @@ _BD_SEG_AWK='
           continue
         }
         if (c == "`") {
-          if (depth > 0 && tick[depth]) { flush(); depth--; buf[depth] = buf[depth] " __BD_SUBST__ " ; continue }
+          if (depth > 0 && tick[depth]) { flush(); depth--; buf[depth] = buf[depth] "__BD_SUBST__"; continue }
           depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1
           continue
         }
         if (c == ")") {
           if (depth > 0) {
             flush(); depth--
-            # The substitution stood where a word stood, so a word goes back.
-            buf[depth] = buf[depth] " __BD_SUBST__ "
+            # The substitution stood where a word stood, or a part of one, so
+            # a word goes back in its place, glued to the text around it as
+            # the substitution was: `D=$(gh pr view 1)` stays one assignment
+            # word, `D=__BD_SUBST__`, not an assignment and a command word.
+            buf[depth] = buf[depth] "__BD_SUBST__"
             continue
           }
           flush()

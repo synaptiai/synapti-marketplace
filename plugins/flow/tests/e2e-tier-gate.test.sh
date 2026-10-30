@@ -1419,6 +1419,20 @@ unknown|eval "$CMD"; gh pr view 1
 unknown|eval "$(printf 'gh pr merge 1')"
 unknown|. <(echo gh pr merge 1)
 unknown|CMD='gh pr merge 1'; $CMD
+silent|D=$(gh pr view 1)
+silent|D=$(gh repo view --json x)
+silent|DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
+silent|D=$(cat release.md)
+silent|X=$(cat "$PUSH_LOG")
+silent|PLAN_SCRIPT=$(sed -n "/^x/,/^y/p" "$RELEASE_MD" 2>/dev/null)
+silent|gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name'
+silent|D=$(git log -1)
+silent|V="x$(gh pr view 1)y"; echo "$V"
+silent|"$(git rev-parse --show-toplevel)/bin/x.sh" 2>/dev/null; gh pr view 1
+silent|CMD='gh pr view 1'; "$CMD"
+silent|case "$u" in "git@github.com:$R"|".") gh pr view 1 ;; esac
+silent|eval "v=\${$name:-}"; gh pr view 1
+unknown|eval "v=\$(gh pr merge 1)"
 maybe|GIT_DIR+=../other/.git git push origin v1-fix
 maybe|export GIT_DIR+=../other/.git; git push origin v1-fix
 maybe|set -a; GIT_DIR+=../other/.git; git push origin v1-fix
