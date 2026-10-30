@@ -40,7 +40,7 @@ TaskCreate in PLAN (one per deliverable, imperative subject, acceptance criteria
 - **2** Journal: push, PR creation, issue assignment. Execute, log to journal.
 - **3** Confirm: merge, release, force operations. Human confirmation, always.
 
-The `tier-gate.sh` hook applies `settings.json` `tiers` to each Bash command; merge and release are always confirm. Full tables: `references/three-tier-safety.md`.
+Merge and release always ask via `AskUserQuestion`; no command or hook reads the `tiers` settings. Full tables: `references/three-tier-safety.md`.
 
 ## AskUserQuestion Enforcement
 

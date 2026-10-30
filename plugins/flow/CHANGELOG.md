@@ -7,46 +7,13 @@ plugin as it behaves (#316). A prompt audit against Claude Opus 5.5 found 120
 places where that text pointed at commands, phases, settings or tasks that do
 not exist, compared against earlier plugin versions, or contradicted another
 file; the fixable ones are corrected and each contradiction was settled by the
-maintainer. Settled decisions that needed code ship with it: `tiers.*` is
-enforced by a hook, both judges run with no tools, branches without an issue
-get a session journal, `/flow:watch` gains issue and branch watches, and
-`/flow:release` bumps version files through a release pull request.
+maintainer. Settled decisions that needed code ship with it: both judges run
+with no tools, branches without an issue get a session journal, `/flow:watch`
+gains issue and branch watches, and `/flow:release` bumps version files
+through a release pull request.
 
 ### Added
 
-- `tier-gate.sh`, a PreToolUse hook, applies `tiers.*` to every Bash command:
-  `git push` (push), `gh pr create` (prCreate), assigning an issue
-  (issueAssign), `gh issue create` (issueCreate), `gh pr merge` (merge) and
-  `gh release create` (release), plus the `gh api` REST and GraphQL calls that
-  do the same. `confirm` asks through Claude Code's permission prompt,
-  `journal` writes a breadcrumb to the git-ignored auto-log trail and lets the
-  command run, and `autonomous` lets it run. Merge and release never go below
-  `confirm`; a lower setting is ignored with one line on stderr. Pushing or
-  deleting a tag is the release tier, and so are `gh release edit`, `delete`,
-  `upload` and `delete-asset`. `gh release create --verify-tag` for a tag
-  already on origin, in the repository gh targets, is only journalled, so a
-  release asks once, at the tag push. `/flow:merge` and `/flow:release` still
-  ask their own question first; the hook asks again, and also covers merge
-  and release commands run outside flow. A hook "ask" prompts in an
-  interactive session, including bypassPermissions mode, and refuses in
-  `claude -p`.
-
-  The hook reads the command after shell keywords, groups and wrappers
-  (`env`, `timeout`, `sudo`, `xargs` and others), reads `git` and `gh`
-  options as those programs parse them, and skips redirections. It asks when
-  it cannot tell what a command will do: a push it cannot tell from a tag
-  push (a source that is not a local branch, a glob, a remote chosen by
-  `--repo` or by configuration, a `git config`, `git remote` or upstream
-  change earlier in the command, or `alias`, `exec` or `source` before the
-  push), a program or gh subcommand it cannot read (a variable, a
-  substitution, `"$@"` or `"${A[@]}"`, `eval` of one, `source` of stdin), a
-  shell reading its script from its input in a command with a pipe or a
-  process substitution anywhere (`| bash`, `| { :; bash; }`, `> >(bash)`), a
-  push option it cannot read, and a merge, release or tag push in a quoted
-  command another program runs or in a here-string handed to a shell. A
-  substitution glued to a word (`.../merge$(true)`) is read both with and
-  without it. Text that names none of gh, push, merge or release is not
-  parsed. The hook's header lists what it does not cover.
 - `journal-append.sh` and `journal-record.sh --session` write the documented
   `session-YYYY-MM-DD.md` journal on a branch with no issue number; goals
   created or evaluated without an issue are recorded there.
@@ -87,6 +54,13 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
   The verdict judge's criteria, evidence and holdout output are fenced as
   untrusted data, and a fence marker inside any fenced content is defused so
   it cannot close its fence early.
+- The safety-tier references describe what flow does with each tier:
+  `/flow:merge` and `/flow:release` ask with `AskUserQuestion` before they
+  merge, tag or publish, whatever `tiers.merge` and `tiers.release` say, and
+  the commands that push, open a pull request, assign or create an issue run
+  those actions as Tier 2. No command or hook reads the `tiers.*` values, so
+  changing them does not change what flow does, and nothing applies them to
+  Bash commands run outside flow's commands.
 - Fixes in `/flow:address` follow `testing.tddMode`, as in `/flow:start`: a
   behavior-changing fix starts with a failing reproducing test.
 - `.env.example`, `.env.sample` and `.env.template` are committable; change
@@ -130,22 +104,6 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
 
 - `/flow` routes `goal`, `resume`, `run`, `trigger`, `watch` and `workflow`;
   its verb list named only the other sixteen commands.
-- `block-unchecked-merge.sh` reads a word with a backslash in it as bash
-  does, so `gh pr mer\ge 1` is refused like `gh pr merge 1`. It also refuses
-  a merge in a here-string handed to a shell (`bash <<<'gh pr merge 1'`), in
-  `$(bash -c '...')`, in a backquote inside double quotes, after a `2>&1`
-  in the middle of the command, with a substitution glued to a word
-  (`gh pr merge 1$(true)`), and on the line after a here-string
-  (`cat <<<EOF`), which it had read as the start of a heredoc body. A merge
-  printed into a shell that stands in a group, a subshell, a compound command
-  or a process substitution (`echo '...' | { :; bash; }`, `> >(bash)`) is
-  checked as one piped straight into it.
-- `block-destructive.sh` blocks `git reset --hard` and the other commands it
-  guards when a substitution is glued to a word (`git reset --hard$(true)`),
-  on the line after a here-string, when the text is printed into a shell in
-  a group, a subshell, a compound command or a process substitution, and
-  when the option or the command sits in an unquoted `${...}` default
-  (`git reset ${X:- --hard}`, `${X:-git reset --hard}`).
 - The goal judge runs in its per-user directory or not at all; when that
   directory could not be created it ran in `/tmp`, where another user's
   `.claude/settings.json` or `CLAUDE.md` would load.
