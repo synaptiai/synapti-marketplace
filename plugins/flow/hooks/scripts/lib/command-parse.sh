@@ -397,8 +397,9 @@ _bd_shell_reads_stdin() {
 #     keeps every line it consumed, because "I lost track" must never mean "so
 #     nothing here counts".
 #
-# `<<<` is a here-string, not a heredoc: the delimiter pattern requires a word
-# character after the `<<`, so `<<<word` never matches. `$(( a << b ))`, bare
+# `<<<` is a here-string, not a heredoc: a match that starts at its second `<`
+# (`<<<EOF` read as `<<EOF`) is skipped, so the lines after it stay commands
+# rather than becoming a body. `$(( a << b ))`, bare
 # `(( a << b ))` and `let x=1<<3` do not match either — a shift operand is not
 # a sink and the line does not end with the introducer.
 #
@@ -545,7 +546,8 @@ _bd_strip_noncode() {
       # nothing on it runs the body: the reading of a command without the
       # data its loops and readers take in.
       if (hits == 1 && (out !~ /[|>]/ || blank == 1) &&
-          match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/)) {
+          match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/) &&
+          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
         if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
@@ -561,7 +563,8 @@ _bd_strip_noncode() {
       # The same shape with a single-quoted delimiter. Written separately
       # because embedding an apostrophe in this program would end it.
       if (!inhd && hits == 1 && (out !~ /[|>]/ || blank == 1) &&
-          match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$")) {
+          match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$") &&
+          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
         if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {

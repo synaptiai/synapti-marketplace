@@ -1680,6 +1680,15 @@ EOF
   done
   _tg_run "$(printf 'while IFS= read -r f; do echo "$f"; done <<LIST\n$(ls)\nLIST\ngh pr view 1')"
   _expect_silent_allow
+  # A here-string (<<<EOF) has no body: the lines after it are commands, even
+  # though the text from its second < looks like a heredoc introducer.
+  for C in \
+    "$(printf 'cat <<<EOF\ngh pr merge 1\nEOF')" \
+    "$(printf "cat <<<'EOF'\ngh pr merge 1\nEOF")" \
+    "$(printf 'cat <<< EOF\ngh pr merge 1\nEOF')"; do
+    _tg_run "$C"
+    _expect_ask "tiers.merge"
+  done
   e2e_expect_clean_edges
 fi
 

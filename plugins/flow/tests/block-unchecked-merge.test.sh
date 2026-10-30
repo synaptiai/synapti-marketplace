@@ -561,6 +561,13 @@ assert_exit 2 "$?" "a merge after a comment ending in a backslash is still check
 _bum_run "$S" "$(printf 'ls # list \\\ngh pr merge 7 --repo acme/widgets --squash')"
 assert_exit 2 "$?" "and after a trailing comment ending in a backslash"
 
+_flow_test_begin "a here-string is not a heredoc: the lines after it are commands"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "$(printf 'cat <<<EOF\ngh pr merge 7 --repo acme/widgets --squash\nEOF')"
+assert_exit 2 "$?" "a merge on the line after cat <<<EOF is checked"
+_bum_run "$S" "$(printf "cat <<<'EOF'\ngh pr merge 7 --repo acme/widgets --squash\nEOF")"
+assert_exit 2 "$?" "and after a quoted here-string word"
+
 _flow_test_begin "an apostrophe in a heredoc body does not hide what follows"
 S=$(_bum_stub "$QUEUED" "" "")
 _bum_run "$S" "$(printf "git commit -F - <<EOF\nDon't ship yet\nEOF\ngit commit --amend -m 'Refs #12' && gh pr merge 7 --repo acme/widgets --squash")"
