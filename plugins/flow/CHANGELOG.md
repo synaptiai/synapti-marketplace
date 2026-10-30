@@ -77,9 +77,6 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
 
 ### Changed
 
-- `/flow:merge` and `/flow:release` no longer ask their own yes/no question;
-  the tier hook's permission prompt on the merge, tag push or release command
-  is the confirmation. Escalations still use AskUserQuestion.
 - `/flow:goal evaluate` and the Stop hook give the goal judge the same fenced
   input, the same instructions and the same model (`flow.goals.judge.model`).
   The verdict judge's criteria, evidence and holdout output are fenced as
