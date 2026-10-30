@@ -43,7 +43,48 @@ assert_match 'preflight . bump . release_pr' "$CONTENT" "documents the first run
 assert_match 'preflight . tag' "$CONTENT" "documents the second run's phase order (matches workflow yaml)"
 WF_PHASES=$(python3 -c 'import sys, yaml; print(" ".join(p["id"] for p in yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["phases"]))' "$PLUGIN_DIR/workflows/release.workflow.yaml")
 assert_equal "preflight bump release_pr tag" "$WF_PHASES" "release.workflow.yaml phases"
-assert_not_contains "ask_user_to_release" "$(cat "$PLUGIN_DIR/workflows/release.workflow.yaml")" "no AskUserQuestion activity in the workflow"
+assert_contains "ask_user_to_release" "$(cat "$PLUGIN_DIR/workflows/release.workflow.yaml")" "the workflow records the AskUserQuestion confirmation before the tag phase acts"
+
+# The release asks its own question before the tag, the tag push and the
+# release are created, and before the release for a tag already on origin;
+# the tier hook's prompt on those commands is a second check. The release pull
+# request run creates nothing that needs Tier 3, so it does not ask.
+# _rel_section_line <section label> <pattern>: the first line matching the
+# pattern inside the Phase 4 section headed ### `RELEASE_RUN=<label>`.
+_rel_section_line() {
+  awk -v head="### \`RELEASE_RUN=$1\`" -v pat="$2" '
+    /^### / { p = (index($0, head) == 1) }
+    /^## / { p = 0 }
+    p && $0 ~ pat { print NR; exit }' "$RELEASE_MD"
+}
+_rel_asks_before() {
+  local label="$1" fence="$2" ask gate run
+  ask=$(_rel_section_line "$label" 'AskUserQuestion')
+  gate=$(_rel_section_line "$label" 'Only after the user confirms')
+  run=$(_rel_section_line "$label" "$fence")
+  if [ -n "$ask" ] && [ -n "$gate" ] && [ -n "$run" ] && [ "$ask" -lt "$gate" ] && [ "$gate" -lt "$run" ]; then
+    _flow_assert_pass "RELEASE_RUN=$label: AskUserQuestion (line $ask), then the confirmed-only gate (line $gate), then the block (line $run)"
+  else
+    _flow_assert_fail "RELEASE_RUN=$label must ask with AskUserQuestion and run its block only after the user confirms (ask='$ask' gate='$gate' block='$run')"
+  fi
+}
+
+_flow_test_begin "release.md asks with AskUserQuestion before tagging and before publishing"
+_rel_asks_before tag '^# RELEASE_TAG_BLOCK_BEGIN'
+_rel_asks_before publish '^gh release create '
+PR_ASK=$(_rel_section_line pr 'AskUserQuestion')
+PR_FENCE=$(_rel_section_line pr '^# RELEASE_PR_BLOCK_BEGIN')
+if [ -n "$PR_FENCE" ] && [ -z "$PR_ASK" ]; then
+  _flow_assert_pass "RELEASE_RUN=pr: the release pull request run does not ask (Tier 2 only)"
+else
+  _flow_assert_fail "RELEASE_RUN=pr: expected its block and no AskUserQuestion (block='$PR_FENCE' ask='$PR_ASK')"
+fi
+assert_not_contains "this is not a question" "$CONTENT" "the preview no longer says no question follows"
+if grep -qE 'git push origin <tag>` \| 3 \| \*\*Confirm\*\* — asks via `AskUserQuestion`' <<<"$CONTENT"; then
+  _flow_assert_pass "the Tier table names the command's own question for the tag push"
+else
+  _flow_assert_fail "the Tier table names the command's own question for the tag push: no Tier table row matches /"'git push origin <tag>` \| 3 \| \*\*Confirm\*\* — asks via `AskUserQuestion`'"/"
+fi
 
 _flow_test_begin "release.md transitions the FlowRun to terminal state"
 assert_contains "FlowRun terminal transition" "$CONTENT" "terminal-transition step documented"

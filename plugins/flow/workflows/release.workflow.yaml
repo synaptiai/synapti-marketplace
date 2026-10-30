@@ -70,6 +70,9 @@ phases:
   - id: tag
     type: mixed
     activities:
+      - id: ask_user_to_release
+        type: external
+        evidence: user_confirmation
       - id: tag_after_merge
         type: bash
         evidence: tag_sha
@@ -89,6 +92,7 @@ completion_gate:
     - version_bumped_consistently
     - changelog_generated
     - release_pr_merged
+    - user_confirmed
     - tag_pushed
     - github_release_created
 

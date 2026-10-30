@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, AskUserQuestion
 
 # Create Release v$ARGUMENTS
 
-Tier 3 operation — **always requires human confirmation**. The version bump reaches the default branch only through a release pull request; flow's tier hook asks before the tag is pushed, and nothing is published until you accept that prompt.
+Tier 3 operation — **always requires human confirmation**, even in autonomous mode. The version bump reaches the default branch only through a release pull request. Before the tag is created and pushed, and before a GitHub release is created, this command asks you with AskUserQuestion. flow's tier hook then asks again when the tag push or the release command runs; it is a second check, and it also covers a tag push or release typed outside flow. You may see two prompts for one release, and nothing is published until you accept both.
 
 Arguments: the bump type (`patch`, `minor` or `major`) and, in a plugin marketplace, the name of the plugin to release and optionally the marketplace's bump type (`/flow:release minor flow`).
 
@@ -427,6 +427,8 @@ With `RELEASE_RUN=publish`, ask with AskUserQuestion which to do. A repository t
 2. Skip it and plan the next version: run the block below with `TAG` from Phase 2. It runs this phase again with `TAG` counted as released and prints a new release state; continue from that output as from the first (usually `RELEASE_RUN=pr`).
 3. Stop.
 
+These answers choose the path; they do not confirm the release. On the tag and publish paths, Phase 4 shows the Release Preview and then asks before anything is created.
+
 ```bash
 # RELEASE_SKIP_BLOCK_BEGIN
 if [ -z "${TAG:-}" ]; then
@@ -475,7 +477,7 @@ On `RELEASE_RUN=pr`, when the repository keeps a changelog file (the plugin's `C
 
 ## Phase 4: Show the Assessment and Act
 
-Show the assessment as text — this is not a question:
+Show the assessment as text. The release pull request run continues without a question; the tag and publish runs ask with AskUserQuestion after the preview, in their sections below.
 
 ```markdown
 ## Release Preview
@@ -679,7 +681,9 @@ Show the pull request's URL. The release continues when it is merged: run `/flow
 
 The release title names the tag and, in a marketplace, the plugin and its version with a one-line summary: `v4.17.0 — flow 3.10.0: <summary>`. Outside a marketplace it is the tag.
 
-Run the block below with `TAG`, `TAG_COMMIT` and `DEFAULT_BRANCH` from Phase 2, `TITLE` set to the release title, and `CHANGELOG` to the generated changelog. It creates an annotated tag on `TAG_COMMIT`, then pushes it and creates the GitHub release from it. The whole block is one call, and flow's tier hook, which treats the tag push as a release, asks for your confirmation before any of it runs; if you decline, nothing runs and no tag is created. If the push fails after the tag is created, the tag is in your clone only, and `TAG_ERROR` says how to push or delete it. If the release is not created after the push, run `/flow:release` again: it finds the tag on origin and creates only the release.
+Use the AskUserQuestion tool with contextual options to confirm, naming what will be created: "Create release {TAG} on {TAG_COMMIT}? This creates the tag, pushes it to origin and creates the GitHub release with the changelog above." Offer two options: create the release as previewed, or cancel. Ask even when `autonomous: true` is set: a release is Tier 3.
+
+Only after the user confirms via the tool, run the block below with `TAG`, `TAG_COMMIT` and `DEFAULT_BRANCH` from Phase 2, `TITLE` set to the release title, and `CHANGELOG` to the generated changelog. If the user cancels, stop without running it. The block creates an annotated tag on `TAG_COMMIT`, then pushes it and creates the GitHub release from it. The whole block is one call, and flow's tier hook, which treats the tag push as a release, asks again before any of it runs; that second prompt is expected. If you decline it, nothing runs and no tag is created. If the push fails after the tag is created, the tag is in your clone only, and `TAG_ERROR` says how to push or delete it. If the release is not created after the push, run `/flow:release` again: it finds the tag on origin and creates only the release.
 
 ```bash
 # RELEASE_TAG_BLOCK_BEGIN
@@ -717,7 +721,9 @@ gh release create "$TAG" --verify-tag --title "$TITLE" --notes "$CHANGELOG" \
 
 ### `RELEASE_RUN=publish`: create the release for a tag already on origin
 
-The tag is already on origin, so nothing is tagged or pushed. Generate the changelog from the pull requests merged between the tag before `TAG` and `TAG` (Phase 1 counted from `TAG` itself, so its list is empty), set `TITLE` as for `RELEASE_RUN=tag`, and run the block below. flow's tier hook asks for your confirmation before the release is created, because the block names the tag as `"$TAG"`, which the hook cannot read; with a literal tag that is on origin it would record the call in flow's auto-log trail instead of asking. The prompt is wanted here, because the tag may have been pushed outside flow, where nothing confirmed the release. Its reason says the tag could not be found on origin; Phase 2 has already found it there. If you decline, nothing is created.
+The tag is already on origin, so nothing is tagged or pushed. Generate the changelog from the pull requests merged between the tag before `TAG` and `TAG` (Phase 1 counted from `TAG` itself, so its list is empty), and set `TITLE` as for `RELEASE_RUN=tag`. Then use the AskUserQuestion tool with contextual options to confirm: "Create the GitHub release for {TAG}, which is already on origin, with the changelog above?" Offer two options: create the release as previewed, or cancel. Ask even when `autonomous: true` is set.
+
+Only after the user confirms via the tool, run the block below. If the user cancels, stop without running it. flow's tier hook also asks before the release is created, because the block names the tag as `"$TAG"`, which the hook cannot read; with a literal tag that is on origin it would record the call in flow's auto-log trail instead of asking. The prompt is wanted here, because the tag may have been pushed outside flow, where nothing confirmed the release. Its reason says the tag could not be found on origin; Phase 2 has already found it there. If you decline that prompt, nothing is created.
 
 ```bash
 if [ -z "${TAG:-}" ]; then
@@ -727,7 +733,7 @@ fi
 gh release create "$TAG" --verify-tag --title "${TITLE:-$TAG}" --notes "$CHANGELOG"
 ```
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes. First run: `preflight` (`RELEASE_RUN=pr`), `bump` (version files bumped and committed on the release branch, changelog written), `release_pr` (branch pushed, pull request opened). Second run: `preflight` (`RELEASE_RUN=tag`), `tag` (annotated tag created, pushed after the tier prompt, GitHub release created). A run with `RELEASE_RUN=publish` records `preflight` and `tag` (GitHub release created for the tag already on origin); when the release is skipped, the run continues from the new release state and records as that run does. Each write advances `state.current_phase` in that order.
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record one FlowActivity per phase boundary as it completes. First run: `preflight` (`RELEASE_RUN=pr`), `bump` (version files bumped and committed on the release branch, changelog written), `release_pr` (branch pushed, pull request opened). Second run: `preflight` (`RELEASE_RUN=tag`), then `tag` once the block returns (the user confirmed with AskUserQuestion, the annotated tag was created and pushed after the tier hook's prompt, and the GitHub release was created). A run with `RELEASE_RUN=publish` records `preflight` and, once the user has confirmed and the block returns, `tag` (GitHub release created for the tag already on origin); when the release is skipped, the run continues from the new release state and records as that run does. Each write advances `state.current_phase` in that order.
 
 ## Phase 5: Post-Release
 
@@ -738,7 +744,7 @@ On the second run:
 gh release view "$TAG"
 ```
 
-**FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): when the run's last phase succeeds — the release pull request opened on the first run, the release published on the second — invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. If a `workflow-run` journal artifact was emitted at entry, update it to `status=completed` via a second `bin/journal-record.sh` call. If the run stopped (`STATE=blocked`, `RELEASE_RUN=waiting`, a declined prompt) or failed, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
+**FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): when the run's last phase succeeds — the release pull request opened on the first run, the release published on the second — invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. If a `workflow-run` journal artifact was emitted at entry, update it to `status=completed` via a second `bin/journal-record.sh` call. If the run stopped (`STATE=blocked`, `RELEASE_RUN=waiting`, a cancelled question, a declined prompt) or failed, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
 
 Display the pull request or release URL and a summary that lists every version file bumped and every file skipped with its reason.
 
@@ -752,9 +758,9 @@ Display the pull request or release URL and a summary that lists every version f
 | Create the release branch, write the bump and changelog, commit | 1 | Autonomous, local |
 | `git push -u origin <release branch>` | 2 | Per `tiers.push` |
 | `gh pr create` (the release pull request) | 2 | Per `tiers.prCreate` |
-| `git tag -a <tag> <merge commit>` | 1 | Autonomous, local |
-| `git push origin <tag>` | 3 | **Confirm** — the tier hook asks before it runs |
-| `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push in the same call; with the tag already on origin (`RELEASE_RUN=publish`), the tier hook asks for the release alone, because the block names the tag as `"$TAG"`, which it cannot read; that prompt is wanted, since the tag may have been pushed outside flow |
+| `git tag -a <tag> <merge commit>` | 1 | Autonomous, local; it runs in the tag block, so only after the user confirms the release question |
+| `git push origin <tag>` | 3 | **Confirm** — asks via `AskUserQuestion` before the tag block runs; the tier hook asks again when it runs |
+| `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push, in the same question and the same hook prompt; with the tag already on origin (`RELEASE_RUN=publish`), asks via `AskUserQuestion` for the release alone, and the tier hook asks again because the block names the tag as `"$TAG"`, which it cannot read; that prompt is wanted, since the tag may have been pushed outside flow |
 | Post-release verification (`gh release view`) | 1 | Autonomous |
 
-`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push, with the GitHub release created in the same call, needs your confirmation at flow's tier hook, whatever `tiers.release` says. Creating the release for a tag already on origin is asked on its own: the hook cannot read the tag the block passes as `"$TAG"`, and that prompt is wanted, since the tag may have been pushed outside flow. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.
+`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push, with the GitHub release created in the same call, needs your answer to this command's question and then your confirmation at flow's tier hook, whatever `tiers.release` says. Creating the release for a tag already on origin is asked the same way: the command's question first, then the hook, which cannot read the tag the block passes as `"$TAG"`; that prompt is wanted, since the tag may have been pushed outside flow. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.
