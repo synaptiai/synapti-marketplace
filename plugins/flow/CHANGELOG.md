@@ -25,23 +25,26 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
   deleting a tag is the release tier, and so are `gh release edit`, `delete`,
   `upload` and `delete-asset`. `gh release create --verify-tag` for a tag
   already on origin, in the repository gh targets, is only journalled, so a
-  release asks once, at the tag push. The hook reads the command after shell
-  keywords and groups (`if`, `do`, `!`, `{`, `function`, `coproc`), wrappers
-  (`env`, `timeout`, `sudo`, `xargs` and others) and backslashes inside a
-  word, reads `git` and `gh` options as those programs parse them (`git
-  push` options by prefix, `-X=POST` for the API method, a percent-encoded
-  API endpoint), skips redirections, including one attached to a word
-  (`--tags>/dev/null`), and asks when it cannot tell a tag push from a branch
-  push: a source that is not a local branch, a glob, a forced push to a name
-  that is not a branch, a remote chosen by `--repo` or by configuration,
-  `remote.<name>.mirror`, `.push` or `include.path` set in config, `-c`,
-  `--config-env` or `GIT_CONFIG_*`, or a `git config` or `git remote` change
-  earlier in the same command. After `cd` into another worktree of the same
-  repository it judges the push there. After a program it does not know, a
-  merge, release or tag push later in the command, in a quoted command it
-  runs (`watch '...'`, `flock -c '...'`) or in a here-string handed to a
-  shell, still asks. A hook "ask" prompts in an interactive session, including
-  bypassPermissions mode, and refuses in `claude -p`.
+  release asks once, at the tag push. `/flow:merge` and `/flow:release` still
+  ask their own question first; the hook asks again, and also covers merge
+  and release commands run outside flow. A hook "ask" prompts in an
+  interactive session, including bypassPermissions mode, and refuses in
+  `claude -p`.
+
+  The hook reads the command after shell keywords, groups and wrappers
+  (`env`, `timeout`, `sudo`, `xargs` and others), reads `git` and `gh`
+  options as those programs parse them, and skips redirections. It asks when
+  it cannot tell what a command will do: a push it cannot tell from a tag
+  push (a source that is not a local branch, a glob, a remote chosen by
+  `--repo` or by configuration, a `git config`, `git remote` or upstream
+  change earlier in the command, or `alias`, `exec` or `source` before the
+  push), a program or gh subcommand it cannot read (a variable, a
+  substitution, `eval` of one, `source` of stdin), text piped into a shell, a
+  push option it cannot read, and a merge, release or tag push in a quoted
+  command another program runs or in a here-string handed to a shell. A
+  substitution glued to a word (`.../merge$(true)`) is read both with and
+  without it. Text that names none of gh, push, merge or release is not
+  parsed. The hook's header lists what it does not cover.
 - `journal-append.sh` and `journal-record.sh --session` write the documented
   `session-YYYY-MM-DD.md` journal on a branch with no issue number; goals
   created or evaluated without an issue are recorded there.
@@ -128,8 +131,13 @@ get a session journal, `/flow:watch` gains issue and branch watches, and
 - `block-unchecked-merge.sh` reads a word with a backslash in it as bash
   does, so `gh pr mer\ge 1` is refused like `gh pr merge 1`. It also refuses
   a merge in a here-string handed to a shell (`bash <<<'gh pr merge 1'`), in
-  `$(bash -c '...')`, in a backquote inside double quotes, and after a
-  `2>&1` in the middle of the command.
+  `$(bash -c '...')`, in a backquote inside double quotes, after a `2>&1`
+  in the middle of the command, with a substitution glued to a word
+  (`gh pr merge 1$(true)`), and on the line after a here-string
+  (`cat <<<EOF`), which it had read as the start of a heredoc body.
+- `block-destructive.sh` blocks `git reset --hard` and the other commands it
+  guards when a substitution is glued to a word (`git reset --hard$(true)`)
+  and on the line after a here-string.
 - The goal judge runs in its per-user directory or not at all; when that
   directory could not be created it ran in `/tmp`, where another user's
   `.claude/settings.json` or `CLAUDE.md` would load.

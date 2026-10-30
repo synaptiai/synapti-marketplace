@@ -355,7 +355,8 @@
 # script from a pipe asks. A command word that is a variable or a
 # substitution (`$GH pr merge 7`) is read as possibly gh or git for the same
 # Tier 3 actions, and with nothing after it (`$CMD`) asks unless it is one
-# quoted string. A
+# quoted string, when the command gets past the cheap reject below (its text
+# names gh, push, merge or release somewhere). A
 # substitution is one word with the text around it (`D=$(gh repo view)` is an
 # assignment, and the gh in it is read as a command of its own). Programs that
 # only print, search or compare their arguments are exempt: echo, printf,
@@ -369,7 +370,10 @@
 # journaled, since a prompt for every script that
 # mentions git would cost more than the setting saves. And what text cannot
 # show: a whole command held in a variable with arguments after it (`$CMD
-# --repo o/r`, read only as possibly gh or git), a gh or git alias, a gh
+# --repo o/r`, read only as possibly gh or git), a command held in a variable
+# in a command whose text names none of gh, push, merge or release
+# (`CMD=$(cat f); $CMD`, which the cheap reject lets through like `bash f`),
+# a gh or git alias, a gh
 # extension, a script file (`bash release.sh`; one run with `source` or `.`
 # makes the pushes in the command ask, but its own actions are not read) or
 # a make target, another program that talks to GitHub (curl, git
