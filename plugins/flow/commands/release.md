@@ -717,7 +717,7 @@ gh release create "$TAG" --verify-tag --title "$TITLE" --notes "$CHANGELOG" \
 
 ### `RELEASE_RUN=publish`: create the release for a tag already on origin
 
-The tag is already on origin, so nothing is tagged or pushed. Generate the changelog from the pull requests merged between the tag before `TAG` and `TAG` (Phase 1 counted from `TAG` itself, so its list is empty), set `TITLE` as for `RELEASE_RUN=tag`, and run the block below. flow's tier hook asks for your confirmation before the release is created, because the tag may have been pushed outside flow, where nothing confirmed the release. Its reason says the tag could not be found on origin: the block names the tag as `"$TAG"`, which the hook does not read, and Phase 2 has already found the tag there. If you decline, nothing is created.
+The tag is already on origin, so nothing is tagged or pushed. Generate the changelog from the pull requests merged between the tag before `TAG` and `TAG` (Phase 1 counted from `TAG` itself, so its list is empty), set `TITLE` as for `RELEASE_RUN=tag`, and run the block below. flow's tier hook asks for your confirmation before the release is created, because the block names the tag as `"$TAG"`, which the hook cannot read; with a literal tag that is on origin it would record the call in flow's auto-log trail instead of asking. The prompt is wanted here, because the tag may have been pushed outside flow, where nothing confirmed the release. Its reason says the tag could not be found on origin; Phase 2 has already found it there. If you decline, nothing is created.
 
 ```bash
 if [ -z "${TAG:-}" ]; then
@@ -754,7 +754,7 @@ Display the pull request or release URL and a summary that lists every version f
 | `gh pr create` (the release pull request) | 2 | Per `tiers.prCreate` |
 | `git tag -a <tag> <merge commit>` | 1 | Autonomous, local |
 | `git push origin <tag>` | 3 | **Confirm** — the tier hook asks before it runs |
-| `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push in the same call; with the tag already on origin (`RELEASE_RUN=publish`), the tier hook asks for the release alone |
+| `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push in the same call; with the tag already on origin (`RELEASE_RUN=publish`), the tier hook asks for the release alone, because the block names the tag as `"$TAG"`, which it cannot read; that prompt is wanted, since the tag may have been pushed outside flow |
 | Post-release verification (`gh release view`) | 1 | Autonomous |
 
-`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push, with the GitHub release created in the same call, needs your confirmation at flow's tier hook, whatever `tiers.release` says. Creating the release for a tag already on origin is asked on its own. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.
+`/flow:release` is **Tier 3** for the publish path: nothing reaches the default branch except through the release pull request, and the tag push, with the GitHub release created in the same call, needs your confirmation at flow's tier hook, whatever `tiers.release` says. Creating the release for a tag already on origin is asked on its own: the hook cannot read the tag the block passes as `"$TAG"`, and that prompt is wanted, since the tag may have been pushed outside flow. The cost of an unwanted release (downstream consumers pulling a broken version, false notifications) is borne by people downstream, which is the Tier 3 criterion.
