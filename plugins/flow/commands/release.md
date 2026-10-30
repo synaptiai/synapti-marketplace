@@ -428,6 +428,7 @@ With `RELEASE_RUN=publish`, ask with AskUserQuestion which to do. A repository t
 3. Stop.
 
 ```bash
+# RELEASE_SKIP_BLOCK_BEGIN
 if [ -z "${TAG:-}" ]; then
   printf '%s\n' "STATE=blocked"
   printf '%s\n' "ERROR=\"set TAG to the tag whose release is skipped\""
@@ -446,6 +447,7 @@ fi
 # The block reads the arguments from $ARGUMENTS, which Claude Code fills in
 # here as it did when it ran the block the first time.
 FLOW_RELEASE_SKIP_PUBLISH="$TAG" ARGUMENTS="$ARGUMENTS" bash -c "$PLAN_SCRIPT"
+# RELEASE_SKIP_BLOCK_END
 ```
 
 ## Phase 3: Generate Changelog

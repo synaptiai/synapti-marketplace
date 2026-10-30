@@ -64,6 +64,10 @@
 #      release pull request's version, an untagged version, or the next tag
 #      with no version file) goes unseen, and the run creates a second
 #      release beside it
+#   S14 the skip fence, as written, finds no release.md, cuts the wrong lines
+#      out of it, or loses the arguments, so the plan it prints is not the
+#      one the skip asked for; or it runs with no TAG, or with no Phase 2
+#      block to run, and prints nothing that says so
 #   S12 a repository that pushes tags without GitHub releases lands in
 #      publish on every run and can never plan its next version; or the
 #      skip that lets it applies to another tag, or to a tag only in this
@@ -830,18 +834,48 @@ e2e_expect_line "RELEASE_RUN=tag"
 e2e_expect_line "TAG=v2.4.10"
 e2e_expect_clean_edges
 
-# The fence the skip answer runs: it runs Phase 2 again from release.md with
-# the skip set, as the user's choice in the publish question does.
+# The fence the skip answer runs, whole and as written: it finds release.md
+# through the plugin root (CLAUDE_PLUGIN_ROOT, as Claude Code sets it), cuts
+# the Phase 2 block out of it, and runs that with the skip set and the
+# arguments Claude Code fills in for $ARGUMENTS. gh fails when asked for
+# v4.17.0's release, so a run where the skip did not reach the block shows
+# STATE=unavailable rather than the plan.
+_flow_test_begin "Phase 2 skip fence: runs Phase 2 again with the tag counted as released (S14)"
 e2e_new release-skip-fence
 e2e_describe "v4.17.0 on origin with no release; the skip fence with TAG=v4.17.0, run as /flow:release minor beta"
 _released_marketplace
 e2e_gh_fail release-v4.17.0
 e2e_gh_fixture prs-all-chore_release-4.18.0-main '[]'
-e2e_run_fence TAG=v4.17.0 "$RELEASE_MD" 'FLOW_RELEASE_SKIP_PUBLISH="$TAG"' 'minor beta'
+e2e_run_fence TAG=v4.17.0 "$RELEASE_MD" 'RELEASE_SKIP_BLOCK_BEGIN' 'minor beta'
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "RELEASE_TYPE=minor"
 e2e_expect_line "RELEASE_PLUGIN=beta"
 e2e_expect_line "RELEASE_RUN=pr"
 e2e_expect_line "TAG=v4.18.0"
+e2e_expect_line "RELEASE_BRANCH=chore/release-4.18.0"
+e2e_expect_no_out "STATE=unavailable"
+e2e_expect_no_out "RELEASE_RUN=publish"
+e2e_expect_clean_edges
+
+e2e_new release-skip-fence-no-tag
+e2e_describe "the skip fence run without TAG"
+_released_marketplace
+e2e_run_fence "$RELEASE_MD" 'RELEASE_SKIP_BLOCK_BEGIN' 'minor beta'
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "STATE=blocked"
+e2e_expect_out "set TAG to the tag whose release is skipped"
+e2e_expect_no_out "RELEASE_RUN="
+e2e_expect_clean_edges
+
+e2e_new release-skip-fence-no-block
+e2e_describe "the skip fence with TAG=v4.17.0, where the plugin root's release.md has no Phase 2 block"
+_released_marketplace
+e2e_plugin_copy commands/release.md '# Create Release (no Phase 2 block in this copy)'
+e2e_run_fence TAG=v4.17.0 "$RELEASE_MD" 'RELEASE_SKIP_BLOCK_BEGIN' 'minor beta'
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_line "STATE=blocked"
+e2e_expect_out "cannot read the Phase 2 block"
+e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 
 _flow_test_begin "Phase 2: a release branch name that is not a valid branch name stops the run (S10)"
