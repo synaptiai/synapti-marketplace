@@ -51,7 +51,7 @@
           "default": "journal"
         },
         "issueCreate": {
-          "description": "gh issue create. flow's commands create issues without asking; while a FlowGoal is active, the ask-issue-create.sh hook asks first unless minimalScope is true.",
+          "description": "gh issue create. /flow:issue creates the issue without asking; /flow:review and /flow:address file a follow-up issue only in minimalScope mode, after asking. While a FlowGoal is active, the ask-issue-create.sh hook asks first unless minimalScope is true.",
           "enum": [
             "autonomous",
             "journal",

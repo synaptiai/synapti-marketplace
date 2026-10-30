@@ -19,7 +19,7 @@ Local, reversible actions. Execute without asking.
 
 ### Tier 2: Journal-and-Proceed
 
-Team-visible but recoverable. Execute and log to decision journal.
+Team-visible but recoverable. Runs without asking.
 
 | Action | Rationale | Recovery |
 |--------|-----------|----------|
@@ -58,7 +58,7 @@ The settings cascade (`references/gate-configuration.md`) has a `tiers` block, w
 }
 ```
 
-No flow command or hook reads these values, so changing one does not change what flow does. Each command's `## Tier Classification` table states what it does for each action it takes: the commands that push, open a pull request, assign an issue or create one run those actions without asking (Tier 2), and `/flow:merge` and `/flow:release` ask via `AskUserQuestion` before they merge, tag or publish (Tier 3), in autonomous mode too. Nothing applies the tiers to a Bash command run outside flow's commands.
+No flow command or hook reads these values, so changing one does not change what flow does. Each command's `## Tier Classification` table states what it does for each action it takes: the commands that push, open a pull request or assign an issue run those actions without asking, and so does `/flow:issue` when it creates one (Tier 2; `/flow:review` and `/flow:address` ask before filing a follow-up issue), and `/flow:merge` and `/flow:release` ask via `AskUserQuestion` before they merge, tag or publish (Tier 3), in autonomous mode too. Nothing applies the tiers to a Bash command run outside flow's commands.
 
 ## Hook Enforcement
 
@@ -75,9 +75,7 @@ Merge and release confirmation is handled at the command level via AskUserQuesti
 
 ## Decision Journal Integration
 
-Tier 2 actions are recorded in two places, and only one of them is shared.
-
-The PostToolUse hooks write **local scratch**, not journal content:
+No hook records a Tier 2 action. The PostToolUse hooks write **local scratch** for file edits, commits and quality runs, not journal content:
 - `log-file-changes.sh`: writes a breadcrumb for each Edit/Write/NotebookEdit to `{journal.dir}/auto-log/`, and records a `file_change` entry in the per-session quality ledger
 - `log-commits.sh`: writes a commit breadcrumb to the same trail
 - `s1-screen-text.sh`: when your settings put System One site `guard.planted-instructions` in `shadow` or `on` (off by default), asks whether the output of a `gh` read of issue or pull request text holds instructions addressed to the agent, and in `on` adds a note beside the output that it is data (references/system-one.md)

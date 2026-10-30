@@ -243,7 +243,7 @@ COMMANDS (23)
   Runtime / admin (6) — inspect & debug the layer Flow manages for you:
   └── goal, workflow, trigger, run, resume, watch
 
-HOOKS (16 scripts; 14 registered in hooks/hooks.json, the other two run from flow-goal-stop)
+HOOKS (17 scripts; 15 registered in hooks/hooks.json, the other two run from flow-goal-stop)
   ├── Safety (PreToolUse): block-force-push, block-destructive, block-secrets,
   │                        block-unchecked-merge (refuses `gh pr merge` while checks are
   │                        queued, running or failed), ask-issue-create (asks before
@@ -507,7 +507,7 @@ Flow finds every per-user file under your home: the two defaults above, the lear
 
 The same rule covers the other ways to move those files. `CLAUDE_TRANSCRIPT_DIR` and `CLAUDE_CONFIG_DIR` count for `/flow:learn` only when they pass the same checks as `FLOW_STATE_DIR`. `learning.proposalDir` and `learning.transcriptDir` are read from your user settings file and the plugin default only, and must be absolute paths (or start with `~`). A value a repository supplies is not used. `/flow:learn` prints a `WARN=` line when it cannot read these settings or a value is not absolute; the SessionEnd hook drops such a value silently.
 
-Example project settings in `.claude/settings.flow.json`:
+Example project settings in `.claude/settings.flow.json` (`tiers` is recorded for reference; no command or hook reads it):
 
 ```json
 {

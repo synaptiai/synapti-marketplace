@@ -756,8 +756,8 @@ Display the pull request or release URL and a summary that lists every version f
 | Calculate next version, plan the version-file bump | 1 | Autonomous, read-only |
 | Generate changelog from PR titles | 1 | Autonomous |
 | Create the release branch, write the bump and changelog, commit | 1 | Autonomous, local |
-| `git push -u origin <release branch>` | 2 | Journal-and-proceed |
-| `gh pr create` (the release pull request) | 2 | Journal-and-proceed |
+| `git push -u origin <release branch>` | 2 | Runs without asking |
+| `gh pr create` (the release pull request) | 2 | Runs without asking |
 | `git tag -a <tag> <merge commit>` | 1 | Autonomous, local; it runs in the tag block, so only after the user confirms the release question |
 | `git push origin <tag>` | 3 | **Confirm** — asks via `AskUserQuestion` before the tag block runs |
 | `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push, in the same question; with the tag already on origin (`RELEASE_RUN=publish`), asks via `AskUserQuestion` for the release alone |
