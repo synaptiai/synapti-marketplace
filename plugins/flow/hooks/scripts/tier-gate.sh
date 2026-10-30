@@ -254,9 +254,10 @@
 #     source or . of stdin or of a process
 #     substitution (`. <(...)`), or a command word
 #     that is a variable with nothing after it
-#     (`$CMD`, `""$CMD`, `${CMD%/}`; not a word that
-#     is one quoted string, `"$CMD"`, one program
-#     name; not one with a / outside ${...},
+#     (`$CMD`, `""$CMD`, `${CMD%/}`, `"$@"`,
+#     `"${A[@]}"`; not a word that is one quoted
+#     string, `"$CMD"`, one program name; not one
+#     with a / outside ${...},
 #     `"$ROOT/bin/x.sh"`, a file; not a line of a
 #     heredoc body read by a program other than a
 #     shell that is not also a command outside it)
@@ -358,8 +359,8 @@
 # script from its input asks when the command has a pipe or a process
 # substitution anywhere. A command word that is a variable or a
 # substitution (`$GH pr merge 7`) is read as possibly gh or git for the same
-# Tier 3 actions, and with nothing after it (`$CMD`) asks unless it is one
-# quoted string, when the command gets past the cheap reject below (its text
+# Tier 3 actions, and with nothing after it (`$CMD`, `"${A[@]}"`) asks unless
+# it is one quoted string that expands to one word, when the command gets past the cheap reject below (its text
 # names gh, push, merge or release somewhere). A
 # substitution is one word with the text around it (`D=$(gh repo view)` is an
 # assignment, and the gh in it is read as a command of its own). Programs that
@@ -1538,7 +1539,8 @@ _tg_scan() {   # $1 = index of the command word
     # word splitting turns into a program and its arguments. Not when the
     # word is one quoted string (`"$CMD"` is one program name, and a quoted
     # case pattern such as `"git@github.com:$R")` is left as a segment of its
-    # own; `""$CMD` and `"$A"$B` are split), and not when it has a / of its
+    # own; `""$CMD` and `"$A"$B` are split, and `"$@"` and `"${A[@]}"` expand
+    # to one word per element: TOKQ, _bd_words), and not when it has a / of its
     # own outside ${...}: it names a file to run (`"$ROOT/bin/x.sh"`; not
     # `${CMD%/}`). Nor when it is a line of a heredoc body that a program
     # other than a shell reads, such as `$PATHS` in `while read -r p; do ...;

@@ -170,9 +170,11 @@ _bd_words() {
   esac
   if ! _w_out=$(printf '%s' "$1" | LC_ALL=C awk '
     # qs=1 while the word is one quoted string and nothing else: `"$CMD"`,
-    # not `""$CMD` or `"$A"$B`.
+    # not `""$CMD` or `"$A"$B`, and not one that expands to several words
+    # however it is quoted (`"$@"`, `"${@:2}"`, `"${A[@]}"`, `"${!A[@]}"`).
     function emit() {
       if (!inw) return
+      if (qs && (index(cur, "$@") || cur ~ /[$][{][^}]*@/)) qs = 0
       gsub(/\n/, RSN, cur)
       if (pend == "H" || pend == "I" || pend == "R") print pend cur
       else if (pend == "") print "W" ((xp || index(cur, "__BD_SUBST__")) ? 1 : 0) (qs ? 1 : 0) cur
