@@ -1573,6 +1573,89 @@ EOF
   e2e_expect_clean_edges
 fi
 
+# eval of one assignment that reads a variable by name runs nothing; any
+# other text in it may be commands.
+if _want tg-eval-assignment; then
+  _tg_setup tg-eval-assignment feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: eval \"v=\\\${\$name}\" and eval \"v=\\\${\$name:-}\" are silent; an eval of an assignment from any other variable, or with anything more in it, asks (T33)"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      unread) _expect_ask "flow cannot read from the command text"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+unread|CMD=';gh release create v9'; eval "X=$CMD"
+unread|CMD='x;gh pr merge 1'; eval X=$CMD
+unread|eval "v=$CMD"; gh pr list
+unread|eval v=$CMD; gh pr list
+unread|eval "v=\${$name}$X"; gh pr list
+unread|eval "v=\${$name:-`x`}"; gh pr list
+unread|eval "v=\${$name:-$X}"; gh pr list
+silent|eval "v=\${$name}"; gh pr list
+silent|eval "v=\${$name:-}"; gh pr list
+silent|  eval "__value=\${$__name:-}"; gh pr list
+EOF
+  e2e_expect_clean_edges
+fi
+
+# The command word alone: a variable that is not one whole quoted word, and
+# one whose / is inside ${...}, may be a whole command; a heredoc body line
+# is data only where the body is a non-shell reader's and the same text is
+# not also a command outside it.
+if _want tg-command-word; then
+  _tg_setup tg-command-word feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, branch v1-fix: a command word that is a variable with nothing after it asks unless it is one whole quoted word, or has a / outside \${...} (a file); a parameter expansion as the command word may be cd or eval; a heredoc body line is data only inside the body of a reader that is not a shell (T33)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix && git init -q "$E2E_DIR/other" ) >/dev/null 2>&1 \
+    || _flow_assert_fail "tg-command-word: could not create the branch and ../other"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      unread) _expect_ask "flow cannot read from the command text"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+      maybe) _expect_ask "may push or delete a tag"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+unread|CMD='gh release create v9'; ""$CMD
+unread|CMD='gh release create v9'; ''$CMD
+unread|CMD='gh release create v9'; "$E"$CMD
+unread|CMD='gh release create v9'; "${E}"$CMD
+unread|CMD='gh release create v9'; "$@"$CMD
+unread|CMD='gh pr merge 1'; ""$CMD
+unread|CMD='git push --tags'; ""$CMD
+unread|"$A"$B; gh pr list
+unread|CMD='gh release create v9'; ${CMD%/}
+unread|CMD=gh_release_create_v9; ${CMD//_/ }
+unread|CMD='gh pr merge 1'; ${CMD%/}
+unread|CMD='gh pr merge 1'; ${CMD#*/}
+maybe|CD=cdx; ${CD/x/} ../other && git push origin v1-fix
+maybe|E=eval; ${E%/} 'cd ../other' && git push origin v1-fix
+silent|"$CMD"; gh pr list
+silent|X=1 "$CMD"; gh pr list
+silent|"$CMD" 2>/dev/null; gh pr list
+silent|"$ROOT/bin/x.sh"; gh pr list
+silent|${ROOT}/bin/x.sh; gh pr list
+silent|"${ROOT%/}/bin/x.sh" ../other && git push origin v1-fix
+EOF
+  # A heredoc body line of a reader that is not a shell is data; the same
+  # text after the body, or in a body a shell reads, is a command.
+  for C in \
+    "$(printf 'CMD="gh release create v9"\ncat >/dev/null <<EOF\nx\nEOF\n$CMD')" \
+    "$(printf 'CMD="gh release create v9"\ncat <<EOF >/dev/null\nx\nEOF\n$CMD')" \
+    "$(printf 'CMD="gh release create v9"\n: <<EOF\nx\nEOF\n$CMD')" \
+    "$(printf 'CMD="gh release create v9"\nbash <<EOF\nx\nEOF\n$CMD')" \
+    "$(printf "bash <<'EOF'\nCMD='gh release create v9'; \$CMD\nEOF")" \
+    "$(printf 'cat >/dev/null <<EOF\n$CMD\nEOF\nCMD="gh release create v9"; $CMD')" \
+    "$(printf 'CMD="gh release create v9"\nwhile read -r p; do echo "$p"; done <<EOF\n$CMD\nEOF\n$CMD')" \
+    "$(printf 'CMD="gh release create v9"; echo "x <<EOF\n$CMD\nEOF"; $CMD')"; do
+    _tg_run "$C"
+    _expect_ask "flow cannot read from the command text"
+  done
+  _tg_run "$(printf 'while IFS= read -r f; do echo "$f"; done <<LIST\n$(ls)\nLIST\ngh pr view 1')"
+  _expect_silent_allow
+  e2e_expect_clean_edges
+fi
+
 # A shell asks as one that reads its script from its input only when a pipe
 # feeds it; named as an argument (`which bash`) it runs nothing.
 if _want tg-shell-argument; then

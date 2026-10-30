@@ -502,6 +502,60 @@ _tg_unreadable() {
   return 1
 }
 
+# Does the word have a / of its own, outside ${...}? Then bash runs it as a
+# file. A / inside a parameter expansion (`${X/a/b}`, `${X%/}`) is part of
+# the expansion, and the word may expand to any command name.
+_tg_names_file() {   # $1 = the word
+  local w="$1" re='\$\{[^{}]*\}'
+  case "$w" in *'${'*)
+    while [[ $w =~ $re ]]; do w="${w/"${BASH_REMATCH[0]}"/}"; done ;;
+  esac
+  case "$w" in */*) return 0 ;; esac
+  return 1
+}
+
+# Is the simple command being read (TG_SEGTXT) a line of a heredoc body that
+# a program other than a shell reads, and not also a command outside such a
+# body? Only for the command as typed (depth 0) whose heredoc body was kept
+# (TG_KEPT): the command is read again with those bodies left out
+# (_bd_strip_noncode with BD_BLANK_BODIES=1), once, and a simple command
+# that reading still has is a command. A reading that fails counts it as one.
+_tg_body_line() {
+  local s l
+  [ "${TG_KEPT:-0}" = 1 ] && [ "${TG_DEPTH:-0}" = 0 ] || return 1
+  if [ "${TG_BODYFREE_DONE:-0}" = 0 ]; then
+    TG_BODYFREE=$(BD_BLANK_BODIES=1; _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE") \
+      || TG_BODYFREE=__BD_SEG_FAIL__
+    TG_BODYFREE_DONE=1
+  fi
+  case "$TG_BODYFREE" in *__BD_SEG_FAIL__*) return 1 ;; esac
+  s="${TG_SEGTXT#"${TG_SEGTXT%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
+  while IFS= read -r l; do
+    l="${l#__BD_ALT__}"; l="${l#__BD_PIPE__}"
+    l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"
+    [ "$l" = "$s" ] && return 1
+  done <<TG_BODY_EOF
+$TG_BODYFREE
+TG_BODY_EOF
+  return 0
+}
+
+# Is the simple command, as written, `eval "NAME=\${$NAME}"` or `eval
+# "NAME=\${$NAME:-DEFAULT}"`, with DEFAULT made only of letters, digits and
+# _ . , / @ % + - (nothing the shell reads specially)? eval then assigns the
+# value of the variable NAME names and runs nothing (unless that variable
+# holds shell text rather than a name: not covered). Any other text after
+# eval may be commands.
+_tg_eval_read_by_name() {   # $1 = the simple command's text
+  local t="$1" re
+  # A substitution, which the parser has replaced by its marker, inserts
+  # text this hook cannot read.
+  case "$t" in *__BD_SUBST__*) return 1 ;; esac
+  re='^eval[[:space:]]+"[A-Za-z_][A-Za-z0-9_]*=\\\$\{\$[A-Za-z_][A-Za-z0-9_]*(:-[A-Za-z0-9_.,/@%+-]*)?\}"$'
+  t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+  [[ $t =~ $re ]]
+}
+
 # The program a word names: its last path component, a leading backslash
 # removed, in lower case (a case-insensitive filesystem runs `GH`).
 _tg_prog() {
@@ -586,7 +640,7 @@ _tg_wrapper_opt() {   # $1 = wrapper, $2 = the word, $3 = the next word
 # (inside its single quotes `\\` and `\'` are escapes): when STRING holds a
 # backslash, every word of it is flagged as one this hook cannot read exactly.
 _tg_split_words() {   # $1 = the text
-  local -a TOK=() TOKE=() BD_HSTR=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=()
   _bd_words "$1"
   TG_SPLITW=(${TOK[@]+"${TOK[@]}"})
   TG_SPLITE=(${TOKE[@]+"${TOKE[@]}"})
@@ -641,9 +695,11 @@ _tg_command_word() {
           if [ "$w" = env ] && { [ "$TG_WO" = S ] || [ "$TG_WO" = --split-string ]; } && [ "$splits" -lt 8 ]; then
             splits=$((splits + 1))
             _tg_split_words "$TG_WV"
-            # TOKE, the words' expansion flags, moves with TOK.
+            # TOKE, the words' expansion flags, moves with TOK, and so does
+            # TOKQ: a word from STRING is never read as one quoted word.
             TOK=("${TOK[@]:0:i}" ${TG_SPLITW[@]+"${TG_SPLITW[@]}"} "${TOK[@]:i+TG_WN}")
             TOKE=("${TOKE[@]:0:i}" ${TG_SPLITE[@]+"${TG_SPLITE[@]}"} "${TOKE[@]:i+TG_WN}")
+            TOKQ=("${TOKQ[@]:0:i}" ${TG_SPLITE[@]+"${TG_SPLITE[@]/*/0}"} "${TOKQ[@]:i+TG_WN}")
             n=${#TOK[@]}
             continue
           fi
@@ -1452,19 +1508,17 @@ _tg_scan() {   # $1 = index of the command word
   if _tg_unreadable "${TOK[$1]}"; then
     start=$1
     # Alone, it may be a whole command held in a variable (`$CMD`), which
-    # word splitting turns into a program and its arguments. Not when it is
-    # quoted (`"$CMD"` is one program name, and a quoted case pattern such as
-    # `"git@github.com:$R")` is left as a segment of its own), and not when
-    # it has a / of its own: it names a file to run (`"$ROOT/bin/x.sh"`).
-    # Nor in a text whose heredoc body was kept: a line of the body such as
-    # `$PATHS` in `while read -r p; do ...; done <<EOF` is data the loop reads.
-    if [ "$(($1 + 1))" -ge "$n" ] && [ "${TG_KEPT:-0}" = 0 ]; then
-      case "${TOK[$1]}" in */*) ;; *)
-        case "${TG_SEGTXT#"${TG_SEGTXT%%[![:space:]]*}"}" in
-          \"*|\'*) ;;
-          *) _tg_emit cmdUnread "$1"; return 0 ;;
-        esac ;;
-      esac
+    # word splitting turns into a program and its arguments. Not when the
+    # word is one quoted string (`"$CMD"` is one program name, and a quoted
+    # case pattern such as `"git@github.com:$R")` is left as a segment of its
+    # own; `""$CMD` and `"$A"$B` are split), and not when it has a / of its
+    # own outside ${...}: it names a file to run (`"$ROOT/bin/x.sh"`; not
+    # `${CMD%/}`). Nor when it is a line of a heredoc body that a program
+    # other than a shell reads, such as `$PATHS` in `while read -r p; do ...;
+    # done <<EOF`: data the loop reads (_tg_body_line).
+    if [ "$(($1 + 1))" -ge "$n" ] && [ "${TOKQ[$1]:-0}" != 1 ] && ! _tg_names_file "${TOK[$1]}" \
+       && ! _tg_body_line; then
+      _tg_emit cmdUnread "$1"; return 0
     fi
   fi
   # interp=1 once a word the parser treats as running a script has been
@@ -1833,9 +1887,9 @@ _tg_unmodeled() {
   [ "${TG_EXECW:-0}" = 1 ] && return 0
   w="${TOK[TG_I]}"
   # A variable or substitution as the command word may expand to cd, eval or
-  # export; one with a / of its own (`"$ROOT/bin/x.sh"`) names a file, and
-  # bash never runs a builtin for a word with a /.
-  case "$w" in */*) ;; *) _tg_unreadable "$w" && return 0 ;; esac
+  # export; one with a / of its own outside ${...} (`"$ROOT/bin/x.sh"`, not
+  # `${CD%/}`) names a file, and bash never runs a builtin for a word with a /.
+  _tg_names_file "$w" || { _tg_unreadable "$w" && return 0; }
   case "$w" in
     # With nothing after them they run nothing, unless what they read comes
     # from a redirection or a process substitution (`. <(...)`): a bare `.`
@@ -1988,7 +2042,7 @@ _tg_common_dir() {   # $1 = a directory
 # push must not ask because of the upstream it sets.
 _tg_config_prescan() {   # $1 = the text, $2 = 1 to leave out git push -u
   local segs seg k n TG_I TG_XARGS TG_EXECW TG_PB=0 TG_RIN TG_AN
-  local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=() TG_RDIR=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() TG_RDIR=()
   local BD_RIN=0
   segs=$(_bd_segments "$1")
   while IFS= read -r seg; do
@@ -2079,12 +2133,10 @@ _tg_read_seg() {   # $1 = the segment
   # cannot see.
   case "${TOK[TG_I]}" in
     eval)
-      # An assignment whose value reads a variable indirectly (`eval
-      # "v=\${$name}"`, the bash 3.2 way to read a variable by name) runs
-      # no command, as long as no substitution is written in it.
-      if [ $((TG_I + 2)) -eq "$n" ] && _tg_is_assignment "${TOK[TG_I + 1]}"; then
-        case "${TOK[TG_I + 1]}" in *__BD_SUBST__*|*'`'*|*'$('*) _tg_emit cmdUnread "$TG_I" ;; esac
-      else
+      # One assignment that reads a variable by name (`eval "v=\${$name}"`
+      # or `eval "v=\${$name:-}"`, the bash 3.2 way to do it), written as
+      # exactly that, runs no command (_tg_eval_read_by_name).
+      if ! _tg_eval_read_by_name "$TG_SEGTXT"; then
         for ((k = TG_I + 1; k < n; k++)); do
           _tg_unreadable "${TOK[k]}" && { _tg_emit cmdUnread "$TG_I"; break; }
         done

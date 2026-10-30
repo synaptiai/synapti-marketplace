@@ -101,7 +101,7 @@ _rm_segment_is_destructive() {
   # _bd_words fills all of these; they are local so it does not leave them
   # behind in the hook's own shell.
   # shellcheck disable=SC2034
-  local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=()
   # shellcheck disable=SC2034
   local BD_RIN=0
   _bd_words "$1"
