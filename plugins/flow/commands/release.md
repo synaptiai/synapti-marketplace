@@ -1,5 +1,5 @@
 ---
-description: "Create a release in two runs: open a release pull request that bumps the version files and changelog, then, once it is merged, tag the merge commit and publish the GitHub release. Tier 3 — never autonomous."
+description: "Create a release in two runs: open a release pull request that bumps the version files and changelog, then, once it is merged, tag the merge commit and publish the GitHub release. Requires explicit human confirmation. Tier 3 — never autonomous."
 argument-hint: <patch|minor|major> [plugin-name] [marketplace-bump]
 allowed-tools: Bash, Read, AskUserQuestion
 ---

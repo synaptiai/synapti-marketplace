@@ -126,21 +126,22 @@
 # --global, --file, `set`, --add, --unset, a key given as a variable, or -e),
 # or renames or removes one of those sections, with or without a subsection
 # (`--rename-section x push`, `rename-section`); a `git remote add`,
-# `set-url` or `rename` (`--mirror=push`); an upstream or tracking change
-# (`git branch -u`, `--set-upstream-to`, `--unset-upstream`, `-t`/`--track`,
-# a moved or copied branch, `git checkout -b <name> <start>`, `-t`/`--track`
-# on checkout or switch, `git push -u`); under xargs, which appends words
+# `set-url` or `rename` (`--mirror=push`); under xargs, which appends words
 # this hook cannot see, a git config that is not a read, a git remote that
 # is not show or get-url, a git branch, a git push, or a git with no
 # subcommand; a git whose subcommand is a variable; and a write to a file
 # under .git, to a .gitconfig or to ~/.config/git (a redirection target such
 # as `>> .git/config`, or an argument of a program that does not only print
 # or search it: `cp ../other/.git/config .git/config`, `tee -a .git/config`,
-# `ln -s ../other/.git .git`). A git checkout or switch that may change the
-# branch (not `git checkout -- <paths>`), or a git symbolic-ref of HEAD,
-# makes a later push that names no remote ask: the new branch's
-# configuration picks it. Each of these counts the same in a quoted argument
-# or here-string handed to a shell anywhere in the command (`bash -c 'git
+# `ln -s ../other/.git .git`). An upstream or tracking change (`git branch
+# -u`, `--set-upstream-to`, `--unset-upstream`, `-t`/`--track`, a moved or
+# copied branch, `git checkout -b <name> <start>`, `-t`/`--track` on
+# checkout or switch, `git push -u`) writes only the branch's own keys, so
+# it makes a later push that names no remote or no refspec ask. A git
+# checkout or switch that may change the branch (not `git checkout --
+# <paths>`), or a git symbolic-ref of HEAD, makes a later push that names
+# no remote ask: the new branch's configuration picks it. Each of these
+# counts the same in a quoted argument or here-string handed to a shell anywhere in the command (`bash -c 'git
 # config ...' && git push`), or to a program this hook does not know (`watch
 # 'git config ...'`); reading configuration (--get, --list, `get`), other
 # keys (user.name) and reading a file under .git (cat, grep) do not. Under
@@ -153,8 +154,9 @@
 # commands too, but an evaluated variable or a sourced file is not), exec
 # with a command, alias, `hash -p`, enable with arguments, a DEBUG, RETURN
 # or ERR trap, a nameref (declare, typeset or local -n), and a command word
-# that is a variable or a substitution (`CD=cd; $CD ../other`; not one with a
-# / of its own, `"$ROOT/bin/x.sh"`, which names a file). One anywhere
+# that is a variable or a substitution (`CD=cd; $CD ../other`, `${CD%/}
+# ../other`; not one with a / of its own outside ${...}, `"$ROOT/bin/x.sh"`,
+# which names a file). One anywhere
 # in the command, before a push or after it (a loop or a function can run
 # the push again), makes the directory, the environment and git's
 # configuration unreadable from the start of the command: every push in it
@@ -246,17 +248,23 @@
 #     flow reads
 #   a gh pr or gh release whose subcommand is a       -> "ask": it may merge or release
 #     variable (`gh pr $A 7`, `gh $SUB merge 7`), an
-#     eval of a variable or a substitution (not an
-#     assignment that reads a variable by name:
-#     `eval "v=\${$name}"`), a source or . of stdin
-#     or of a process substitution (`. <(...)`), or
-#     an unquoted command word that is a variable
-#     with nothing after it (`$CMD`; not `"$CMD"`, one
-#     program name, nor `"$ROOT/bin/x.sh"`, a file)
-#   a shell that reads its script from its input      -> "ask": it may merge or release
+#     eval of a variable or a substitution (not
+#     `eval "v=\${$name}"` or `eval "v=\${$name:-}"`
+#     as written, which read a variable by name), a
+#     source or . of stdin or of a process
+#     substitution (`. <(...)`), or a command word
+#     that is a variable with nothing after it
+#     (`$CMD`, `""$CMD`, `${CMD%/}`; not a word that
+#     is one quoted string, `"$CMD"`, one program
+#     name; not one with a / outside ${...},
+#     `"$ROOT/bin/x.sh"`, a file; not a line of a
+#     heredoc body read by a program other than a
+#     shell that is not also a command outside it)
+#   a shell a pipe feeds, reading its script from it  -> "ask": it may merge or release
 #     (`echo '...' | bash`, `| sh -s`, `| sudo bash`,
-#     xargs bash): no -c, no script file, and no
-#     here-string, heredoc or < on it
+#     `| xargs bash`): no -c, no script file, and no
+#     here-string, heredoc or < on it; a shell no
+#     pipe feeds (`which bash`) is an argument
 #   a push whose refspec, remote or option is a       -> "ask": it may push or delete a tag
 #     variable or a substitution (or left to xargs),
 #     whose source is not a local branch, a forced
@@ -290,8 +298,11 @@
 # `;`, `|` (not the one of `>|`), `&` (not the `&` of `2>&1`, `<&3` or `&>`),
 # `(`, `)`, newlines and
 # command substitutions (`$(...)` and backquotes, inside double quotes too),
-# outside quotes; each simple command is split into the words bash hands the
-# program: quotes removed, a backslash removed outside quotes (`g\h pr
+# outside quotes. A substitution's output can be empty, so a simple command
+# in which one is glued to other text (`merge$(x)`, `--tags$(x)`) is read
+# twice: with it, as a word that cannot be read, and without it, for the
+# Tier 3 actions alone. Each simple command is split into the words bash
+# hands the program: quotes removed, a backslash removed outside quotes (`g\h pr
 # mer\ge 1` is gh pr merge 1, `gh\ pr` one word) and inside double quotes
 # only before $, `, " and \, and kept inside single quotes; `$"merge"` is a
 # double-quoted string (bash drops the $), while `$'...'` keeps its $ and
@@ -306,7 +317,8 @@
 # a line that names such a program (`bash <<<'...'`, `cat <<<'...' | bash`),
 # since that program reads it as its script, and so is a quoted argument of
 # the simple command before a shell that reads its script from its input
-# (`echo 'gh pr merge 1' | bash`).
+# (`echo 'gh pr merge 1' | bash`). A parameter expansion is one piece of
+# its word up to its closing brace (`${CMD//_/ }` is one word).
 #
 # Every action counts when its program is the command word: first in its
 # simple command, after any VAR=value assignments; after a shell keyword or
@@ -340,9 +352,10 @@
 # create v9`; not after a shell or a language's interpreter (`bash -c '...'
 # a b` runs only its script, which is read already). At most 16 such readings are made per simple command, and one
 # more asks as an unreadable gh call. A shell among the words that reads its
-# script from its input asks. A command word that is a variable or a
+# script from a pipe asks. A command word that is a variable or a
 # substitution (`$GH pr merge 7`) is read as possibly gh or git for the same
-# Tier 3 actions, and unquoted with nothing after it (`$CMD`) asks. A
+# Tier 3 actions, and with nothing after it (`$CMD`) asks unless it is one
+# quoted string. A
 # substitution is one word with the text around it (`D=$(gh repo view)` is an
 # assignment, and the gh in it is read as a command of its own). Programs that
 # only print, search or compare their arguments are exempt: echo, printf,
@@ -366,8 +379,10 @@
 # name` is then read as a directory under the current one), a GraphQL
 # mutation whose field names hold none of Merge, Release or Ref
 # (createCommitOnBranch), gh api DELETE or PATCH requests other than those
-# above (deleting a branch ref), and an `eval "v=\${$name}"` whose name
-# variable holds shell text rather than a name. Branch protection,
+# above (deleting a branch ref), an `eval "v=\${$name}"` whose name
+# variable holds shell text rather than a name, and a heredoc body line
+# (`$CMD`) read by a while loop whose body, on another line, runs a shell
+# that reads the rest of the heredoc. Branch protection,
 # rulesets and tag protection are the mechanism against those; this hook
 # reads the commands an agent writes. `--help` is not exempted: it costs a
 # prompt, while exempting a value that happens to read `--help` would cost a
@@ -388,9 +403,10 @@
 # makes every push in the command ask (`. venv/bin/activate && git push`,
 # `exec git push origin br`); the joined reading of a program's words is
 # made for every program but a shell or a language's interpreter, so
-# `"gh release" create v9`, which runs nothing, asks; and a shell that reads
-# its script from its input after `;` rather than `|` asks too. Each of
-# these costs an extra prompt or journal line, never a missed one.
+# `"gh release" create v9`, which runs nothing, asks; and a merge seen only
+# once a glued substitution is removed asks, though the substitution may
+# print something that makes it no merge. Each of these costs an extra
+# prompt or journal line, never a missed one.
 #
 # ask-issue-create.sh is a separate hook and both apply to `gh issue create`:
 # Claude Code takes the most restrictive answer, so an ask from either wins.
