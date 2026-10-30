@@ -126,21 +126,22 @@
 # --global, --file, `set`, --add, --unset, a key given as a variable, or -e),
 # or renames or removes one of those sections, with or without a subsection
 # (`--rename-section x push`, `rename-section`); a `git remote add`,
-# `set-url` or `rename` (`--mirror=push`); an upstream or tracking change
-# (`git branch -u`, `--set-upstream-to`, `--unset-upstream`, `-t`/`--track`,
-# a moved or copied branch, `git checkout -b <name> <start>`, `-t`/`--track`
-# on checkout or switch, `git push -u`); under xargs, which appends words
+# `set-url` or `rename` (`--mirror=push`); under xargs, which appends words
 # this hook cannot see, a git config that is not a read, a git remote that
 # is not show or get-url, a git branch, a git push, or a git with no
 # subcommand; a git whose subcommand is a variable; and a write to a file
 # under .git, to a .gitconfig or to ~/.config/git (a redirection target such
 # as `>> .git/config`, or an argument of a program that does not only print
 # or search it: `cp ../other/.git/config .git/config`, `tee -a .git/config`,
-# `ln -s ../other/.git .git`). A git checkout or switch that may change the
-# branch (not `git checkout -- <paths>`), or a git symbolic-ref of HEAD,
-# makes a later push that names no remote ask: the new branch's
-# configuration picks it. Each of these counts the same in a quoted argument
-# or here-string handed to a shell anywhere in the command (`bash -c 'git
+# `ln -s ../other/.git .git`). An upstream or tracking change (`git branch
+# -u`, `--set-upstream-to`, `--unset-upstream`, `-t`/`--track`, a moved or
+# copied branch, `git checkout -b <name> <start>`, `-t`/`--track` on
+# checkout or switch, `git push -u`) writes only the branch's own keys, so
+# it makes a later push that names no remote or no refspec ask. A git
+# checkout or switch that may change the branch (not `git checkout --
+# <paths>`), or a git symbolic-ref of HEAD, makes a later push that names
+# no remote ask: the new branch's configuration picks it. Each of these
+# counts the same in a quoted argument or here-string handed to a shell anywhere in the command (`bash -c 'git
 # config ...' && git push`), or to a program this hook does not know (`watch
 # 'git config ...'`); reading configuration (--get, --list, `get`), other
 # keys (user.name) and reading a file under .git (cat, grep) do not. Under
@@ -153,8 +154,9 @@
 # commands too, but an evaluated variable or a sourced file is not), exec
 # with a command, alias, `hash -p`, enable with arguments, a DEBUG, RETURN
 # or ERR trap, a nameref (declare, typeset or local -n), and a command word
-# that is a variable or a substitution (`CD=cd; $CD ../other`; not one with a
-# / of its own, `"$ROOT/bin/x.sh"`, which names a file). One anywhere
+# that is a variable or a substitution (`CD=cd; $CD ../other`, `${CD%/}
+# ../other`; not one with a / of its own outside ${...}, `"$ROOT/bin/x.sh"`,
+# which names a file). One anywhere
 # in the command, before a push or after it (a loop or a function can run
 # the push again), makes the directory, the environment and git's
 # configuration unreadable from the start of the command: every push in it
@@ -246,17 +248,23 @@
 #     flow reads
 #   a gh pr or gh release whose subcommand is a       -> "ask": it may merge or release
 #     variable (`gh pr $A 7`, `gh $SUB merge 7`), an
-#     eval of a variable or a substitution (not an
-#     assignment that reads a variable by name:
-#     `eval "v=\${$name}"`), a source or . of stdin
-#     or of a process substitution (`. <(...)`), or
-#     an unquoted command word that is a variable
-#     with nothing after it (`$CMD`; not `"$CMD"`, one
-#     program name, nor `"$ROOT/bin/x.sh"`, a file)
-#   a shell that reads its script from its input      -> "ask": it may merge or release
+#     eval of a variable or a substitution (not
+#     `eval "v=\${$name}"` or `eval "v=\${$name:-}"`
+#     as written, which read a variable by name), a
+#     source or . of stdin or of a process
+#     substitution (`. <(...)`), or a command word
+#     that is a variable with nothing after it
+#     (`$CMD`, `""$CMD`, `${CMD%/}`; not a word that
+#     is one quoted string, `"$CMD"`, one program
+#     name; not one with a / outside ${...},
+#     `"$ROOT/bin/x.sh"`, a file; not a line of a
+#     heredoc body read by a program other than a
+#     shell that is not also a command outside it)
+#   a shell a pipe feeds, reading its script from it  -> "ask": it may merge or release
 #     (`echo '...' | bash`, `| sh -s`, `| sudo bash`,
-#     xargs bash): no -c, no script file, and no
-#     here-string, heredoc or < on it
+#     `| xargs bash`): no -c, no script file, and no
+#     here-string, heredoc or < on it; a shell no
+#     pipe feeds (`which bash`) is an argument
 #   a push whose refspec, remote or option is a       -> "ask": it may push or delete a tag
 #     variable or a substitution (or left to xargs),
 #     whose source is not a local branch, a forced
@@ -290,8 +298,11 @@
 # `;`, `|` (not the one of `>|`), `&` (not the `&` of `2>&1`, `<&3` or `&>`),
 # `(`, `)`, newlines and
 # command substitutions (`$(...)` and backquotes, inside double quotes too),
-# outside quotes; each simple command is split into the words bash hands the
-# program: quotes removed, a backslash removed outside quotes (`g\h pr
+# outside quotes. A substitution's output can be empty, so a simple command
+# in which one is glued to other text (`merge$(x)`, `--tags$(x)`) is read
+# twice: with it, as a word that cannot be read, and without it, for the
+# Tier 3 actions alone. Each simple command is split into the words bash
+# hands the program: quotes removed, a backslash removed outside quotes (`g\h pr
 # mer\ge 1` is gh pr merge 1, `gh\ pr` one word) and inside double quotes
 # only before $, `, " and \, and kept inside single quotes; `$"merge"` is a
 # double-quoted string (bash drops the $), while `$'...'` keeps its $ and
@@ -306,7 +317,8 @@
 # a line that names such a program (`bash <<<'...'`, `cat <<<'...' | bash`),
 # since that program reads it as its script, and so is a quoted argument of
 # the simple command before a shell that reads its script from its input
-# (`echo 'gh pr merge 1' | bash`).
+# (`echo 'gh pr merge 1' | bash`). A parameter expansion is one piece of
+# its word up to its closing brace (`${CMD//_/ }` is one word).
 #
 # Every action counts when its program is the command word: first in its
 # simple command, after any VAR=value assignments; after a shell keyword or
@@ -340,9 +352,10 @@
 # create v9`; not after a shell or a language's interpreter (`bash -c '...'
 # a b` runs only its script, which is read already). At most 16 such readings are made per simple command, and one
 # more asks as an unreadable gh call. A shell among the words that reads its
-# script from its input asks. A command word that is a variable or a
+# script from a pipe asks. A command word that is a variable or a
 # substitution (`$GH pr merge 7`) is read as possibly gh or git for the same
-# Tier 3 actions, and unquoted with nothing after it (`$CMD`) asks. A
+# Tier 3 actions, and with nothing after it (`$CMD`) asks unless it is one
+# quoted string. A
 # substitution is one word with the text around it (`D=$(gh repo view)` is an
 # assignment, and the gh in it is read as a command of its own). Programs that
 # only print, search or compare their arguments are exempt: echo, printf,
@@ -366,8 +379,10 @@
 # name` is then read as a directory under the current one), a GraphQL
 # mutation whose field names hold none of Merge, Release or Ref
 # (createCommitOnBranch), gh api DELETE or PATCH requests other than those
-# above (deleting a branch ref), and an `eval "v=\${$name}"` whose name
-# variable holds shell text rather than a name. Branch protection,
+# above (deleting a branch ref), an `eval "v=\${$name}"` whose name
+# variable holds shell text rather than a name, and a heredoc body line
+# (`$CMD`) read by a while loop whose body, on another line, runs a shell
+# that reads the rest of the heredoc. Branch protection,
 # rulesets and tag protection are the mechanism against those; this hook
 # reads the commands an agent writes. `--help` is not exempted: it costs a
 # prompt, while exempting a value that happens to read `--help` would cost a
@@ -388,9 +403,10 @@
 # makes every push in the command ask (`. venv/bin/activate && git push`,
 # `exec git push origin br`); the joined reading of a program's words is
 # made for every program but a shell or a language's interpreter, so
-# `"gh release" create v9`, which runs nothing, asks; and a shell that reads
-# its script from its input after `;` rather than `|` asks too. Each of
-# these costs an extra prompt or journal line, never a missed one.
+# `"gh release" create v9`, which runs nothing, asks; and a merge seen only
+# once a glued substitution is removed asks, though the substitution may
+# print something that makes it no merge. Each of these costs an extra
+# prompt or journal line, never a missed one.
 #
 # ask-issue-create.sh is a separate hook and both apply to `gh issue create`:
 # Claude Code takes the most restrictive answer, so an ask from either wins.
@@ -474,6 +490,10 @@ for _tg_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _bd_wor
   type "$_tg_fn" >/dev/null 2>&1 || _tg_undecidable "$COMMAND" "the command parser did not load"
 done
 [ -n "${_BD_SEG_AWK:-}" ] || _tg_undecidable "$COMMAND" "the command parser did not load"
+# A segment that holds a substitution is followed by its reading with the
+# substitution removed, marked __BD_ALT__ (_bd_segments, _tg_read_text).
+BD_SEG_ALT=1
+BD_SEG_MARK=1
 
 # --- reading one simple command ---------------------------------------------
 
@@ -496,6 +516,60 @@ _tg_is_assignment() {
 _tg_unreadable() {
   case "$1" in *'$'*|*'`'*|*__BD_SUBST__*) return 0 ;; esac
   return 1
+}
+
+# Does the word have a / of its own, outside ${...}? Then bash runs it as a
+# file. A / inside a parameter expansion (`${X/a/b}`, `${X%/}`) is part of
+# the expansion, and the word may expand to any command name.
+_tg_names_file() {   # $1 = the word
+  local w="$1" re='\$\{[^{}]*\}'
+  case "$w" in *'${'*)
+    while [[ $w =~ $re ]]; do w="${w/"${BASH_REMATCH[0]}"/}"; done ;;
+  esac
+  case "$w" in */*) return 0 ;; esac
+  return 1
+}
+
+# Is the simple command being read (TG_SEGTXT) a line of a heredoc body that
+# a program other than a shell reads, and not also a command outside such a
+# body? Only for the command as typed (depth 0) whose heredoc body was kept
+# (TG_KEPT): the command is read again with those bodies left out
+# (_bd_strip_noncode with BD_BLANK_BODIES=1), once, and a simple command
+# that reading still has is a command. A reading that fails counts it as one.
+_tg_body_line() {
+  local s l
+  [ "${TG_KEPT:-0}" = 1 ] && [ "${TG_DEPTH:-0}" = 0 ] || return 1
+  if [ "${TG_BODYFREE_DONE:-0}" = 0 ]; then
+    TG_BODYFREE=$(BD_BLANK_BODIES=1; _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE") \
+      || TG_BODYFREE=__BD_SEG_FAIL__
+    TG_BODYFREE_DONE=1
+  fi
+  case "$TG_BODYFREE" in *__BD_SEG_FAIL__*) return 1 ;; esac
+  s="${TG_SEGTXT#"${TG_SEGTXT%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
+  while IFS= read -r l; do
+    l="${l#__BD_ALT__}"; l="${l#__BD_PIPE__}"
+    l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"
+    [ "$l" = "$s" ] && return 1
+  done <<TG_BODY_EOF
+$TG_BODYFREE
+TG_BODY_EOF
+  return 0
+}
+
+# Is the simple command, as written, `eval "NAME=\${$NAME}"` or `eval
+# "NAME=\${$NAME:-DEFAULT}"`, with DEFAULT made only of letters, digits and
+# _ . , / @ % + - (nothing the shell reads specially)? eval then assigns the
+# value of the variable NAME names and runs nothing (unless that variable
+# holds shell text rather than a name: not covered). Any other text after
+# eval may be commands.
+_tg_eval_read_by_name() {   # $1 = the simple command's text
+  local t="$1" re
+  # A substitution, which the parser has replaced by its marker, inserts
+  # text this hook cannot read.
+  case "$t" in *__BD_SUBST__*) return 1 ;; esac
+  re='^eval[[:space:]]+"[A-Za-z_][A-Za-z0-9_]*=\\\$\{\$[A-Za-z_][A-Za-z0-9_]*(:-[A-Za-z0-9_.,/@%+-]*)?\}"$'
+  t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+  [[ $t =~ $re ]]
 }
 
 # The program a word names: its last path component, a leading backslash
@@ -582,7 +656,7 @@ _tg_wrapper_opt() {   # $1 = wrapper, $2 = the word, $3 = the next word
 # (inside its single quotes `\\` and `\'` are escapes): when STRING holds a
 # backslash, every word of it is flagged as one this hook cannot read exactly.
 _tg_split_words() {   # $1 = the text
-  local -a TOK=() TOKE=() BD_HSTR=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=()
   _bd_words "$1"
   TG_SPLITW=(${TOK[@]+"${TOK[@]}"})
   TG_SPLITE=(${TOKE[@]+"${TOKE[@]}"})
@@ -637,9 +711,11 @@ _tg_command_word() {
           if [ "$w" = env ] && { [ "$TG_WO" = S ] || [ "$TG_WO" = --split-string ]; } && [ "$splits" -lt 8 ]; then
             splits=$((splits + 1))
             _tg_split_words "$TG_WV"
-            # TOKE, the words' expansion flags, moves with TOK.
+            # TOKE, the words' expansion flags, moves with TOK, and so does
+            # TOKQ: a word from STRING is never read as one quoted word.
             TOK=("${TOK[@]:0:i}" ${TG_SPLITW[@]+"${TG_SPLITW[@]}"} "${TOK[@]:i+TG_WN}")
             TOKE=("${TOKE[@]:0:i}" ${TG_SPLITE[@]+"${TG_SPLITE[@]}"} "${TOKE[@]:i+TG_WN}")
+            TOKQ=("${TOKQ[@]:0:i}" ${TG_SPLITE[@]+"${TG_SPLITE[@]/*/0}"} "${TOKQ[@]:i+TG_WN}")
             n=${#TOK[@]}
             continue
           fi
@@ -949,6 +1025,9 @@ _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followT
   # read (`git push $OPTS`, `git push $'--tags'`) may be an option as well:
   # --tags, --mirror or --follow-tags.
   [ -n "${words[0]:-}" ] && _tg_unreadable "${words[0]}" && unread=1
+  # After an upstream or tracking change earlier in the command, a push that
+  # names no remote or no refspec sends what the branch's new keys say.
+  [ "${TG_UPSTREAM:-0}" = 1 ] && [ "${#words[@]}" -le 1 ] && unread=1
   for ((w = 1; w < ${#words[@]}; w++)); do specs+=("${words[w]}"); done
   if [ "${TG_UNRES:-0}" = 1 ]; then
     # The repository is unknown, so its remotes' configuration is too.
@@ -1448,19 +1527,17 @@ _tg_scan() {   # $1 = index of the command word
   if _tg_unreadable "${TOK[$1]}"; then
     start=$1
     # Alone, it may be a whole command held in a variable (`$CMD`), which
-    # word splitting turns into a program and its arguments. Not when it is
-    # quoted (`"$CMD"` is one program name, and a quoted case pattern such as
-    # `"git@github.com:$R")` is left as a segment of its own), and not when
-    # it has a / of its own: it names a file to run (`"$ROOT/bin/x.sh"`).
-    # Nor in a text whose heredoc body was kept: a line of the body such as
-    # `$PATHS` in `while read -r p; do ...; done <<EOF` is data the loop reads.
-    if [ "$(($1 + 1))" -ge "$n" ] && [ "${TG_KEPT:-0}" = 0 ]; then
-      case "${TOK[$1]}" in */*) ;; *)
-        case "${TG_SEGTXT#"${TG_SEGTXT%%[![:space:]]*}"}" in
-          \"*|\'*) ;;
-          *) _tg_emit cmdUnread "$1"; return 0 ;;
-        esac ;;
-      esac
+    # word splitting turns into a program and its arguments. Not when the
+    # word is one quoted string (`"$CMD"` is one program name, and a quoted
+    # case pattern such as `"git@github.com:$R")` is left as a segment of its
+    # own; `""$CMD` and `"$A"$B` are split), and not when it has a / of its
+    # own outside ${...}: it names a file to run (`"$ROOT/bin/x.sh"`; not
+    # `${CMD%/}`). Nor when it is a line of a heredoc body that a program
+    # other than a shell reads, such as `$PATHS` in `while read -r p; do ...;
+    # done <<EOF`: data the loop reads (_tg_body_line).
+    if [ "$(($1 + 1))" -ge "$n" ] && [ "${TOKQ[$1]:-0}" != 1 ] && ! _tg_names_file "${TOK[$1]}" \
+       && ! _tg_body_line; then
+      _tg_emit cmdUnread "$1"; return 0
     fi
   fi
   # interp=1 once a word the parser treats as running a script has been
@@ -1495,7 +1572,7 @@ _tg_scan() {   # $1 = index of the command word
           [Gg][Hh]) out=$(_tg_gh "$k") ;;
           [Gg][Ii][Tt]) out=$(_tg_git "$k") ;;
           *)
-            if [ "$k" -gt "$1" ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$k"; then
+            if [ "$k" -gt "$1" ] && [ "${TG_PIPED:-0}" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$k"; then
               _tg_emit shell "$k"; continue
             fi
             [ "$k" = "$1" ] || continue
@@ -1508,9 +1585,10 @@ _tg_scan() {   # $1 = index of the command word
   # The words joined, as ssh, watch or `sudo -s` hand them to a shell. Not
   # after a shell or a language's own interpreter: `bash -c '...' a b` runs
   # its one script, already read as a command, with a and b as arguments.
-  [ "${#TOK[$1]}" -le 4096 ] && case "${TOK[$1]##*/}" in
-    sh|bash|zsh|ksh|dash|ash|mksh|busybox|python|python[23]|perl|ruby|node|deno|bun) join=0 ;;
-  esac
+  if [ "${#TOK[$1]}" -le 4096 ]; then
+    _bd_is_shell "${TOK[$1]}" && join=0
+    case "${TOK[$1]##*/}" in python|python[23]|perl|ruby|node|deno|bun) join=0 ;; esac
+  fi
   if [ "$join" = 1 ]; then
     for ((k = $1; k < n; k++)); do joined="$joined${joined:+ }${TOK[k]}"; done
     if _tg_may_run "$joined"; then
@@ -1673,11 +1751,17 @@ _tg_set_names() {
 # --get-all, --get-regexp, --list, -l, `get`, `list`) changes nothing, and
 # neither does a key such as user.name.
 #
+# An upstream or tracking change (the branch, checkout, switch and push forms
+# above) changes only the branch's own keys (branch.<name>.remote, .merge),
+# which pick what a push that names no remote, or no refspec, sends: it
+# sets TG_UPW=1 instead of counting as a change of configuration, and such
+# a push asks (TG_UPSTREAM, _tg_git_push).
+#
 # Also sets TG_PB=1 when the git at $1 may change the branch checked out
 # (checkout or switch without `--`, symbolic-ref with a target): a push that
 # names no remote is then sent where that branch's configuration says.
 _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
-  local j=$(($1 + 1)) t first="" ro=0 hit=0 sect=0 path=0 words=0 c rest sub
+  local j=$(($1 + 1)) t first="" ro=0 hit=0 up=0 sect=0 path=0 words=0 c rest sub
   while [ "$j" -lt "$n" ]; do
     case "${TOK[j]}" in
       -C|-c|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--list-cmds|--attr-source) j=$((j + 2)) ;;
@@ -1730,9 +1814,9 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
           --) break ;;
           --*)
             for c in --set-upstream-to:--set-u --unset-upstream:--uns --track:--tr --no-track:--no-t --move:--mov --copy:--cop; do
-              _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && hit=1
+              _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && up=1
             done ;;
-          -?*) case "${t#-}" in *[utmMcC]*) hit=1 ;; esac ;;
+          -?*) case "${t#-}" in *[utmMcC]*) up=1 ;; esac ;;
         esac
       done ;;
     checkout|switch)
@@ -1741,16 +1825,16 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
         t="${TOK[j]}"
         case "$t" in
           --) path=1; break ;;
-          --track|--track=*|-t) hit=1 ;;
+          --track|--track=*|-t) up=1 ;;
           --orphan|--create|--force-create) words=-1; j=$((j + 1)) ;;
           --*) ;;
           -?*)
             rest="${t#-}"
-            case "$rest" in *t*) hit=1 ;; esac
+            case "$rest" in *t*) up=1 ;; esac
             # -b, -B, -c, -C: the new branch's name follows; a word after
             # it is the start point.
             case "$rest" in *[bBcC]*) words=-1; [ "${rest##*[bBcC]}" = "" ] && j=$((j + 1)) ;; esac ;;
-          *) [ "$words" = -1 ] && hit=1; words=$((words + 1)) ;;
+          *) [ "$words" = -1 ] && up=1; words=$((words + 1)) ;;
         esac
       done
       # `git checkout -- <paths>` restores files and stays on the branch.
@@ -1767,13 +1851,14 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
           t="${TOK[j]}"
           case "$t" in
             --) break ;;
-            --*) _bd_is_opt "${t%%=*}" --set-upstream --set-u && hit=1 ;;
-            -?*) rest="${t#-}"; rest="${rest%%o*}"; case "$rest" in *u*) hit=1 ;; esac ;;
+            --*) _bd_is_opt "${t%%=*}" --set-upstream --set-u && up=1 ;;
+            -?*) rest="${t#-}"; rest="${rest%%o*}"; case "$rest" in *u*) up=1 ;; esac ;;
           esac
         done
       fi ;;
   esac
   shopt -u nocasematch
+  [ "$up" = 1 ] && TG_UPW=1
   [ "$hit" = 1 ] && [ "$ro" = 0 ]
 }
 
@@ -1828,9 +1913,9 @@ _tg_unmodeled() {
   [ "${TG_EXECW:-0}" = 1 ] && return 0
   w="${TOK[TG_I]}"
   # A variable or substitution as the command word may expand to cd, eval or
-  # export; one with a / of its own (`"$ROOT/bin/x.sh"`) names a file, and
-  # bash never runs a builtin for a word with a /.
-  case "$w" in */*) ;; *) _tg_unreadable "$w" && return 0 ;; esac
+  # export; one with a / of its own outside ${...} (`"$ROOT/bin/x.sh"`, not
+  # `${CD%/}`) names a file, and bash never runs a builtin for a word with a /.
+  _tg_names_file "$w" || { _tg_unreadable "$w" && return 0; }
   case "$w" in
     # With nothing after them they run nothing, unless what they read comes
     # from a redirection or a process substitution (`. <(...)`): a bare `.`
@@ -1868,6 +1953,7 @@ _tg_state_prescan() {   # $1 = the segments
   local seg
   while IFS= read -r seg; do
     case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+    case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
     case "$seg" in
       *eval*|*source*|*exec*|*alias*|*hash*|*enable*|*trap*|*declare*|*typeset*|*local*|\
       *'$'*|*'`'*|*__BD_SUBST__*|*[\'\"\\]*|.|.[[:space:]]*|*[[:space:]].|*[[:space:]].[[:space:]]*) ;;
@@ -1981,12 +2067,13 @@ _tg_common_dir() {   # $1 = a directory
 # the text handed to a shell is also read in order as commands, and its own
 # push must not ask because of the upstream it sets.
 _tg_config_prescan() {   # $1 = the text, $2 = 1 to leave out git push -u
-  local segs seg k n TG_I TG_XARGS TG_EXECW TG_PB=0 TG_RIN TG_AN
-  local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=() TG_RDIR=()
+  local segs seg k n TG_I TG_XARGS TG_EXECW TG_PB=0 TG_UPW=0 TG_RIN TG_AN
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() TG_RDIR=()
   local BD_RIN=0
   segs=$(_bd_segments "$1")
   while IFS= read -r seg; do
     case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+    case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
     _bd_words "$seg"
     n=${#TOK[@]}
     TG_RDIR=(${BD_RDIR[@]+"${BD_RDIR[@]}"})
@@ -2000,10 +2087,106 @@ _tg_config_prescan() {   # $1 = the text, $2 = 1 to leave out git push -u
       esac
     done
     [ "$TG_PB" = 1 ] && TG_CDWT=1
+    [ "$TG_UPW" = 1 ] && TG_UPSTREAM=1
   done <<TG_PRESCAN_EOF
 $segs
 TG_PRESCAN_EOF
   return 0
+}
+
+# One simple command of the text _tg_read_text reads: its actions, and what it
+# changes for the simple commands after it (pend, gpend, bpend, its caller's).
+_tg_read_seg() {   # $1 = the segment
+  local seg="$1"
+  # TG_PIPED=1: a pipe feeds this simple command (_bd_segments).
+  TG_PIPED=0
+  case "$seg" in __BD_PIPE__*) TG_PIPED=1; seg="${seg:11}" ;; esac
+  [ -z "$seg" ] && return 0
+  case "$seg" in __BD_UNBALANCED__) return 0 ;; esac
+  # Every comparison below is on the words as bash passes them to the
+  # program (_bd_words): quotes removed, a backslash removed where bash
+  # removes it, and redirections (`2>&1`, `--tags>/dev/null`, `> "a b"`)
+  # set aside with their targets. A here-string's text is kept apart
+  # (TG_HSTR): it is the program's input, not an argument.
+  _bd_words "$seg"
+  n=${#TOK[@]}
+  TG_HSTR=(${BD_HSTR[@]+"${BD_HSTR[@]}"})
+  TG_RDIR=(${BD_RDIR[@]+"${BD_RDIR[@]}"})
+  TG_RIN="$BD_RIN"
+  TG_SEGTXT="$seg"
+  # The words of the simple command before this one (a substitution comes
+  # just before the command that holds it): _tg_cd.
+  TG_LASTW="${TG_CURW:-}"; TG_CURW="${TOK[*]:-}"
+  [ "$n" -gt 0 ] || return 0
+  _tg_command_word
+  # A variable this simple command sets (_tg_set_names) that chooses gh's
+  # repository, or git's configuration or repository.
+  _tg_set_names
+  for t in ${TG_SETN[@]+"${TG_SETN[@]}"}; do
+    case "$t" in GH_REPO|GH_HOST) pend=1 ;; esac
+    _tg_git_env_name "$t" && gpend=1
+  done
+  # A write under .git or to a .gitconfig (_tg_gitpath_write), also by a
+  # redirection of a simple command with no program: from the next simple
+  # command on, a push asks.
+  _tg_gitpath_write && gpend=1
+  [ "$TG_I" -lt "$n" ] || return 0
+  # git config, git remote, an upstream or tracking change, or a branch
+  # change, changing what a later push sends or where it goes
+  # (_tg_config_write), as the command word or behind a program this hook
+  # does not know: from the next simple command on, a push asks (a branch
+  # change: a push that names no remote; an upstream or tracking change: a
+  # push that names no remote or no refspec).
+  sc=$(_tg_prog "${TOK[TG_I]}")
+  case "$sc" in
+    echo|printf|grep|egrep|fgrep|zgrep|rg|jq|cat|tee|test|'['|'[['|:) ;;
+    *)
+      TG_PB=0; TG_UPW=0
+      for ((k = TG_I; k < n; k++)); do
+        [ "${#TOK[k]}" -le 4096 ] || continue
+        case "${TOK[k]##*/}" in
+          [Gg][Ii][Tt]) _tg_config_write "$k" && gpend=1 ;;
+        esac
+      done
+      [ "$TG_PB" = 1 ] && bpend=1
+      [ "$TG_UPW" = 1 ] && upend=1 ;;
+  esac
+  # A shell that reads its script from a pipe (`echo '...' | bash`) runs
+  # text this hook cannot read; with the input redirected it reads a
+  # here-string or a heredoc, which is read as commands, or a file. A shell
+  # no pipe feeds (`which bash`, `x; bash`) reads nothing this command wrote.
+  if [ "$TG_PIPED" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$TG_I"; then _tg_emit shell "$TG_I"; return 0; fi
+  # eval of text this hook cannot read (`eval "$CMD"`, `eval "$(...)"`), and
+  # source or . of no file, of stdin with no here-string, or of a file named
+  # by a variable (`. <(...)`, `cmd | source /dev/stdin`), run commands it
+  # cannot see.
+  case "${TOK[TG_I]}" in
+    eval)
+      # One assignment that reads a variable by name (`eval "v=\${$name}"`
+      # or `eval "v=\${$name:-}"`, the bash 3.2 way to do it), written as
+      # exactly that, runs no command (_tg_eval_read_by_name).
+      if ! _tg_eval_read_by_name "$TG_SEGTXT"; then
+        for ((k = TG_I + 1; k < n; k++)); do
+          _tg_unreadable "${TOK[k]}" && { _tg_emit cmdUnread "$TG_I"; break; }
+        done
+      fi ;;
+    source|.)
+      t="${TOK[TG_I + 1]:-}"
+      if { [ -z "$t" ] && case "$seg" in *'<'*) true ;; *) false ;; esac; } || _tg_unreadable "$t" \
+         || { case "$t" in /dev/stdin|/dev/fd/*|-) true ;; *) false ;; esac \
+              && [ "${#TG_HSTR[@]}" -eq 0 ] && [ "$TG_RIN" = 0 ]; }; then
+        _tg_emit cmdUnread "$TG_I"
+      fi ;;
+  esac
+  case "${TOK[TG_I]}" in cd|pushd|popd) pend=1; _tg_cd "$TG_I" ;; esac
+  case "$sc" in
+    git) _tg_git "$TG_I" ;;
+    gh) _tg_gh "$TG_I" ;;
+    # They print, search or compare their arguments, and run none of them:
+    # `echo gh pr merge 1`, `grep "gh pr merge" log`.
+    echo|printf|grep|egrep|fgrep|zgrep|rg|jq|cat|tee|test|'['|'[['|:) ;;
+    *) _tg_scan "$TG_I" ;;
+  esac
 }
 
 # Every action a command text names, one `key<TAB>summary<TAB>dir` line each.
@@ -2013,7 +2196,7 @@ TG_PRESCAN_EOF
 # exits 2 when awk fails, and that must reach the caller as "cannot decide",
 # not end this hook with a refusal.
 _tg_read_text() {   # $1 = the text, $2 = depth
-  local segs seg pend=0 gpend=0 bpend=0 k t bare code0 added sc
+  local segs seg pend=0 gpend=0 bpend=0 upend=0 k t bare code0 added sc
   TG_DEPTH=$2
   bare=$(printf '%s' "$1" | LC_ALL=C tr -d "'\"\\\\") || bare=gh
   case "$bare" in
@@ -2052,100 +2235,28 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     # or repository, or changed git's configuration with git config or git
     # remote (TG_GITENV).
     # bpend: it may have changed the branch checked out (TG_CDWT).
+    # upend: it changed a branch's upstream or tracking (TG_UPSTREAM).
     [ "$pend" = 1 ] && TG_GHMOVED=1
     [ "$gpend" = 1 ] && TG_GITENV=1
     [ "$bpend" = 1 ] && TG_CDWT=1
-    [ -z "$seg" ] && continue
-    case "$seg" in __BD_UNBALANCED__) continue ;; esac
-    # Every comparison below is on the words as bash passes them to the
-    # program (_bd_words): quotes removed, a backslash removed where bash
-    # removes it, and redirections (`2>&1`, `--tags>/dev/null`, `> "a b"`)
-    # set aside with their targets. A here-string's text is kept apart
-    # (TG_HSTR): it is the program's input, not an argument.
-    _bd_words "$seg"
-    n=${#TOK[@]}
-    TG_HSTR=(${BD_HSTR[@]+"${BD_HSTR[@]}"})
-    TG_RDIR=(${BD_RDIR[@]+"${BD_RDIR[@]}"})
-    TG_RIN="$BD_RIN"
-    TG_SEGTXT="$seg"
-    # The words of the simple command before this one (a substitution comes
-    # just before the command that holds it): _tg_cd.
-    TG_LASTW="${TG_CURW:-}"; TG_CURW="${TOK[*]:-}"
-    [ "$n" -gt 0 ] || continue
-    _tg_command_word
-    # A variable this simple command sets (_tg_set_names) that chooses gh's
-    # repository, or git's configuration or repository.
-    _tg_set_names
-    for t in ${TG_SETN[@]+"${TG_SETN[@]}"}; do
-      case "$t" in GH_REPO|GH_HOST) pend=1 ;; esac
-      _tg_git_env_name "$t" && gpend=1
-    done
-    # A write under .git or to a .gitconfig (_tg_gitpath_write), also by a
-    # redirection of a simple command with no program: from the next simple
-    # command on, a push asks.
-    _tg_gitpath_write && gpend=1
-    [ "$TG_I" -lt "$n" ] || continue
-    # git config, git remote, an upstream or tracking change, or a branch
-    # change, changing what a later push sends or where it goes
-    # (_tg_config_write), as the command word or behind a program this hook
-    # does not know: from the next simple command on, a push asks (a branch
-    # change: a push that names no remote).
-    sc=$(_tg_prog "${TOK[TG_I]}")
-    case "$sc" in
-      echo|printf|grep|egrep|fgrep|zgrep|rg|jq|cat|tee|test|'['|'[['|:) ;;
-      *)
-        TG_PB=0
-        for ((k = TG_I; k < n; k++)); do
-          [ "${#TOK[k]}" -le 4096 ] || continue
-          case "${TOK[k]##*/}" in
-            [Gg][Ii][Tt]) _tg_config_write "$k" && gpend=1 ;;
-          esac
-        done
-        [ "$TG_PB" = 1 ] && bpend=1 ;;
+    [ "$upend" = 1 ] && TG_UPSTREAM=1
+    # The second reading of the segment before, with its substitutions
+    # removed (_bd_segments): read in a subshell, so it changes no state, and
+    # only for the Tier 3 actions it names. The first reading kept the
+    # substitution and has already counted it as unreadable where that asks.
+    case "$seg" in
+      __BD_ALT__*)
+        t=$(_tg_read_seg "${seg:10}")
+        [ -n "$t" ] && _tg_tier3 "$t"
+        continue ;;
     esac
-    # A shell that reads its script from a pipe (`echo '...' | bash`) runs
-    # text this hook cannot read; with the input redirected it reads a
-    # here-string or a heredoc, which is read as commands, or a file.
-    if [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$TG_I"; then _tg_emit shell "$TG_I"; continue; fi
-    # eval of text this hook cannot read (`eval "$CMD"`, `eval "$(...)"`), and
-    # source or . of no file, of stdin with no here-string, or of a file named
-    # by a variable (`. <(...)`, `cmd | source /dev/stdin`), run commands it
-    # cannot see.
-    case "${TOK[TG_I]}" in
-      eval)
-        # An assignment whose value reads a variable indirectly (`eval
-        # "v=\${$name}"`, the bash 3.2 way to read a variable by name) runs
-        # no command, as long as no substitution is written in it.
-        if [ $((TG_I + 2)) -eq "$n" ] && _tg_is_assignment "${TOK[TG_I + 1]}"; then
-          case "${TOK[TG_I + 1]}" in *__BD_SUBST__*|*'`'*|*'$('*) _tg_emit cmdUnread "$TG_I" ;; esac
-        else
-          for ((k = TG_I + 1; k < n; k++)); do
-            _tg_unreadable "${TOK[k]}" && { _tg_emit cmdUnread "$TG_I"; break; }
-          done
-        fi ;;
-      source|.)
-        t="${TOK[TG_I + 1]:-}"
-        if { [ -z "$t" ] && case "$seg" in *'<'*) true ;; *) false ;; esac; } || _tg_unreadable "$t" \
-           || { case "$t" in /dev/stdin|/dev/fd/*|-) true ;; *) false ;; esac \
-                && [ "${#TG_HSTR[@]}" -eq 0 ] && [ "$TG_RIN" = 0 ]; }; then
-          _tg_emit cmdUnread "$TG_I"
-        fi ;;
-    esac
-    case "${TOK[TG_I]}" in cd|pushd|popd) pend=1; _tg_cd "$TG_I" ;; esac
-    case "$sc" in
-      git) _tg_git "$TG_I" ;;
-      gh) _tg_gh "$TG_I" ;;
-      # They print, search or compare their arguments, and run none of them:
-      # `echo gh pr merge 1`, `grep "gh pr merge" log`.
-      echo|printf|grep|egrep|fgrep|zgrep|rg|jq|cat|tee|test|'['|'[['|:) ;;
-      *) _tg_scan "$TG_I" ;;
-    esac
+    _tg_read_seg "$seg"
   done <<< "$segs"
 }
 
 # Every action the command names.
 _tg_actions() {
-  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_CDBASE="$CWD"; TG_CURW=""
+  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_UPSTREAM=0; TG_CDBASE="$CWD"; TG_CURW=""
   _tg_read_text "$COMMAND" 0
 }
 

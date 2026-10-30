@@ -122,6 +122,11 @@ case "$_BUM_BARE" in
   *) exit 0 ;;
 esac
 
+# A word glued to a substitution is also read without it, marked as that
+# second reading (_bd_segments): `gh pr merge$(x) 7` may be gh pr merge 7.
+BD_SEG_ALT=1
+BD_SEG_MARK=1
+
 _bd_strip_noncode "$COMMAND"
 # `bash -c 'gh pr merge 9'` and `eval '...'` hide the merge inside one quoted
 # word. Expand those first, so the merge is a command like any other.
@@ -379,9 +384,16 @@ MERGE_DEL=()
 MERGE_ADMIN=()
 MERGE_MHC=()
 
+PREV_MERGE=0
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
   case "$SEG" in __BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+  # SEG_ALT=1: the reading of the segment before this one with its
+  # substitutions removed (_bd_segments). PREV_MERGE=1: that segment was
+  # already read as a merge.
+  SEG_ALT=0
+  case "$SEG" in __BD_ALT__*) SEG_ALT=1; SEG="${SEG:10}" ;; *) PREV_MERGE=0 ;; esac
+  case "$SEG" in __BD_PIPE__*) SEG="${SEG:11}" ;; esac
   # The words as bash passes them to the program (_bd_words, the reader every
   # hook shares): `g\h pr mer\ge 7` runs gh pr merge 7, `$"merge"` is merge,
   # and a redirection is set aside wherever it stands, with or without a space
@@ -499,6 +511,16 @@ while IFS= read -r SEG; do
     esac
     _bum_takes_value "${TOK[k]}" && k=$((k + 1))
   done
+  # A merge seen only once the substitutions are removed (`gh pr merge$(x)
+  # 7`): what the substitution adds to the words, a number or an option,
+  # cannot be read, so it is refused whatever the checks say. One already
+  # read as a merge with them in place was judged there.
+  if [ "$SEG_ALT" = 1 ]; then
+    [ "$PREV_MERGE" = 1 ] && continue
+    _bum_refuse "BLOCKED: gh pr merge, but a command substitution is glued to one of its words, so what it merges cannot be read from the command." \
+      "Next: write the merge without the substitution: $_BUM_SHAPE."
+  fi
+  PREV_MERGE=1
   # Text that does not balance is read line by line as well (see _bd_segments),
   # and a merge found in a line that ends inside an open quote may be half of
   # one: which half gh would run cannot be read. Refused, with how to write it.

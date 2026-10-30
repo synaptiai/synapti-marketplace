@@ -33,7 +33,7 @@ git checkout -b feature/synthetic-pr-test
 printf '%s\n' "test" > test-file.txt
 git add test-file.txt
 git commit -m "test: synthetic PR for /flow:watch quickstart"
-git push -u origin feature/synthetic-pr-test
+git push -u origin HEAD
 gh pr create --title "Synthetic PR for /flow:watch test" --body "Quickstart artifact — close when done."
 ```
 

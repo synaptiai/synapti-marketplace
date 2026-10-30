@@ -101,7 +101,7 @@ _rm_segment_is_destructive() {
   # _bd_words fills all of these; they are local so it does not leave them
   # behind in the hook's own shell.
   # shellcheck disable=SC2034
-  local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=()
   # shellcheck disable=SC2034
   local BD_RIN=0
   _bd_words "$1"
@@ -156,6 +156,12 @@ _rm_segment_is_destructive() {
   fi
   return 1
 }
+
+# A word glued to a substitution is also read without it (`git reset
+# --hard$(true)` is git reset --hard): each segment with a substitution glued
+# to other text is followed by that second reading (_bd_segments), which
+# every rule below reads too.
+BD_SEG_ALT=1
 
 # Strip comments and heredoc bodies once; every rule below reads BD_CODE.
 _bd_strip_noncode "$COMMAND"

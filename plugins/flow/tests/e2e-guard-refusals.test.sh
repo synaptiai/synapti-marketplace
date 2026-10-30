@@ -747,3 +747,38 @@ for C in "echo 'git reset --hard' | bash" "printf '%s\n' 'rm -rf src' | sh -s" "
   e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
 done
 e2e_expect_clean_edges
+
+# --- D2: a substitution glued to a word of a discard ---------------------------
+
+_flow_test_begin "discard-glued-substitution"
+e2e_new discard-glued-substitution
+e2e_describe "every discard block-destructive refuses, with a command substitution glued to its program, subcommand, option or path (\$(true), backquotes): a substitution's output can be empty, so each is still refused (D2); the same with a non-discarding form, or a substitution as a whole argument, is allowed"
+e2e_repo work
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+git reset --hard$(true)
+git reset --hard`true`
+git reset$(true) --hard
+$(true)git reset --hard
+git checkout .$(true)
+git checkout -- .$(true)
+git checkout$(true) .
+git restore .$(true)
+git restore$(true) .
+git clean$(true) -fd
+git branch --delete$(true) --force feat
+rm$(true) -rf src
+ROWS
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+git reset --soft HEAD~1$(true)
+git clean -n$(true)
+git checkout "$(git rev-parse --abbrev-ref HEAD)"
+git restore --staged "$(git diff --name-only | head -n 1)"
+x=$(git rev-parse HEAD) && git status
+ROWS
+e2e_expect_clean_edges

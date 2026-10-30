@@ -1459,13 +1459,13 @@ silent|watch "gh pr" view 1
 silent|ssh h 'git log' --oneline
 maybe|git branch -u mir/main && git push
 maybe|git branch --set-upstream-to=mir/main; git push
-maybe|git branch --set-upstream-to mir/main; git push origin v1-fix
+silent|git branch --set-upstream-to mir/main; git push origin v1-fix
 maybe|git checkout -b x mir/main && git push
 maybe|git checkout -t mir/main && git push
 maybe|git checkout --track mir/main && git push
 maybe|git switch -c y --track mir/main && git push
 maybe|git push -u mir v1-fix && git push
-maybe|git push --set-upstream mir v1-fix && git push origin v1-fix
+silent|git push --set-upstream mir v1-fix && git push origin v1-fix
 maybe|git config --rename-section x push && git push
 maybe|git config rename-section x push && git push
 maybe|git config --rename-section x Remote.mir && git push
@@ -1473,7 +1473,7 @@ maybe|git config --remove-section push && git push origin v1-fix
 maybe|git checkout main && git push
 maybe|git switch main; git push
 maybe|watch 'git config push.followTags true'; git push origin v1-fix
-maybe|watch 'git branch -u mir/main'; git push origin v1-fix
+silent|watch 'git branch -u mir/main'; git push origin v1-fix
 maybe|watch -n 9 'git checkout main'; git push
 maybe|watch 'git push -u mir v1-fix'; git push
 silent|bash -c 'git push -u origin v1-fix'
@@ -1538,6 +1538,182 @@ EOF
 gh pr view 1"
   _expect_silent_allow
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
+# A substitution's output can be empty, so the word it is glued to may be only
+# the text around it: each of these may run the action without the
+# substitution.
+if _want tg-glued-substitution; then
+  _tg_setup tg-glued-substitution feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, branch v1-fix: a substitution glued to the endpoint, method, option or subcommand of a merge, a release or a tag push (\$(...), backquotes, inside double quotes) does not hide it; a branch push or a read with a substitution in it stays silent (T33)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix ) || _flow_assert_fail "tg-glued-substitution: could not create the branch"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      *) _expect_ask "is a Tier 3 action (tiers.$WANT)"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+merge|gh api -X PUT repos/o/r/pulls/1/merge$(true)
+merge|gh api -X PUT repos/o/r/pulls/1/merge`true`
+merge|gh api -X PUT repos/o/r/pulls/1/merge"$(true)"
+merge|gh api -X POST repos/o/r/merges$(true) -f base=main -f head=x
+release|gh api repos/o/r/releases$(true) -f tag_name=v9
+release|gh api -X POST repos/o/r/releases$(true) -f tag_name=v9
+release|gh api --method$(true) POST repos/o/r/releases
+release|gh api -X$(true) POST repos/o/r/releases -f tag_name=v9
+merge|gh api graphql -f query$(true)='mutation{mergePullRequest(input:{pullRequestId:"x"}){clientMutationId}}'
+release|git push$(true) --tags
+merge|gh pr merge$(true) 1
+silent|gh pr view "$(git branch --show-current)"
+silent|x=$(gh pr view 1 --json title -q .title); git push origin v1-fix
+silent|gh pr create --title "$(git log -1 --format=%s)" --body "$(cat notes.md)"
+EOF
+  e2e_expect_clean_edges
+fi
+
+# An upstream or tracking change can change only what a push that names no
+# remote, or no refspec, sends.
+if _want tg-upstream-named-push; then
+  _tg_setup tg-upstream-named-push feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, origin with main, branch v1-fix: after an upstream or tracking change a push naming a remote and a refspec is silent; one naming no remote, or no refspec, asks (T33)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git init -q --bare "$E2E_DIR/origin.git" && git remote add origin "$E2E_DIR/origin.git" \
+      && git push -q origin HEAD:main && git fetch -q origin && git branch v1-fix ) >/dev/null 2>&1 \
+    || _flow_assert_fail "tg-upstream-named-push: could not create origin and the branch"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      maybe) _expect_ask "may push or delete a tag"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+silent|git checkout -b feat2 origin/main && git push -u origin HEAD
+silent|git branch -u origin/main && git push origin v1-fix
+silent|git push -u origin HEAD && git push origin v1-fix
+maybe|git checkout main && git push
+maybe|git checkout -b feat2 origin/main && git push
+maybe|git checkout -b feat2 origin/main && git push -u origin
+maybe|git branch -u origin/main && git push origin
+maybe|git config branch.v1-fix.merge refs/tags/v1 && git push origin v1-fix
+EOF
+  e2e_expect_clean_edges
+fi
+
+# eval of one assignment that reads a variable by name runs nothing; any
+# other text in it may be commands.
+if _want tg-eval-assignment; then
+  _tg_setup tg-eval-assignment feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: eval \"v=\\\${\$name}\" and eval \"v=\\\${\$name:-}\" are silent; an eval of an assignment from any other variable, or with anything more in it, asks (T33)"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      unread) _expect_ask "flow cannot read from the command text"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+unread|CMD=';gh release create v9'; eval "X=$CMD"
+unread|CMD='x;gh pr merge 1'; eval X=$CMD
+unread|eval "v=$CMD"; gh pr list
+unread|eval v=$CMD; gh pr list
+unread|eval "v=\${$name}$X"; gh pr list
+unread|eval "v=\${$name:-`x`}"; gh pr list
+unread|eval "v=\${$name:-$X}"; gh pr list
+silent|eval "v=\${$name}"; gh pr list
+silent|eval "v=\${$name:-}"; gh pr list
+silent|  eval "__value=\${$__name:-}"; gh pr list
+EOF
+  e2e_expect_clean_edges
+fi
+
+# The command word alone: a variable that is not one whole quoted word, and
+# one whose / is inside ${...}, may be a whole command; a heredoc body line
+# is data only where the body is a non-shell reader's and the same text is
+# not also a command outside it.
+if _want tg-command-word; then
+  _tg_setup tg-command-word feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, branch v1-fix: a command word that is a variable with nothing after it asks unless it is one whole quoted word, or has a / outside \${...} (a file); a parameter expansion as the command word may be cd or eval; a heredoc body line is data only inside the body of a reader that is not a shell (T33)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix && git init -q "$E2E_DIR/other" ) >/dev/null 2>&1 \
+    || _flow_assert_fail "tg-command-word: could not create the branch and ../other"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      unread) _expect_ask "flow cannot read from the command text"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+      maybe) _expect_ask "may push or delete a tag"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+unread|CMD='gh release create v9'; ""$CMD
+unread|CMD='gh release create v9'; ''$CMD
+unread|CMD='gh release create v9'; "$E"$CMD
+unread|CMD='gh release create v9'; "${E}"$CMD
+unread|CMD='gh release create v9'; "$@"$CMD
+unread|CMD='gh pr merge 1'; ""$CMD
+unread|CMD='git push --tags'; ""$CMD
+unread|"$A"$B; gh pr list
+unread|CMD='gh release create v9'; ${CMD%/}
+unread|CMD=gh_release_create_v9; ${CMD//_/ }
+unread|CMD='gh pr merge 1'; ${CMD%/}
+unread|CMD='gh pr merge 1'; ${CMD#*/}
+maybe|CD=cdx; ${CD/x/} ../other && git push origin v1-fix
+maybe|E=eval; ${E%/} 'cd ../other' && git push origin v1-fix
+silent|"$CMD"; gh pr list
+silent|X=1 "$CMD"; gh pr list
+silent|"$CMD" 2>/dev/null; gh pr list
+silent|"$ROOT/bin/x.sh"; gh pr list
+silent|${ROOT}/bin/x.sh; gh pr list
+silent|"${ROOT%/}/bin/x.sh" ../other && git push origin v1-fix
+EOF
+  # A heredoc body line of a reader that is not a shell is data; the same
+  # text after the body, or in a body a shell reads, is a command.
+  for C in \
+    "$(printf 'CMD="gh release create v9"\ncat >/dev/null <<EOF\nx\nEOF\n$CMD')" \
+    "$(printf 'CMD="gh release create v9"\ncat <<EOF >/dev/null\nx\nEOF\n$CMD')" \
+    "$(printf 'CMD="gh release create v9"\n: <<EOF\nx\nEOF\n$CMD')" \
+    "$(printf 'CMD="gh release create v9"\nbash <<EOF\nx\nEOF\n$CMD')" \
+    "$(printf "bash <<'EOF'\nCMD='gh release create v9'; \$CMD\nEOF")" \
+    "$(printf 'cat >/dev/null <<EOF\n$CMD\nEOF\nCMD="gh release create v9"; $CMD')" \
+    "$(printf 'CMD="gh release create v9"\nwhile read -r p; do echo "$p"; done <<EOF\n$CMD\nEOF\n$CMD')" \
+    "$(printf 'CMD="gh release create v9"; echo "x <<EOF\n$CMD\nEOF"; $CMD')"; do
+    _tg_run "$C"
+    _expect_ask "flow cannot read from the command text"
+  done
+  _tg_run "$(printf 'while IFS= read -r f; do echo "$f"; done <<LIST\n$(ls)\nLIST\ngh pr view 1')"
+  _expect_silent_allow
+  e2e_expect_clean_edges
+fi
+
+# A shell asks as one that reads its script from its input only when a pipe
+# feeds it; named as an argument (`which bash`) it runs nothing.
+if _want tg-shell-argument; then
+  _tg_setup tg-shell-argument feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, branch v1-fix: a shell named as an argument (which, command -v, type, ls, file, docker run, direnv export) or after || is silent; a shell a pipe feeds (|, |&, through sudo or an unknown program) asks (T33)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix ) || _flow_assert_fail "tg-shell-argument: could not create the branch"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      shell) _expect_ask "reads its script from its input"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+silent|which bash && gh pr view 1
+silent|command -v bash && gh pr list
+silent|type bash; gh pr list
+silent|ls /bin/sh && gh pr list
+silent|file /bin/bash && gh pr list
+silent|docker run --rm img bash && gh pr list
+silent|direnv export bash && gh pr view 1
+silent|x=$(direnv export bash) && gh pr view 1
+silent|docker compose run app sh && git push origin v1-fix
+silent|gh pr view 1 || bash
+shell|echo x | sudo bash; gh pr list
+shell|cat f | sh -s; gh pr list
+shell|echo x |& bash; gh pr list
+shell|gh pr view 1 | tee log | bash
+shell|echo x | docker run -i img bash; gh pr list
+EOF
+  _tg_run "$(printf 'gh pr view 1 |\nbash')"
+  _expect_ask "reads its script from its input"
   e2e_expect_clean_edges
 fi
 

@@ -19,7 +19,8 @@
 #                                    redirections kept); s1-guard's word check
 #   _bd_words <text>              -> fills TOK with the words bash hands the program
 #                                    (redirections dropped), TOKE with an expansion
-#                                    flag per word, BD_HSTR with here-string texts,
+#                                    flag per word, TOKQ with 1 for a word that is one
+#                                    whole quoted string, BD_HSTR with here-string texts,
 #                                    BD_RDIR with redirection targets, and sets
 #                                    BD_RIN=1 when the program's input is redirected
 #   _bd_git_parse <simple-command> -> sets GIT_SUB, GIT_ARGS, GIT_ARGN; 1 if not git
@@ -149,28 +150,33 @@ _rm_tokenise() {
 #     a translation, and there is none), so `gh pr $"merge" 7` is gh pr merge 7.
 #   - an unquoted ;, |, &, (, ) or backquote ends a word, so a whole line can
 #     be read too (`x=$(bash` is the words `x=$` and `bash`).
+#   - a parameter expansion `${...}` is one piece of its word up to its
+#     closing brace, spaces and all, as bash reads it (`${CMD//_/ }`).
 # Text with none of the characters that need this is split by the shell
 # builtin, with no subprocess. An awk that fails refuses the command (exit 2),
 # as _rm_tokenise does.
 _bd_words() {
-  TOK=(); TOKE=(); BD_HSTR=(); BD_RDIR=(); BD_RIN=0
+  TOK=(); TOKE=(); TOKQ=(); BD_HSTR=(); BD_RDIR=(); BD_RIN=0
   local _w_out _w_line _w_i
   case "$1" in
-    *[\'\"\\\<\>\&\(\)\;\|\`]*|*$'\n'*) ;;
+    *[\'\"\\\<\>\&\(\)\;\|\`]*|*$'\n'*|*'${'*) ;;
     *)
       read -r -a TOK <<< "$1"
       for ((_w_i = 0; _w_i < ${#TOK[@]}; _w_i++)); do
         case "${TOK[_w_i]}" in *'$'*|*__BD_SUBST__*) TOKE[_w_i]=1 ;; *) TOKE[_w_i]=0 ;; esac
+        TOKQ[_w_i]=0
       done
       return 0 ;;
   esac
   if ! _w_out=$(printf '%s' "$1" | LC_ALL=C awk '
+    # qs=1 while the word is one quoted string and nothing else: `"$CMD"`,
+    # not `""$CMD` or `"$A"$B`.
     function emit() {
       if (!inw) return
       gsub(/\n/, RSN, cur)
       if (pend == "H" || pend == "I" || pend == "R") print pend cur
-      else if (pend == "") print "W" ((xp || index(cur, "__BD_SUBST__")) ? 1 : 0) cur
-      cur = ""; inw = 0; plain = 1; xp = 0; pend = ""
+      else if (pend == "") print "W" ((xp || index(cur, "__BD_SUBST__")) ? 1 : 0) (qs ? 1 : 0) cur
+      cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0
     }
     # Does the quote at i open a dollar-quoted string? Only when the character
     # before it is a dollar sign that no backslash escapes.
@@ -183,17 +189,19 @@ _bd_words() {
     BEGIN { SQ = sprintf("%c", 39); RSN = sprintf("%c", 30); s = "" }
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
-      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""
+      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         if (c == " " || c == "\t" || c == "\r" || c == "\n") { emit(); continue }
         if (c == "\\") {
+          qs = 0
           if (i == n) { cur = cur c; inw = 1; plain = 0; continue }
           d = substr(s, i + 1, 1); i++
           if (d != "\n") { cur = cur d; inw = 1; plain = 0 }
           continue
         }
         if (c == SQ) {
+          qs = inw ? 0 : 1
           inw = 1; plain = 0
           if (dq_open(s, i)) {
             # $'...': kept as written, the $ included; a backslash escapes
@@ -212,8 +220,9 @@ _bd_words() {
           cur = cur substr(s, i + 1, k - 1); i += k; continue
         }
         # $"...": the $ goes, and the string is read as a double-quoted one.
-        if (c == "$" && substr(s, i + 1, 1) == "\"") { inw = 1; plain = 0; continue }
+        if (c == "$" && substr(s, i + 1, 1) == "\"") { inw = 1; plain = 0; qs = 0; continue }
         if (c == "\"") {
+          qs = inw ? 0 : 1
           inw = 1; plain = 0
           for (k = i + 1; k <= n; k++) {
             d = substr(s, k, 1)
@@ -231,7 +240,7 @@ _bd_words() {
           i = k; continue
         }
         if (c == "<" || c == ">" || (c == "&" && substr(s, i + 1, 1) == ">")) {
-          if (inw && plain && pend == "" && (cur ~ /^[0-9]+$/ || cur ~ /^\{[A-Za-z_][A-Za-z0-9_]*\}$/) && c != "&") { cur = ""; inw = 0; xp = 0 }
+          if (inw && plain && pend == "" && (cur ~ /^[0-9]+$/ || cur ~ /^\{[A-Za-z_][A-Za-z0-9_]*\}$/) && c != "&") { cur = ""; inw = 0; xp = 0; qs = 0 }
           else emit()
           t = substr(s, i, 3)
           if (t == "<<<") { op = "H"; l = 3 }
@@ -244,8 +253,19 @@ _bd_words() {
           i += l - 1; pend = op; continue
         }
         if (c == ";" || c == "|" || c == "&" || c == "(" || c == ")" || c == "`") { emit(); pend = ""; continue }
+        # ${...}: to its closing brace, nested ${...} counted; one with no
+        # closing brace is read character by character as before.
+        if (c == "$" && substr(s, i + 1, 1) == "{") {
+          d = 1
+          for (k = i + 2; k <= n && d > 0; k++) {
+            e = substr(s, k, 1)
+            if (e == "$" && substr(s, k + 1, 1) == "{") { d++; k++ }
+            else if (e == "}") d--
+          }
+          if (d == 0) { cur = cur substr(s, i, k - i); inw = 1; qs = 0; xp = 1; i = k - 1; continue }
+        }
         if (c == "$" && substr(s, i + 1, 1) ~ /[A-Za-z_{(0-9@*#?$!-]/) xp = 1
-        cur = cur c; inw = 1
+        cur = cur c; inw = 1; qs = 0
       }
       emit()
     }
@@ -257,7 +277,7 @@ _bd_words() {
   while IFS= read -r _w_line; do
     case "$_w_line" in *$'\036'*) _w_line="${_w_line//$'\036'/$'\n'}" ;; esac
     case "$_w_line" in
-      W*) TOKE+=("${_w_line:1:1}"); TOK+=("${_w_line:2}") ;;
+      W*) TOKE+=("${_w_line:1:1}"); TOKQ+=("${_w_line:2:1}"); TOK+=("${_w_line:3}") ;;
       H*) BD_HSTR+=("${_w_line:1}"); BD_RIN=1 ;;
       I*) BD_RDIR+=("${_w_line:1}"); BD_RIN=1 ;;
       R*) BD_RDIR+=("${_w_line:1}") ;;
@@ -281,7 +301,7 @@ _bd_words() {
 # generous — `cat <<EOF | bash` keeps the body too. Examining something harmless
 # costs a comparison; skipping something real costs the tree.
 #
-# Quoting, word splitting and redirections are left to _rm_tokenise below.
+# Quoting, word splitting and redirections are left to _bd_words above.
 # ---------------------------------------------------------------------------
 # Does this word name something that will run a script handed to it? Used for
 # the quoted-argument expansion below, not for heredoc stripping — the heredoc
@@ -289,8 +309,9 @@ _bd_words() {
 # with a much shorter list, because there "keep" is the safe default and here
 # "examine" is.
 _bd_is_interpreter() {
+  _bd_is_shell "$1" && return 0
   case "${1##*/}" in
-    sh|bash|zsh|ksh|dash|ash|busybox|python|python2|python3|perl|ruby|node|deno|bun)
+    python|python2|python3|perl|ruby|node|deno|bun)
       return 0 ;;
     eval|source|.|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at)
       return 0 ;;
@@ -298,9 +319,27 @@ _bd_is_interpreter() {
   return 1
 }
 
+# The shells, the one list every reader of a command uses: _bd_is_shell,
+# _bd_shell_reads_stdin, _bd_is_interpreter, and the piped-into-a-shell pass
+# of _bd_expand_interpreter_args (_BD_SHELL_RE).
+_BD_SHELLS="sh bash zsh ksh dash ash mksh busybox"
+_BD_SHELL_RE="(^|[^A-Za-z0-9_.-])(${_BD_SHELLS// /|})([^A-Za-z0-9_.-]|\$)"
+
+# _bd_is_shell <word>
+# Is the word a shell, in any case (a case-insensitive filesystem runs
+# `BASH`) and with any directory?
+_bd_is_shell() {
+  local b="${1##*/}" r=1 nc=0
+  case "$b" in ''|*[[:space:]]*) return 1 ;; esac
+  shopt -q nocasematch && nc=1
+  shopt -s nocasematch
+  case " $_BD_SHELLS " in *" $b "*) r=0 ;; esac
+  [ "$nc" = 1 ] || shopt -u nocasematch
+  return "$r"
+}
+
 # _bd_shell_reads_stdin <index>
-# Is TOK[index] a shell (sh, bash, zsh, ksh, dash, ash, mksh, in any case and
-# with any directory) that reads its script from its input? It does when it
+# Is TOK[index] a shell (_bd_is_shell) that reads its script from its input? It does when it
 # is given neither -c nor a script file: `bash`, `bash -s arg`, `sh -x`,
 # `bash --`, `sh -`. Its options are read as the shell reads them: c or s
 # anywhere in a bundle of short options (`-xc`, `-es`), -o and -O (and +o,
@@ -310,10 +349,7 @@ _bd_shell_reads_stdin() {
   local i="$1" n=${#TOK[@]} t
   [ "$i" -lt "$n" ] || return 1
   [ "${#TOK[i]}" -le 4096 ] || return 1
-  case "${TOK[i]##*/}" in
-    [Ss][Hh]|[Bb][Aa][Ss][Hh]|[Zz][Ss][Hh]|[Kk][Ss][Hh]|[Dd][Aa][Ss][Hh]|[Aa][Ss][Hh]|[Mm][Kk][Ss][Hh]) ;;
-    *) return 1 ;;
-  esac
+  _bd_is_shell "${TOK[i]}" || return 1
   i=$((i + 1))
   while [ "$i" -lt "$n" ]; do
     t="${TOK[i]}"
@@ -369,7 +405,7 @@ _bd_shell_reads_stdin() {
 # Carriage returns are stripped first, so a CRLF command is read the same way a
 # LF one is. Both tokeniser paths then agree about where words end.
 _bd_strip_noncode() {
-  BD_CODE=$(printf '%s\n' "$1" | awk '
+  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v shells="$_BD_SHELLS" '
     function owner_word(str,   n, parts, seg) {
       # The heredoc belongs to the innermost command, which is the first word
       # after the last separator. Reading the word immediately before the `<<`
@@ -405,7 +441,35 @@ _bd_strip_noncode() {
       for (j = i - 2; j >= 1 && substr(s, j, 1) == "\\"; j--) b++
       return (b % 2) == 0
     }
-    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = "" }
+    # blank=1 only (BD_BLANK_BODIES): may a heredoc introduced on this line,
+    # whatever its owner, be read as data? Not when a word of the line before
+    # the introducer is a shell (_BD_SHELLS) or a program that runs its input
+    # or its arguments, and not when a command word is a variable or a
+    # substitution, which may be either.
+    function reader_ok(str,   n, cmds, i, m, w, j, c, x) {
+      n = split(str, cmds, /[;&|(){}`]|[$][(]/)
+      for (i = 1; i <= n; i++) {
+        m = split(cmds[i], w, /[ \t]+/)
+        c = 1
+        for (j = 1; j <= m; j++) {
+          if (w[j] == "") continue
+          x = w[j]
+          gsub("[\"" SQ "\\\\]", "", x)
+          if (c) {
+            if (x ~ /^(if|then|elif|else|while|until|do|!|time)$/ || x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) continue
+            if (x == "" || x ~ /^[$]/) return 0
+            c = 0
+          }
+          sub(/^.*\//, "", x)
+          x = tolower(x)
+          if (x ~ shre) return 0
+          if (x ~ /^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$/) return 0
+        }
+      }
+      return 1
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = ""
+            shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$" }
     {
       line = $0
       sub(/\r$/, "", line)
@@ -476,11 +540,15 @@ _bd_strip_noncode() {
       probe = out
       hits = gsub(/<</, "<<", probe)
       if (q0 != "") hits = 0
-      if (hits == 1 && out !~ /[|>]/ &&
+      # With blank=1 (BD_BLANK_BODIES) a heredoc whose owner is not a sink is
+      # dropped too, when the line ends outside quotes and reader_ok says
+      # nothing on it runs the body: the reading of a command without the
+      # data its loops and readers take in.
+      if (hits == 1 && (out !~ /[|>]/ || blank == 1) &&
           match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/)) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
-        if (is_sink(owner)) {
+        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
           d = intro
           sub(/^<</, "", d)
           tabs = 0
@@ -492,11 +560,11 @@ _bd_strip_noncode() {
       }
       # The same shape with a single-quoted delimiter. Written separately
       # because embedding an apostrophe in this program would end it.
-      if (!inhd && hits == 1 && out !~ /[|>]/ &&
+      if (!inhd && hits == 1 && (out !~ /[|>]/ || blank == 1) &&
           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$")) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
-        if (is_sink(owner)) {
+        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
           d = intro
           sub(/^<</, "", d)
           tabs = 0
@@ -555,6 +623,18 @@ _bd_strip_noncode() {
 # argument did the same to the selector: `gh pr merge -b "a; b" 42` lost the 42,
 # and a probe that wants to know WHICH pull request asked about another one.
 #
+# A substitution's output can be empty, so a word glued to one may be just
+# the text around it: `git reset --hard$(true)` is git reset --hard, and
+# `gh pr merge$(x) 7` may be gh pr merge 7. With BD_SEG_ALT=1 a segment in
+# which a marker is glued to other text is followed by a second reading of
+# it, the same text with those markers removed; a marker that is a whole
+# word, or the whole of a double-quoted word, stays, and a segment with only
+# such markers has no second reading. The first reading still has every
+# marker, for a rule that must treat the word as unreadable (`git push
+# origin v1$(x)`), and the second lets a rule match the words as they may
+# run. With BD_SEG_MARK=1 that second reading starts with `__BD_ALT__`, for
+# a caller that must tell it from a command written that way.
+#
 # Two marker lines can appear among the segments: `__BD_UNBALANCED__` when the
 # text ends inside a quote or an unclosed substitution, and `__BD_SEG_FAIL__`
 # when the parse itself failed. BD_UNBALANCED is also set, for a caller that
@@ -590,12 +670,12 @@ _bd_segments() {
   # A failed awk prints `__BD_SEG_FAIL__`. The caller reads this through
   # `$(...)`, and an empty result would read as "no commands", so the marker is
   # how a failure reaches it.
-  joined=$(printf '%s\n' "$1" | awk -v join=1 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+  joined=$(printf '%s\n' "$1" | awk -v join=1 -v alt="${BD_SEG_ALT:-0}" -v mark="${BD_SEG_MARK:-0}" "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
   case "$joined" in
     *__BD_UNBALANCED__*) BD_UNBALANCED=1 ;;
   esac
   if [ "$BD_UNBALANCED" = "1" ] || [ "${BD_KEPT_BODY:-0}" = "1" ]; then
-    perline=$(printf '%s\n' "$1" | awk -v join=0 "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
+    perline=$(printf '%s\n' "$1" | awk -v join=0 -v alt="${BD_SEG_ALT:-0}" -v mark="${BD_SEG_MARK:-0}" "$_BD_SEG_AWK") || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
     { printf '%s\n' "$joined"; printf '%s\n' "$perline"; } | grep -v '^__BD_UNBALANCED__$' | awk '!seen[$0]++' \
       || { printf '%s\n' "__BD_SEG_FAIL__"; return 0; }
     [ "$BD_UNBALANCED" = "1" ] && printf '%s\n' "__BD_UNBALANCED__"
@@ -619,8 +699,37 @@ _BD_SEG_AWK='
       return (b % 2) == 0
     }
     BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; depth = 0; unbal = 0 }
+    # One simple command, and with alt=1, when a substitution marker in it is
+    # glued to other text, its reading with those markers removed (see
+    # _bd_segments). A marker that is a whole word, or the whole of a
+    # double-quoted word, hides nothing and stays: `git checkout "$(x)"` has
+    # no second reading.
+    # With mark=1 a simple command a pipe feeds (after `|` or `|&`, not `||`)
+    # starts with `__BD_PIPE__`, and so does its second reading.
+    function emit(s,   t, u, pre, post, a, b, keep, cut, p) {
+      p = (mark == 1 && pipe[depth]) ? "__BD_PIPE__" : ""
+      pipe[depth] = 0
+      print p s
+      if (alt != 1 || !index(s, "__BD_SUBST__")) return
+      t = s; u = ""; cut = 0
+      while (match(t, /__BD_SUBST__/)) {
+        pre = substr(t, 1, RSTART - 1); post = substr(t, RSTART + RLENGTH)
+        a = (length(pre) > 0) ? substr(pre, length(pre), 1) : ""
+        b = substr(post, 1, 1)
+        if (a == "\"" && b == "\"") {
+          a = (length(pre) > 1) ? substr(pre, length(pre) - 1, 1) : ""
+          b = substr(post, 2, 1)
+        }
+        keep = (a == "" || a == " " || a == "\t") && (b == "" || b == " " || b == "\t" || b == "<" || b == ">")
+        if (!keep) cut = 1
+        u = u pre (keep ? "__BD_SUBST__" : "")
+        t = post
+      }
+      u = u t
+      if (cut && u ~ /[^ \t]/) print ((mark == 1) ? "__BD_ALT__" : "") p u
+    }
     function flush(   i) {
-      if (buf[depth] != "") { print buf[depth]; buf[depth] = "" }
+      if (buf[depth] != "") { emit(buf[depth]); buf[depth] = "" }
     }
     {
       line = $0
@@ -647,12 +756,12 @@ _BD_SEG_AWK='
           # `$(` re-opens code inside a double-quoted string, and so does a
           # backquote: `x="`gh pr merge 1`"` runs the merge.
           if (q[depth] == "\"" && c == "$" && substr(line, i + 1, 1) == "(") {
-            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0
+            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0; pipe[depth] = 0
             i++
             continue
           }
           if (q[depth] == "\"" && c == "`") {
-            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1
+            depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1; pipe[depth] = 0
             continue
           }
           buf[depth] = buf[depth] c
@@ -667,13 +776,13 @@ _BD_SEG_AWK='
         if (c == "\"" || c == SQ) { q[depth] = c; buf[depth] = buf[depth] c; continue }
 
         if (c == "$" && substr(line, i + 1, 1) == "(") {
-          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0
+          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 0; pipe[depth] = 0
           i++
           continue
         }
         if (c == "`") {
           if (depth > 0 && tick[depth]) { flush(); depth--; buf[depth] = buf[depth] "__BD_SUBST__"; continue }
-          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1
+          depth++; buf[depth] = ""; q[depth] = ""; tick[depth] = 1; pipe[depth] = 0
           continue
         }
         if (c == ")") {
@@ -698,7 +807,17 @@ _BD_SEG_AWK='
         # A | right after an unquoted > is the clobber redirection >|, not a
         # pipe: splitting `gh pr >| log merge 7` there hid the merge.
         if (c == "|" && pra && substr(line, i - 1, 1) == ">") { buf[depth] = buf[depth] c; continue }
-        if (c == ";" || c == "|" || c == "&") { flush(); continue }
+        # `||` and `|&`: one operator each. A pipe (`|`, `|&`) feeds the next
+        # simple command; `;`, `&`, `&&` and `||` do not.
+        if (c == "|") {
+          flush()
+          d = substr(line, i + 1, 1)
+          if (d == "|") { i++; pipe[depth] = 0; continue }
+          if (d == "&") i++
+          pipe[depth] = 1
+          continue
+        }
+        if (c == ";" || c == "&") { flush(); pipe[depth] = 0; continue }
 
         buf[depth] = buf[depth] c
         ra = (c == "<" || c == ">")
@@ -707,8 +826,8 @@ _BD_SEG_AWK='
       else flush()
     }
     END {
-      while (depth > 0) { if (buf[depth] != "") print buf[depth]; depth-- ; unbal = 1 }
-      if (buf[0] != "") print buf[0]
+      while (depth > 0) { if (buf[depth] != "") emit(buf[depth]); depth-- ; unbal = 1 }
+      if (buf[0] != "") emit(buf[0])
       if (unbal || q[0] != "") print "__BD_UNBALANCED__"
     }
 '
@@ -727,7 +846,7 @@ _BD_SEG_AWK='
 # merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
 _bd_expand_interpreter_args() {
   local seg tok base i n found h prev
-  local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=()
   local BD_RIN=0
   local extra=""
   while IFS= read -r seg; do
@@ -775,11 +894,24 @@ BD_EXPAND_EOF
   # segments do not say whether a `|` or a `;` stood between the two, so a
   # shell with no script after `;` costs the same reading; that is only a
   # second look at text, never a missed one.
+  # Started only when a shell's name is a whole word somewhere after a `|`
+  # (_BD_SHELL_RE, any case): this pass segments the whole text again, and a
+  # long text piped into tee or grep that holds the letters sh (push,
+  # should) paid for it on every call.
+  local nc=0 piped=0
   case "$BD_CODE" in
-    *'|'*[Ss][Hh]*)
+    *'|'*)
+      shopt -q nocasematch && nc=1
+      shopt -s nocasematch
+      [[ "${BD_CODE#*|}" =~ $_BD_SHELL_RE ]] && piped=1
+      [ "$nc" = 1 ] || shopt -u nocasematch ;;
+  esac
+  case "$piped" in
+    1)
       prev=""
       while IFS= read -r seg; do
         case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+        case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
         _bd_words "$seg"
         n=${#TOK[@]}
         # The shell is the command word: past assignments, and past the
@@ -832,7 +964,7 @@ _bd_git_parse() {
     *[Gg][Ii][Tt]*|*[Gg][\\\'\"]*|*[Gg][Ii][\\\'\"]*|*[\\\'\"][Ii][Tt]*) ;;
     *) return 1 ;;
   esac
-  local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=()
   local BD_RIN=0
   # The words as bash hands them to git (_bd_words): a redirection is not an
   # argument even when it is glued to one (`--hard&>/dev/null` is --hard),
