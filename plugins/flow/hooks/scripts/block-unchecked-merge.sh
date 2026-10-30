@@ -90,7 +90,7 @@ fi
 . "$_BD_LIB"
 # Readable is not the same as loaded. A truncated or broken library defines
 # nothing, every call below fails, no merge is found, and the hook allows.
-for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_unescape_tok _bd_is_redirection; do
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _bd_words; do
   if ! type "$_bd_fn" >/dev/null 2>&1; then
     echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so merge readiness cannot be verified." >&2
     echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
@@ -195,11 +195,14 @@ _bum_is_gh() {
   return 1
 }
 
+# NAME=value, NAME+=value and NAME[index]=value are assignments.
 _bum_is_assignment() {
   case "$1" in
     [A-Za-z_]*=*)
       local name="${1%%=*}"
-      case "$name" in *[!A-Za-z0-9_]*) return 1 ;; esac
+      name="${name%+}"
+      case "$name" in *\[*\]) name="${name%%\[*}" ;; esac
+      case "$name" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac
       return 0 ;;
   esac
   return 1
@@ -224,12 +227,6 @@ _bum_subwords() {
     t="${TOK[j]}"
     if _bum_takes_value "$t"; then j=$((j + 2)); continue; fi
     case "$t" in -*) j=$((j + 1)); continue ;; esac
-    # A redirection between the words (`gh pr 2>&1 merge 7`) is not one of
-    # them; a bare operator takes the next word as its target.
-    case "$t" in
-      '>'|'>>'|'<'|'<<<'|[0-9]'>'|[0-9]'>>'|[0-9]'<') j=$((j + 2)); continue ;;
-    esac
-    if _bd_is_redirection "$t"; then j=$((j + 1)); continue; fi
     SUB+=("$t")
     j=$((j + 1))
   done
@@ -282,12 +279,6 @@ _bum_judge_merge() {
   while [ "$i" -lt "$n" ]; do
     tok="${TOK[i]}"
     nxt="${TOK[i+1]:-}"
-    # A bare redirection operator takes the next word as its target, which is
-    # a file name and not a selector.
-    case "$tok" in
-      '>'|'>>'|'<'|'<<<'|[0-9]'>'|[0-9]'>>'|[0-9]'<') i=$((i + 2)); continue ;;
-    esac
-    if _bd_is_redirection "$tok"; then i=$((i + 1)); continue; fi
     case "$tok" in
       --repo)
         repo="$nxt"; repo_n=$((repo_n + 1)); i=$((i + 2))
@@ -391,10 +382,12 @@ MERGE_MHC=()
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
   case "$SEG" in __BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
-  TOK=()
-  _rm_tokenise "$SEG"
-  # The words as bash passes them: `g\h pr mer\ge 7` runs gh pr merge 7.
-  _bd_unescape_tok
+  # The words as bash passes them to the program (_bd_words, the reader every
+  # hook shares): `g\h pr mer\ge 7` runs gh pr merge 7, `$"merge"` is merge,
+  # and a redirection is set aside wherever it stands, with or without a space
+  # before its target (`gh pr >& /dev/null merge 7`, `2>&1`, `&>>log`), so
+  # neither the operator nor its target is read as a word of the merge.
+  _bd_words "$SEG"
   n=${#TOK[@]}
   [ "$n" -gt 0 ] || continue
 

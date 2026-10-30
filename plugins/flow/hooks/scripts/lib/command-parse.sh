@@ -15,20 +15,22 @@
 # Contract for callers:
 #   _bd_strip_noncode <command>   -> sets BD_CODE, and BD_KEPT_BODY=1 when a heredoc
 #                                    body was kept as text
-#   _rm_tokenise <simple-command> -> fills TOK
-#   _bd_unescape <word>           -> sets BD_UNESC to the word with its backslash
-#                                    escapes removed
-#   _bd_unescape_tok              -> applies _bd_unescape to every word of TOK
+#   _rm_tokenise <simple-command> -> fills TOK (quotes removed, backslashes and
+#                                    redirections kept); s1-guard's word check
 #   _bd_words <text>              -> fills TOK with the words bash hands the program
 #                                    (redirections dropped), TOKE with an expansion
-#                                    flag per word, BD_HSTR with here-string texts
+#                                    flag per word, BD_HSTR with here-string texts,
+#                                    BD_RDIR with redirection targets, and sets
+#                                    BD_RIN=1 when the program's input is redirected
 #   _bd_git_parse <simple-command> -> sets GIT_SUB, GIT_ARGS, GIT_ARGN; 1 if not git
 #   _bd_is_whole_tree <pathspec>  -> 0 when the pathspec is the whole tree
-#   _bd_is_redirection <token>    -> 0 when the token is a redirection
 #   _bd_is_opt <token> <full> <min> -> 0 when the token is that long option,
 #                                    including any unambiguous abbreviation
 #   _bd_is_interpreter <word>     -> 0 when the word names something that runs a script
-#   _bd_expand_interpreter_args   -> appends quoted interpreter arguments to BD_CODE
+#   _bd_shell_reads_stdin <index> -> 0 when TOK[index] is a shell that reads its
+#                                    script from its input (no -c, no script file)
+#   _bd_expand_interpreter_args   -> appends quoted interpreter arguments, and text
+#                                    piped into a shell, to BD_CODE
 #   _bd_segments <text>           -> one simple command per line, plus marker lines
 #                                    (__BD_UNBALANCED__, __BD_SEG_FAIL__)
 #
@@ -120,82 +122,14 @@ _rm_tokenise() {
   done <<< "$_tok_out"
 }
 
-# _bd_unescape <word>
-# Sets BD_UNESC to the word as the shell hands it to the program: each `\X`
-# becomes `X` (so `\\` becomes `\`). _rm_tokenise keeps backslashes, and bash
-# removes them, so `g\h pr mer\ge 1` runs `gh pr merge 1`; a rule that compares
-# the word as written misses it. The tokeniser does not record which part of a
-# word was quoted, so a backslash inside quotes (where bash keeps it) is removed
-# too: that can only make a word read as a command it does not run, which a
-# guard pays for with an extra check, never a missed one.
-#
-# Short words go through a pattern substitution, long ones through one sed:
-# bash 3.2's `${v//pattern/}` is quadratic and took thirteen seconds on a 9KB
-# word, and a PR body can be that long.
-_bd_unescape() {
-  BD_UNESC="$1"
-  case "$1" in *\\*) ;; *) return 0 ;; esac
-  if [ "${#1}" -le 64 ]; then
-    BD_UNESC="${1//\\\\/$'\001'}"
-    BD_UNESC="${BD_UNESC//\\/}"
-    BD_UNESC="${BD_UNESC//$'\001'/\\}"
-  else
-    BD_UNESC=$(printf '%s\n' "$1" | LC_ALL=C sed 's/\\\(.\)/\1/g') || BD_UNESC="$1"
-  fi
-}
-
-# _bd_unescape_tok — _bd_unescape on every word of the caller's TOK.
-#
-# Long words go through sed together: one sed for the whole simple command,
-# not one per word, so a command of three hundred long backslashed words
-# costs one process rather than three hundred. A word with a line end in it
-# cannot be sent one per line, and goes through _bd_unescape alone; so does
-# every word when the lines sed prints back do not match the words sent.
-_bd_unescape_tok() {
-  local _ue_i _ue_k _ue_line _ue_out
-  local -a _ue_idx=() _ue_res=()
-  for ((_ue_i = 0; _ue_i < ${#TOK[@]}; _ue_i++)); do
-    case "${TOK[_ue_i]}" in *\\*) ;; *) continue ;; esac
-    if [ "${#TOK[_ue_i]}" -gt 64 ]; then
-      case "${TOK[_ue_i]}" in
-        *$'\n'*) ;;
-        *) _ue_idx+=("$_ue_i"); continue ;;
-      esac
-    fi
-    _bd_unescape "${TOK[_ue_i]}"
-    TOK[_ue_i]="$BD_UNESC"
-  done
-  [ "${#_ue_idx[@]}" -gt 0 ] || return 0
-  # The words are printed one per line, and a marker line after them keeps
-  # $(...) from removing a trailing empty line.
-  _ue_out=$(
-    for _ue_i in "${_ue_idx[@]}"; do printf '%s\n' "${TOK[_ue_i]}"; done \
-      | LC_ALL=C sed 's/\\\(.\)/\1/g'
-    printf '.'
-  ) || _ue_out=""
-  # Outside the here-document: bash 3.2 does not read $'\n' inside one.
-  _ue_out="${_ue_out%.}"
-  _ue_out="${_ue_out%$'\n'}"
-  while IFS= read -r _ue_line; do _ue_res+=("$_ue_line"); done <<BD_UE_EOF
-$_ue_out
-BD_UE_EOF
-  if [ "${#_ue_res[@]}" -eq "${#_ue_idx[@]}" ] && [ -n "$_ue_out" ]; then
-    for ((_ue_k = 0; _ue_k < ${#_ue_idx[@]}; _ue_k++)); do
-      TOK[_ue_idx[_ue_k]]="${_ue_res[_ue_k]}"
-    done
-  else
-    for _ue_i in "${_ue_idx[@]}"; do
-      _bd_unescape "${TOK[_ue_i]}"
-      TOK[_ue_i]="$BD_UNESC"
-    done
-  fi
-}
-
 # _bd_words <text>
 # Fills the caller's TOK with the words bash would hand the program, TOKE with
 # one flag per word (1 when bash would expand something in it: a `$` outside
-# single quotes, a backquote, a substitution), and BD_HSTR with the text of
-# every here-string (`<<<word`), as the program reads it on its input.
+# single quotes, a backquote, a substitution), BD_HSTR with the text of every
+# here-string (`<<<word`), as the program reads it on its input, and BD_RDIR
+# with the target of every other redirection (`>> .git/config` gives
+# .git/config, `<<EOF` gives EOF). BD_RIN is 1 when the program's input comes
+# from one of them (<, <<, <<-, <<<, <>, <&) rather than from a pipe.
 #
 # Read as bash reads them, not approximated:
 #   - quotes are removed; inside single quotes every character is literal;
@@ -211,13 +145,15 @@ BD_UE_EOF
 #     word goes to BD_HSTR. A quoted < or > is text.
 #   - `$'...'` keeps its `$` and its text as written, so the word still reads
 #     as something only a shell can work out.
+#   - `$"..."` is a double-quoted string: bash drops the `$` (it only asks for
+#     a translation, and there is none), so `gh pr $"merge" 7` is gh pr merge 7.
 #   - an unquoted ;, |, &, (, ) or backquote ends a word, so a whole line can
 #     be read too (`x=$(bash` is the words `x=$` and `bash`).
 # Text with none of the characters that need this is split by the shell
 # builtin, with no subprocess. An awk that fails refuses the command (exit 2),
 # as _rm_tokenise does.
 _bd_words() {
-  TOK=(); TOKE=(); BD_HSTR=()
+  TOK=(); TOKE=(); BD_HSTR=(); BD_RDIR=(); BD_RIN=0
   local _w_out _w_line _w_i
   case "$1" in
     *[\'\"\\\<\>\&\(\)\;\|\`]*|*$'\n'*) ;;
@@ -232,7 +168,7 @@ _bd_words() {
     function emit() {
       if (!inw) return
       gsub(/\n/, RSN, cur)
-      if (pend == "H") print "H" cur
+      if (pend == "H" || pend == "I" || pend == "R") print pend cur
       else if (pend == "") print "W" ((xp || index(cur, "__BD_SUBST__")) ? 1 : 0) cur
       cur = ""; inw = 0; plain = 1; xp = 0; pend = ""
     }
@@ -275,6 +211,8 @@ _bd_words() {
           if (k == 0) { cur = cur substr(s, i + 1); i = n; continue }
           cur = cur substr(s, i + 1, k - 1); i += k; continue
         }
+        # $"...": the $ goes, and the string is read as a double-quoted one.
+        if (c == "$" && substr(s, i + 1, 1) == "\"") { inw = 1; plain = 0; continue }
         if (c == "\"") {
           inw = 1; plain = 0
           for (k = i + 1; k <= n; k++) {
@@ -297,10 +235,10 @@ _bd_words() {
           else emit()
           t = substr(s, i, 3)
           if (t == "<<<") { op = "H"; l = 3 }
-          else if (t == "<<-" || t == "&>>") { op = "R"; l = 3 }
+          else if (t == "<<-" || t == "&>>") { op = (c == "<") ? "I" : "R"; l = 3 }
           else {
             t = substr(s, i, 2)
-            op = "R"
+            op = (c == "<") ? "I" : "R"
             l = (t == "<<" || t == "<>" || t == "<&" || t == ">>" || t == ">|" || t == ">&" || t == "&>") ? 2 : 1
           }
           i += l - 1; pend = op; continue
@@ -320,7 +258,9 @@ _bd_words() {
     case "$_w_line" in *$'\036'*) _w_line="${_w_line//$'\036'/$'\n'}" ;; esac
     case "$_w_line" in
       W*) TOKE+=("${_w_line:1:1}"); TOK+=("${_w_line:2}") ;;
-      H*) BD_HSTR+=("${_w_line:1}") ;;
+      H*) BD_HSTR+=("${_w_line:1}"); BD_RIN=1 ;;
+      I*) BD_RDIR+=("${_w_line:1}"); BD_RIN=1 ;;
+      R*) BD_RDIR+=("${_w_line:1}") ;;
     esac
   done <<< "$_w_out"
 }
@@ -356,6 +296,39 @@ _bd_is_interpreter() {
       return 0 ;;
   esac
   return 1
+}
+
+# _bd_shell_reads_stdin <index>
+# Is TOK[index] a shell (sh, bash, zsh, ksh, dash, ash, mksh, in any case and
+# with any directory) that reads its script from its input? It does when it
+# is given neither -c nor a script file: `bash`, `bash -s arg`, `sh -x`,
+# `bash --`, `sh -`. Its options are read as the shell reads them: c or s
+# anywhere in a bundle of short options (`-xc`, `-es`), -o and -O (and +o,
+# +O) taking the next word, --rcfile and --init-file taking the next word,
+# and any other long option taking none. The first other word is the script.
+_bd_shell_reads_stdin() {
+  local i="$1" n=${#TOK[@]} t
+  [ "$i" -lt "$n" ] || return 1
+  [ "${#TOK[i]}" -le 4096 ] || return 1
+  case "${TOK[i]##*/}" in
+    [Ss][Hh]|[Bb][Aa][Ss][Hh]|[Zz][Ss][Hh]|[Kk][Ss][Hh]|[Dd][Aa][Ss][Hh]|[Aa][Ss][Hh]|[Mm][Kk][Ss][Hh]) ;;
+    *) return 1 ;;
+  esac
+  i=$((i + 1))
+  while [ "$i" -lt "$n" ]; do
+    t="${TOK[i]}"
+    case "$t" in
+      --|-) return 0 ;;
+      --rcfile|--init-file) i=$((i + 2)); continue ;;
+      --*) i=$((i + 1)); continue ;;
+      [-+]*c*) return 1 ;;
+      [-+]*s*) return 0 ;;
+      [-+]*[oO]*) i=$((i + 2)); continue ;;
+      [-+]?*) i=$((i + 1)); continue ;;
+    esac
+    return 1
+  done
+  return 0
 }
 
 # Non-code stripping, rebuilt.
@@ -565,7 +538,8 @@ _bd_strip_noncode() {
 # Prints one simple command per line.
 #
 # Splits on `;` `|` `&` where the shell would — outside quotes, and not at the
-# `&` of a redirection (`2>&1`, `<&3`, `&>file`) — and treats a command
+# `&` of a redirection (`2>&1`, `<&3`, `&>file`) or the `|` of `>|` — and
+# treats a command
 # substitution (`$(...)`, or backquotes, also inside double quotes) as BOTH
 # things it is: a command in its own right, emitted
 # as its own segment, and a word in the command containing it, which therefore
@@ -715,6 +689,9 @@ _BD_SEG_AWK='
         # splitting `git push 2>&1 --tags` there made `1 --tags` a command of
         # its own and hid the --tags from the push.
         if (c == "&" && (pra || substr(line, i + 1, 1) == ">")) { buf[depth] = buf[depth] c; continue }
+        # A | right after an unquoted > is the clobber redirection >|, not a
+        # pipe: splitting `gh pr >| log merge 7` there hid the merge.
+        if (c == "|" && pra && substr(line, i - 1, 1) == ">") { buf[depth] = buf[depth] c; continue }
         if (c == ";" || c == "|" || c == "&") { flush(); continue }
 
         buf[depth] = buf[depth] c
@@ -743,8 +720,9 @@ _BD_SEG_AWK='
 # Shared because every hook that reads commands has the same blind spot: the
 # merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
 _bd_expand_interpreter_args() {
-  local seg tok base i n found h
-  local -a TOK=() TOKE=() BD_HSTR=()
+  local seg tok base i n found h prev
+  local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=()
+  local BD_RIN=0
   local extra=""
   while IFS= read -r seg; do
     [ -z "$seg" ] && continue
@@ -785,6 +763,47 @@ $h"
   done <<BD_EXPAND_EOF
 $BD_CODE
 BD_EXPAND_EOF
+  # Text printed into a pipe that a shell reads as its script (`echo '...' |
+  # bash`, `printf ... | sudo sh -s`): the quoted words of the simple command
+  # before the shell are read as commands too, as a here-string to it is. The
+  # segments do not say whether a `|` or a `;` stood between the two, so a
+  # shell with no script after `;` costs the same reading; that is only a
+  # second look at text, never a missed one.
+  case "$BD_CODE" in
+    *'|'*[Ss][Hh]*)
+      prev=""
+      while IFS= read -r seg; do
+        case "$seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+        _bd_words "$seg"
+        n=${#TOK[@]}
+        # The shell is the command word: past assignments, and past the
+        # programs that run the rest of the line (and their options).
+        i=0
+        while [ "$i" -lt "$n" ]; do
+          case "${TOK[i]}" in
+            [A-Za-z_]*=*) i=$((i + 1)); continue ;;
+          esac
+          case "${TOK[i]##*/}" in
+            sudo|doas|env|nohup|nice|time|command|builtin|exec|timeout|xargs)
+              i=$((i + 1))
+              while [ "$i" -lt "$n" ]; do case "${TOK[i]}" in -*) i=$((i + 1)) ;; *) break ;; esac; done
+              continue ;;
+          esac
+          break
+        done
+        if [ "$BD_RIN" = 0 ] && [ -n "$prev" ] && _bd_shell_reads_stdin "$i"; then
+          extra="$extra$prev"
+        fi
+        prev=""
+        for ((i = 0; i < n; i++)); do
+          case "${TOK[i]}" in *[[:space:]]*) prev="$prev
+${TOK[i]}" ;; esac
+        done
+      done <<BD_EXPAND_EOF
+$(_bd_segments "$BD_CODE")
+BD_EXPAND_EOF
+      ;;
+  esac
   if [ -n "$extra" ]; then BD_CODE="$BD_CODE$extra"; fi
 }
 
@@ -792,7 +811,8 @@ BD_EXPAND_EOF
 # git command parsing.
 #
 # _bd_git_parse reads one simple command and, when that command IS git, sets
-# GIT_SUB to the subcommand and GIT_ARGS to everything after it. `git` is
+# GIT_SUB to the subcommand and GIT_ARGS to everything after it, redirections
+# left out. `git` is
 # recognised the way `rm` is: as a command word, never as a substring, so
 # `npm run git-reset-helper` and the word `digit` are not git. Global options
 # taking a value (-C, -c, --git-dir, ...) are stepped over so the subcommand
@@ -800,9 +820,18 @@ BD_EXPAND_EOF
 # ---------------------------------------------------------------------------
 _bd_git_parse() {
   GIT_SUB=""; GIT_ARGS=(); GIT_ARGN=0
-  case "$1" in *git*) ;; *) return 1 ;; esac
-  local -a TOK=()
-  _rm_tokenise "$1"
+  # git, in any case (a case-insensitive filesystem runs `GIT`), or with a
+  # quote or a backslash inside the name (`g"it"`, `gi\t`).
+  case "$1" in
+    *[Gg][Ii][Tt]*|*[Gg][\\\'\"]*|*[Gg][Ii][\\\'\"]*|*[\\\'\"][Ii][Tt]*) ;;
+    *) return 1 ;;
+  esac
+  local -a TOK=() TOKE=() BD_HSTR=() BD_RDIR=()
+  local BD_RIN=0
+  # The words as bash hands them to git (_bd_words): a redirection is not an
+  # argument even when it is glued to one (`--hard&>/dev/null` is --hard),
+  # and `\git` or `g"it"` is git.
+  _bd_words "$1"
   local n=${#TOK[@]} i base idx=-1
   for ((i = 0; i < n; i++)); do
     # A command word is a program name, never a 40KB argument. Skipping the
@@ -812,8 +841,7 @@ _bd_git_parse() {
     # PATH_MAX; nothing runnable is longer.
     [ "${#TOK[i]}" -le 4096 ] || continue
     base="${TOK[i]##*/}"
-    base="${base#\\}"
-    if [ "$base" = "git" ]; then idx=$i; break; fi
+    case "$base" in [Gg][Ii][Tt]) idx=$i; break ;; esac
   done
   [ "$idx" -lt 0 ] && return 1
   i=$((idx + 1))
@@ -879,13 +907,3 @@ _bd_is_opt() {
   esac
   return 1
 }
-
-# A redirection is not an argument to the command. `&>file` and `2>&1` reach
-# here as one word: _bd_segments does not split a command at their `&`.
-_bd_is_redirection() {
-  case "$1" in
-    '>'|'>>'|'<'|[0-9]'>'|[0-9]'>>'|'>'*|'<'*|[0-9]'>'*|[0-9]'<'*|'&>'*) return 0 ;;
-  esac
-  return 1
-}
-
