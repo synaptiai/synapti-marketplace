@@ -1459,13 +1459,13 @@ silent|watch "gh pr" view 1
 silent|ssh h 'git log' --oneline
 maybe|git branch -u mir/main && git push
 maybe|git branch --set-upstream-to=mir/main; git push
-maybe|git branch --set-upstream-to mir/main; git push origin v1-fix
+silent|git branch --set-upstream-to mir/main; git push origin v1-fix
 maybe|git checkout -b x mir/main && git push
 maybe|git checkout -t mir/main && git push
 maybe|git checkout --track mir/main && git push
 maybe|git switch -c y --track mir/main && git push
 maybe|git push -u mir v1-fix && git push
-maybe|git push --set-upstream mir v1-fix && git push origin v1-fix
+silent|git push --set-upstream mir v1-fix && git push origin v1-fix
 maybe|git config --rename-section x push && git push
 maybe|git config rename-section x push && git push
 maybe|git config --rename-section x Remote.mir && git push
@@ -1473,7 +1473,7 @@ maybe|git config --remove-section push && git push origin v1-fix
 maybe|git checkout main && git push
 maybe|git switch main; git push
 maybe|watch 'git config push.followTags true'; git push origin v1-fix
-maybe|watch 'git branch -u mir/main'; git push origin v1-fix
+silent|watch 'git branch -u mir/main'; git push origin v1-fix
 maybe|watch -n 9 'git checkout main'; git push
 maybe|watch 'git push -u mir v1-fix'; git push
 silent|bash -c 'git push -u origin v1-fix'
@@ -1569,6 +1569,33 @@ merge|gh pr merge$(true) 1
 silent|gh pr view "$(git branch --show-current)"
 silent|x=$(gh pr view 1 --json title -q .title); git push origin v1-fix
 silent|gh pr create --title "$(git log -1 --format=%s)" --body "$(cat notes.md)"
+EOF
+  e2e_expect_clean_edges
+fi
+
+# An upstream or tracking change can change only what a push that names no
+# remote, or no refspec, sends.
+if _want tg-upstream-named-push; then
+  _tg_setup tg-upstream-named-push feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous, origin with main, branch v1-fix: after an upstream or tracking change a push naming a remote and a refspec is silent; one naming no remote, or no refspec, asks (T33)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git init -q --bare "$E2E_DIR/origin.git" && git remote add origin "$E2E_DIR/origin.git" \
+      && git push -q origin HEAD:main && git fetch -q origin && git branch v1-fix ) >/dev/null 2>&1 \
+    || _flow_assert_fail "tg-upstream-named-push: could not create origin and the branch"
+  while IFS='|' read -r WANT C; do
+    _tg_run "$C"
+    case "$WANT" in
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      maybe) _expect_ask "may push or delete a tag"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+    esac
+  done <<'EOF'
+silent|git checkout -b feat2 origin/main && git push -u origin HEAD
+silent|git branch -u origin/main && git push origin v1-fix
+silent|git push -u origin HEAD && git push origin v1-fix
+maybe|git checkout main && git push
+maybe|git checkout -b feat2 origin/main && git push
+maybe|git checkout -b feat2 origin/main && git push -u origin
+maybe|git branch -u origin/main && git push origin
+maybe|git config branch.v1-fix.merge refs/tags/v1 && git push origin v1-fix
 EOF
   e2e_expect_clean_edges
 fi

@@ -1009,6 +1009,9 @@ _tg_git_push() {   # $1 = index of git, $2 = first word after push, $3 = followT
   # read (`git push $OPTS`, `git push $'--tags'`) may be an option as well:
   # --tags, --mirror or --follow-tags.
   [ -n "${words[0]:-}" ] && _tg_unreadable "${words[0]}" && unread=1
+  # After an upstream or tracking change earlier in the command, a push that
+  # names no remote or no refspec sends what the branch's new keys say.
+  [ "${TG_UPSTREAM:-0}" = 1 ] && [ "${#words[@]}" -le 1 ] && unread=1
   for ((w = 1; w < ${#words[@]}; w++)); do specs+=("${words[w]}"); done
   if [ "${TG_UNRES:-0}" = 1 ]; then
     # The repository is unknown, so its remotes' configuration is too.
@@ -1732,11 +1735,17 @@ _tg_set_names() {
 # --get-all, --get-regexp, --list, -l, `get`, `list`) changes nothing, and
 # neither does a key such as user.name.
 #
+# An upstream or tracking change (the branch, checkout, switch and push forms
+# above) changes only the branch's own keys (branch.<name>.remote, .merge),
+# which pick what a push that names no remote, or no refspec, sends: it
+# sets TG_UPW=1 instead of counting as a change of configuration, and such
+# a push asks (TG_UPSTREAM, _tg_git_push).
+#
 # Also sets TG_PB=1 when the git at $1 may change the branch checked out
 # (checkout or switch without `--`, symbolic-ref with a target): a push that
 # names no remote is then sent where that branch's configuration says.
 _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
-  local j=$(($1 + 1)) t first="" ro=0 hit=0 sect=0 path=0 words=0 c rest sub
+  local j=$(($1 + 1)) t first="" ro=0 hit=0 up=0 sect=0 path=0 words=0 c rest sub
   while [ "$j" -lt "$n" ]; do
     case "${TOK[j]}" in
       -C|-c|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--list-cmds|--attr-source) j=$((j + 2)) ;;
@@ -1789,9 +1798,9 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
           --) break ;;
           --*)
             for c in --set-upstream-to:--set-u --unset-upstream:--uns --track:--tr --no-track:--no-t --move:--mov --copy:--cop; do
-              _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && hit=1
+              _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && up=1
             done ;;
-          -?*) case "${t#-}" in *[utmMcC]*) hit=1 ;; esac ;;
+          -?*) case "${t#-}" in *[utmMcC]*) up=1 ;; esac ;;
         esac
       done ;;
     checkout|switch)
@@ -1800,16 +1809,16 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
         t="${TOK[j]}"
         case "$t" in
           --) path=1; break ;;
-          --track|--track=*|-t) hit=1 ;;
+          --track|--track=*|-t) up=1 ;;
           --orphan|--create|--force-create) words=-1; j=$((j + 1)) ;;
           --*) ;;
           -?*)
             rest="${t#-}"
-            case "$rest" in *t*) hit=1 ;; esac
+            case "$rest" in *t*) up=1 ;; esac
             # -b, -B, -c, -C: the new branch's name follows; a word after
             # it is the start point.
             case "$rest" in *[bBcC]*) words=-1; [ "${rest##*[bBcC]}" = "" ] && j=$((j + 1)) ;; esac ;;
-          *) [ "$words" = -1 ] && hit=1; words=$((words + 1)) ;;
+          *) [ "$words" = -1 ] && up=1; words=$((words + 1)) ;;
         esac
       done
       # `git checkout -- <paths>` restores files and stays on the branch.
@@ -1826,13 +1835,14 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
           t="${TOK[j]}"
           case "$t" in
             --) break ;;
-            --*) _bd_is_opt "${t%%=*}" --set-upstream --set-u && hit=1 ;;
-            -?*) rest="${t#-}"; rest="${rest%%o*}"; case "$rest" in *u*) hit=1 ;; esac ;;
+            --*) _bd_is_opt "${t%%=*}" --set-upstream --set-u && up=1 ;;
+            -?*) rest="${t#-}"; rest="${rest%%o*}"; case "$rest" in *u*) up=1 ;; esac ;;
           esac
         done
       fi ;;
   esac
   shopt -u nocasematch
+  [ "$up" = 1 ] && TG_UPW=1
   [ "$hit" = 1 ] && [ "$ro" = 0 ]
 }
 
@@ -2041,7 +2051,7 @@ _tg_common_dir() {   # $1 = a directory
 # the text handed to a shell is also read in order as commands, and its own
 # push must not ask because of the upstream it sets.
 _tg_config_prescan() {   # $1 = the text, $2 = 1 to leave out git push -u
-  local segs seg k n TG_I TG_XARGS TG_EXECW TG_PB=0 TG_RIN TG_AN
+  local segs seg k n TG_I TG_XARGS TG_EXECW TG_PB=0 TG_UPW=0 TG_RIN TG_AN
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() TG_RDIR=()
   local BD_RIN=0
   segs=$(_bd_segments "$1")
@@ -2061,6 +2071,7 @@ _tg_config_prescan() {   # $1 = the text, $2 = 1 to leave out git push -u
       esac
     done
     [ "$TG_PB" = 1 ] && TG_CDWT=1
+    [ "$TG_UPW" = 1 ] && TG_UPSTREAM=1
   done <<TG_PRESCAN_EOF
 $segs
 TG_PRESCAN_EOF
@@ -2108,19 +2119,21 @@ _tg_read_seg() {   # $1 = the segment
   # change, changing what a later push sends or where it goes
   # (_tg_config_write), as the command word or behind a program this hook
   # does not know: from the next simple command on, a push asks (a branch
-  # change: a push that names no remote).
+  # change: a push that names no remote; an upstream or tracking change: a
+  # push that names no remote or no refspec).
   sc=$(_tg_prog "${TOK[TG_I]}")
   case "$sc" in
     echo|printf|grep|egrep|fgrep|zgrep|rg|jq|cat|tee|test|'['|'[['|:) ;;
     *)
-      TG_PB=0
+      TG_PB=0; TG_UPW=0
       for ((k = TG_I; k < n; k++)); do
         [ "${#TOK[k]}" -le 4096 ] || continue
         case "${TOK[k]##*/}" in
           [Gg][Ii][Tt]) _tg_config_write "$k" && gpend=1 ;;
         esac
       done
-      [ "$TG_PB" = 1 ] && bpend=1 ;;
+      [ "$TG_PB" = 1 ] && bpend=1
+      [ "$TG_UPW" = 1 ] && upend=1 ;;
   esac
   # A shell that reads its script from a pipe (`echo '...' | bash`) runs
   # text this hook cannot read; with the input redirected it reads a
@@ -2167,7 +2180,7 @@ _tg_read_seg() {   # $1 = the segment
 # exits 2 when awk fails, and that must reach the caller as "cannot decide",
 # not end this hook with a refusal.
 _tg_read_text() {   # $1 = the text, $2 = depth
-  local segs seg pend=0 gpend=0 bpend=0 k t bare code0 added sc
+  local segs seg pend=0 gpend=0 bpend=0 upend=0 k t bare code0 added sc
   TG_DEPTH=$2
   bare=$(printf '%s' "$1" | LC_ALL=C tr -d "'\"\\\\") || bare=gh
   case "$bare" in
@@ -2206,9 +2219,11 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     # or repository, or changed git's configuration with git config or git
     # remote (TG_GITENV).
     # bpend: it may have changed the branch checked out (TG_CDWT).
+    # upend: it changed a branch's upstream or tracking (TG_UPSTREAM).
     [ "$pend" = 1 ] && TG_GHMOVED=1
     [ "$gpend" = 1 ] && TG_GITENV=1
     [ "$bpend" = 1 ] && TG_CDWT=1
+    [ "$upend" = 1 ] && TG_UPSTREAM=1
     # The second reading of the segment before, with its substitutions
     # removed (_bd_segments): read in a subshell, so it changes no state, and
     # only for the Tier 3 actions it names. The first reading kept the
@@ -2225,7 +2240,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
 
 # Every action the command names.
 _tg_actions() {
-  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_CDBASE="$CWD"; TG_CURW=""
+  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_UPSTREAM=0; TG_CDBASE="$CWD"; TG_CURW=""
   _tg_read_text "$COMMAND" 0
 }
 
