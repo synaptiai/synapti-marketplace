@@ -597,6 +597,29 @@ _bd_strip_noncode() {
           if (d != "") { inhd = 1; delim = d; buf = "" }
         }
       }
+      # With blank=1 only: an introducer followed by redirections or a pipe
+      # (`cat <<EOF > body.md`, `gh pr comment 5 --body-file - <<EOF
+      # >/dev/null`, `cat <<EOF | gh pr create --body-file -`) is dropped too
+      # when reader_ok finds no shell, interpreter or variable command word
+      # anywhere on the line, the text after the introducer included: `cat
+      # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies.
+      if (!inhd && blank == 1 && hits == 1 && q == "" &&
+          (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|])/) ||
+           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])")) &&
+          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+        pre = substr(out, 1, RSTART - 1)
+        rest = substr(out, RSTART)
+        match(rest, "^<<-?[\"" SQ "]?[A-Za-z_][A-Za-z0-9_]*[\"" SQ "]?")
+        d = substr(rest, 1, RLENGTH)
+        post = substr(rest, RLENGTH + 1)
+        if (reader_ok(pre " " post)) {
+          sub(/^<</, "", d)
+          tabs = 0
+          if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
+          gsub("[\"" SQ "]", "", d)
+          if (d != "") { inhd = 1; delim = d; buf = "" }
+        }
+      }
       # A heredoc this pass did not drop keeps its body in the output, and that
       # body is text, not shell: its quotes do not pair with anything. Say so,
       # so the segmenter does not read one apostrophe in it as a quote that
