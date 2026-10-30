@@ -34,10 +34,10 @@ Any prerequisite fails, stale approval, unresolved conversations > 0, unfinished
 
 ## Merge Execution (Phases 2–4)
 
-Display the Merge Assessment table as text, then run the merge. The confirmation is the `tier-gate.sh` hook's permission prompt on the `gh pr merge` command (`tiers.merge` is always `confirm`), which shows that command; do not ask a separate yes/no question first. A merge declined at the prompt stops the command.
+Display the Merge Assessment table as text, then confirm via `AskUserQuestion`, naming the strategy and whether the branch is deleted, and run the merge only after the user confirms. The `tier-gate.sh` hook asks again when the `gh pr merge` command runs (`tiers.merge` is always `confirm`), showing that command; the user may see two prompts for one merge. A merge cancelled at the question or declined at the prompt stops the command.
 
 - `merge.strategy`: `squash` | `merge` | `rebase` (default `squash`)
-- `merge.deleteBranch`: default `true`; `--delete-branch` is part of the command the prompt shows
+- `merge.deleteBranch`: default `true`; named in the merge question, and `--delete-branch` is part of the command the hook's prompt shows
 - `merge.markerTrust.allowedAssociations`: whose ledger markers are honored; read from the plugin tier only, never the settings cascade (`references/finding-ledger-parser.md`)
 
 Post-merge: `gh pr view $PR_NUM --json state` must return `MERGED`; then suggest switching to the default branch and pulling.
@@ -48,6 +48,6 @@ Post-merge: `gh pr view $PR_NUM --json state` must return `MERGED`; then suggest
 
 **Version** (Phase 2): tag = `release.tagPrefix` (default `v`) + version, bumped by semver (`patch`, `minor`, `major`). In a plugin marketplace the version is the marketplace's `metadata.version`, bumped by minor for a minor or major plugin release and by patch for a patch unless a type is named. `bin/flow-release-versions.sh --plan` lists the version files to bump and the files it skips; files that disagree on the current version stop the release. No version file and no prior tag: first release is `v1.0.0`.
 
-**Changelog** (Phase 3) and **Execute** (Phase 4): show the Release Preview as text. The first run commits only the bumped files and the changelog and pushes nothing to the default branch; in the second, flow's tier hook asks for confirmation before the tag is pushed.
+**Changelog** (Phase 3) and **Execute** (Phase 4): show the Release Preview as text. The first run commits only the bumped files and the changelog and pushes nothing to the default branch, and asks no question. The second run confirms via `AskUserQuestion` before it tags, pushes the tag and creates the GitHub release, and before it creates the release for a tag already on origin; flow's tier hook asks again when the tag push or the release command runs.
 
 **Post-release** (Phase 5, second run): `gh release view "$TAG"` must succeed; the summary lists every version file bumped and every file skipped.

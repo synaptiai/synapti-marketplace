@@ -96,7 +96,7 @@ See [`skills/llm-operator-principles/SKILL.md`](skills/llm-operator-principles/S
 
 Two opt-in modes complement the LLM-operator defaults:
 
-- `autonomous: true` — removes `AskUserQuestion` interruptions for any decision the agent can resolve under the operator principles. Reserves `AskUserQuestion` for true product/architecture decisions; Tier 3 confirmations (merge, release) are the tier hook's prompt and still appear. Recommended for sole-maintainer repositories.
+- `autonomous: true` — removes `AskUserQuestion` interruptions for any decision the agent can resolve under the operator principles. Reserves `AskUserQuestion` for Tier 3 confirmations (merge, release) and true product/architecture decisions; the tier hook's prompt on the merge or release command still appears as well. Recommended for sole-maintainer repositories.
 - `minimalScope: true` — offers a follow-up issue, instead of an in-PR fix, for cosmetic P3 in untouched files only. Use when scope is deliberately constrained (e.g., a one-line hotfix that should not expand into a refactor). P1/P2 findings still fix in-PR even in this mode.
 
 Both can be toggled in settings or in-conversation ("autonomous mode on", "minimal scope on").
@@ -257,8 +257,9 @@ HOOKS (16 scripts; 14 registered in hooks/hooks.json, the other two run from flo
   ├── Reply style: reply-style-check (Stop — opt-in, warns only)
   └── Session: session-end-learn, session-end-state, nudge-idle-teammate
 
-  Note: merge/release confirmation is tier-gate's permission prompt, for the
-  command and for a merge or release typed directly (references/three-tier-safety.md).
+  Note: /flow:merge and /flow:release ask with AskUserQuestion first; tier-gate's
+  permission prompt asks again when the command runs, and is the only check for a
+  merge or release typed directly (references/three-tier-safety.md).
 
 BIN/ HELPER SCRIPTS (most print usage with --help)
   Settings and skills
@@ -379,7 +380,7 @@ Every command in `plugins/flow/commands/` ships with a `## Tier Classification` 
 |---|---|
 | 1 (Autonomous) | File edits, branches, commits — execute without asking |
 | 2 (Journal) | Push, PR creation, posting reviews / resolution comments — execute and log |
-| 3 (Confirm) | Merge, release — always ask, through the tier hook's permission prompt |
+| 3 (Confirm) | Merge, release — always ask via `AskUserQuestion`; the tier hook's permission prompt asks again when the command runs |
 
 Per-command tier tables make the safety boundary explicit at the point of use. Reviewers can audit a command's behavior without reading the full prose; users can see what a command will do before invoking it. Verification: `grep -L "^## Tier Classification" plugins/flow/commands/*.md` returns nothing.
 

@@ -94,7 +94,7 @@ Hooks provide structural enforcement for dangerous operations:
 | `ask-issue-create.sh` | `gh issue create` while a FlowGoal is active (and `minimalScope` is false) | JSON `permissionDecision: ask` (prompt names the goal and the fix-it-here rule) |
 | `tier-gate.sh` | `git push` (a tag push counts as release), `gh pr create`, `gh issue edit --add-assignee`, `gh issue create`, `gh pr merge`, `gh release create`, `edit`, `delete`, `upload` and `delete-asset`, and `gh api` writes to the same endpoints | `tiers.*`: `confirm` asks (merge and release always do), `journal` writes a breadcrumb to the auto-log trail, `autonomous` allows |
 
-Merge and release confirmation is the tier hook's prompt. `/flow:merge` and `/flow:release` show their assessment as text and then run the command; the prompt appears when it runs. `ask-issue-create.sh` and `tier-gate.sh` both apply to `gh issue create`; Claude Code takes the more restrictive answer.
+`/flow:merge` and `/flow:release` confirm merge and release with their own `AskUserQuestion` question before they run the command. The tier hook asks again when the command runs: it is a second check, and the only one for a merge, tag push or release typed outside flow. Inside flow the user may see two prompts for one action. `ask-issue-create.sh` and `tier-gate.sh` both apply to `gh issue create`; Claude Code takes the more restrictive answer.
 
 ## Decision Journal Integration
 
