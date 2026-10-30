@@ -1459,10 +1459,11 @@ _tg_scan() {   # $1 = index of the command word
     case "$t" in *[[:space:]\;\|\&\<\>\(\)\`]*) join=1 ;; esac
     case "$t" in
       *[[:space:]]*)
-        if [ "$interp" = 0 ] && _tg_may_run "$t"; then
+        [ "$interp" = 0 ] || continue
+        [ "${#texts[@]}" -lt "$TG_SCAN_MAX" ] && _tg_persist_hint "$t" && texts+=("$t")
+        if _tg_may_run "$t"; then
           if [ "$reads" -ge "$TG_SCAN_MAX" ]; then over=1; continue; fi
           reads=$((reads + 1))
-          texts+=("$t")
           out=$(_tg_read_text "$t" $((TG_DEPTH + 1)))
         fi ;;
       *)
@@ -1504,19 +1505,21 @@ _tg_scan() {   # $1 = index of the command word
   # Tier 3 actions. After an interpreter the parser has read it already.
   if [ "$interp" = 0 ]; then
     for t in ${TG_HSTR[@]+"${TG_HSTR[@]}"}; do
+      [ "${#texts[@]}" -lt "$TG_SCAN_MAX" ] && _tg_persist_hint "$t" && texts+=("$t")
       _tg_may_run "$t" || continue
       if [ "$reads" -ge "$TG_SCAN_MAX" ]; then over=1; continue; fi
       reads=$((reads + 1))
-      texts+=("$t")
       out=$(_tg_read_text "$t" $((TG_DEPTH + 1)))
       [ -n "$out" ] && _tg_tier3 "$out"
     done
   fi
   [ "$over" = 1 ] && _tg_emit unknown "$1"
   # What the quoted words and here-strings change for good: the repository's
-  # configuration, its branch, its .git (`watch 'git config ...'`).
+  # configuration, its branch, its .git (`watch 'git config ...'`, `watch
+  # 'git checkout main'`), whether or not they name a Tier 3 action. At most
+  # TG_SCAN_MAX of them are parsed.
   for t in ${texts[@]+"${texts[@]}"}; do
-    _tg_persist_hint "$t" && _tg_config_prescan "$t"
+    _tg_config_prescan "$t"
   done
   return 0
 }
