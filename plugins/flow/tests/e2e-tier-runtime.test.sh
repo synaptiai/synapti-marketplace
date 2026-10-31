@@ -721,3 +721,15 @@ _tr_setup tr-approved-function-lines "W39: an approved function written over sev
 _tr_call "$(printf 'm ( )\n{\n  gh pr merge $1 --squash\n}\nm 7; m 8')"
 e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
 e2e_expect_equal 2 "$(grep -c 'pr merge' "$E2E_DIR/gh-calls.log")" "both merges ran"
+
+#   W40 Claude Code starts the shell in a form the session's line does not
+#       read: the approved merge is refused (it fails closed), and the
+#       refusal says the approval could not be tied to the command
+
+_tr_setup tr-unknown-shell-form "W40: the gate asks and the merge is approved, but the shell gets the command without eval '...': refused, with the note that the approval could not be tied to it"
+_tr_gate 'gh pr merge 5 --squash'
+e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
+_e2e_exec env TR_ENV="$E2E_DIR/env.sh" TR_FAKE="$E2E_DIR/fakegh" \
+  bash -c 'PATH="$TR_FAKE:$PATH"; . "$TR_ENV"; gh pr merge 5 --squash'
+e2e_expect_equal 0 "$(grep -c 'pr merge 5' "$E2E_DIR/gh-calls.log")" "the merge did not run"
+e2e_expect_err "could not tie the approval to it"

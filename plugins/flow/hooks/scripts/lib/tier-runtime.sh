@@ -689,6 +689,14 @@ _tr_decide() {   # $1 = git or gh
     local first="${refused# }"; first=${first%% *}
     printf 'flow: %s (tiers.%s) needs your confirmation, and this Bash call was not confirmed for it: flow did not find %s in the command text before it ran (or found fewer of them than ran), so it could not ask. Nothing was run. Run the %s command on its own, with its arguments written out (for example: gh pr merge 7 --squash, or git push origin v1.2.0), so that flow asks first.\n' \
       "$(_tr_phrase "$first")" "$first" "$_TR_WHAT" "$1" >&2
+    # An approval record that no call took, while this call has none: the
+    # shell may have been started with the command in a form the session's
+    # line does not match (a Claude Code update, a hook that rewrites
+    # commands). Say so, since the message above would then be wrong.
+    if [ -z "$_TR_REC" ] && [ -n "${FLOW_TIER_DIR:-}" ] &&
+       command ls "$FLOW_TIER_DIR" 2>/dev/null | grep -q '^pending\.'; then
+      printf 'flow: if you approved this command, flow could not tie the approval to it: a record of an approval is waiting that no command took. Claude Code may now start its shell in a way flow does not read, or another hook rewrote the command. Run the command yourself with ! in front of it, and report this to the flow plugin.\n' >&2
+    fi
     exit 1
   fi
   if [ -n "$crumbs" ]; then
