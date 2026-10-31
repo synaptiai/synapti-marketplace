@@ -2,6 +2,13 @@
 
 Reference for the `run-state-management` skill: the exact document shapes it writes under `.flow/runs/<id>/`. Both conform to the JSON Schemas at `plugins/flow/schemas/v1/run.schema.json` and `plugins/flow/schemas/v1/activity.schema.json`; the schemas win on any disagreement.
 
+## Outputs
+
+1. `.flow/runs/<id>/run.yaml` — FlowRun conforming to `schemas/v1/run.schema.json`.
+2. `.flow/runs/<id>/activities/<NNN>-<name>.yaml` — one FlowActivity per phase boundary, `schemas/v1/activity.schema.json`.
+3. `.flow/runs/<id>/events.jsonl` — line-per-event ledger.
+4. `workflow-run` artifact in the linked decision journal (`bin/journal-record.sh --type workflow-run`), updated with the final status at the terminal transition.
+
 ## FlowRun (`.flow/runs/<id>/run.yaml`)
 
 Written once at command entry by a direct file write into the directory `bin/flow-mkdir.sh` created — never through a symlinked `.flow` or `.flow/runs` — race-free because the run is new. Every later mutation goes through `bin/_journal_atomic.py` (`acquire_lock(run.yaml.lock)` + atomic write).
@@ -14,7 +21,7 @@ metadata:
   workflow: ${WORKFLOW_ID}      # start-issue | debug | address-pr | review-pr | merge-pr | release
   workflow_version: 1
   goal: ${GOAL_ID:-null}        # linked FlowGoal id, or null
-  created_at: ${NOW}
+  created_at: '${NOW}'
 context:
   repo: ${REPO}
   branch: ${BRANCH}
@@ -22,16 +29,15 @@ context:
   pr: ${PR:-null}
   journal: ${JOURNAL}           # linked decision journal path
 state:
-  status: active                # active | completed | failed | blocked | cancelled
+  status: active                # active | completed | blocked | cancelled
   current_phase: ${INITIAL_PHASE}
-  current_activity: null
   completed_activities: []
   blocked_reason: null          # set only when status is blocked
 limits:
   max_iterations: 10
   max_runtime_minutes: null
 events:
-  - at: ${NOW}
+  - at: '${NOW}'
     type: run_started
 ```
 
@@ -87,7 +93,7 @@ state:
 
 ```yaml
 state:
-  status: completed                    # or failed | cancelled | blocked
+  status: completed                    # or cancelled | blocked
   current_phase: <last>
   current_activity: <last>
   completed_activities: [...]
@@ -106,3 +112,17 @@ state:
 | `release` | preflight → bump → confirm → tag |
 
 Machine-readable equivalents: `plugins/flow/workflows/<id>.workflow.yaml`.
+
+## SessionEnd
+
+`hooks/scripts/session-end-state.sh`, not the skill, runs at SessionEnd: it appends a `session_end` event to each active run's `events.jsonl` and prints `flow: N active FlowRun(s) persisted`. It does not change `run.yaml`; status changes are the user's decision through `/flow:resume`.
+
+## Related
+
+- `plugins/flow/skills/autonomous-workflow/SKILL.md` — phase structure source of truth; this skill materializes its phase boundaries.
+- `plugins/flow/bin/flow-record-activity.sh` — atomic activity writer.
+- `plugins/flow/bin/flow-mkdir.sh` — creates the run directory, never through a symlink.
+- `plugins/flow/bin/_journal_atomic.py` — `acquire_lock`, `_atomic_write` for run.yaml updates.
+- `plugins/flow/schemas/v1/run.schema.json`, `activity.schema.json` — document schemas.
+- `plugins/flow/references/decision-journal-schema.md` — `workflow-run` and `run-state-transition` artifact rows.
+- `plugins/flow/references/flow-runtime-state.md` — `.flow/` layout, gitignore policy, resumability.

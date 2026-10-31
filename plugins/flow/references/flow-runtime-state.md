@@ -85,7 +85,7 @@ Every `.flow/` mutation that has long-term significance ALSO writes a journal ma
 1. **Not a database.** No queries beyond `glob.glob` + per-file YAML parsing. Adding query semantics is out of scope.
 2. **Not a CI artifact store.** Use existing CI artifact mechanisms; `.flow/runs/` is for local resumability.
 3. **Not Temporal.** No exactly-once execution. No deterministic replay. Resume reads `state.completed_activities[]` and tells the user where to pick up — the user decides whether to re-run partially-completed phases.
-4. **Not a long-term archive.** `runRetentionDays` (default 30; cascade-resolved via `flow.runtime.runRetentionDays`) bounds run records. A future cleanup helper will prune by mtime.
+4. **Not a long-term archive.** Run records are not pruned: `flow.runtime.runRetentionDays` (default 30) is set in the plugin defaults, but no helper reads it.
 
 ## Resumability
 
@@ -104,8 +104,8 @@ When SessionEnd fires (`hooks/scripts/session-end-state.sh`), every active FlowR
 All `.flow/` behavior is gated by `flow.runtime.enabled` (cascade-resolved; default `true`). When disabled:
 - No `.flow/` writes happen
 - Existing `.flow/` files remain readable
-- `/flow:resume` and `/flow:goal` print a notice and exit 0
-- The Stop hook fast-paths to `{"decision":"approve","reason":"runtime disabled"}`
+- `/flow:resume` prints a notice and exits 0, and the SessionEnd hook records nothing
+- `/flow:goal` and the Stop hook do not read this switch; `/flow:goal` follows `flow.goals.enabled`
 
 This switch is meant for users who want to opt out entirely; the per-feature switches (`flow.goals.enabled`, `flow.workflows.enabled`, `flow.triggers.enabled`) provide finer-grained control.
 

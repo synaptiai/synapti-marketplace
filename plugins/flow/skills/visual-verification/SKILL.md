@@ -32,7 +32,7 @@ Permitted skips: `SKIP` when no UI signal fires or the dev server is unavailable
 
 ## UI Relevance
 
-Activates when changed files match `\.(tsx|jsx|vue|html|css|scss|svelte)$`, or criteria contain
+Activates when changed files match `\.(tsx|jsx|vue|html|css|scss|sass|less|svelte)$`, or criteria contain
 UI, page, display, render, visual, layout, responsive, component or style. Neither: `SKIP — no UI-relevant changes
 detected.` `requireVisualVerification` (default `false`) controls escalation only; an unattempted
 UI change still yields `SKIP_WARN`.

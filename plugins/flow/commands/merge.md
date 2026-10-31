@@ -6,11 +6,11 @@ allowed-tools: Bash, Read, AskUserQuestion, Skill
 
 # Merge PR #$ARGUMENTS
 
-Tier 3 operation — **always requires human confirmation**. This is non-negotiable even in autonomous mode.
+Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion before it runs the merge.
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `merge-and-release` — prerequisite verification, merge execution
 - `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
 
@@ -377,9 +377,7 @@ fi
 # Surface "untrusted-only" markers as a block reason rather than silently
 # treating them as no markers at all. This is the marker-forgery defense.
 # Render the trust list as a comma-separated string for the user-facing
-# message — the `$TRUST_REGEX` variable used to appear here was a leftover
-# from an earlier revision and never assigned, producing the empty-parens string
-# "trusted authors ()" in messages or aborting under `set -u`.
+# message.
 #
 # Derive the fallback from $TRUST_DEFAULT rather than hard-coding the value:
 # if $TRUST_DEFAULT changes (e.g., adding CONTRIBUTOR), the display string
@@ -565,7 +563,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`merge-pr`, goal=`null` — the merge reads the linked FlowGoal for the gate below but the run itself is not goal-owned), initial phase `preflight`. Phase order: `preflight → verify → confirm → merge`. Write a FlowActivity at each boundary (verify, confirm, merge).
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`merge-pr`, goal=`null` — the merge reads the linked FlowGoal for the gate below but the run itself is not goal-owned), initial phase `preflight`. Phase order: `preflight → verify → confirm → merge`. Write a FlowActivity at each boundary (verify, confirm, merge). The confirm boundary is the user's answer to Phase 3's question: write the confirm activity when the user confirms, and the merge activity after the merge command returns.
 
 **Linked-run completion check** (Phase 2 / verify): before allowing merge, verify that every FlowRun linked to this PR's branch (the `start-issue` run and any `address-pr` / `review-pr` runs) has reached `state.status: completed`. If any linked run is still `active`, refuse the merge — this is Tier 3, so there is **no override** beyond the standard merge confirmation. Surface the still-active run id and point to `/flow:resume`.
 
@@ -586,9 +584,8 @@ fi
 # back to squash/true; a setting that could not be READ — cascade-resolve.sh
 # refuses a value carrying a control character, exit 2 — must not, or this gate
 # prints MERGE_SETTINGS_STATE=ok for a settings file it could not read, which is
-# the same answer it prints for a valid one. That is the defect class this whole
-# change is about, so the two are told apart here: exit 2 is blocked, empty is
-# absent.
+# the same answer it prints for a valid one. So the two are told apart here:
+# exit 2 is blocked, empty is absent.
 # stderr is CAPTURED, not discarded. cascade-resolve.sh has three ways to fail to
 # hand back a value, and only one of them is an exit code: a refusal exits 2, but
 # a settings file that cannot be opened or cannot be PARSED is skipped with a
@@ -597,16 +594,15 @@ fi
 # look like "you did not set it". For an irreversible merge, any warning is
 # treated as unreadable.
 #
-# No temp file: `rm` is a destructive verb and this repository forbids those
-# inside an inline-bang block, with a test that enforces it. Merging the streams
+# No temp file: an inline-bang block may not run `rm`. Merging the streams
 # is enough because the two are disjoint — a clean resolve prints the value and
 # nothing else, and every warning cascade-resolve emits is prefixed with its own
 # name, which no value accepted below can contain.
 MERGE_OUT=$("$CASCADE" '.merge.strategy' 2>&1); RC_STRATEGY=$?
 # Collapsed to one line: cascade-resolve emits one warning per source it had to
 # skip, so this is multi-line as soon as two are unreadable, and a multi-line
-# value here re-opens through the error path exactly the forgery this block was
-# hardened against.
+# value printed through the error path could forge a line of the output of
+# this block.
 MERGE_OUT=$(printf '%s' "$MERGE_OUT" | tr '\n\r' '  ')
 case "$MERGE_OUT" in
   *cascade-resolve:*)
@@ -749,14 +745,17 @@ means there was no origin remote to verify against. In each case the merge
 below would have to name a repository nobody verified. Report the state and
 what the user can do about it.
 
-Use the AskUserQuestion tool with contextual options to confirm, naming what
-will actually run: "PR #{PR_NUMBER} in {OWNER/NAME} is ready to merge. Proceed
-with a {strategy} merge{, deleting the branch}?" — the strategy and the branch
-clause come from `MERGE_STRATEGY` and `DELETE_BRANCH` in Merge Settings, so the
-user approves the same merge that runs.
+Show the assessment as text. Then use the AskUserQuestion tool with contextual
+options to confirm, naming what will actually run: "PR #{PR_NUMBER} in
+{OWNER/NAME} is ready to merge. Proceed with a {strategy} merge{, deleting the
+branch}?" The strategy and the branch clause come from `MERGE_STRATEGY` and
+`DELETE_BRANCH` in Merge Settings, so the user approves the same merge that
+runs. Offer two options: merge as assessed, or cancel. Ask even when
+`autonomous: true` is set: a merge is Tier 3.
 
 Only after the user confirms via the tool, run the merge with every value
-written literally. Replace each `{…}` below before running:
+written literally. If the user cancels, stop without running it. Replace
+each `{…}` below before running:
 
 - `{PR_NUMBER}` — the PR number from the report
 - `{OWNER/NAME}` — the report's Repository row
@@ -866,6 +865,6 @@ Suggest: `/flow:release {type}` if this completes a milestone.
 | FlowGoal gate check (v3 opt-in; reads `.flow/goals/*.goal.yaml`) | 1 | Autonomous; blocks on `lifecycle.status != achieved` |
 | Stale-approval check | 1 | Autonomous; warns on stale |
 | Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Journal-and-proceed if user accepts; otherwise blocked |
-| `gh pr merge` | 3 | **Confirm** — always asks via `AskUserQuestion` |
-| Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — bundled into the merge prompt |
+| `gh pr merge` | 3 | **Confirm** — asks via `AskUserQuestion` before the command runs |
+| Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — named in the merge question |
 | `git checkout <default-branch> && git pull` (post-merge cleanup) | 1 | Autonomous |

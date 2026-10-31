@@ -6,8 +6,6 @@ allowed-tools: Read
 
 # LLM Operator Principles
 
-Consulted by every `/flow:*` command before any other skill.
-
 ## Iron Law
 
 **CONVERGENCE = ZERO FINDINGS. NOT EXHAUSTED BUDGET.**

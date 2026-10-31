@@ -1,18 +1,16 @@
-# Workflow Validation — schema step with the v3.0.x migration shim
+# Workflow Validation — schema step with the completion_gate.requires shim
 
 Reference for Step 1 of the `workflow-validation` skill. The canonical schema-validation invocation for a FlowWorkflow YAML, including the `completion_gate.requires` → `completion_gate.documented_requirements` deprecation shim.
 
 ## Why the shim and the validator share one process
 
-`python3 -m jsonschema -i <file> <schema>` re-reads the YAML from disk, which bypasses any in-memory migration. A project-local workflow that still uses the legacy `completion_gate.requires` field would then fail schema validation (the schema sets `additionalProperties: false`) despite the documented "accept legacy through v3.0.x" contract. The shim and `jsonschema.validate` therefore run in the same Python process, on the same in-memory document.
+`python3 -m jsonschema -i <file> <schema>` re-reads the YAML from disk, which bypasses any in-memory migration. A project-local workflow that still uses the legacy `completion_gate.requires` field would then fail schema validation (the schema sets `additionalProperties: false`) even though flow still accepts the legacy field. The shim and `jsonschema.validate` therefore run in the same Python process, on the same in-memory document.
 
 Shim behavior:
 
 - `requires` present, `documented_requirements` absent → rename in memory, emit `WARN` on stderr.
-- both present → drop the legacy `requires`, emit `WARN` on stderr (previously the schema rejected this with an opaque `additionalProperties` error).
+- both present → drop the legacy `requires`, emit `WARN` on stderr.
 - `requires` absent → no-op.
-
-The legacy name will be rejected outright in v3.1.
 
 ## Canonical invocation
 

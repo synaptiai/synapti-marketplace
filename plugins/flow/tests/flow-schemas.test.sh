@@ -238,6 +238,8 @@ for tt in "$REPO_ROOT"/plugins/flow/triggers/templates/*.trigger.yaml; do
   # must avoid '/' because the trigger metadata.id pattern only permits
   # [a-z0-9-] (the slug is built from these).
   sed -e 's/\${PR}/42/g' \
+      -e 's|\${BRANCH_SLUG}|feature-example|g' \
+      -e 's|\${DEFAULT_BRANCH}|main|g' \
       -e 's|\${BRANCH}|feature-example|g' \
       -e 's|\${REPO}|example-example|g' \
       -e "s|\\\${NOW}|2026-05-20T14:30:00Z|g" \
@@ -250,4 +252,36 @@ for tt in "$REPO_ROOT"/plugins/flow/triggers/templates/*.trigger.yaml; do
     echo "  -> $(basename "$tt"): $RESULT" >&2
   fi
 done
-assert_equal "0" "$TRIGGER_FAILURES" "all 3 plugin trigger templates validate after \${VAR} substitution"
+assert_equal "0" "$TRIGGER_FAILURES" "all 5 plugin trigger templates validate after \${VAR} substitution"
+
+# --- The FlowRun creation template in references/run-state-templates.md is
+# what run-state-management writes at command entry, so it must validate
+# against run.schema.json once its placeholders are filled. state.current_activity
+# is typed string in the schema: a template that writes it as null fails here.
+_flow_test_begin "run-state-templates.md FlowRun creation template validates against run.schema.json"
+TEMPLATES_MD="$REPO_ROOT/plugins/flow/references/run-state-templates.md"
+TMP_RUN=$(mktemp -t run-template.XXXXXX)
+# First ```yaml fence after the "## FlowRun" heading.
+awk '/^## FlowRun/{s=1} s&&/^```yaml$/{f=1;next} f&&/^```$/{exit} f' "$TEMPLATES_MD" |
+  sed -e 's/\${[A-Z_]*:-null}/null/g' \
+      -e 's/\${RUN_ID}/2026-05-20T143000Z-issue-42/g' \
+      -e 's/\${NOW}/2026-05-20T14:30:00Z/g' \
+      -e 's/\${[A-Z_]*}/example/g' > "$TMP_RUN"
+assert_contains "kind: FlowRun" "$(cat "$TMP_RUN")" "the FlowRun fence was extracted"
+RESULT=$(_validate_fixture "$SCHEMA_DIR/run.schema.json" "$TMP_RUN")
+rm -f "$TMP_RUN"
+assert_equal "ok" "$RESULT" "the filled creation template validates"
+
+# Every run status the templates name is one the schema accepts: the
+# `state.status` comments list the allowed values.
+_flow_test_begin "run status values named in run-state-templates.md are all in run.schema.json"
+SCHEMA_STATUSES=$(jq -r '.properties.state.properties.status.enum[]' "$SCHEMA_DIR/run.schema.json" | sort | tr '\n' ' ')
+DOC_STATUSES=$(awk '/^state:/{s=1;next} s&&/^[^ ]/{s=0} s&&/^  status:/' "$TEMPLATES_MD" |
+  sed -e 's/^  status:[[:space:]]*//' -e 's/#//' | tr '|' ' ' | tr -s ' ' '\n' |
+  grep -v '^$' | grep -v '^or$' | sort -u)
+UNKNOWN=""
+for st in $DOC_STATUSES; do
+  case " $SCHEMA_STATUSES " in *" $st "*) ;; *) UNKNOWN="$UNKNOWN $st" ;; esac
+done
+assert_contains "completed" "$DOC_STATUSES" "the status comments were read"
+assert_equal "" "$UNKNOWN" "no documented run status is missing from the schema enum"

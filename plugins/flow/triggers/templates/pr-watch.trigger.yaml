@@ -4,6 +4,9 @@
 # /flow:watch pr <N> copies this template, substitutes ${PR} with the actual PR
 # number, and writes to .flow/triggers/pr-<N>-watch.trigger.yaml.
 #
+# target.command is the work each iteration does; the loop prompt runs it
+# through /flow:run trigger pr-<N>-watch, which checks this policy first.
+#
 # Plugin CANNOT invoke /loop. User invokes it manually using the generated
 # .claude/flow-loop-pr-<N>.md prompt file.
 
@@ -25,7 +28,7 @@ trigger:
 target:
   workflow: address-pr
   goal: pr-${PR}-address
-  command: '/flow:run trigger pr-${PR}-watch'
+  command: '/flow:address ${PR}'
 
 context:
   repo: '${REPO}'

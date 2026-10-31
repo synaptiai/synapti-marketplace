@@ -35,7 +35,7 @@ Each facet runs as a **paired reviewer**: a skeptic ("assume the diff is broken 
 4. **Synthesize.** The lead applies the consolidation table mechanically: both raised independently (same facet, file, lines ±2, priority ±1) → HIGH `consensus`; AGREE → HIGH `validated`; REFINE → MEDIUM `refined`; DISAGREE → LOW `kept`; timeout/error → MEDIUM `unchallenged`; both DISAGREE → dropped and journaled under `## Dropped after challenge`. A System One answer is not a challenger answer and never counts toward a drop. The lead never adjudicates.
 5. **Emit.** Finding tables carry a trailing `_(confidence · disposition)_` suffix; the `FLOW_REVIEW_CYCLE` marker carries the 7-field rows per `references/finding-ledger-parser.md`.
 
-Cost: about 23 LLM calls per review (12 + 10 challenge + 1 consolidation), roughly 3.8× the single-session baseline; opt-in.
+Opt-in: about 23 LLM calls per review (`references/paired-review-protocol.md`).
 
 Bias rules: no reading of another reviewer's findings before producing your own (anchoring); HIGH-confidence-on-everything is a smell (groupthink); no third-agent judge (central-judge bias).
 

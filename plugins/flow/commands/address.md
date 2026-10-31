@@ -10,7 +10,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `feedback-resolution` — surgical changes, context recovery, pushback criteria
 - `change-classification` — verify no out-of-context changes
 - `capability-discovery` — quality commands for verification
@@ -357,7 +357,7 @@ When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.f
 
 ### System One checks (optional)
 
-Two decisions in this command can be asked of a System One provider (`references/system-one.md`): whether an inline review comment still applies to the code now (`address.still_applies`), and which priority a feedback item has (`address.category`). The block below prints one line for each that is active, and nothing for one that is off, which is the default. With no line for a decision, skip the steps that name it: the command does what it did before.
+Two decisions in this command can be asked of a System One provider (`references/system-one.md`): whether an inline review comment still applies to the code now (`address.still_applies`), and which priority a feedback item has (`address.category`). The block below prints one line for each that is active, and nothing for one that is off, which is the default. With no line for a decision, skip the steps that name it: the Explore check runs as written and your own category stands.
 
 ```!
 # S1_ADDRESS_MODES_BLOCK_BEGIN
@@ -701,6 +701,8 @@ Display categorized feedback:
 
 ## Phase 3: CODE
 
+**TDD enforcement**: a fix that changes behavior follows `testing.tddMode` exactly as `/flow:start` Phase 3 does (`enforce` default; `suggest` only with `testing.tddModeOptOut: true`; `off` still runs tests in verification). The `tdd-patterns` contract loaded above defines RED: a test is red only when it fails for the intended reason, its expected value has a stated source (spec, reference, hand computation, fixture, standard — never the implementation's output), and its input is not degenerate for the behavior under test. A fix that changes only documentation, comments, or configuration with no behavior change is exempt and needs no new test.
+
 For each feedback task (in priority order):
 
 ```
@@ -709,10 +711,16 @@ For each feedback task (in priority order):
 3. Context recovery: find current code location (don't trust line numbers)
    - Search for quoted code snippets
    - Read the file at the mentioned path
-4. Implement the fix
-5. Write or update tests that verify the fix:
+4. Reproducing test first (behavior-changing fix; exempt fixes go to step 5):
+   - tddMode=enforce: RED — write a test that reproduces the defect the comment
+     names, run it, and confirm it fails on the current code for the intended
+     reason (not a syntax error, not a wrong import). Expected value with its
+     stated source; an input on which the fixed and the unfixed code differ
+   - tddMode=suggest: the same, unless the user decides to skip it for this fix
+   - tddMode=off: no test-first step; step 5 still writes the test
+5. Implement the fix (GREEN) — the simplest change that makes the test pass:
+   - tddMode=off: then write or update a test that would have caught the issue
    - Follow existing test patterns (co-located files, same framework)
-   - At minimum, write a test that would have caught the issue
    - Test the specific edge case, not just the happy path
    - Only modify the fix target and its test file
 6. Verify the fix addresses the specific feedback and tests pass
@@ -758,7 +766,7 @@ For each Pushback item:
    `cmd` before the block starts; inside single quotes, a `'` in the value ends the quote the same
    way.
 3. The id reaches the `DISPUTED:[...]` array of the resolution marker through the
-   `DISPUTED_ARRAY_BLOCK` in Phase 5 step 9, which reads it back out of the artifact this block
+   `DISPUTED_ARRAY_BLOCK` in Phase 4 step 9, which reads it back out of the artifact this block
    writes — do not transcribe it by hand. `templates/resolution-comment.md` already carries the array and
    `references/finding-ledger-parser.md` already gives it precedence below `RESOLVED` and
    `ESCALATED`. A disputed id blocks the merge because it is unresolved — `commands/merge.md` reads
@@ -830,10 +838,7 @@ case "$CYCLE_NUMBER" in ''|*[!0-9]*) printf '%s\n' "FINDING_DISMISSED=skipped (C
 #
 # It is NOT about glob expansion. status.md's containment check writes the id as
 # `*",$ID,"*`, where the quotes make it a literal, and commands/merge.md has no
-# glob at all — its gate is `comm` over sorted lists. An earlier version of this
-# comment claimed an id of `*` "matches every RESOLVED list"; that was never
-# true of any consumer, and the same claim was corrected in
-# bin/_journal_manifest.py in the same round.
+# glob at all — its gate is `comm` over sorted lists.
 if ! ( LC_ALL=C
        case "$FINDING_ID" in [A-Za-z]*) ;; *) exit 1 ;; esac
        case "$FINDING_ID" in *[!A-Za-z0-9_-]*) exit 1 ;; esac ); then
@@ -905,9 +910,9 @@ A finding in a file the PR already modifies is NEVER out-of-scope — it must be
 
 P1 or P2 findings in untouched files must be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded). They MUST NOT be filed as a six-field Proactive-Autonomy escalation — finding triage is not a decision, it is work. See `skills/llm-operator-principles/SKILL.md`.
 
-**Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed if bounded (<10 lines) or documented inline in the PR body under a `### Known cosmetic notes` section. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
+**Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed in this PR with an `improve:` commit. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
 
-**Minimal-scope mode (`settings.json` → `minimalScope: true`, or user said "minimal scope" in-conversation):** for cosmetic P3 findings in truly untouched files only, the original follow-up workflow is restored:
+**Minimal-scope mode (`settings.json` → `minimalScope: true`, or user said "minimal scope" in-conversation):** for cosmetic P3 findings in truly untouched files only, use the follow-up issue workflow:
 
 1. Use the AskUserQuestion tool with contextual options: "This cosmetic P3 finding is in an untouched file. Create a follow-up issue to track it?"
 2. If yes, create a GitHub issue using issue-crafting skill knowledge:
@@ -925,7 +930,7 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
 
 ## Phase 4: VERIFY (Convergence Check)
 
-**CRITICAL: The resolution comment and inline replies are MANDATORY. NEVER skip posting. Push without posting is incomplete — the reviewer cannot see what was addressed. Do not re-request review until the resolution comment is posted and TaskUpdate confirms completion.**
+Post the inline replies (step 8) and the resolution comment (step 9) every cycle: a push without them leaves the reviewer unable to see what was addressed. Re-request review only after the resolution comment is posted and its task is marked completed.
 
 1. **Quality commands** (parallel): lint, test, typecheck
 2. **Comprehensive self-review** of ALL files touched on the branch — parallel agent dispatch matching `/flow:pr` Phase 3 fan-out so fix commits don't slip convention/test/error-handling regressions past automated re-review:
@@ -992,7 +997,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    - P2 in touched files → fix NOW
    - P3 in touched files → fix NOW (same disposition as P1/P2 — the proximity test is not a deferral mechanism)
    - P1/P2 in untouched files → fix in-PR (expand scope with `improve:` commits). Finding triage is NEVER a valid escalation trigger.
-   - Cosmetic P3 in untouched files → fix if bounded (<10 lines) or document inline in PR body. Default mode does not create follow-up issues. (Only `minimalScope` mode restores the follow-up workflow for this case.)
+   - Cosmetic P3 in untouched files → fix in this PR (`improve:` commit). Default mode does not create follow-up issues; only `minimalScope` mode uses the follow-up issue workflow for this case.
    - After fixes: re-run quality commands, re-review changed files, re-run holdout-validation
    - Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
    - **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
@@ -1292,19 +1297,13 @@ true
        `in_fix_forward` instead of `disputed`. The `REASON` names the remedy, which is to re-run
        the block with the earlier issue: `ISSUE=<n> PR_NUM=<pr>`. The block uses a pre-set `ISSUE`
        as given and skips the lookup.
-
-       An earlier revision checked this automatically with an unmarked `gh api | jq` fence in this
-       prose. It referenced `$REPO` and `$TRUST_LIST`, which nothing in its own shell defined, and
-       checked no exit status — so it failed, printed nothing, and the instruction below read that
-       silence as "nothing to worry about". A check whose failure is indistinguishable from a clean
-       result is the defect this whole step exists to remove, so it is gone rather than repaired.
      - **No `DISPUTED_REASON_CODE` line.** **Stop. Do not post the comment.** Report the `REASON`
        and fix it first. Do NOT reason from "Phase 3 recorded nothing this run": the array is
        cumulative over the pull request, so a dismissal from cycle 2 that this read could not see
        is erased by a `DISPUTED:[]` posted in cycle 3, and it reclassifies from `disputed` to
        still-being-fixed.
 
-     Never skip the comment silently — Phase 5 calls it mandatory, and a missing resolution comment
+     Never skip the comment silently — Phase 4 step 9 calls it mandatory, and a missing resolution comment
      leaves `/flow:merge` with no `RESOLVED` array at all.
 
    Set `BODY` from a file, as the inline replies are: run `mktemp` and note the path it prints,
@@ -1355,10 +1354,41 @@ true
 
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
-   - Fetch current body: `gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body'`
+   - Fetch the current body: run the block below with `PR_NUM=<n>` and no `BODY_FILE`; it prints the body.
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
-   - Update: `gh pr edit "$PR_NUM" --body "$UPDATED_BODY"`
+   - Update: run `mktemp` and note the path it prints, write the whole updated body to that path with the Write tool, and run the block with `PR_NUM=<n> BODY_FILE=<the path>`, followed in the same call by `rm -f <the path>`. The body quotes reviewer text, so it never goes in a shell command.
+
+   ```bash
+   # PR_BODY_BLOCK_BEGIN
+   # Reads the pull request body, or, with BODY_FILE, replaces it with that
+   # file's text. Each fence is its own shell, so REPO is resolved here:
+   # `gh --repo ""` falls back to gh's own resolution, which acts on whichever
+   # repository the working directory belongs to.
+   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+   [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
+   case "${PR_NUM:-}" in ''|0*|*[!0-9]*) printf '%s\n' "ERROR: PR_NUM must be a positive integer with no leading zero" >&2; exit 1 ;; esac
+   if [ -z "${BODY_FILE:-}" ]; then
+     gh pr view "$PR_NUM" --repo "$REPO" --json body --jq '.body' || exit 1
+     exit 0
+   fi
+   [ -f "$BODY_FILE" ] && [ -s "$BODY_FILE" ] || { printf '%s\n' "ERROR: BODY_FILE must name a file holding the updated body" >&2; exit 1; }
+   # The body is published, so only a file the session made with mktemp is
+   # accepted: directly in TMPDIR, a regular file and not a symlink, owned by
+   # this user, with one link. Any other file is not read.
+   PB_TMPDIR=$(cd -P -- "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)
+   PB_DIR=""
+   case "$BODY_FILE" in /*) PB_DIR=$(cd -P -- "$(dirname -- "$BODY_FILE")" 2>/dev/null && pwd -P) ;; esac
+   if [ -z "$PB_TMPDIR" ] || [ "$PB_DIR" != "$PB_TMPDIR" ] || [ -L "$BODY_FILE" ] \
+      || [ -z "$(find "$BODY_FILE" -prune -type f -user "$(id -u)" -links 1 2>/dev/null)" ]; then
+     printf '%s\n' "ERROR: BODY_FILE must be a file made by mktemp directly in \$TMPDIR; the body was not updated" >&2; exit 1
+   fi
+   gh pr edit "$PR_NUM" --repo "$REPO" --body-file "$BODY_FILE" >/dev/null
+   BODY_EXIT=$?
+   printf '%s\n' "BODY_EXIT=$BODY_EXIT"
+   [ "$BODY_EXIT" -eq 0 ] || exit 1
+   # PR_BODY_BLOCK_END
+   ```
 11. **TaskList**: Confirm ALL tasks complete including "Post resolution comment". Do NOT proceed until verified.
 12. **Conditional re-request review**:
 

@@ -40,7 +40,17 @@ ls plugins/gh-workflow/.claude-plugin/plugin.json .claude/settings.gh-workflow.j
 # 4. Git remote
 git remote -v | head -2
 gh auth status 2>&1 | head -3
+
+# 5. timeout(1) or gtimeout (GNU coreutils), which the verdict judge
+# (/flow:start Phase 4) and the goal judge run under; stock macOS has neither
+if command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1; then
+  printf '%s\n' "TIMEOUT_BIN=found"
+else
+  printf '%s\n' "TIMEOUT_BIN=missing — the verdict judge and the goal judge need timeout(1) or gtimeout (install GNU coreutils; on macOS: brew install coreutils)"
+fi
 ```
+
+On `TIMEOUT_BIN=missing`, add the coreutils install to **Manual Steps Required** in the Phase 6 summary: without it the verdict judge and the goal judge report that they could not start (exit 4).
 
 **Skill(capability-discovery)**: Detect tech stack, quality commands, existing agents/skills, and LSP capabilities.
 
@@ -63,7 +73,7 @@ JOURNAL_DIR=".decisions"
 RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 [ -x "$RESOLVER" ] && JOURNAL_DIR=$("${RESOLVER%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$JOURNAL_DIR/auto-log/"; do
+for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' '.flow/watch/' "$JOURNAL_DIR/auto-log/"; do
   if [ -f .gitignore ]; then
     grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
   else
@@ -92,7 +102,7 @@ Write `.claude/settings.flow.json` with:
 - `learning.enabled: true`. Not `learning.proposalDir` or `learning.transcriptDir`: Flow reads those from the user settings file only, so a value written here would be ignored
 - `journal.dir` (default `.decisions`). Written here it is a repository setting, so it must resolve inside the repository; a directory outside the checkout belongs in the user's own `~/.claude/settings.flow.json`
 - LSP settings (`lsp.enabled: true`, `lsp.timeout: 5000`, `lsp.diagnosticsAsQuality: true`)
-- Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings
+- Tier classification (`tiers.*`, recorded for reference: no command or hook reads it), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings
 
 **On re-run** (existing settings detected): Read current settings and merge — preserve user customizations, only add new keys that don't exist yet.
 
@@ -385,8 +395,9 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 |----------|--------|--------|-------------|
 | {language} | {server} | {Installed/Missing/Skipped} | {available features} |
 
-{If any servers need manual steps:}
+{If any servers need manual steps, or Phase 1 printed TIMEOUT_BIN=missing:}
 ### Manual Steps Required
+- [ ] {TIMEOUT_BIN=missing only} Install GNU coreutils (`brew install coreutils` on macOS) so the verdict judge and the goal judge can run
 - [ ] Add `export ENABLE_LSP_TOOL=1` to shell profile and restart Claude Code
 - [ ] Run `{install command}` to install {server}
 - [ ] Restart Claude Code after plugin installation
@@ -394,6 +405,7 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 ### Commands Available
 | Command | Purpose |
 |---------|---------|
+| `/flow <verb> <target>` | Entry point that routes a verb to the command below |
 | `/flow:start <issue>` | Start work on an issue |
 | `/flow:commit` | Classify and commit changes |
 | `/flow:pr` | Create pull request |
@@ -401,8 +413,21 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 | `/flow:address <pr>` | Address review feedback |
 | `/flow:merge <pr>` | Merge approved PR |
 | `/flow:release <type>` | Create release |
+| `/flow:resolve [pr-or-branch]` | Resolve merge conflicts |
 | `/flow:status` | Workflow overview |
 | `/flow:learn` | Analyze patterns |
+| `/flow:setup` | Initialize flow for a repository |
+| `/flow:explain` | Questions about decisions on this branch |
+| `/flow:issue [topic]` | Create a GitHub issue |
+| `/flow:brainstorm [topic]` | Explore approaches before implementation |
+| `/flow:debug [error]` | Structured debugging |
+| `/flow:design [feature]` | Architecture and design review |
+| `/flow:goal` | Create, inspect and evaluate FlowGoals |
+| `/flow:resume` | Propose the next safe action for an interrupted run |
+| `/flow:workflow` | Inspect workflow definitions |
+| `/flow:trigger` | Manage FlowTriggers |
+| `/flow:run trigger <id>` | Run one FlowTrigger's target once |
+| `/flow:watch` | Generate a `/loop` prompt for hands-off iteration |
 
 ### Next Steps
 - Assign an issue and run `/flow:start <number>`

@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Grep, Glob
 
 ## Iron Law
 
-**EVERY CHANGE MUST BE INTENTIONAL. If you can't explain why a line changed, revert it.**
+**Every change is intentional: if you can't explain why a line changed, revert it.**
 
 ## Before You Write Code
 
@@ -36,7 +36,7 @@ Leave every file you touch better than you found it. Touching a file means ownin
 
 P1/P2 in the expanded-scope bucket: fix in-PR with an appropriate commit message. Finding triage is NEVER a valid escalation trigger — do NOT file a six-field escalation to ask whether to fix a finding (see `skills/llm-operator-principles/SKILL.md` and `references/escalation-format.md`). "Disagree to fix" and "ask the user whether to fix" are not options.
 
-**Default mode:** cosmetic P3 in truly untouched files is fixed if bounded (<10 lines) or documented inline in the PR body. Do NOT create follow-up issues for them.
+**Default mode:** cosmetic P3 in truly untouched files is fixed in this PR with an `improve:` commit. Do NOT create follow-up issues for them.
 
 **Minimal-scope mode (`settings.json` → `minimalScope: true`):** the follow-up issue workflow for cosmetic P3 in untouched files is restored.
 

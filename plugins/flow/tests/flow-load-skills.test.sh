@@ -215,6 +215,70 @@ _fls_wordcount() {
   fi
 }
 
+# --- every shipped skill: body at most 600 words, Contract at most 120
+# The budget references/skill-manifests.md states for every skill, counted the
+# way the learned-skill check below counts: frontmatter stripped, words by
+# _fls_wordcount. _fls_size_problems prints what is over, or nothing.
+FLS_MAX_BODY=600
+FLS_MAX_CONTRACT=120
+_fls_size_problems() {
+  local body bw cw p=""
+  body=$(awk 'BEGIN{fm=0} NR==1 && /^---$/ {fm=1; next} fm==1 { if (/^---$/) {fm=2}; next } {print}' "$1")
+  bw=$(printf '%s\n' "$body" | _fls_wordcount)
+  cw=$(printf '%s\n' "$body" | awk '/^## Contract[[:space:]]*$/ {on=1; next} on && /^## / {exit} on {print}' | _fls_wordcount)
+  [ "$bw" -le "$FLS_MAX_BODY" ] || p="$p; body is $bw words (max $FLS_MAX_BODY)"
+  [ "$cw" -le "$FLS_MAX_CONTRACT" ] || p="$p; Contract is $cw words (max $FLS_MAX_CONTRACT)"
+  printf '%s' "${p#; }"
+}
+
+# The check on skills built to sit exactly at and one word over each limit, so
+# a raised limit or a miscount fails here even when every shipped skill fits.
+# Each fixture body is "# T", a "## Contract" heading, the contract words, a
+# "## Body" heading and the body words: 6 words of headings.
+_flow_test_begin "the size check: 600/120 pass, 601 body or 121 Contract fail"
+SIZE_FIX="$FIX/size"
+_fls_size_fixture() {  # <name> <contract words> <other body words>
+  mkdir -p "$SIZE_FIX/$1"
+  python3 - "$SIZE_FIX/$1/SKILL.md" "$1" "$2" "$3" <<'PY'
+import sys
+path, name, c, b = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+with open(path, "w", encoding="utf-8") as f:
+    f.write("---\nname: %s\ndescription: \"fixture words that are not counted\"\nagent: Explore\n---\n\n" % name)
+    f.write("# T\n\n## Contract\n\n%s\n\n## Body\n\n%s\n" % (" ".join(["c"] * c), " ".join(["w"] * b)))
+PY
+}
+_fls_size_fixture at-limit 120 474        # 6 + 120 + 474 = 600
+_fls_size_fixture body-over 120 475       # 601
+_fls_size_fixture contract-over 121 10    # Contract 121, body 137
+assert_equal "" "$(_fls_size_problems "$SIZE_FIX/at-limit/SKILL.md")" "a 600-word body with a 120-word Contract passes"
+assert_equal "body is 601 words (max 600)" "$(_fls_size_problems "$SIZE_FIX/body-over/SKILL.md")" "a 601-word body fails"
+assert_equal "Contract is 121 words (max 120)" "$(_fls_size_problems "$SIZE_FIX/contract-over/SKILL.md")" "a 121-word Contract fails"
+
+_flow_test_begin "every shipped skill: body at most 600 words, Contract at most 120"
+SIZE_SCANNED=0
+SIZE_OVER=""
+for FILE in "$SKILLS_DIR"/*/SKILL.md; do
+  [ -f "$FILE" ] || continue
+  SIZE_SCANNED=$((SIZE_SCANNED + 1))
+  NAME=$(basename "$(dirname "$FILE")")
+  P=$(_fls_size_problems "$FILE")
+  if [ -n "$P" ]; then
+    SIZE_OVER="$SIZE_OVER $NAME"
+    _flow_assert_fail "$NAME: $P"
+  else
+    _flow_assert_pass "$NAME: within $FLS_MAX_BODY / $FLS_MAX_CONTRACT words"
+  fi
+done
+# Every skill on disk one level under skills/ was checked: a loop that skipped
+# one, or a glob that reached none, would otherwise pass.
+SIZE_FOUND=$(find "$SKILLS_DIR" -mindepth 2 -maxdepth 2 -name SKILL.md -type f | wc -l | tr -d ' ')
+if [ "$SIZE_SCANNED" -eq "$SIZE_FOUND" ] && [ "$SIZE_FOUND" -gt 0 ]; then
+  _flow_assert_pass "checked $SIZE_SCANNED of $SIZE_FOUND shipped skills"
+else
+  _flow_assert_fail "checked $SIZE_SCANNED shipped skills but $SIZE_FOUND are on disk"
+fi
+[ -z "$SIZE_OVER" ] || printf 'over the limit:%s\n' "$SIZE_OVER" >&2
+
 _flow_test_begin "promoted learned skills carry skill shape, not proposal shape"
 if [ -d "$SKILLS_DIR/learned" ]; then
   _flow_assert_pass "$SKILLS_DIR/learned exists — the walk below has somewhere to go"
@@ -291,3 +355,79 @@ else
     assert_contains "reason=not-found" "$NOUT" "an absent name is still not-found"
   fi
 fi
+
+# --- references/skill-manifests.md is what bin/flow-skill-manifests.sh prints
+# The tables there were hand-maintained and drifted (one skill listed at 598
+# words was 1618). The generator rewrites only its marked regions, so the
+# committed file must equal its output byte for byte. An empty output, or a
+# generator that failed, would compare equal to nothing useful, so the exit
+# status and the row counts are checked first.
+GEN="$REPO_ROOT/plugins/flow/bin/flow-skill-manifests.sh"
+MANIFEST="$REPO_ROOT/plugins/flow/references/skill-manifests.md"
+_flow_test_begin "references/skill-manifests.md equals bin/flow-skill-manifests.sh output"
+"$GEN" > "$FIX/manifests.out" 2> "$FIX/manifests.err"
+GEN_RC=$?
+assert_exit 0 "$GEN_RC" "the generator exits 0 ($(tr '\n' ' ' < "$FIX/manifests.err"))"
+CMD_FILES=$(find "$COMMANDS_DIR" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')
+CMD_ROWS=$(grep -c '^| `/flow:' "$FIX/manifests.out" || true)
+assert_equal "$CMD_FILES" "$CMD_ROWS" "one command row per commands/*.md"
+SKILL_ROWS=$(awk '/BEGIN GENERATED: skills/{on=1; next} /END GENERATED: skills/{on=0} on && /^\| [a-z0-9-]+ \|/' "$FIX/manifests.out" | wc -l | tr -d ' ')
+assert_equal "$SIZE_FOUND" "$SKILL_ROWS" "one skill row per skills/<name>/SKILL.md"
+if [ "$GEN_RC" -eq 0 ] && cmp -s "$FIX/manifests.out" "$MANIFEST"; then
+  _flow_assert_pass "the committed file is the generator's output"
+else
+  _flow_assert_fail "references/skill-manifests.md differs from bin/flow-skill-manifests.sh output; run it with --write. First differences: $(diff "$MANIFEST" "$FIX/manifests.out" 2>&1 | head -6 | tr '\n' ' ')"
+fi
+
+# The generator's refusals, on a copy of the plugin's bin, commands, skills
+# and references: a region without its markers, and a command whose Required
+# Skills name a skill that does not load, each exit 1 with no output.
+_flow_test_begin "bin/flow-skill-manifests.sh refuses a missing region and a skill that does not load"
+_fls_gen_copy() {
+  rm -rf "$FIX/gen"; mkdir -p "$FIX/gen"
+  cp -R "$REPO_ROOT/plugins/flow/bin" "$REPO_ROOT/plugins/flow/commands" \
+        "$REPO_ROOT/plugins/flow/skills" "$REPO_ROOT/plugins/flow/references" "$FIX/gen/"
+}
+_fls_gen_copy
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 0 "$?" "an unchanged copy generates"
+assert_equal "" "$(diff "$FIX/gen.out" "$FIX/manifests.out")" "an unchanged copy gives the same output"
+python3 - "$FIX/gen/references/skill-manifests.md" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(t.replace("<!-- END GENERATED: skills -->\n", ""))
+PY
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 1 "$?" "a region with no END marker exits 1"
+assert_equal "" "$(cat "$FIX/gen.out")" "and prints nothing on stdout"
+assert_contains "the skills region must have one BEGIN marker followed by one END marker" "$(cat "$FIX/gen.err")" "and says which region"
+_fls_gen_copy
+python3 - "$FIX/gen/commands/issue.md" <<'PY'
+import sys
+p = sys.argv[1]
+t = open(p, encoding="utf-8").read()
+t = t.replace("## Required Skills\n\n", "## Required Skills\n\n- `no-such-skill` — a skill that does not exist\n", 1)
+open(p, "w", encoding="utf-8").write(t)
+PY
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 1 "$?" "a required skill that does not load exits 1"
+assert_contains "SKILL_LOAD_ERROR=no-such-skill reason=not-found" "$(cat "$FIX/gen.err")" "and names the skill"
+assert_equal "" "$(cat "$FIX/gen.out")" "and prints nothing on stdout"
+
+# The Required Skills section runs to the next "## " heading or the end of the
+# file, not to the first line that starts with "#": a command whose section
+# is the last one is read, and a section that names no skill and has no
+# "_None" line is refused rather than written as "(none)".
+_flow_test_begin "bin/flow-skill-manifests.sh reads a Required Skills section with no heading after it, and refuses one with neither a skill nor _None"
+_fls_gen_copy
+printf '# Zz\n\n## Required Skills\n\n- `tdd-patterns` — a skill listed in the last section of the file\n' > "$FIX/gen/commands/zz-last.md"
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 0 "$?" "a section with no heading after it generates ($(tr '\n' ' ' < "$FIX/gen.err"))"
+assert_match '^\| `/flow:zz-last` \| tdd-patterns \| [0-9]+ \| [0-9]+ \| [1-9][0-9]* \|$' "$(grep '^| `/flow:zz-last`' "$FIX/gen.out")" "its row names the skill, not (none)"
+_fls_gen_copy
+printf '# Zz\n\n## Required Skills\n\nSome prose that names no skill.\n\n## Next\n\nText.\n' > "$FIX/gen/commands/zz-prose.md"
+"$FIX/gen/bin/flow-skill-manifests.sh" > "$FIX/gen.out" 2> "$FIX/gen.err"
+assert_exit 1 "$?" "a section with neither a skill nor a _None line exits 1"
+assert_contains "commands/zz-prose.md: the Required Skills section lists no skill and has no _None line" "$(cat "$FIX/gen.err")" "and says which command"
+assert_equal "" "$(cat "$FIX/gen.out")" "and prints nothing on stdout"

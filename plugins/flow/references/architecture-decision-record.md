@@ -63,12 +63,6 @@ A mode with no answer is a gap to close before proceeding, not a detail to defer
 
 Non-goals and failure modes are not optional; a record missing them is incomplete and does not ship.
 
-## Existing-pattern probes
-
-```bash
-ls -la src/ app/ lib/
-grep -r "class \|module \|interface " --include="*.{ts,js,py,rb}" | head -20
-git log --oneline --all -- "src/*/index.*" | head -10
-```
+## Existing patterns
 
 Follow existing patterns unless there is a documented reason to diverge.

@@ -23,12 +23,7 @@ The invoking command MUST pass:
 
 ## Outputs
 
-1. `.flow/runs/<id>/run.yaml` — FlowRun conforming to `schemas/v1/run.schema.json`.
-2. `.flow/runs/<id>/activities/<NNN>-<name>.yaml` — one FlowActivity per phase boundary, `schemas/v1/activity.schema.json`.
-3. `.flow/runs/<id>/events.jsonl` — line-per-event ledger.
-4. `workflow-run` artifact in the linked decision journal (`bin/journal-record.sh --type workflow-run`), updated with the final status at the terminal transition.
-
-Exact document shapes and the per-workflow phase-order table: `references/run-state-templates.md`.
+`run.yaml`, one activity file per phase boundary, `events.jsonl` and a `workflow-run` journal artifact. Paths, document shapes and the per-workflow phase order: `references/run-state-templates.md`.
 
 ## Workflow
 
@@ -50,8 +45,8 @@ If it exits non-zero, create no run: say why — exit 1 is a refused symlink, ex
 
 2. **Record an activity at every phase boundary** (and significant sub-steps): compose the FlowActivity YAML to a temp file, then `bin/flow-record-activity.sh --run-id <id> --activity-file <path>`. The helper assigns the sequence number, validates against the schema, writes atomically (O_NOFOLLOW + flock + tempfile+rename), and appends to `events.jsonl`.
 3. **Update `state.current_*`** after each activity: advance `current_phase` at a boundary, set `current_activity`, append the recorded id to `completed_activities[]`. Read-merge-write through `bin/_journal_atomic.py` (`acquire_lock(run.yaml.lock)` + atomic write) — never a bare overwrite.
-4. **Terminal transition** when the command ends: `state.status` → `completed` (verdict PASS / action succeeded), `blocked` with `blocked_reason` (verdict FAIL or session ended mid-workflow), `failed`, or `cancelled`; then re-emit the `workflow-run` artifact with the final status.
-5. **SessionEnd** (`hooks/scripts/session-end-state.sh`, not this skill): appends a `session_end` event to each active run's `events.jsonl` and prints `flow: N active FlowRun(s) persisted` — it does not mutate `run.yaml`; status changes are the user's decision via `/flow:resume`.
+4. **Terminal transition** when the command ends: `state.status` → `completed` (verdict PASS / action succeeded), `blocked` with `blocked_reason` (verdict FAIL or session ended mid-workflow), or `cancelled`; then re-emit the `workflow-run` artifact with the final status.
+5. **SessionEnd** is the hook's, not this skill's: it never changes `run.yaml` (`references/run-state-templates.md`).
 
 ## Rules
 
@@ -60,13 +55,3 @@ If it exits non-zero, create no run: say why — exit 1 is a refused symlink, ex
 - Never mark `state.status: completed` with an empty `completed_activities[]`.
 - Readers of `events.jsonl` MUST skip un-parseable trailing lines (atomic at write, tolerant at read).
 - Never auto-resume a `blocked` run without surfacing `blocked_reason` first.
-
-## Reuse map
-
-- `plugins/flow/skills/autonomous-workflow/SKILL.md` — phase structure source of truth; this skill materializes its phase boundaries.
-- `plugins/flow/bin/flow-record-activity.sh` — atomic activity writer.
-- `plugins/flow/bin/flow-mkdir.sh` — creates the run directory, never through a symlink.
-- `plugins/flow/bin/_journal_atomic.py` — `acquire_lock`, `_atomic_write` for run.yaml updates.
-- `plugins/flow/schemas/v1/run.schema.json`, `activity.schema.json` — document schemas.
-- `plugins/flow/references/decision-journal-schema.md` — `workflow-run` and `run-state-transition` artifact rows.
-- `plugins/flow/references/flow-runtime-state.md` — `.flow/` layout, gitignore policy, resumability.

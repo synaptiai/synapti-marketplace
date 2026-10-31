@@ -5,7 +5,7 @@ metadata:
   id: release
   command: /flow:release
   version: 1
-  description: Create a release — bump version, generate changelog, tag, push, require AskUserQuestion.
+  description: Create a release in two runs — open a release pull request that bumps the version files and changelog; after it merges, tag the merge commit and publish the GitHub release.
 
 inputs:
   release_type:
@@ -29,42 +29,59 @@ phases:
       - id: detect_current_version
         type: bash
         evidence: current_version
+      - id: detect_release_run
+        type: bash
+        evidence: release_run
       - id: gather_unreleased_commits
         type: bash
         evidence: commit_list
 
+  # First run (RELEASE_RUN=pr).
   - id: bump
     type: mixed
     activities:
       - id: compute_next_version
         type: bash
         evidence: next_version
-      - id: update_plugin_json
+      - id: bump_version_files
         type: bash
-        evidence: plugin_json_diff
-      - id: update_marketplace_json
-        type: bash
-        evidence: marketplace_json_diff
+        evidence: version_files_diff
       - id: generate_changelog
         type: bash
         evidence: changelog_diff
 
-  - id: confirm
+  - id: release_pr
+    type: mixed
+    activities:
+      - id: create_release_branch
+        type: bash
+        evidence: release_branch
+      - id: commit_bump
+        type: bash
+        evidence: bump_commit_sha
+      - id: push_release_branch
+        type: bash
+        evidence: push_result
+      - id: open_release_pr
+        type: external
+        evidence: release_pr_url
+
+  # Second run (RELEASE_RUN=tag), after the release pull request is merged.
+  - id: tag
     type: mixed
     activities:
       - id: ask_user_to_release
         type: external
         evidence: user_confirmation
-
-  - id: tag
-    type: mixed
-    activities:
-      - id: create_tag
+      - id: tag_after_merge
         type: bash
         evidence: tag_sha
       - id: push_tag
-        type: bash
+        type: external
         evidence: push_result
+      - id: create_github_release
+        type: external
+        evidence: release_url
       - id: workflow_run_terminal
         type: skill
         skill: run-state-management
@@ -74,12 +91,15 @@ completion_gate:
   documented_requirements:
     - version_bumped_consistently
     - changelog_generated
+    - release_pr_merged
     - user_confirmed
     - tag_pushed
+    - github_release_created
 
 tier_classification:
   file_edits: autonomous
   commits: journal
   push: journal
+  pr_create: journal
   tag_push: confirm
   release: confirm

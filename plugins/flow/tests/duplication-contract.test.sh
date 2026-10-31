@@ -443,3 +443,35 @@ while [ "$DC_FR_I" -le "${DC_FR_N:-0}" ]; do
 
   DC_FR_I=$((DC_FR_I + 1))
 done
+
+# The blast-radius fence is code: it lists the contract files the branch
+# changed against the default branch. Run it in a scratch repository whose
+# branch changes one contract file and one ordinary file. A base written as a
+# placeholder (`<base>`) is read by the shell as a redirection from a file
+# named "base", so git never runs and no contract file is named.
+_flow_test_begin "code-reviewer: the blast-radius fence names the contract files the branch changed"
+DC_BR="$DC_FR_DIR/blast"
+mkdir -p "$DC_BR/repo" "$DC_BR/stub" "$DC_BR/home"
+awk '/^```bash$/{on=1;buf="";next} on&&/^```$/{if (buf ~ /flow-contract-files/) {printf "%s", buf; exit} on=0; next} on{buf=buf $0 "\n"}' \
+  "$REVIEWER" > "$DC_BR/fence.sh"
+assert_contains "flow-contract-files.sh" "$(cat "$DC_BR/fence.sh")" "the fence was extracted"
+# gh is not reachable: the fence falls back to main as the default branch.
+printf '#!/bin/sh\nexit 1\n' > "$DC_BR/stub/gh"
+chmod +x "$DC_BR/stub/gh"
+(
+  cd "$DC_BR/repo" &&
+  git init -q &&
+  git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m base &&
+  git update-ref refs/remotes/origin/main HEAD &&
+  git checkout -q -b feature &&
+  mkdir api &&
+  printf 'type Query { a: Int }\n' > api/schema.graphql &&
+  printf 'notes\n' > notes.txt &&
+  git add api/schema.graphql notes.txt &&
+  git -c user.name=t -c user.email=t@example.com commit -q -m change
+) >/dev/null 2>&1
+DC_BR_OUT=$(cd "$DC_BR/repo" && PATH="$DC_BR/stub:$PATH" HOME="$DC_BR/home" \
+  CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugins/flow" bash "$DC_BR/fence.sh" 2>&1)
+assert_contains "CONTRACT_FILE=api/schema.graphql|graphql" "$DC_BR_OUT" "the changed GraphQL schema is named"
+assert_not_contains "notes.txt" "$DC_BR_OUT" "an ordinary file is not"
+assert_not_contains "No such file" "$DC_BR_OUT" "and the fence reads no file named by a placeholder"

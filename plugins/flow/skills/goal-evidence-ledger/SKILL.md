@@ -15,7 +15,7 @@ Iron law: no AC transitions to `pass` without a FlowEvidence sidecar whose `prov
 ## Inputs
 
 1. **Evidence id** — `evidence-<AC.id>-<descriptor>-<turn>`; lowercase, digits, `_-`.
-2. **Evidence type** — one of `evidence.schema.json`'s enum: command_result, test_result, lint_result, runtime_smoke_result, visual_result, git_diff, holdout_validation, verdict, human_approval, review_comment_snapshot, ci_status, llm_judge_report, artifact_check, path_boundary_check.
+2. **Evidence type** — one of `evidence.schema.json`'s enum: command_result, test_result, lint_result, typecheck_result, runtime_smoke_result, visual_result, git_diff, holdout_validation, verdict, human_approval, review_comment_snapshot, ci_status, llm_judge_report, artifact_check, path_boundary_check.
 3. **Proves** — AC ids this evidence supports.
 4. Optional: `command`, `exit_code`, raw output path, `limitations`, `negative_cases`.
 
@@ -68,7 +68,7 @@ The schema rejects a `command_result` without `limitations` at write time.
 bin/flow-record-evidence.sh --run-id <run-id> --evidence-file <composed.yaml> [--raw-output <stdout-capture>]
 ```
 
-The helper writes atomically (tempfile + rename via `_journal_atomic.py`), refuses symlinked targets and lockfiles, validates the schema when `jsonschema` is installed, and copies the raw output next to the sidecar, setting the sidecar's `output_ref` to the copy's name; it refuses a sidecar whose `output_ref` names another file, and an id already recorded (a correction is a new id). It copies the raw output whole and synced before it writes the sidecar, so a refused or short copy leaves neither, and a sidecar that cannot be written takes its copy away again; once the sidecar is written, the copy stays; of two overlapping records of one id, the second is refused (exit 2). Surface any non-zero exit with its stderr: exit 1 is the arguments or the evidence (fix them and record again), exit 2 the repository, the run, an existing record or the system (too many open files, an I/O error).
+The helper writes atomically and copies the raw output beside the sidecar; it refuses symlinked targets, a sidecar whose `output_ref` names another file, and an id already recorded (a correction is a new id). What it guarantees: `references/goal-evidence-ledger.md`. Surface any non-zero exit with its stderr: exit 1 is the arguments or the evidence (fix them and record again), exit 2 the repository, the run, an existing record or the system (too many open files, an I/O error).
 
 ### Step 4: Journal
 
@@ -86,8 +86,3 @@ The caller updates the AC in `.flow/goals/<id>.goal.yaml`: `status: evidence_col
 - One run proving two ACs is one sidecar with `proves: [AC1, AC2]`.
 - Capture evidence before the verdict; never after the goal is `achieved`.
 - Never write a sidecar with `echo >`; the helper is the only writer.
-
-## References
-
-- `plugins/flow/skills/evidence-based-development/SKILL.md` — the ASSERTION/EVIDENCE/VERIFIED discipline this ledger materializes.
-- `plugins/flow/references/evidence-bundle-format.md` — the bundle layout the judge consumes.

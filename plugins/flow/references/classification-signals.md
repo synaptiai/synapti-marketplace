@@ -13,7 +13,8 @@ Complete reference for the change-classification skill's signal evaluation.
 
 | Pattern | Action | Rationale |
 |---------|--------|-----------|
-| `.env`, `.env.*` | BLOCK | Environment secrets |
+| `.env`, `.env.<environment>` (`.env.local`, `.env.production`, ...) | BLOCK | Environment secrets |
+| `.env.example`, `.env.sample`, `.env.template` | BLOCK when a value looks like a real secret; otherwise classify as usual | Committable templates, once each value is a placeholder. A value looks real when it is neither empty nor a placeholder (`changeme`, `your-key-here`, `<...>`, `xxx`, all zeros): a known key prefix (`sk-`, `sk_live_`, `sk_test_`, `ghp_`, `github_pat_`, `glpat-`, `AKIA`, `AIza`, `xox`), a value starting `-----BEGIN` or a private-key block, a hex string of 32 or more characters holding both a digit and a letter (upper or lower case), or a string of 20 or more letters and digits that mixes upper case, lower case and digits. Replace the value with a placeholder and the template commits |
 | `credentials*`, `*secret*`, `*password*` | BLOCK | Sensitive data |
 | `*.pem`, `*.key`, `*.p12` | BLOCK | Cryptographic keys |
 | `id_rsa*`, `*.pub` (SSH keys) | BLOCK | SSH credentials |
@@ -24,33 +25,34 @@ Complete reference for the change-classification skill's signal evaluation.
 
 ## Primary Signals
 
-| Signal | Weight | Detection Method |
-|--------|--------|-----------------|
-| File in branch diff | 0.9 | `git diff --name-only $DEFAULT_BRANCH...HEAD` includes file |
-| File matches issue title keywords | 0.8 | Tokenize issue title, match against file path components |
-| File matches issue body keywords | 0.7 | Tokenize issue body, match against file path |
-| File referenced in active task | 0.9 | TaskList descriptions mention file path |
-| File in same module as task target | 0.7 | Same top-level directory as task files |
+| Signal | Detection Method |
+|--------|-----------------|
+| File in branch diff | `git diff --name-only $DEFAULT_BRANCH...HEAD` includes file |
+| File matches issue title keywords | Tokenize issue title, match against file path components |
+| File matches issue body keywords | Tokenize issue body, match against file path |
+| File referenced in active task | TaskList descriptions mention file path |
+| File in same module as task target | Same top-level directory as task files |
 
 ## Secondary Signals
 
-| Signal | Weight | Detection Method |
-|--------|--------|-----------------|
-| Sibling of in-context file | 0.5 | Same parent directory |
-| Test file for changed module | 0.6 | Naming convention: `foo.rb` ↔ `foo_test.rb`, `foo.spec.ts` |
-| Import/require of changed file | 0.5 | Grep for import statements |
-| Config in project root | 0.3 | Dotfiles, manifest changes |
-| README/docs for changed module | 0.4 | Documentation in same package |
+| Signal | Detection Method |
+|--------|-----------------|
+| Sibling of in-context file | Same parent directory |
+| Test file for changed module | Naming convention: `foo.rb` ↔ `foo_test.rb`, `foo.spec.ts` |
+| Import/require of changed file | Grep for import statements |
+| Config in project root | Dotfiles, manifest changes |
+| README/docs for changed module | Documentation in same package |
 
-## Classification Thresholds
+## Classification
 
-| Total Signal Score | Classification |
-|-------------------|---------------|
-| >= 0.7 | **in-context** |
-| 0.3 - 0.69 | **uncertain** — present to user |
-| < 0.3 | **out-of-context** — flag prominently |
+| Signals present | Classification |
+|-----------------|---------------|
+| Any primary signal | **in-context** |
+| Secondary signals only | **uncertain** — present to user; a sibling or test companion of an in-context file leans in-context |
+| Unrelated directory, no link to the issue or tasks | **out-of-context** — flag prominently |
+| None of the above | **uncertain** (default) |
 
-**Boy Scout Exception**: Changes that pass the proximity test (see `code-quality-principles`) in files already classified as in-context are always in-context, regardless of signal score. They use the `improve` commit type.
+**Boy Scout Exception**: Changes that pass the proximity test (see `code-quality-principles`) in files already classified as in-context are always in-context, regardless of other signals. They use the `improve` commit type.
 
 ## First-Touch Indicators
 

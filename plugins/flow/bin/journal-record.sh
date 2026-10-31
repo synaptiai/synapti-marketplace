@@ -12,10 +12,15 @@
 #
 # Usage:
 #   journal-record.sh \
-#     --issue <N> \
+#     (--issue <N> | --session) \
 #     --type <artifact-type> \
 #     [--metadata key=value ...] \
 #     [--metadata key=value ...]
+#
+# --session records in `session-{YYYY-MM-DD}.md` instead of `issue-{N}.md`:
+# the journal for work with no issue number, dated by the local calendar day
+# (the day log-commits.sh names the session trail by). Its manifest carries
+# `session: YYYY-MM-DD` where an issue journal carries `issue: N`.
 #
 # Examples:
 #   journal-record.sh --issue 142 --type specification \
@@ -41,7 +46,8 @@
 #
 # Exits:
 #   0 — artifact recorded
-#   1 — missing required argument or invalid metadata
+#   1 — missing required argument, both --issue and --session, or invalid
+#       metadata
 #   2 — infrastructure error (settings unreadable, disk full, symlink
 #       rejected — including a symlinked journal directory, etc.)
 
@@ -70,12 +76,14 @@ if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH
 export PYTHONSAFEPATH=1
 
 ISSUE=""
+SESSION=0
 TYPE=""
 METADATA=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --issue)    ISSUE="$2"; shift 2 ;;
+    --session)  SESSION=1; shift ;;
     --type)     TYPE="$2"; shift 2 ;;
     --metadata)
       # Reject newline/CR in metadata pairs upfront. A value containing a
@@ -100,11 +108,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -z "$ISSUE" ] && { echo "journal-record.sh: --issue is required" >&2; exit 1; }
+if [ -n "$ISSUE" ] && [ "$SESSION" -eq 1 ]; then
+  echo "journal-record.sh: --issue and --session are mutually exclusive" >&2
+  exit 1
+fi
+[ -z "$ISSUE" ] && [ "$SESSION" -eq 0 ] && { echo "journal-record.sh: --issue is required (or --session for work with no issue)" >&2; exit 1; }
 [ -z "$TYPE" ]  && { echo "journal-record.sh: --type is required" >&2; exit 1; }
 
 # Validate issue is an integer
-if ! echo "$ISSUE" | grep -qE '^[0-9]+$'; then
+if [ "$SESSION" -eq 0 ] && ! echo "$ISSUE" | grep -qE '^[0-9]+$'; then
   echo "journal-record.sh: --issue must be a positive integer (got: $ISSUE)" >&2
   exit 1
 fi
@@ -123,7 +135,13 @@ USER_JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh" --user-owned 2>/dev/null) || USE
 
 # The directory is created in Python, through ensure_repo_dir(): mkdir -p
 # would follow a symlinked journal directory, or one above it.
-JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"
+if [ "$SESSION" -eq 1 ]; then
+  SESSION_DATE=$(date +%Y-%m-%d)
+  JOURNAL="$JOURNAL_DIR/session-$SESSION_DATE.md"
+else
+  SESSION_DATE=""
+  JOURNAL="$JOURNAL_DIR/issue-$ISSUE.md"
+fi
 
 # Hand off to Python for YAML frontmatter parsing + atomic write.
 # PyYAML is checked at the top — if absent, fail clearly so the caller can
@@ -149,7 +167,7 @@ LOCKFILE="$JOURNAL.lock"
 # without triplicating ~180 lines of security-sensitive code.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$SCRIPT_DIR" "$JOURNAL" "$LOCKFILE" "$ISSUE" "$TYPE" "$USER_JOURNAL_DIR" "${METADATA[@]:-}" <<'PYTHON'
+python3 - "$SCRIPT_DIR" "$JOURNAL" "$LOCKFILE" "$ISSUE" "$SESSION_DATE" "$TYPE" "$USER_JOURNAL_DIR" "${METADATA[@]:-}" <<'PYTHON'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -171,16 +189,19 @@ from _journal_atomic import (
 
 journal = sys.argv[2]
 lockfile = sys.argv[3]
-issue = int(sys.argv[4])
-artifact_type = sys.argv[5]
-register_user_owned(sys.argv[6])
-metadata_args = sys.argv[7:]
+# Exactly one of the two is set: an issue number, or the session date.
+session = sys.argv[5] or None
+issue = None if session else int(sys.argv[4])
+artifact_type = sys.argv[6]
+register_user_owned(sys.argv[7])
+metadata_args = sys.argv[8:]
 
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 try:
     ensure_repo_dir(os.path.dirname(journal), create=True)
-    record_artifact(journal, lockfile, issue, artifact_type, metadata_args, now)
+    record_artifact(journal, lockfile, issue, artifact_type, metadata_args, now,
+                    session=session)
 except JournalAtomicError as e:
     print(f"journal-record.sh: {e}", file=sys.stderr)
     if e.refuse:

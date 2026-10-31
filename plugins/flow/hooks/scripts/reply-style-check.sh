@@ -44,6 +44,10 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Inside a judge's session (bin/flow-judge.sh runs the judge with
+# CLAUDE_HOOK_GOAL_JUDGE_MODE=true, no tools, in a per-user directory) this
+# hook has nothing to do: the session is not the user's work.
+if [ "${CLAUDE_HOOK_GOAL_JUDGE_MODE:-}" = "true" ]; then exit 0; fi
 export PYTHONSAFEPATH=1
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -43,6 +43,29 @@ assert_contains "FlowRun terminal transition" "$CONTENT" "terminal-transition st
 assert_contains "status=completed" "$CONTENT" "updates workflow-run artifact to completed"
 assert_contains "cancelled" "$CONTENT" "cancels the run on aborted merge (not left resumable)"
 
+# The merge asks its own question before the merge command runs. Line
+# numbers within Phase 3: the first AskUserQuestion, the sentence that gates
+# the merge on the answer, and the gh pr merge line the model runs.
+_flow_test_begin "merge.md asks with AskUserQuestion before the merge command runs"
+_mrg_line() { awk -v pat="$1" '/^## Phase 3/ { p = 1 } /^## Phase 4/ { p = 0 } p && $0 ~ pat { print NR; exit }' "$MERGE_MD"; }
+ASK_LINE=$(_mrg_line 'AskUserQuestion')
+GATE_LINE=$(_mrg_line 'Only after the user confirms')
+RUN_LINE=$(_mrg_line '^gh pr merge ')
+if [ -n "$ASK_LINE" ] && [ -n "$GATE_LINE" ] && [ -n "$RUN_LINE" ] \
+   && [ "$ASK_LINE" -lt "$GATE_LINE" ] && [ "$GATE_LINE" -lt "$RUN_LINE" ]; then
+  _flow_assert_pass "Phase 3: AskUserQuestion (line $ASK_LINE), then the confirmed-only gate (line $GATE_LINE), then gh pr merge (line $RUN_LINE)"
+else
+  _flow_assert_fail "Phase 3 must ask with AskUserQuestion, then run gh pr merge only after the user confirms (ask='$ASK_LINE' gate='$GATE_LINE' merge='$RUN_LINE')"
+fi
+assert_not_contains "Do not ask a yes/no question" "$CONTENT" "no instruction to skip the question"
+assert_not_contains "does not ask a separate yes/no question" "$CONTENT" "no claim that the command does not ask"
+if grep -qE 'gh pr merge` \| 3 \| \*\*Confirm\*\* — asks via `AskUserQuestion`' <<<"$CONTENT"; then
+  _flow_assert_pass "the Tier table names the command's own question"
+else
+  _flow_assert_fail "the Tier table names the command's own question: no Tier table row matches /"'gh pr merge` \| 3 \| \*\*Confirm\*\* — asks via `AskUserQuestion`'"/"
+fi
+assert_contains "ask_user_to_merge" "$(cat "$PLUGIN_DIR/workflows/merge-pr.workflow.yaml")" "the merge-pr workflow keeps its confirm activity"
+
 # --- functional: extract entry block, run under controlled settings
 # _extract_run_block <out file> — the FLOW_RUN_BLOCK block, through assert_block (lib/assert.sh),
 # which fails the test when the markers do not pair.

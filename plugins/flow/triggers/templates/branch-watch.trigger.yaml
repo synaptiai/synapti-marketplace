@@ -1,0 +1,69 @@
+# Template: branch watch
+#
+# Generates a user-invoked /loop prompt that keeps the current branch up to
+# date with the default branch: merge it in (never rebase, never force-push),
+# run the quality checks, fix failures the merge introduced, commit and push.
+# /flow:watch branch fills ${BRANCH} (the branch name), ${BRANCH_SLUG} (the
+# name made into an id: lower case, every run of other characters a '-'),
+# ${DEFAULT_BRANCH}, ${REPO} and ${NOW}, writes the result to
+# .flow/triggers/branch-<slug>-watch.trigger.yaml, and writes the loop prompt
+# from branch-watch.loop.md to .claude/flow-loop-branch-<slug>-watch.md.
+#
+# Plugin CANNOT invoke /loop. User invokes it manually using the generated
+# prompt file.
+
+apiVersion: flow.synapti.ai/v1
+kind: FlowTrigger
+
+metadata:
+  id: branch-${BRANCH_SLUG}-watch
+  name: 'Watch branch ${BRANCH}'
+  enabled: true
+  created_at: '${NOW}'
+
+trigger:
+  type: loop_prompt
+  suggested_interval: '1h'
+  jitter: '10m'
+  user_starts_loop_manually: true
+
+target:
+  # The keep-green step: merge the default branch in and resolve conflicts.
+  # The loop prompt runs it through /flow:run trigger branch-${BRANCH_SLUG}-watch.
+  command: '/flow:resolve ${BRANCH}'
+
+context:
+  repo: '${REPO}'
+  branch: '${BRANCH}'
+  default_branch: '${DEFAULT_BRANCH}'
+
+policy:
+  autonomy: journal
+  # update_from_default_branch is a merge commit of the default branch INTO
+  # this branch. `merge` (merging a pull request) stays forbidden.
+  allowed_actions:
+    - read_repo
+    - read_ci
+    - update_from_default_branch
+    - run_quality_checks
+    - edit_files
+    - commit
+    - push
+  forbidden_actions:
+    - merge
+    - release
+    - delete_branch
+    - force_push
+    - rebase
+    - create_trigger
+
+concurrency:
+  policy: skip_if_running
+
+stop_conditions:
+  - 'branch_merged_or_deleted == true'
+
+recursion_policy:
+  triggered_runs_may_create_triggers: false
+  triggered_runs_may_modify_triggers: false
+  triggered_runs_may_enable_triggers: false

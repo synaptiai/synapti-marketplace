@@ -97,7 +97,7 @@ before every inline ```` ```bash ```` fence, whatever their line numbers. Both
 `/flow:review` and `/flow:address` put their `gh pr checkout` in an inline
 fence and say so in as many words, which makes every `!` fence in them author
 context — the working tree is still the user's own. Classifying by line number
-instead put the post-checkout form in three `!` fences, and in a bare checkout
+would put the post-checkout form in those `!` fences, and in a bare checkout
 of flow with no marketplace install that resolves to nothing and blocks the
 run, which is the case the author-context form exists to serve.
 
@@ -135,12 +135,11 @@ Three details are load-bearing:
   in-repository" — and a resolver run from `$HOME` then refused the install
   sitting under it.
 - `__x=1` when the repository root resolves but cannot be entered, and the
-  `[ "$__x" = 1 ]||{ ... }` that then produces no candidates at all. This was
-  first written as `__t=/`, relying on the skip pattern to match every absolute
-  path — twice wrongly. Unstripped it read `//*`, which needs two leading
-  slashes and matched nothing. Stripped to `""/*` it matched everything on bash
-  3.2 and nothing on the bash the Linux runner ships, so the same source was
-  fail-closed on one platform and fail-open on the other. A flag has no such
+  `[ "$__x" = 1 ]||{ ... }` that then produces no candidates at all. A sentinel
+  such as `__t=/` would rely on the skip pattern matching every absolute path,
+  and that pattern matches differently on bash 3.2 and on the bash the Linux
+  runner ships, so one source would fail closed on one platform and open on
+  the other. A flag has no such
   reading: when it is set the candidate list is never generated, so nothing can
   be selected.
 

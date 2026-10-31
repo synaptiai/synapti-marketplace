@@ -132,6 +132,8 @@ See [gate-configuration.md](references/gate-configuration.md) for full gate deta
 | `git` | branch, commit and diff operations | flow does not run |
 | `gh` (GitHub CLI, authenticated) | issues, pull requests, reviews, merges | any command that touches GitHub fails |
 | `jq` | reading settings and GitHub JSON | commands fall back to a narrower path or stop |
+| `timeout` or `gtimeout` (GNU coreutils; stock macOS has neither: `brew install coreutils`) | the time limit on the verdict judge in `/flow:start` Phase 4, the goal judge in `/flow:goal evaluate`, and the Stop hook's evaluator-loop judge | no judge runs without a time limit: the verdict and goal judges report that they could not start (exit 4), and the evaluator-loop Stop hook approves with a message naming the install. `/flow:setup` checks for it |
+| `claude` (the Claude Code CLI) on `PATH` | running those judges with every tool disallowed | the judges report that they could not start (exit 4) |
 | `python3` 3.12 to 3.14 with **PyYAML** | the decision journal, FlowRun state, FlowGoal contracts and evidence bundles | those writes are skipped; commands still run, but the history they would have left is lost |
 | `python3` with `jsonschema` | strict validation of evidence and skill input against `schemas/` | validation falls back to a narrower structural check |
 | `jscpd` (optional) | the duplication scan in review and in `/flow:start`'s per-task gate | the scan reports that it did not run and prints `npm install -g jscpd@5.3.1`; flow never installs it for you |
@@ -241,7 +243,7 @@ COMMANDS (23)
   Runtime / admin (6) — inspect & debug the layer Flow manages for you:
   └── goal, workflow, trigger, run, resume, watch
 
-HOOKS (16 scripts; 14 registered in hooks/hooks.json, the other two run from flow-goal-stop)
+HOOKS (17 scripts; 15 registered in hooks/hooks.json, the other two run from flow-goal-stop)
   ├── Safety (PreToolUse): block-force-push, block-destructive, block-secrets,
   │                        block-unchecked-merge (refuses `gh pr merge` while checks are
   │                        queued, running or failed), ask-issue-create (asks before
@@ -261,6 +263,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── cascade-resolve.sh    — reads one setting through the settings cascade (see Configuration)
   ├── flow-migrate-settings.sh — upgrades a settings file that still uses a deprecated key (dry-run unless --apply)
   ├── flow-load-skills.sh   — inlines a command's Required Skills (ambient bodies, dispatched contracts)
+  ├── flow-skill-manifests.sh — regenerates the tables in references/skill-manifests.md (--write)
   └── validate-skill-input.sh — validates skill inputs against the JSON Schemas under schemas/
   Review
   ├── flow-finding-route.sh — routes consolidated findings by confidence and review mode, and builds the marker rows
@@ -269,11 +272,14 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-dep-diff.sh      — lists dependencies added, bumped or removed between two commits, from the manifests, offline
   ├── flow-clone-scan.sh    — lists duplicated blocks a branch introduced, using jscpd against the merge base
   ├── flow-pr-linked-issue.sh — prints the issue GitHub lists as closed by a pull request
-  └── flow-check-resolution-body.sh — refuses a resolution comment the merge finding-ledger gate would misread
+  ├── flow-check-resolution-body.sh — refuses a resolution comment the merge finding-ledger gate would misread
+  └── flow-pr-feedback.sh   — prints a pull request's inline review comments, reviews and conversation comments, every page, one JSON object per line
   Goals, runs and the quality ledger
   ├── flow-active-goal.sh   — finds the FlowGoal for the current branch and prints its status, criteria or JSON
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
+  ├── flow-goal-judge-run.sh — runs the goal judge for /flow:goal evaluate, as the Stop hook runs it
+  ├── flow-trigger-schema-check.sh — validates a FlowTrigger YAML against the plugin's trigger schema
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
   ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink (exit 2), or says the check could not run (exit 3); needs python3 but not PyYAML
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
@@ -327,15 +333,15 @@ Two loading modes, decided from each skill's frontmatter:
 - **Ambient** (no `context: fork`, no `agent:`) — the whole body is inlined. These are stance skills that apply throughout (`llm-operator-principles`, `evidence-based-development`, `autonomous-workflow`, `code-quality-principles`).
 - **Dispatched** (`context: fork` or `agent:`) — only the skill's `## Contract` section is inlined (its first H2, at most 120 words: iron law, invoking phase, return shape, permitted skips). The body runs in full when the command invokes `Skill(<name>)`.
 
-Rules. The plugin's test suite enforces rules 1 to 3; promotion refuses a learned skill whose body is over 600 words:
+Rules. The plugin's test suite enforces rules 1 to 3 and the word limit in rule 4; promotion also refuses a learned skill whose body is over 600 words:
 
 1. Every command either has `## Required Skills` bullets plus the loader block, or an explicit `_None — {reason}_` marker and no loader block.
 2. The loader block's names equal the bullet list exactly.
 3. Every dispatched skill has `## Contract` as its first H2, at most 120 words.
-4. Every `Skill(X)` invocation in a command body names one of its Required Skills. Skill bodies are kept to about 600 words; long tables live under `references/` and are linked.
+4. Every `Skill(X)` invocation in a command body names one of its Required Skills. Every skill body is at most 600 words, frontmatter excluded; long tables live under `references/` and are linked.
 5. Read-only / dispatcher commands (`status`, `learn`, `explain`, `flow`) use the `_None_` marker.
 
-`references/skill-manifests.md` lists what each command loads and how many words that costs.
+`references/skill-manifests.md` lists what each command loads and how many words that costs. `bin/flow-skill-manifests.sh --write` regenerates its tables, and the test suite fails when they are out of date.
 
 ## Canonical Reference Documents
 
@@ -501,7 +507,7 @@ Flow finds every per-user file under your home: the two defaults above, the lear
 
 The same rule covers the other ways to move those files. `CLAUDE_TRANSCRIPT_DIR` and `CLAUDE_CONFIG_DIR` count for `/flow:learn` only when they pass the same checks as `FLOW_STATE_DIR`. `learning.proposalDir` and `learning.transcriptDir` are read from your user settings file and the plugin default only, and must be absolute paths (or start with `~`). A value a repository supplies is not used. `/flow:learn` prints a `WARN=` line when it cannot read these settings or a value is not absolute; the SessionEnd hook drops such a value silently.
 
-Example project settings in `.claude/settings.flow.json`:
+Example project settings in `.claude/settings.flow.json` (`tiers` is recorded for reference; no command or hook reads it):
 
 ```json
 {
@@ -597,7 +603,7 @@ what each one does are in
 | Interaction | ~40 decision points | Autonomous with journal |
 | Learning | None across sessions | Decision journal + skill proposals |
 | Review | Sequential agents | Parallel + adversarial (team option) |
-| Safety | Interactive gates | Hook-enforced tiers |
+| Safety | Interactive gates | Command-level tiers, hook-enforced guards |
 | Knowledge | Locked in commands | Composable, reusable skills |
 
 ## License

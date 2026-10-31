@@ -9,7 +9,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: **every issue gets the four elements (non-goals, failure modes, interface contracts, risk map) in the journal before PLAN.** Invoked with issue context, journal path, and invocation reason (Per-invoker scope below). Returns the `## Captured Specification` payload from [`references/specification-journal-format.md`](../../references/specification-journal-format.md) after writing and re-reading `.decisions/issue-{N}.md`. Permitted skips: elements outside the invoker's scope row; the risk map when `specFirst.riskMap` is `false` (written as `disabled — specFirst.riskMap=false`); elements the journal already holds for an unchanged issue.
+Iron law: **every issue gets the four elements (non-goals, failure modes, interface contracts, risk map) in the journal before PLAN.** Invoked with issue context, journal path, and invocation reason (Per-invoker scope below). Returns the `## Captured Specification` payload from [`references/specification-journal-format.md`](../../references/specification-journal-format.md) after writing and re-reading the journal file named in Inputs. Permitted skips: elements outside the invoker's scope row; the risk map when `specFirst.riskMap` is `false` (written as `disabled — specFirst.riskMap=false`); elements the journal already holds for an unchanged issue.
 
 ## Inputs
 
@@ -52,9 +52,7 @@ Return the `## Captured Specification` payload; consumers cite subsections as `N
 
 ## Anti-patterns
 
-- "The acceptance criteria are enough": criteria scope WHAT; the elements scope IS NOT, FAILS HOW, WHICH SCHEMAS, WRONG WHERE.
-- "I'll capture during PLAN": PLAN's fence is built from the specification; the Stranger Test fails.
-- "The failure-mode categories cover risk": no. Timeouts, partial failures, invalid input, missing context are infrastructure error paths agents already over-test. The risk map is about the core logic being subtly wrong.
+The reasons the acceptance criteria alone, a capture deferred to PLAN, or the failure-mode categories do not stand in for the specification: `references/specification-journal-format.md`.
 
 ## Verification gates
 

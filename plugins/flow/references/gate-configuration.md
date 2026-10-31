@@ -28,24 +28,16 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 }
 ```
 
-### Values
+The schema accepts `autonomous`, `journal` or `confirm` for each key. No flow command or hook reads these values: what flow does for each action is set by the command that runs it, as below, and changing a value does not change it. Nothing applies them to a Bash command run outside flow's commands.
 
-| Value | Behavior |
-|-------|----------|
-| `autonomous` | Execute without any user interaction |
-| `journal` | Execute and log to decision journal |
-| `confirm` | Require explicit human confirmation via AskUserQuestion |
-
-### Actions
-
-| Key | Default | Action |
-|-----|---------|--------|
-| `push` | journal | `git push` to remote |
-| `prCreate` | journal | `gh pr create` |
-| `issueAssign` | journal | `gh issue edit --add-assignee` |
-| `issueCreate` | journal | `gh issue create` |
-| `merge` | confirm | `gh pr merge` |
-| `release` | confirm | `gh release create` |
+| Key | Default | Action | What flow does |
+|-----|---------|--------|----------------|
+| `push` | journal | `git push` to remote | `/flow:pr`, `/flow:address`, `/flow:release`, the `/flow:watch branch` loop and `bin/promote-proposal.sh` (run for `/flow:learn` proposals) push without asking |
+| `prCreate` | journal | `gh pr create` | `/flow:pr`, `/flow:release` and `bin/promote-proposal.sh` (a draft pull request) open the pull request without asking |
+| `issueAssign` | journal | `gh issue edit --add-assignee` | `/flow:start` assigns the issue without asking |
+| `issueCreate` | journal | `gh issue create` | `/flow:issue` creates the issue without asking; `/flow:review` and `/flow:address` file a follow-up issue only in `minimalScope` mode, after asking via `AskUserQuestion`; while a FlowGoal is active, `ask-issue-create.sh` asks first (below) |
+| `merge` | confirm | `gh pr merge` | `/flow:merge` asks via `AskUserQuestion` before it merges, in autonomous mode too |
+| `release` | confirm | `gh release create` | `/flow:release` asks via `AskUserQuestion` before it creates and pushes the tag and creates the GitHub release, in autonomous mode too |
 
 ## Timeout Settings
 
@@ -106,7 +98,7 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 
 ## Quality Gates
 
-Flow enforces ten quality gates across the workflow lifecycle. Gates are structural -- they block progression until satisfied.
+Flow enforces eleven quality gates across the workflow lifecycle. Gates are structural -- they block progression until satisfied.
 
 ### 1. Spec Validation Gate (EXPLORE phase)
 
@@ -159,7 +151,7 @@ Cross-references agent self-review claims against actual file state. Runs inline
 
 ### 8. Finding-Ledger Merge Gate (merge)
 
-Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the markers contain unresolved or escalated items. Previously used "DEFERRED" status; now uses "ESCALATED" to signal that deferral without structured escalation is not permitted.
+Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the markers contain unresolved or escalated items. An item that is not fixed carries the status "ESCALATED": deferral without a structured escalation is not permitted.
 
 **Blocks:** `gh pr merge` / `/flow:merge`
 **Override:** Resolve all findings or complete Proactive Autonomy escalation for each.
@@ -232,7 +224,7 @@ Example: enabling Path A paired-reviewer mode for yourself in this project only:
 
 (Note: `agentTeams: true` also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` set in your shell environment — the env var is the user-side opt-in for the experimental feature.)
 
-**Path A review model (`agentTeamModel`).** Path A dispatches ~20 review agents (paired skeptic/verifier × 5 facets + a challenge round), all of which would otherwise inherit the session model. To avoid running an Opus session's rate across that fan-out, the model is configurable via the top-level `agentTeamModel` key (enum `haiku|sonnet|opus|fable|inherit`, default `sonnet`), resolved through this same cascade. An invalid value is rejected with a WARN and falls back to `sonnet`. Use `inherit` to reproduce the pre-configuration behavior. This is scoped to Path A only — Path B (single-session) agents always inherit the session model.
+**Path A review model (`agentTeamModel`).** Path A dispatches ~20 review agents (paired skeptic/verifier × 5 facets + a challenge round), all of which would otherwise inherit the session model. To avoid running an Opus session's rate across that fan-out, the model is configurable via the top-level `agentTeamModel` key (enum `haiku|sonnet|opus|fable|inherit`, default `sonnet`), resolved through this same cascade. An invalid value is rejected with a WARN and falls back to `sonnet`. Use `inherit` to run Path A agents on the session model. This is scoped to Path A only — Path B (single-session) agents always inherit the session model.
 
 ```json
 // .claude/settings.flow.local.json (gitignored) — pin a higher model for a hard review
@@ -278,4 +270,4 @@ Reviewers will see the change in the PR diff. Anyone can override with their own
 
 ## Hook Override
 
-Hooks cannot be disabled via settings — they are structural safety mechanisms. To modify hook behavior, edit the hook scripts directly in `plugins/flow/hooks/scripts/`.
+Hook scripts always run. A setting changes what a hook does only where this page names it (`testing.taskCompletionGate`, `minimalScope`, `flow.goals.stopHookEnforcement`); to change anything else, edit the script in `plugins/flow/hooks/scripts/`.

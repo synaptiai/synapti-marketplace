@@ -2,8 +2,96 @@
 
 ## Unreleased
 
+flow's commands, skills, agents and the references they load now describe the
+plugin as it behaves (#316). A prompt audit against Claude Opus 5.5 found 120
+places where that text pointed at commands, phases, settings or tasks that do
+not exist, compared against earlier plugin versions, or contradicted another
+file; the fixable ones are corrected and each contradiction was settled by the
+maintainer. Settled decisions that needed code ship with it: both judges run
+with no tools, branches without an issue get a session journal, `/flow:watch`
+gains issue and branch watches, and `/flow:release` bumps version files
+through a release pull request.
+
+### Added
+
+- `journal-append.sh` and `journal-record.sh --session` write the documented
+  `session-YYYY-MM-DD.md` journal on a branch with no issue number; goals
+  created or evaluated without an issue are recorded there.
+- `/flow:watch issue <N>` reports changes to an issue's comments, labels,
+  assignee and state on each loop tick, read-only, until the issue closes.
+  `/flow:watch branch` keeps the current branch green: it merges in the
+  default branch when it moved (no rebase, no force push), runs the quality
+  checks, fixes failures it introduced, and pushes.
+- `/flow:release` bumps the version files it finds (root `package.json`,
+  `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`, and in a
+  marketplace the plugin's `plugin.json`, its marketplace entry and
+  `metadata.version`) and refuses when they disagree. The first run opens a
+  release pull request with the bump and changelog; after it is merged, the
+  second run creates an annotated tag on the merge commit, pushes it and
+  creates the GitHub release. Nothing is pushed to the default branch. Whether
+  a version is released is read from the tag on origin and the GitHub release:
+  a tag on origin with no release asks whether to create the release or skip
+  it and plan the next version (for repositories that tag without GitHub
+  releases), a draft release for the tag stops the run with the commands to
+  publish or delete it, and a tag that exists only in the local clone stops
+  the run with the commands to push or delete it. A version that is not a
+  semantic version is refused, the version files are written all or nothing,
+  and a failed bump, commit or push restores the files, returns to the branch
+  the run started on, and removes the local release branch.
+- `bin/flow-judge.sh` runs the goal judge and the verdict judge through
+  `claude --print --disallowedTools '*'` with the agent file's body as the
+  system prompt. The verdict judge's model is the new `verdict.model` setting
+  (empty means the CLI default) and its time limit `verdict.timeoutSeconds`
+  (default 300); the commands give the Bash tool a longer timeout than the
+  judge's. The judges need `timeout` or `gtimeout` (macOS: `brew install
+  coreutils`); `/flow:setup` reports when neither is installed, and a judge
+  that cannot start says so.
+
 ### Changed
 
+- `/flow:goal evaluate` and the Stop hook give the goal judge the same fenced
+  input, the same instructions and the same model (`flow.goals.judge.model`).
+  The verdict judge's criteria, evidence and holdout output are fenced as
+  untrusted data, and a fence marker inside any fenced content is defused so
+  it cannot close its fence early.
+- The safety-tier references describe what flow does with each tier:
+  `/flow:merge` and `/flow:release` ask with `AskUserQuestion` before they
+  merge, tag or publish, whatever `tiers.merge` and `tiers.release` say, and
+  the commands that push, open a pull request, assign or create an issue run
+  those actions as Tier 2. No command or hook reads the `tiers.*` values, so
+  changing them does not change what flow does, and nothing applies them to
+  Bash commands run outside flow's commands.
+- Fixes in `/flow:address` follow `testing.tddMode`, as in `/flow:start`: a
+  behavior-changing fix starts with a failing reproducing test.
+- `.env.example`, `.env.sample` and `.env.template` are committable; change
+  classification and the security reviewer flag one only when a value in it
+  looks like a real secret. `.env` and `.env.<environment>` stay blocked.
+- Trigger and workflow commands, `/flow:run` and `/flow:status` treat
+  triggers and workflows as on when no setting turns them off, as the plugin
+  defaults have since 3.1.
+- Visual verification fails a viewport on a P1 or P2 finding everywhere it is
+  described.
+- Trigger templates name the work command as their target (`/flow:address`
+  for a PR watch); the generated loop prompt calls `/flow:run trigger <id>`.
+  Before, each template's target was `/flow:run trigger <id>` itself.
+- A cosmetic P3 finding in a file the PR did not touch is fixed in the PR
+  with an `improve:` commit, as `llm-operator-principles` already said; the
+  commands no longer offer listing it under "Known cosmetic notes" instead,
+  and the PR body template drops that section. `minimalScope` still turns
+  such a finding into a follow-up issue.
+- Every shipped skill body is at most 600 words and its Contract at most 120,
+  checked by `flow-load-skills.test.sh` as learned skills already were.
+  Thirteen skills were over; their runnable blocks moved into
+  `bin/flow-goal-judge-run.sh`, `bin/flow-trigger-schema-check.sh` and
+  `bin/flow-pr-feedback.sh`, and their reference detail into files under
+  `references/` that each skill names where the detail is used.
+  `bin/flow-pr-feedback.sh` refuses a PR number that is not a positive whole
+  number.
+- `references/skill-manifests.md` is generated by
+  `bin/flow-skill-manifests.sh --write`, and a test fails when the committed
+  tables differ from its output; the hand-kept word counts were out of date.
+- Example commands in the correctness-eval reference name
+  `claude-sonnet-5-5` and `claude-opus-5-5`.
 - CI runs flow's Linux tests as four jobs of about a quarter of the suite
   each, with a 20-minute limit per job. In one job the suite took 31 to 41
   minutes against a 45-minute limit, and slower runners were cancelled while
@@ -11,6 +99,83 @@
   the suite when `FLOW_TEST_SHARD=K/N` is set: every Nth file, starting with
   file K. A malformed value, or a part with no file, exits 2 and runs nothing.
   macOS still runs the suite in one job.
+
+### Fixed
+
+- `/flow` routes `goal`, `resume`, `run`, `trigger`, `watch` and `workflow`;
+  its verb list named only the other sixteen commands.
+- The goal judge runs in its per-user directory or not at all; when that
+  directory could not be created it ran in `/tmp`, where another user's
+  `.claude/settings.json` or `CLAUDE.md` would load.
+- A `.env.example`, `.env.sample` or `.env.template` holding a value that
+  looks like a real key is blocked, not committed; placeholders still commit.
+  The check also catches long hex strings and the `sk_live_`, `AIza`,
+  `glpat-` and `xoxb-` prefixes.
+- PR feedback collection reads every page of inline comments and reviews,
+  and includes conversation comments; it read the first 30 inline comments.
+- The trigger schema check refuses a symlinked trigger, and long values in
+  its messages are cut short.
+- The `/flow:watch`, `/flow:trigger`, `/flow:workflow`, `/flow:run`,
+  `/flow:resume` and `/flow:goal` pre-flights say a setting could not be read
+  when the settings resolver fails; they reported the feature as turned off.
+- `/flow:start` Phase 4 collects evidence per atomic task; it looped over
+  "Verify:" tasks that Phase 2 forbids creating.
+- `/flow:address` cites Phase 4 step 9 for the resolution comment; it cited a
+  Phase 5 the command does not have. Its PR-body update passes `--repo`.
+- The goal judge agent no longer applies `failAfterStuckTurns`, a setting it
+  is never given; the Stop hook counts stuck turns. The judge agents were
+  dispatched with every tool because `tools: []` does not remove tools from a
+  subagent; they now run through the CLI with all tools disallowed.
+- The Stop hook shows a full "no verdict" message, with `/flow:goal evaluate`
+  as the next step, when the goal judge times out or replies with nothing
+  usable; it showed an empty one.
+- The `/flow:run` pre-flight exited 1 whenever triggers were on.
+- `code-reviewer`'s contract-file listing passed a literal `<base>` to git; two
+  skills' `grep --include="*.{ts,…}"` matched nothing because grep does not
+  expand braces; three skills found the plugin through a path that exists only
+  in the marketplace checkout.
+- Instructions that disagreed with the code: gate counts, the run status
+  `failed` and `current_activity: null` that the run schema rejects, the
+  install name in the Stop-hook reference, the legacy workflow field said to
+  be "removed in v3.1", and the evidence types missing `typecheck_result`.
+- Wording relative to earlier plugin versions ("v2 behavior preserved", "as
+  before", "previously") and capitalised emphasis without a reason are
+  rewritten as the current rule.
+
+### Removed
+
+- The goal judge agent's "Reuse map" section, which pointed a judge with no
+  tools at files: `verdict-judge.md` (parent agent), `goal-evaluator/SKILL.md`
+  (dispatching skill), `schemas/v1/evidence.schema.json`,
+  `references/evidence-bundle-format.md` (its seven per-criterion subsections
+  apply to the PR-final gate and arrive here as sidecar `limitations`) and
+  `references/escalation-format.md`.
+- Revision history from comments inside command code blocks, recorded here:
+  - `learn.md`, journal reader: "This block used to carry its own copy. The
+    copies drifted every review round: this one never gained the O_NONBLOCK
+    that stops a FIFO in the journal directory hanging the read forever, and
+    the comment here claimed the sibling reader 'opens the same way' while the
+    two had already diverged."
+  - `learn.md`, listdir: glob swallowed the OSError from an unreadable
+    directory and reported `DISMISSED_COUNT=0 / STATE=empty`, the same as a
+    project with nothing recorded; "the revision right before this one passed
+    the directory through glob.escape … and the revision before THAT reported
+    a project with no dismissals for a directory that genuinely held
+    journals."
+  - `merge.md`, trust list: "the `$TRUST_REGEX` variable used to appear here
+    was a leftover from an earlier revision and never assigned, producing the
+    empty-parens string 'trusted authors ()' in messages or aborting under
+    `set -u`."
+  - `merge.md`, settings: "That is the defect class this whole change is
+    about"; "No temp file: `rm` is a destructive verb and this repository
+    forbids those inside an inline-bang block, with a test that enforces it";
+    a fallback value "re-opens through the error path exactly the forgery this
+    block was hardened against."
+  - `address.md`, finding ids: "An earlier version of this comment claimed an
+    id of `*` 'matches every RESOLVED list'; that was never true of any
+    consumer, and the same claim was corrected in bin/_journal_manifest.py in
+    the same round."
+  - `review.md`: "which is what the empty discovery result used to produce."
 
 ## 3.10.0 (2026-10-29)
 

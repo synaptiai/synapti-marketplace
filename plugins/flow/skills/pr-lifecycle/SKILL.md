@@ -33,11 +33,11 @@ All five must hold before creation; otherwise stop:
 4. Every acceptance criterion has a "Met" or "Interpreted" status with concrete evidence.
 5. No P1 findings remain from code review.
 
-"Get the PR up and fix it after", "the reviewer will catch it", "small change", and "CI will validate it" are not exemptions. The eight quality gates flow enforces are mapped in [`gate-configuration.md`](../../references/gate-configuration.md#quality-gates).
+"Get the PR up and fix it after", "the reviewer will catch it", "small change", and "CI will validate it" are not exemptions. The quality gates flow enforces are mapped in [`gate-configuration.md`](../../references/gate-configuration.md#quality-gates).
 
 ## PR Body
 
-Generated from [`templates/pr-body.md`](../../templates/pr-body.md) plus review findings and the decision journal. Section order: Summary (2–3 sentences), Closes, Changes (grouped by area), Comprehension Report, Key Decisions (public journal entries; internal entries redacted), Requirements Adherence (criterion → status → `file:line` evidence), Review Findings (P1/P2/P3), Known cosmetic notes, Review Cycle History, Verification checklist, Verification Verdict, Files Changed. Reviewers skim Summary, Requirements Adherence, Verification in under thirty seconds.
+Generated from [`templates/pr-body.md`](../../templates/pr-body.md) plus review findings and the decision journal. Section order: Summary (2–3 sentences), Closes, Changes (grouped by area), Comprehension Report, Key Decisions (public journal entries; internal entries redacted), Requirements Adherence (criterion → status → `file:line` evidence), Review Findings (P1/P2/P3), Review Cycle History, Verification checklist, Verification Verdict, Files Changed. Reviewers skim Summary, Requirements Adherence, Verification in under thirty seconds.
 
 ## Reviewer Suggestion (`/flow:pr` Phase 4 step 11)
 

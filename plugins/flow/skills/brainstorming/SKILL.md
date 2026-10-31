@@ -23,7 +23,7 @@ Confirm **what** must happen (outcome, not implementation), **why** (motivation,
 ### 2. Check existing patterns
 
 ```bash
-grep -r "relevant_pattern" --include="*.{ts,js,py,rb}" -l
+grep -rl "relevant_pattern" --include='*.ts' --include='*.js' --include='*.py' --include='*.rb' .
 git log --oneline --all --grep="related keyword" | head -10
 ```
 

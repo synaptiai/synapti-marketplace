@@ -37,6 +37,8 @@ Agent(error-handler-inspector-skeptic) | Agent(error-handler-inspector-verifier)
 Skill(holdout-validation) [skeptic lens] | Skill(holdout-validation) [verifier lens]
 ```
 
+`<agent>-skeptic` and `<agent>-verifier` are not separate agent files: each is the `<agent>` agent dispatched with that lens's prompt from the table above.
+
 The holdout-validation pair is dispatched as Skills (not Agents) because the project does not define a `holdout-validation` agent — the skill IS the contract. The holdout-validation pair contributes findings to A.2 auto-consensus matching but is **excluded from the Phase 3 challenge round** by design, not because Skills lack a challenger prompt pattern.
 
 The principled rationale: adversarial challenge (AGREE/DISAGREE/REFINE) exists for findings where reviewers can hold legitimately different subjective opinions about priority, severity, or category. Holdout findings are categorically different — they are objective claim-verification (file state vs self-reported claim). The file state is the arbiter, so DISAGREE is not a meaningful disposition. Including holdout in challenge would produce vacuous AGREE responses (re-check confirms what we already established) or confuse the protocol (DISAGREE based on what?). See `commands/review.md` A.1 for the full rationale.

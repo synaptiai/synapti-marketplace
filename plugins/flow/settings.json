@@ -53,7 +53,9 @@
   },
   "verdict": {
     "enabled": true,
-    "requireAllPass": true
+    "requireAllPass": true,
+    "model": "",
+    "timeoutSeconds": 300
   },
   "review": {
     "groundingCritic": "off"

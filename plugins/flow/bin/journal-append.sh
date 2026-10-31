@@ -13,10 +13,15 @@
 # Usage:
 #   journal-append.sh --file <path>    [--replace-heading <H>] (--text <T> | -)
 #   journal-append.sh --issue <N>      [--replace-heading <H>] (--text <T> | -)
+#   journal-append.sh --session        [--replace-heading <H>] (--text <T> | -)
 #
 #   --file <path>          explicit target (the auto-log hooks use this)
 #   --issue <N>            target <journal.dir>/issue-<N>.md, journal.dir
 #                          resolved by bin/journal-dir.sh
+#   --session              target <journal.dir>/session-<YYYY-MM-DD>.md, the
+#                          journal for work with no issue number, dated by
+#                          the local calendar day as the auto-log hooks date
+#                          the session trail
 #   --replace-heading <H>  replace H's section (to the next `## ` heading), or
 #                          append it when absent, instead of appending text
 #   --text <T>             the entry text
@@ -24,7 +29,7 @@
 #
 # Exits:
 #   0 — written
-#   1 — missing argument, both or neither target selector, unknown flag; also
+#   1 — missing argument, more than one or no target selector, unknown flag; also
 #       an uncaught Python exception, which does not map to the 2 that a
 #       refused symlink or a lock failure produce (a journal holding an invalid
 #       UTF-8 byte reaches --replace-heading as a UnicodeDecodeError)
@@ -75,6 +80,7 @@ one_line() {
 
 ISSUE=""
 TARGET_FILE=""
+SESSION=0
 REPLACE_HEADING=""
 TEXT=""
 TEXT_GIVEN=0
@@ -92,6 +98,7 @@ while [ $# -gt 0 ]; do
     --file)
       [ $# -ge 2 ] || { echo "journal-append.sh: --file needs a value" >&2; exit 1; }
       TARGET_FILE="$2"; shift 2 ;;
+    --session)         SESSION=1; shift ;;
     --replace-heading)
       [ $# -ge 2 ] || { echo "journal-append.sh: --replace-heading needs a value" >&2; exit 1; }
       # An empty heading is not "no heading" — it is a caller bug, and an unset
@@ -109,12 +116,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ -n "$ISSUE" ] && [ -n "$TARGET_FILE" ]; then
-  echo "journal-append.sh: --issue and --file are mutually exclusive" >&2
+SELECTORS=0
+[ -n "$ISSUE" ] && SELECTORS=$((SELECTORS + 1))
+[ -n "$TARGET_FILE" ] && SELECTORS=$((SELECTORS + 1))
+[ "$SESSION" -eq 1 ] && SELECTORS=$((SELECTORS + 1))
+if [ "$SELECTORS" -gt 1 ]; then
+  echo "journal-append.sh: --issue, --session and --file are mutually exclusive" >&2
   exit 1
 fi
-if [ -z "$ISSUE" ] && [ -z "$TARGET_FILE" ]; then
-  echo "journal-append.sh: one of --issue <N> or --file <path> is required" >&2
+if [ "$SELECTORS" -eq 0 ]; then
+  echo "journal-append.sh: one of --issue <N>, --session or --file <path> is required" >&2
   exit 1
 fi
 if [ "$TEXT_GIVEN" -eq 1 ] && [ "$FROM_STDIN" -eq 1 ]; then
@@ -128,9 +139,9 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Resolve the target path. --issue takes the journal directory from
-# journal-dir.sh, as journal-record.sh does, so the two helpers always agree
-# on which file they are serializing against.
+# Resolve the target path. --issue and --session take the journal directory
+# from journal-dir.sh, as journal-record.sh does, so the two helpers always
+# agree on which file they are serializing against.
 if [ -n "$ISSUE" ]; then
   case "$ISSUE" in
     ''|*[!0-9]*)
@@ -141,6 +152,12 @@ if [ -n "$ISSUE" ]; then
   JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
   TARGET="$JOURNAL_DIR/issue-$ISSUE.md"
+elif [ "$SESSION" -eq 1 ]; then
+  # The local calendar day, as log-commits.sh and log-file-changes.sh name the
+  # session trail: that hook looks for this file by the same name.
+  JOURNAL_DIR=$("$SCRIPT_DIR/journal-dir.sh")
+  [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
+  TARGET="$JOURNAL_DIR/session-$(date +%Y-%m-%d).md"
 else
   TARGET="$TARGET_FILE"
 fi

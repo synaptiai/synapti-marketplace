@@ -210,6 +210,10 @@ fi
 # names, since refusing here costs only an estimate. Matched without regard
 # to case, on the whole path and on its last component; .env.example is
 # refused too.
+# That is about sending content to the provider, not about committing: the
+# classification rule still lets .env.example, .env.sample and .env.template be
+# committed (references/classification-signals.md), and this refusal only
+# keeps their values off the network.
 _red_flag() {
   # LC_ALL=C on tr itself: under a UTF-8 locale macOS tr stops at the first
   # byte that is not valid UTF-8, and the rest of the path would go unchecked.

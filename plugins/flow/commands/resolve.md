@@ -164,7 +164,7 @@ true
 
 **1d. Read settings for conflict resolution config:**
 
-Check `settings.json` for `conflictResolution.autoResolveTrivial` and `conflictResolution.maxConflictFiles`.
+Resolve `conflictResolution.autoResolveTrivial` (default `true`) and `conflictResolution.maxConflictFiles` (default `20`) through the settings cascade with `bin/cascade-resolve.sh`, so a value set in `.claude/settings.flow.json` or `.claude/settings.flow.local.json` is honored.
 
 ### Max File Check
 

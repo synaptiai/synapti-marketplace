@@ -9,7 +9,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no contract element invented: every specification element is lifted from the journal or escalated. Invoked by `/flow:start` (Phase 1, after the Spec Validation Gate), `/flow:goal create`, and `/flow:debug` (after the confirmed hypothesis) with a goal id, scope, source, and invocation reason (`start | goal-create | review | address | debug`). Returns the written goal path plus a `goal-created` journal artifact; the caller then invokes `goal-lifecycle`. Permitted skips: `review` and `address` invocations skip the specification block (they inherit the issue's capture); `goal-create` with no linked issue skips the journal artifact. Nothing else may be skipped.
+Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no contract element invented: every specification element is lifted from the journal or escalated. Invoked by `/flow:start` (Phase 1, after the Spec Validation Gate), `/flow:goal create`, and `/flow:debug` (after the confirmed hypothesis) with a goal id, scope, source, and invocation reason (`start | goal-create | review | address | debug`). Returns the written goal path plus a `goal-created` journal artifact; the caller then invokes `goal-lifecycle`. Permitted skips: `review` and `address` invocations skip the specification block (they inherit the issue's capture). Nothing else may be skipped: a `goal-create` with no linked issue records its `goal-created` artifact in the session journal instead of an issue journal.
 
 ## Inputs
 
@@ -20,7 +20,7 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 
 ## Outputs
 
-`.flow/goals/<id>.goal.yaml` conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated), plus `bin/journal-record.sh --issue {N} --type goal-created --metadata goal_id=<id> --metadata source=<src>`.
+`.flow/goals/<id>.goal.yaml` conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated), plus `bin/journal-record.sh --issue {N} --type goal-created --metadata goal_id=<id> --metadata source=<src>`. With no linked issue, `--session` replaces `--issue {N}`: the artifact goes to `<journal dir>/session-{YYYY-MM-DD}.md`, dated by the local calendar day.
 
 ## Workflow
 
@@ -29,7 +29,7 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 3. **`scope`**: from inputs; leave `run_id` unset (run-state-management fills it).
 4. **`objective`**: `outcome` by reason: `start`: "Issue #{N} is implemented and verified."; `review`: "PR #{N} review completed with findings posted or no-finding evidence recorded."; `address`: "All unresolved findings on PR #{N} are resolved, commented, or escalated."; `goal-create`: AskUserQuestion; `debug`: the caller's template. Each AC comes from `criterion-verification-map` output with `status: pending`, `evidence_ref: null`, and its `verification_command` when one exists.
 5. **`specification`**: lift from the journal's `## Specification` section written by `specification-capture`: `non_goals` from `### Non-goals`, `failure_modes` from `### Failure modes`, `interface_contracts` from `### Interface contracts`, and `risk_map` from the `### Risk map` table, where each row `Area | Plausible wrong version | Discriminating check` becomes `{area, plausible_wrong_version, discriminating_check}`. When the journal has no `### Risk map`, omit the `risk_map` key. Never invent rows or fill an empty block with placeholders; an empty non-goals, failure-modes, or interface-contracts block is a six-field escalation.
-6. **`constraints`**: `tdd_required`, `require_all_pass`, `no_calendar_estimates`, `no_tier3_without_confirmation` all `true`; `denied_paths` from `flow.goals.denied_paths`; `allowed_paths` only when the goal narrows scope.
+6. **`constraints`**: `tdd_required`, `require_all_pass`, `no_calendar_estimates`, `no_tier3_without_confirmation` all `true`; `denied_paths` and `allowed_paths` only when the goal narrows scope.
 7. **`evaluator`**: `type: flow_verdict_judge` (`hybrid` when fuzzy criteria exist, `deterministic` when every AC has a command), `command: /flow:goal evaluate`, `judge_agent: goal-evaluator-judge`, `evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md`, `denied_context: [implementation_rationale, self_review_findings]`.
 8. **`continuation`**: `mode: flow_managed`, `on_incomplete: continue_next_activity`, `on_blocked: six_field_escalation`, `on_complete: mark_achieved`, `max_iterations` from settings (default 20).
 9. **`lifecycle`**: `status: active`, `current_phase` by reason (`start`: explore, `review`: fan-out, `address`: categorize, `debug`: fix), `current_activity`, `turns_evaluated: 0`, `last_evaluation: {result: incomplete, reason: "Goal created; evidence not yet collected.", at: <now>}`. Never `achieved` at creation.
@@ -37,10 +37,4 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 
 ## Trust
 
-`bin/flow-goal-record.sh --create` also records the goal in the per-user trust ledger (`goal-trust.jsonl` in the per-user state directory `bin/cascade-resolve.sh --state-dir` names, via `bin/flow-goal-trust.sh record`). The Stop hook executes a goal's verification commands only when the goal is trusted or `flow.goals.executeVerificationCommands` is true. A goal is trusted only when it was created through flow in this user's environment; a goal that arrived with a checkout is not. Editing a `verification_command` by hand changes the hash and untrusts the goal until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`.
-
-## References
-
-- `plugins/flow/skills/specification-capture/SKILL.md`: the journal headings lifted in step 5.
-- `plugins/flow/skills/criterion-verification-map/SKILL.md`: AC verification-command shape.
-- `plugins/flow/references/flow-goals.md`: full YAML example and settings.
+`bin/flow-goal-record.sh --create` also records the goal in the per-user trust ledger (`bin/flow-goal-trust.sh record`). The Stop hook runs a goal's verification commands only when the goal is trusted or `flow.goals.executeVerificationCommands` is true; a goal that arrived with a checkout is not trusted. Editing a `verification_command` by hand untrusts the goal until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`. Full YAML example, settings and the trust ledger: `references/flow-goals.md`.

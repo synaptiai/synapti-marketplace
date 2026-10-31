@@ -22,27 +22,25 @@ Iron law: verify it works before verifying it is good; never review quality on c
 
 Stage 1 on the main thread; facets fan out in parallel:
 
-| Facet | Focus | Agent / Skill |
-|---|---|---|
-| **Security** | OWASP top 10, secrets, authz, input validation | security-reviewer |
-| **Quality** | Logic, edge cases | code-reviewer |
-| **Conventions** | Commit, branch, PR format | convention-checker |
-| **Tests** | Coverage, quality commands, adequacy | test-runner |
-| **Error handling** | Unhandled errors, silent failures | error-handler-inspector |
-| **Claim verification** | Self-review claims vs files | holdout-validation |
+- **Security** (security-reviewer): OWASP top 10, secrets, authz, input validation
+- **Quality** (code-reviewer): logic, edge cases
+- **Conventions** (convention-checker): commit, branch, PR format
+- **Tests** (test-runner): coverage, quality commands, adequacy
+- **Error handling** (error-handler-inspector): unhandled errors, silent failures
+- **Claim verification** (holdout-validation): self-review claims vs files
 
 **Tests facet rule:** derive the expected behavior from the spec BEFORE reading the tests, then check each expected value and input against it; an expectation copied from the implementation confirms nothing (`references/test-review-checklist.md`).
 
 ## Synthesis
 
 1. Deduplicate by `file:line`, keeping the highest priority
-   - Optionally, a System One provider is asked whether two remaining findings in one file, whose reviewer lists differ, describe the same defect (`review.dedup`, off by default; `references/system-one.md`). In on mode a confident yes merges them under the finding with the highest priority, listing every location and reviewer. A security finding, a LOW finding paired with a HIGH or MEDIUM one, and two findings with the same reviewer list are never merged.
+   - Optionally (`review.dedup`, off by default), a System One answer merges two findings in one file that describe the same defect (`references/code-review-methodology.md`).
 2. Order P1, P2, P3 by file
 3. Count per priority; counts must match the `Finding | Suggested Fix` rows (`references/finding-schema.md`)
 
 ## Confidence and signal
 
-HIGH (ran code, a test or LSP) and MEDIUM (read the code path) decide at their priority. LOW (pattern match, or a P1/P2 finding a confident System One answer says its cited code does not show: `review.confidence`, off by default, `references/system-one.md`; on someone else's pull request such a P1 stays counted, with the answer as a note), any priority, goes to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM. `bin/flow-finding-route.sh` applies it. Style is P3 at most; a finding with no `file:line` and no harm scenario is noise.
+HIGH (ran code, a test or LSP) and MEDIUM (read the code path) decide at their priority. LOW (pattern match, or a P1/P2 finding that a confident System One `review.confidence` answer says its cited code does not show; `references/code-review-methodology.md`), any priority, goes to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM. `bin/flow-finding-route.sh` applies it. Style is P3 at most; a finding with no `file:line` and no harm scenario is noise.
 
 ## Boy Scout recognition
 
@@ -72,12 +70,7 @@ Finding triage never triggers escalation (`skills/llm-operator-principles/SKILL.
 
 ## Grounding pass (off by default)
 
-`review.groundingCritic: on` inserts one step into a **Path B** fan-out, between
-synthesis and display: `Agent(finding-critic)` answers each P1/P2 finding in a three-verdict
-grammar, and on a disagreement the reviewer that raised it cites code or drops it.
-**Path A is unchanged** and keeps its own challenge round; the grammar and both
-placements are in `references/paired-review-protocol.md`. Default off until
-`references/review-precision-eval.md`.
+`review.groundingCritic: on` adds a finding-critic step to a **Path B** fan-out; Path A is unchanged (`references/code-review-methodology.md`).
 
 ## Adversarial protocol
 

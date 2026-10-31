@@ -34,8 +34,15 @@ Before any subcommand:
 
 ```bash
 # Resolve flow.goals.enabled (default true)
+# A non-zero exit means the setting could not be read (cascade-resolve.sh
+# says why on stderr): that is not the same as false, so say so and stop.
+__cr_rc=0
 ENABLED=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" \
-  --default "true" '.flow.goals.enabled')
+  --default "true" '.flow.goals.enabled') || __cr_rc=$?
+if [ "$__cr_rc" -ne 0 ]; then
+  printf '%s\n' "flow.goals.enabled could not be read (cascade-resolve.sh exited $__cr_rc; its message is above), so /flow:goal stops here." >&2
+  exit 1
+fi
 if [ "$ENABLED" != "true" ]; then
   printf '%s\n' "flow.goals.enabled is false — /flow:goal is disabled in this project's settings cascade." >&2
   exit 0
@@ -219,7 +226,7 @@ Read-only deep dump:
 
 ### `/flow:goal evaluate <id>`
 
-Invoke `Skill(goal-evaluator)` with `trigger=command`. The skill runs deterministic checks, optionally dispatches `Agent(goal-evaluator-judge)`, and transitions lifecycle. This is the primary user-facing way to advance a goal's state.
+Invoke `Skill(goal-evaluator)` with `trigger=command`. Its Step 5 block runs the judge: give the Bash tool a `timeout` of (`flow.goals.judge.timeoutSeconds`, default 60, + 60) × 1000 milliseconds, at most 600000, so the tool does not stop the block before the judge reaches its own limit. The skill runs deterministic checks, optionally runs the goal judge, and transitions lifecycle. This is the primary user-facing way to advance a goal's state. The judge (Step 5) runs through `bin/flow-judge.sh --judge goal`, the helper the Stop hook runs in evaluator-loop mode: the claude CLI with every tool disallowed, the input assembled by `bin/_flow_evidence_bundle.py`, the body of `agents/goal-evaluator-judge.md` as its instructions, and the model set by `flow.goals.judge.model` (default `haiku`). It needs the `claude` CLI and `timeout` or `gtimeout` (GNU coreutils; on macOS `brew install coreutils`): without them the helper exits 4 and Step 5 reports `JUDGE_STATE=unavailable` with `the judge could not start (exit 4)`, and the flow-judge line on stderr names which is missing.
 
 After the skill produces a verdict, **the command (not the skill) persists it via `bin/flow-record-verdict.sh`**. The skill returns the structured verdict in-memory; the command is the single owner of the write. See `skills/goal-evaluator/SKILL.md` Step 8 for the current contract.
 
@@ -246,7 +253,7 @@ jq -n \
 
 Skipping the write breaks delta computation for the next turn (everything becomes "unchanged"). Helper failure is **non-fatal** — surface to stderr via the `||` clause, never abort the command's lifecycle update.
 
-**F10 — Terminal-transition Tier 2 confirmation**:
+**Terminal-transition Tier 3 confirmation**:
 
 When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion. The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
 
@@ -316,7 +323,7 @@ Transition `{waiting_for_user, waiting_for_ci, blocked} → active` via `Skill(g
 
 Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `.flow/goals/` as audit trail; status is terminal.
 
-Confirmation via AskUserQuestion is mandatory (Tier 2 action: cancels potentially in-flight work).
+Confirmation via AskUserQuestion is mandatory (Tier 3 action: cancels potentially in-flight work).
 
 ### `/flow:goal history`
 
@@ -334,7 +341,7 @@ Filter via flag:
 
 This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `.flow/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no goal has `status: active`.
 
-When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook spawns `Skill(goal-evaluator)` automatically — equivalent to running `/flow:goal evaluate <active>` after every turn, with throttling and budget enforcement.
+When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates the active goal after every turn, with throttling and budget enforcement: it runs the deterministic checks and, when criteria without a command remain, runs the same judge `/flow:goal evaluate` runs, through the same helper. It cannot ask, so it never writes `achieved`; run `/flow:goal evaluate <id>` to finalize.
 
 ## Critical references
 
@@ -355,7 +362,7 @@ When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook spawns `Ski
 | `/flow:goal history` — list all goals with filters | 1 | Autonomous, read-only |
 | `/flow:goal create <kind>` — invoke `Skill(goal-contract-capture)`, write `.flow/goals/<id>.goal.yaml`, transition draft→active | 2 | Journal-and-proceed (writes a goal artifact + lifecycle transition) |
 | `/flow:goal evaluate <id>` — non-terminal verdict — invoke `Skill(goal-evaluator)`, persist verdict, update lifecycle | 1 | Autonomous |
-| `/flow:goal evaluate <id>` — terminal verdict (`achieved` / `failed`) | 2 | **Confirm** via AskUserQuestion (per F10 — see "Terminal-state confirmation" below) |
+| `/flow:goal evaluate <id>` — terminal verdict (`achieved` / `failed`) | 3 | **Confirm** via AskUserQuestion (see "Terminal-transition Tier 3 confirmation" above) |
 | `/flow:goal pause <id>` — active → waiting_for_user | 1 | Autonomous; reason via AskUserQuestion if not `--reason` |
 | `/flow:goal resume <id>` — waiting → active | 1 | Autonomous |
-| `/flow:goal clear <id>` — non-terminal → cancelled | 2 | **Confirm** via AskUserQuestion (irreversible) |
+| `/flow:goal clear <id>` — non-terminal → cancelled | 3 | **Confirm** via AskUserQuestion (irreversible) |

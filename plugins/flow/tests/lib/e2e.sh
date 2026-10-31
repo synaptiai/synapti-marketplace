@@ -161,6 +161,8 @@ case "$args" in
     n=${args%/replies}; f=reply-${n##*/} ;;
   # The merge guard's calls, and the branch-delete guard's.
   "pr view "*" --json number,baseRefName,statusCheckRollup") n=${args#pr view }; f=pr-${n%% *} ;;
+  # bin/flow-pr-feedback.sh's review list.
+  "pr view "*" --json reviews") n=${args#pr view }; f=pr-reviews-${n%% *} ;;
   # Each is keyed on the values the guard passes, so a call that asks about
   # another branch, or compares the two commits the other way round, has no
   # fixture: protection-<branch>, rules-<branch>, merged-prs-<head>-<base>
@@ -171,7 +173,19 @@ case "$args" in
   "pr list --state merged "*)
     h=${args#*--head }; h=${h%% *}; b=${args#*--base }; b=${b%% *}
     f=merged-prs-$(printf '%s' "$h" | tr / _)-$(printf '%s' "$b" | tr / _) ;;
+  # /flow:release looks up its release pull request in every state:
+  # prs-all-<head>-<base>, a / in a branch name written as _.
+  "pr list --state all "*)
+    h=${args#*--head }; h=${h%% *}; b=${args#*--base }; b=${b%% *}
+    f=prs-all-$(printf '%s' "$h" | tr / _)-$(printf '%s' "$b" | tr / _) ;;
   "api repos/"*"/compare/"*) f=compare-${args#*/compare/} ;;
+  # /flow:release asks whether a tag has a GitHub release: release-<tag>.
+  "api repos/"*"/releases/tags/"*) f=release-${args##*/releases/tags/} ;;
+  # and creates one: release-create-<tag>, the release's JSON.
+  "release create "*) n=${args#release create }; f=release-create-${n%% *} ;;
+  # The lookup by tag finds published releases only, so on a 404 /flow:release
+  # looks for a draft in the release list: releases.
+  "api repos/"*"/releases?per_page=100") f=releases ;;
   *) printf 'unhandled: %s\n' "$args" >> "$d/unhandled.log"; exit 99 ;;
 esac
 # An answer written by e2e_gh_http: GitHub's error body on stdout and gh's
@@ -310,12 +324,15 @@ e2e_judge_says() {
 
 # e2e_gh_fixture <name> <json> — the answer gh gives for one call. Names:
 # user, auth, repo, prs, issue-<n>, reviews-<pr>, comments-<pr>, pull-comment-<id>
-# (one pull request review comment), reply-<id> (the answer to a reply posted
+# (one pull request review comment), pull-comments-<pr> (a pull request's
+# inline review comments), pr-reviews-<pr> (gh pr view <pr> --json reviews),
+# reply-<id> (the answer to a reply posted
 # in the thread of comment <id>; the posted text is appended to
 # $E2E_GH/reply-<id>.posted), pr-<n> (gh pr view <n> with its checks),
 # protection-<branch> and rules-<branch> (a base branch's required checks),
 # merged-prs-<head>-<base> (the pull requests merged from <head> into <base>),
-# compare-<base>...<head> (two commits compared on GitHub). e2e_gh_fail <name> makes that
+# compare-<base>...<head> (two commits compared on GitHub), prs-all-<head>-<base>
+# (the pull requests from <head> into <base> in any state). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
@@ -396,6 +413,29 @@ e2e_user_settings() {
   mkdir -p "$E2E_HOME/.claude"
   printf '%s\n' "$1" > "$E2E_HOME/.claude/settings.flow.json"
   printf 'user settings: %s\n' "$(_e2e_mask "$1")" | _e2e_art
+}
+
+# e2e_path_without <command>... — a directory holding a link to every command
+# on the scenario's PATH ($E2E_BIN first) except the named ones, so a command
+# installed on this machine cannot be found. Prints the directory, to pass as
+# PATH=<dir> to e2e_run_block, e2e_run_fence or e2e_run_bin.
+e2e_path_without() {
+  local tools="$E2E_DIR/path-without-$(printf '%s' "$*" | tr -c 'A-Za-z0-9' '-')" d f n skip x
+  # One variable, so every ':' is split: bash 5 does not split at a literal
+  # ':' written between two expansions, and bash 3.2 does.
+  local dirs="$E2E_BIN:$PATH"
+  mkdir -p "$tools"
+  local IFS=:
+  for d in $dirs; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      n="${f##*/}"; skip=""
+      for x in "$@"; do [ "$n" = "$x" ] && skip=1; done
+      [ -z "$skip" ] && [ -x "$f" ] && [ ! -d "$f" ] && [ ! -e "$tools/$n" ] && ln -s "$f" "$tools/$n"
+    done
+  done
+  printf 'PATH without: %s\n' "$*" | _e2e_art
+  printf '%s' "$tools"
 }
 
 # e2e_run_bin [NAME=value ...] <script under the plugin> [arguments] — run a

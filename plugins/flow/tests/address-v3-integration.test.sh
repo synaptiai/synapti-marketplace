@@ -1521,3 +1521,76 @@ assert_not_contains "$LONGID" "$OUT_LI" "and is not echoed back whole"
   ISSUE=214 PR_NUM=234 CYCLE_NUMBER=3 FINDING_ID="$LONGID" REASON=breaks-test \
   DISMISS_FILE="$(_dm_file c "a.sh:1" "e")" bash dismiss.sh) >/dev/null 2>&1; RC_LW=$?
 assert_equal "2" "$RC_LW" "and the writer refuses to record it in the first place"
+
+_flow_test_begin "address.md Phase 3: a behavior-changing fix writes its reproducing test first, per testing.tddMode"
+# The Phase 3 per-task loop, from its fence to the Boy Scout pass.
+PHASE3_LOOP=$(awk '/^## Phase 3: CODE/{f=1} f&&/^\*\*Boy Scout pass\*\*/{exit} f' "$ADDRESS_MD")
+assert_contains "testing.tddMode" "$PHASE3_LOOP" "Phase 3 reads testing.tddMode"
+assert_contains "exactly as \`/flow:start\` Phase 3 does" "$PHASE3_LOOP" "and applies it as /flow:start does"
+assert_match 'documentation, comments, or configuration with no behavior change is exempt' "$PHASE3_LOOP" "docs, comment and config-only fixes are exempt"
+# The test step comes before the implementation step: the step that writes the
+# reproducing test has a lower number than the one that implements the fix.
+TEST_STEP=$(printf '%s\n' "$PHASE3_LOOP" | grep -m1 -E '^[0-9]+\. Reproducing test first' | cut -d. -f1)
+IMPL_STEP=$(printf '%s\n' "$PHASE3_LOOP" | grep -m1 -E '^[0-9]+\. Implement the fix' | cut -d. -f1)
+assert_match '^[0-9]+$' "$TEST_STEP" "Phase 3 has a reproducing-test step"
+assert_match '^[0-9]+$' "$IMPL_STEP" "Phase 3 has an implement step"
+[ -n "$TEST_STEP" ] && [ -n "$IMPL_STEP" ] && [ "$TEST_STEP" -lt "$IMPL_STEP" ]
+assert_exit 0 $? "the reproducing test (step $TEST_STEP) comes before the fix (step $IMPL_STEP)"
+for mode in enforce suggest off; do
+  assert_contains "tddMode=$mode" "$PHASE3_LOOP" "Phase 3 says what tddMode=$mode does"
+done
+
+# Phase 4 step 10, PR_BODY_BLOCK: both gh calls name the repository the block
+# resolved itself. Without --repo, gh picks the repository from the working
+# directory, and a REPO set in an earlier fence does not reach this one.
+# gh is a stub that logs every call's arguments and the body file it is given.
+_pb_setup() {
+  local d="$1"
+  mkdir -p "$d/stub"
+  cat > "$d/stub/gh" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >> "$PB_LOG"
+case "$1 $2" in
+  "repo view") [ -n "${PB_NO_REPO:-}" ] && exit 1; printf '%s\n' "o/r" ;;
+  "pr view") printf '%s\n' "## Review Findings" "### Review Cycle History" "old table" ;;
+  "pr edit")
+    while [ $# -gt 0 ]; do
+      [ "$1" = --body-file ] && cat "$2" >> "$PB_LOG.body"
+      shift
+    done ;;
+  *) exit 99 ;;
+esac
+STUB
+  chmod +x "$d/stub/gh"
+  assert_block "$ADDRESS_MD" PR_BODY_BLOCK "$d/block.sh"
+}
+
+_flow_test_begin "address.md step 10: the PR body is read and written in the repository the block resolved"
+PBD=$(mktemp -d -t flow-pb.XXXXXX); ADDR_CLEANUP+=("$PBD")
+_pb_setup "$PBD"
+OUT_PB=$(cd "$PBD" && PATH="$PBD/stub:$PATH" PB_LOG="$PBD/view.log" PR_NUM=7 bash block.sh 2>&1); RC_PB=$?
+assert_equal "0" "$RC_PB" "reading the body exits 0"
+assert_contains "### Review Cycle History" "$OUT_PB" "and prints the body"
+assert_contains "pr view 7 --repo o/r --json body" "$(cat "$PBD/view.log")" "gh pr view names the repository"
+PB_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-pb-body.XXXXXX")
+printf '%s\n' '## Review Findings' '### Review Cycle History' 'cycle 2: received 3, fixed 3' '$(touch pwned)' > "$PB_FILE"
+OUT_PB=$(cd "$PBD" && PATH="$PBD/stub:$PATH" PB_LOG="$PBD/edit.log" PR_NUM=7 BODY_FILE="$PB_FILE" bash block.sh 2>&1); RC_PB=$?
+rm -f "$PB_FILE"
+assert_equal "0" "$RC_PB" "writing the body exits 0"
+assert_contains "BODY_EXIT=0" "$OUT_PB" "and reports the edit's exit status"
+assert_contains "pr edit 7 --repo o/r --body-file" "$(cat "$PBD/edit.log")" "gh pr edit names the repository and reads the body from the file"
+assert_contains "cycle 2: received 3, fixed 3" "$(cat "$PBD/edit.log.body" 2>/dev/null)" "the file's text is the body sent"
+assert_equal "no" "$([ -e "$PBD/pwned" ] && echo yes || echo no)" "a command substitution in the body is not run"
+
+_flow_test_begin "address.md step 10: a body file not made by mktemp, or no repository, edits nothing"
+PBD2=$(mktemp -d -t flow-pb2.XXXXXX); ADDR_CLEANUP+=("$PBD2")
+_pb_setup "$PBD2"
+printf '%s\n' 'body' > "$PBD2/body.md"
+(cd "$PBD2" && PATH="$PBD2/stub:$PATH" PB_LOG="$PBD2/a.log" PR_NUM=7 BODY_FILE="$PBD2/body.md" bash block.sh) >/dev/null 2>&1; RC_PB=$?
+assert_equal "1" "$RC_PB" "a file outside TMPDIR is refused"
+assert_not_contains "pr edit" "$(cat "$PBD2/a.log" 2>/dev/null)" "and gh pr edit is not called"
+(cd "$PBD2" && PATH="$PBD2/stub:$PATH" PB_LOG="$PBD2/b.log" PB_NO_REPO=1 PR_NUM=7 bash block.sh) >/dev/null 2>&1; RC_PB=$?
+assert_equal "1" "$RC_PB" "an unresolved repository stops the block"
+assert_not_contains "pr view" "$(cat "$PBD2/b.log" 2>/dev/null)" "before any pull request call"
+(cd "$PBD2" && PATH="$PBD2/stub:$PATH" PB_LOG="$PBD2/c.log" PR_NUM=07 bash block.sh) >/dev/null 2>&1; RC_PB=$?
+assert_equal "1" "$RC_PB" "a PR_NUM with a leading zero is refused"

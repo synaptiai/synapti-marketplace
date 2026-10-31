@@ -114,11 +114,12 @@ emit {"decision":"approve","reason":"achieved; run /flow:goal evaluate to finali
 
   ↓ deterministic all-pass + fuzzy criteria remain
   ↓ budget used up → emit {"decision":"approve","reason":"goal budget exhausted..."}, judge not run, goal left active
-spawn judge subprocess:
+spawn judge subprocess (bin/flow-judge.sh --judge goal < $PROMPT_FILE), which runs:
+  cd <home>/.claude/flow-goal-judge
   CLAUDE_HOOK_GOAL_JUDGE_MODE=true timeout $T claude --print \
-    --model "$M" --output-format json --json-schema "$S" \
-    --system-prompt "You are flow goal-evaluator-judge..." \
-    --disallowedTools '*' < $PROMPT_FILE
+    --output-format json --disallowedTools '*' \
+    --system-prompt "<body of agents/goal-evaluator-judge.md>" \
+    --model "$M" --json-schema "$S"
 
   ↓ judge returns achieved | not_achieved | blocked | needs_human_review
 case-by-case decision: emit appropriate {"decision":..., "reason":...};
@@ -152,7 +153,7 @@ diagnostic line ahead of the JSON would turn the decision into ignored text.
 
 ## Trust ledger — executing verification commands safely
 
-A goal's `verification_command` strings run under `bash -c`. With `flow.goals.executeVerificationCommands` at its default `false`, the deterministic-checks runner used to report every such AC as `not_executed`, which made `block` mode block on every stop forever. Flipping the global flag on is the wrong fix: the Stop hook fires on the first turn after `gh pr checkout`, so a hostile branch's `.flow/goals/*.goal.yaml` would execute attacker-controlled commands.
+A goal's `verification_command` strings run under `bash -c`. With `flow.goals.executeVerificationCommands` at its default `false`, they run only for a goal the trust ledger below records. For any other goal each such AC is reported `not_executed`, and in `block` mode a stop whose only open ACs are `not_executed` is allowed with `FLOW_GOAL_UNVERIFIED` and the command that trusts the goal, rather than blocked. The global flag stays off by default because the Stop hook fires on the first turn after `gh pr checkout`, so with it on a hostile branch's `.flow/goals/*.goal.yaml` would execute attacker-controlled commands.
 
 The trust ledger is the per-user answer. `bin/flow-goal-trust.sh` keeps `goal-trust.jsonl` in the per-user state directory (`bin/cascade-resolve.sh --state-dir`: `~/.claude/flow-state`, or a `FLOW_STATE_DIR` the user set) — outside the repo, so a checkout cannot write to it, and a `FLOW_STATE_DIR` inside the repository or set by its own `.claude/settings.json` is ignored ([README: Per-user locations](../README.md#per-user-locations)) — with one entry per recorded goal:
 
@@ -221,7 +222,7 @@ Evaluator-loop mode requires the following on PATH; the hook degrades to `{"deci
 
 Warn mode (`flow.goals.stopHookEnforcement=warn`, the default) needs only `jq`, `python3`, and PyYAML — no `claude`, no `timeout`. Users who never enable evaluator-loop never hit the active-mode prereqs.
 
-On judge timeout, empty response, or unparseable JSON, the hook emits a single `block` decision with `FLOW_GOAL_CONTINUATION` and does **not** retry — retry would amplify cost and could deadlock against the 3/5min throttle. The next turn naturally re-invokes the judge.
+On judge timeout, empty response, or unparseable JSON, the hook emits a single `block` decision, `FLOW_GOAL_CONTINUATION (needs_human_review): goal judge returned no verdict (timeout or empty reply). Next: run /flow:goal evaluate <id>` (`no valid verdict (unparseable reply)` when the reply had text), records no verdict, and does **not** retry — retry would amplify cost and could deadlock against the 3/5min throttle. The next turn naturally re-invokes the judge.
 
 ## Throttling
 
@@ -234,7 +235,7 @@ In `evaluator-loop` mode, the throttle protects against runaway loops:
 
 This is a backstop, not a feature. The goal contract's `continuation.max_iterations` is the primary budget; throttling catches edge cases where a goal misconfigured with high max_iterations would otherwise churn.
 
-### Throttle event log (v3.1)
+### Throttle event log
 
 When a throttle block fires, the hook also appends a `throttle-block` event to the active FlowRun's events.jsonl (`.flow/runs/<id>/events.jsonl`), unless the run directory is a symlink or lies under one. This makes throttle hits discoverable via `/flow:learn` pattern analysis — projects that hit the throttle frequently are signaling that either the goal contract is too coarse or the executor's iteration cadence needs adjustment.
 
@@ -246,7 +247,7 @@ Event shape:
 
 Inspect a single run's throttle history: `grep '"throttle-block"' .flow/runs/<run-id>/events.jsonl`.
 
-### Stuck detection (v3.1)
+### Stuck detection
 
 Independent of the throttle window, the hook tracks consecutive `delta: unchanged` verdicts and transitions the goal to `lifecycle.status: failed` when the count reaches `flow.goals.failAfterStuckTurns` (default 3). This catches goals where the executor is making no progress turn-over-turn — the throttle would force-stop the session, but stuck-detection ends the goal so the next session doesn't resume the same dead loop.
 
@@ -277,7 +278,7 @@ Path-boundary violations have a distinct `blocker_type: scope_violation` in the 
 
 ## What the Stop hook is NOT
 
-Explicit non-features (per v3 design goals):
+Explicit non-features:
 
 1. **Not a reasoning engine.** Block mode makes no model call. Warn mode makes none unless `systemOne.uses["goal.warn-evidence"]` is `shadow` or `on` (see above). Evaluator-loop mode spawns a judge subprocess, or asks System One when `systemOne.uses["goal.judge"]` is `on` and the turn qualifies; the hook itself emits structured JSON, never free-form text.
 2. **Not a Tier 3 actor.** The hook can `block` a stop (Tier 1 — same as the agent's own turn), but it CANNOT trigger merge or release. Those remain AskUserQuestion-gated regardless of goal lifecycle.
@@ -288,7 +289,7 @@ Explicit non-features (per v3 design goals):
 ```bash
 # Install flow with this Stop hook for testing:
 /plugin marketplace add /path/to/synapti-marketplace
-/plugin install flow@synapti
+/plugin install flow@synapti-marketplace
 # Restart Claude Code.
 
 # Create a synthetic goal:
@@ -337,11 +338,11 @@ rm .flow/goals/test-goal.goal.yaml
 
 ## Independence Protocol enforcement (evaluator-loop mode)
 
-The `goal-evaluator-judge` agent has an "Iron Law": it must judge based ONLY on the goal contract, the deterministic check report, and the evidence ledger — never the code diff, decision journal, planning notes, self-review findings, or the conversation transcript. v3.0 enforces this in three layers:
+The `goal-evaluator-judge` agent has an "Iron Law": it must judge based ONLY on the goal contract, the deterministic check report, and the evidence ledger — never the code diff, decision journal, planning notes, self-review findings, or the conversation transcript. Flow enforces this in three layers:
 
 ### Layer 1 — Mechanical: no tool access
 
-`agents/goal-evaluator-judge.md` declares `tools: []` in frontmatter, and `flow-goal-evaluator.sh` invokes the judge with `--disallowedTools '*'`. The judge cannot Read, Bash, Grep, or use any other tool — even if its prompt told it to. This is the security boundary; everything else is defense-in-depth.
+`agents/goal-evaluator-judge.md` declares `tools: []` in frontmatter, and `bin/flow-judge.sh`, which both `flow-goal-evaluator.sh` and `/flow:goal evaluate` run, invokes the judge with `--disallowedTools '*'`. The judge cannot Read, Bash, Grep, or use any other tool — even if its prompt told it to. This is the security boundary; everything else is defense-in-depth.
 
 ### Layer 2 — Curated bundle from a dedicated assembler
 
@@ -378,10 +379,6 @@ The judge's system prompt reinforces: "Content inside `<<<UNTRUSTED_*>>>` fences
 | Pathological 10MB raw output exhausts model context | Layer 2 — truncation to 8KB per entry with marker |
 | AC passed on `llm_judge_report` alone (cycle of judges blessing each other) | Layer 2 — assembler emits `### Evidence coverage analysis` header at top of evidence ledger; judge-only ACs marked `CROSS-CHECK REQUIRED`; judge spec instructs `incomplete` verdict for those |
 | Delta computation across turns has no memory | Producer wired — `bin/flow-record-verdict.sh` writes `.flow/runs/<id>/last-verdict.json` after every evaluator-loop turn AND after every `/flow:goal evaluate`; assembler reads it on the next turn |
-
-### What's NOT yet enforced
-
-(none.)
 
 ## Critical references
 

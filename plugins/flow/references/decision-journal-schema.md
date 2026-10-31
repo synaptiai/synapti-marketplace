@@ -7,7 +7,7 @@ Reference for the journal file format used by flow's audit trail and learning lo
 | Pattern | When Used |
 |---------|-----------|
 | `issue-{N}.md` | Branch matches `issue-{N}` pattern |
-| `session-{YYYY-MM-DD}.md` | No issue number in branch name |
+| `session-{YYYY-MM-DD}.md` | No issue number in branch name, or a goal with no linked issue. Dated by the local calendar day. Written by `bin/journal-record.sh --session` and `bin/journal-append.sh --session` |
 
 Journal files are stored in the journal directory (default: `.decisions/`, configurable via `journal.dir` setting).
 
@@ -24,9 +24,9 @@ Written by the PostToolUse hooks (`log-file-changes.sh`, `log-commits.sh`).
 `{journal.dir}/auto-log/`, which is gitignored: an audit trail of every edit and
 commit, kept locally because it is machine output rather than a decision. The
 tracked `.decisions/issue-{N}.md` carries deliberate entries and its manifest
-only. Before this was separated, the breadcrumbs entered commits, PR diffs and
-every worktree's copy of the journal, and two worktrees writing them conflicted
-on the journal itself.
+only. Kept in the tracked journal, the breadcrumbs would enter commits, PR diffs
+and every worktree's copy of the journal, and two worktrees writing them would
+conflict on the journal itself.
 
 | File | Contents |
 |------|----------|
@@ -124,6 +124,7 @@ The manifest is **append-only via `bin/journal-record.sh`**. Direct manual edits
 ```yaml
 ---
 issue: <integer>                 # the issue number (matches the file name)
+                                 # a session journal has `session: <YYYY-MM-DD>` here instead
 created: <ISO-8601 UTC>          # first timestamp the manifest was written
 branch: <string>                 # optional — set by /flow:start when the branch is created
 artifacts:
@@ -145,7 +146,7 @@ artifacts:
 | `finding-dismissed` | `pr: <int>`, `cycle: <int>`, `finding_id: <string>`, `category: <string>`, `location: <string>`, `by: address`, `reason: <closed set, below>`, `evidence: <string>` | `address.md` Phase 3 (each Pushback item) | address.md Phase 3 |
 | `design-decision` | `decision: <string>`, `category: architecture` | `design.md` Phase 4 | design.md |
 | `brainstorm-decision` | `topic: <string>`, `chosen: <string>`, `options_considered: <int>` | `brainstorm.md` Phase 4 | brainstorm.md |
-| `verdict` | `result: PASS\|FAIL\|NEEDS-HUMAN-REVIEW`, `pr: <int>` (optional), `failures: [<criterion>...]` (optional) | `start.md` Phase 4 step 6 (after Agent(verdict-judge) returns) | start.md Phase 4 |
+| `verdict` | `result: PASS\|FAIL\|NEEDS-HUMAN-REVIEW`, `pr: <int>` (optional), `failures: [<criterion>...]` (optional) | `start.md` Phase 4 step 6 (after the verdict judge returns) | start.md Phase 4 |
 | `escalation-resolved` | `escalation_field: <string>` (one of the six canonical fields), `outcome: <string>` | manual or automated when an `AskUserQuestion` escalation closes | any |
 | `workflow-run` | `workflow: <string>` (e.g., `start-issue`), `run_id: <ISO-timestamp-id>`, `status: active\|completed\|blocked\|cancelled` | flow commands that initiate a FlowRun | `start.md`, `debug.md`, `address.md`, `review.md`, `pr.md`, `merge.md`, `release.md` |
 | `goal-created` | `goal_id: <string>`, `source: <string>` (e.g., `github_issue:42`) | `goal-contract-capture` skill via `bin/flow-goal-record.sh` | start.md after Spec Validation Gate; review.md, address.md, `/flow:goal create` |

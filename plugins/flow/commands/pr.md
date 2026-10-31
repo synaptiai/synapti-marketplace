@@ -10,7 +10,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined above): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `pr-lifecycle` — pre-flight, PR body, reviewer suggestion
 - `code-review-methodology` — 6-facet review synthesis
 - `capability-discovery` — detect quality commands and agents
@@ -407,7 +407,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 - `S1_DEDUP=shadow`: the block only records the answers. The finding set is the one the merge above produced, whatever the block printed.
 - Anything else (`DEDUP_STATE=no-answer` or `skipped`, `STATE=blocked`, or no output): the finding set is the one the merge above produced. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
 
-**Grounding pass** (immediately after step 1's synthesis, before anything is displayed, fixed or posted). Phase 3 dispatches the Path B fan-out and nothing else, so this pass applies to every `/flow:pr` review; **Path A is unchanged by it** — its A.3 challenge round keeps its own AGREE / DISAGREE / REFINE vocabulary and produces `disposition`, and the grounding pass never runs inside it. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`).
+**Grounding pass** (immediately after step 1's synthesis, before anything is displayed, fixed or posted). Phase 3 dispatches the Path B fan-out and nothing else, so this pass applies to every `/flow:pr` review. Runs only when `review.groundingCritic` is `on`; default `off`, because the pass costs one critic call plus at most five re-pass calls on top of the six this fan-out already spends, and whether it earns them is what the review-precision eval measures (`references/review-precision-eval.md`).
 
 ```!
 # GROUNDING_CRITIC_BEGIN
@@ -567,7 +567,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    - LOW-confidence findings, at any priority, including those the System One step after the grounding pass demoted → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `{"finding_id", "facet"}` (its id and the agent that raised it) to the `refuted` list of step 13's `DROPS_FILE`); when neither can settle it, escalate with the six-field structure and record it MEDIUM. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM.
    - P1 findings → must fix before PR
    - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
-   - P3 findings → fix in-PR by default. Cosmetic P3 in untouched files only: fix if bounded (<10 lines) or document inline in the PR body under `### Known cosmetic notes`. Do NOT add a "Known issues" section that defers fixable P2s.
+   - P3 findings → fix in-PR, including cosmetic P3 in untouched files (an `improve:` commit). Do NOT add a section to the PR body that lists findings instead of fixing them.
 7. **If P1 or P2 findings that are not escalated**: Fix them, re-run review. An escalated finding keeps its priority but stays listed in the PR body and does not send the flow back here.
 
 7a. **FlowGoal gate (v3, opt-in)** — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
@@ -626,7 +626,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    its `chore(decisions):` subject is skipped by `log-commits.sh` Guard 1 (no re-append):
    ```bash
    "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
-   git push -u origin $BRANCH
+   git push -u origin HEAD
    ```
 10. **Create PR** (Tier 2):
     ```bash

@@ -2,7 +2,7 @@
 
 FlowTrigger is the flow plugin's project-local replacement for "background execution" — except flow makes NO claim to actually run things in the background. Plugins cannot invoke native `/loop` or scheduled tasks from plugin code. FlowTrigger artifacts declare WHEN flow should resume work and WHAT to do, but actual execution requires a runner: the user manually invoking `/loop`, a Stop hook firing, CI invoking a workflow, or (v3.1+) an external runner like GitHub Actions or local cron.
 
-## Trigger types (v3.0)
+## Trigger types (in the default `allowedTypes`)
 
 | Type | Runner | Mechanism |
 |---|---|---|
@@ -10,7 +10,7 @@ FlowTrigger is the flow plugin's project-local replacement for "background execu
 | `hook` | Claude Code hook | A hook script (e.g., PostToolUse) invokes `/flow:run trigger <id>` programmatically |
 | `loop_prompt` | User-invoked `/loop` | `/flow:watch` generates a loop-prompt file the user invokes with `/loop @.claude/flow-loop-<id>.md` |
 
-## Trigger types (v3.1+ — design only, NOT shipped in v3.0)
+## Trigger types (schema-valid, not in the default `allowedTypes`)
 
 | Type | Runner | Mechanism |
 |---|---|---|
@@ -48,6 +48,10 @@ A trigger doesn't have its own state machine — `metadata.enabled` is the only 
 plugins/flow/triggers/templates/         # Plugin-shipped templates
 ├── pr-watch.trigger.yaml                  # Template for /flow:watch pr <N>
 ├── ci-failure.trigger.yaml                # Template for /flow:watch ci
+├── issue-watch.trigger.yaml               # Template for /flow:watch issue <N> (read-only on GitHub)
+├── issue-watch.loop.md                    # Its loop prompt
+├── branch-watch.trigger.yaml              # Template for /flow:watch branch (merge the default branch in)
+├── branch-watch.loop.md                   # Its loop prompt
 └── nightly-maintenance.trigger.yaml       # Template for /flow:watch (manual setup)
 
 .flow/triggers/                          # Project-local trigger artifacts
@@ -63,8 +67,8 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 
 | Key | Default | Description |
 |---|---|---|
-| `flow.triggers.enabled` | `false` | Master switch |
-| `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | v3.1+ types are valid schema but disabled until shipped |
+| `flow.triggers.enabled` | `true` | Master switch; `false` turns `/flow:trigger` and `/flow:watch` off |
+| `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | `github_actions`, `local_cron` and `local_daemon` are schema-valid but allowed only when added here |
 | `flow.triggers.allowAutonomousMerge` | `false` | Hard-coded non-negotiable |
 | `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Recursion default |
 | `flow.triggers.defaultConcurrency` | `skip_if_running` | When triggers fire on top of in-flight runs |
@@ -93,6 +97,25 @@ Code built-in; only you can start it. The trigger YAML records that
 you're watching this PR; the prompt file gives /loop the per-iteration
 instructions.
 ```
+
+## Policy report
+
+The report the `trigger-policy` skill returns, in `validate` and `enforce` mode:
+
+```json
+{
+  "trigger_id": "pr-123-watch",
+  "schema_valid": true,
+  "tier3_violations": [],
+  "recursion_violations": [],
+  "missing_required_forbidden": [],
+  "cross_reference_violations": [],
+  "concurrency_violations": [],
+  "overall": "pass"
+}
+```
+
+`bin/flow-trigger-schema-check.sh <trigger.yaml>` is the skill's step 1: it validates the trigger against `schemas/v1/trigger.schema.json` in the plugin it ships in, prints one `SCHEMA_ERROR=` line per error, and exits 0 (valid), 2 (schema errors) or 1 (the trigger or the schema could not be read, or python3, PyYAML or jsonschema is missing).
 
 ## References
 

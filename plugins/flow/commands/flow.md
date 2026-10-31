@@ -14,15 +14,13 @@ _None — dispatcher only. Sub-commands declare their own Required Skills (see S
 
 ## Skill Manifests
 
-Each verb requires specific domain skills. The dispatcher invokes these deterministically:
-
 `references/skill-manifests.md` is the authority: it is generated from the loader and drift-tested. Each command also lists its own skills under `## Required Skills`.
 
 ## Routing Logic
 
 Parse `$ARGUMENTS` to extract verb and target:
 
-1. **Extract verb**: First word of arguments (start, commit, pr, review, address, merge, resolve, release, status, learn, setup, explain, debug, design, brainstorm, issue)
+1. **Extract verb**: First word of arguments (start, commit, pr, review, address, merge, resolve, release, status, learn, setup, explain, debug, design, brainstorm, issue, goal, resume, run, trigger, watch, workflow)
 2. **Extract target**: Remaining arguments (issue number, PR number, version type, etc.)
 3. **Route**: Invoke the corresponding sub-command via Skill tool with the target as arguments
 
