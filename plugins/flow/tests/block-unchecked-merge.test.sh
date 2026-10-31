@@ -1,4 +1,6 @@
 # Tests for hooks/scripts/block-unchecked-merge.sh (issue #170).
+# flow-test: alone
+# (run.sh runs this file by itself: it checks that a merge after 20000 words is read within a time limit.)
 #
 # Contract: a `gh pr merge` is refused while any check is unfinished or failing,
 # and `--auto` is refused on a base branch that requires no status checks —
