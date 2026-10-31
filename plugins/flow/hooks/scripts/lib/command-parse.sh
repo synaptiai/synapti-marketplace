@@ -176,13 +176,17 @@ _bd_words() {
     # qs=1 while the word is one quoted string and nothing else: `"$CMD"`,
     # not `""$CMD` or `"$A"$B`, and not one that expands to several words
     # however it is quoted (`"$@"`, `"${@:2}"`, `"${A[@]}"`, `"${!A[@]}"`).
+    # The `${NAME:-` of a default read in pieces, printed once the word that
+    # holds its last piece has ended.
+    function flushmark() { if (pmark != "") { print "W10" pmark; pmark = "" } }
     function emit() {
-      if (!inw) return
+      if (!inw) { flushmark(); return }
       if (qs && (index(cur, "$@") || cur ~ /[$][{][^}]*@/)) qs = 0
       gsub(/\n/, RSN, cur)
       if (pend == "H" || pend == "I" || pend == "R") print pend cur
       else if (pend == "") print "W" ((xp || inexp || index(cur, "__BD_SUBST__")) ? 1 : 0) (qs ? 1 : 0) cur
       cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0
+      flushmark()
     }
     # Does the quote at i open a dollar-quoted string? Only when the character
     # before it is a dollar sign that no backslash escapes.
@@ -195,12 +199,14 @@ _bd_words() {
     BEGIN { SQ = sprintf("%c", 39); RSN = sprintf("%c", 30); s = "" }
     { s = (NR > 1) ? s "\n" $0 : $0 }
     END {
-      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0; inexp = 0
+      n = length(s); cur = ""; inw = 0; plain = 1; xp = 0; pend = ""; qs = 0; inexp = 0; pmark = ""
       for (i = 1; i <= n; i++) {
         c = substr(s, i, 1)
         # The closing brace of a ${...} read in pieces (splitexp=1, below)
         # ends the expansion and is no part of the last piece.
-        if (c == "}" && (i in cb)) { delete cb[i]; inexp = 0; continue }
+        # A default read in pieces leaves its `${NAME:-` as a word of its own,
+        # after the word its last piece is in (below).
+        if (c == "}" && (i in cb)) { if (cb[i] != "1" && pend == "") pmark = cb[i]; delete cb[i]; inexp = 0; continue }
         if (c == " " || c == "\t" || c == "\r" || c == "\n") { emit(); continue }
         if (c == "\\") {
           qs = 0
@@ -263,12 +269,22 @@ _bd_words() {
         }
         if (c == ";" || c == "|" || c == "&" || c == "(" || c == ")" || c == "`") { emit(); pend = ""; continue }
         # ${...}: to its closing brace, nested ${...} counted; one with no
-        # closing brace is read character by character. With splitexp=1 one
-        # that holds whitespace is read in pieces, the words bash may split
-        # it into: `${NAME:-` (or :+ := :? - + = ?) as a word of its own,
-        # then the words of the rest up to the closing brace, which is
-        # dropped (`${X:- -rf}` is `${X:-` and `-rf`). Each piece is flagged
-        # as an expansion (inexp).
+        # closing brace is read character by character. With splitexp=1:
+        #   - a default, an assigned default or an alternative (`${NAME:-...}`,
+        #     `-`, `:=`, `=`, `:+`, `+`) is read as the words bash makes of
+        #     what follows the operator, quotes removed and split at
+        #     whitespace: the value when the variable is unset (set, for +).
+        #     Text before it is glued to the first of those words and text
+        #     after it to the last, as bash does (`rm -${X:-rf src}` is rm
+        #     -rf src, `git reset --har${X:-d }` is git reset --hard). The
+        #     `${NAME:-` is then a word of its own after them, which marks
+        #     that a variable is there without standing where the program or
+        #     the subcommand is (`git ${X:-reset --hard}` is git reset
+        #     --hard `${X:-`).
+        #   - any other that holds whitespace is read character by character,
+        #     so its pieces are words of their own.
+        # The closing brace is dropped, and each piece is flagged as an
+        # expansion (inexp).
         if (c == "$" && substr(s, i + 1, 1) == "{") {
           d = 1
           for (k = i + 2; k <= n && d > 0; k++) {
@@ -276,11 +292,12 @@ _bd_words() {
             if (e == "$" && substr(s, k + 1, 1) == "{") { d++; k++ }
             else if (e == "}") d--
           }
+          if (d == 0 && splitexp == 1 && match(substr(s, i, k - i), /^[$][{][A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?:?[-+=]/)) {
+            cb[k - 1] = substr(s, i, RLENGTH); inexp = 1; xp = 1; qs = 0
+            i = i + RLENGTH - 1; continue
+          }
           if (d == 0 && splitexp == 1 && substr(s, i, k - i) ~ /[ \t\r\n]/) {
             cb[k - 1] = 1; inexp = 1; xp = 1
-            if (match(substr(s, i, k - i), /^[$][{][!#]?[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?:?[-+=?]/)) {
-              cur = cur substr(s, i, RLENGTH); inw = 1; qs = 0; emit(); i = i + RLENGTH - 1; continue
-            }
           }
           else if (d == 0) { cur = cur substr(s, i, k - i); inw = 1; qs = 0; xp = 1; i = k - 1; continue }
         }
@@ -342,7 +359,7 @@ _bd_is_interpreter() {
 # The shells, the one list every reader of a command uses: _bd_is_shell,
 # _bd_shell_reads_stdin, _bd_is_interpreter, and the piped-into-a-shell pass
 # of _bd_expand_interpreter_args (_BD_SHELL_RE).
-_BD_SHELLS="sh bash zsh ksh dash ash mksh busybox"
+_BD_SHELLS="sh bash zsh ksh dash ash mksh busybox tcsh csh fish yash rbash"
 _BD_SHELL_RE="(^|[^A-Za-z0-9_.-])(${_BD_SHELLS// /|})([^A-Za-z0-9_.-]|\$)"
 
 # _bd_is_shell <word>
@@ -375,6 +392,8 @@ _bd_shell_reads_stdin() {
     t="${TOK[i]}"
     case "$t" in
       --|-) return 0 ;;
+      # It prints and exits.
+      --version|--help) return 1 ;;
       --rcfile|--init-file) i=$((i + 2)); continue ;;
       --*) i=$((i + 1)); continue ;;
       [-+]*c*) return 1 ;;
@@ -594,6 +613,30 @@ _bd_strip_noncode() {
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
           gsub(SQ, "", d)
           gsub(/[ \t]+$/, "", d)
+          if (d != "") { inhd = 1; delim = d; buf = "" }
+        }
+      }
+      # A heredoc fed to a text tool whose output goes only to gh (`cat
+      # <<'EOF' | gh pr create --body-file -`) is data: gh reads it and runs
+      # none of it. Only when nothing before the introducer is quoted,
+      # escaped, substituted or redirected, the delimiter is one whole quoted
+      # word (bash expands nothing in such a body; with a bare delimiter it
+      # runs a `$(...)` in it), and after it comes one pipe into a single gh
+      # command and nothing else.
+      if (!inhd && hits == 1 && q == "" &&
+          (match(out, /<<-?"[A-Za-z_][A-Za-z0-9_]*"/) ||
+           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ)) &&
+          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+        pre = substr(out, 1, RSTART - 1)
+        d = substr(out, RSTART, RLENGTH)
+        post = substr(out, RSTART + RLENGTH)
+        owner = owner_word(pre)
+        if (owner != "gh" && is_sink(owner) && pre !~ ("[\"" SQ "\\\\`$()<>|;&]") &&
+            post ~ /^[ \t]*[|][ \t]*gh[ \t][^|;&<>`$()]*$/) {
+          sub(/^<</, "", d)
+          tabs = 0
+          if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
+          gsub("[\"" SQ "]", "", d)
           if (d != "") { inhd = 1; delim = d; buf = "" }
         }
       }
@@ -951,9 +994,13 @@ BD_EXPAND_EOF
   local nc=0 piped=0 quoted="" fed=0
   case "$BD_CODE" in
     *'|'*|*'>('*|*'<('*)
+      # On the text without quotes and backslashes, which bash removes
+      # from a word before it runs it (`| bas\h` runs bash).
+      local bare="${BD_CODE//\\/}"
+      bare="${bare//\"/}"; bare="${bare//\'/}"
       shopt -q nocasematch && nc=1
       shopt -s nocasematch
-      [[ "$BD_CODE" =~ $_BD_SHELL_RE ]] && piped=1
+      [[ "$bare" =~ $_BD_SHELL_RE ]] && piped=1
       [ "$nc" = 1 ] || shopt -u nocasematch ;;
   esac
   case "$piped" in
@@ -971,10 +1018,17 @@ BD_EXPAND_EOF
           case "${TOK[i]}" in
             [A-Za-z_]*=*|if|then|elif|else|while|until|do|'!'|'{') i=$((i + 1)); continue ;;
           esac
+          # `command -v bash` looks a program up and runs nothing.
+          if [ "${TOK[i]##*/}" = command ]; then
+            case "${TOK[i+1]:-}" in -*[vV]*) i=$n; break ;; esac
+          fi
+          # A program that runs the rest of its line: the shell is the first
+          # word after it that names one, past its options and their values
+          # (`timeout 5 bash`, `ionice -c3 bash`, `busybox sh`).
           case "${TOK[i]##*/}" in
-            sudo|doas|env|nohup|nice|time|command|builtin|exec|timeout|xargs)
+            sudo|doas|env|nohup|nice|time|command|builtin|exec|timeout|xargs|stdbuf|setsid|ionice|caffeinate|chrt|taskset|flock|unbuffer|chronic|coproc|busybox|script|watch|parallel)
               i=$((i + 1))
-              while [ "$i" -lt "$n" ]; do case "${TOK[i]}" in -*) i=$((i + 1)) ;; *) break ;; esac; done
+              while [ "$i" -lt "$n" ] && ! _bd_is_shell "${TOK[i]}"; do i=$((i + 1)); done
               continue ;;
           esac
           break

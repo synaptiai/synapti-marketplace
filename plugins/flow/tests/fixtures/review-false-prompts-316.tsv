@@ -1,0 +1,17 @@
+7	gh pr list | wc -l; which bash
+7	gh pr list | grep x; command -v bash
+7	bash --version | head -1 && git --version && gh --version
+7	gh pr checks 5 | tail -3; zsh --version
+7	gh auth status 2>&1 | head -3; echo $SHELL; which bash zsh
+7	x=$(ls | wc -l); which bash; gh pr list
+7	bash -c 'ls | wc -l'; which bash; gh pr list
+7	gh pr list | grep -c x; docker run --rm img sh
+7	git commit -m "fix: refuse git reset --hard in hooks" && bash --version | head -1
+7	gh pr comment 5 --body "merge with gh pr merge 5 --squash once green" && bash --version | head -1
+7	git branch --sort -committerdate | head -5; git push origin HEAD
+7	git branch --format '-%(refname:short)'; git push origin HEAD
+issue	gh pr create --title "feat: x" --body "$(cat <<'BODY'⏎Merges the release work.⏎⏎Closes #42⏎BODY⏎)"
+issue	cat <<'EOF' | gh pr create --title t --body-file -⏎Run gh pr merge once green; release notes follow.⏎EOF
+issue	gh pr view 7 --json title | tee pr.json | grep -c title
+issue	gh pr list | grep merge
+issue	which bash

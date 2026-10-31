@@ -117,8 +117,16 @@ COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
 if ! _BUM_BARE=$(printf '%s' "$COMMAND" | LC_ALL=C tr -d "'\"\\\\"); then
   _BUM_BARE=merge
 fi
+# A substitution can split the word itself (`gh pr mer$(true)ge 7`), so the
+# text is also judged with each one removed.
 case "$_BUM_BARE" in
   *[Mm][Ee][Rr][Gg][Ee]*|*[Gg][Rr][Aa][Pp][Hh][Qq][Ll]*) ;;
+  *'$('*|*'`'*)
+    _BUM_BARE=$(printf '%s' "$_BUM_BARE" | sed -e 's/[$]([^()]*)//g' -e 's/`[^`]*`//g' 2>/dev/null) || _BUM_BARE=merge
+    case "$_BUM_BARE" in
+      *[Mm][Ee][Rr][Gg][Ee]*|*[Gg][Rr][Aa][Pp][Hh][Qq][Ll]*) ;;
+      *) exit 0 ;;
+    esac ;;
   *) exit 0 ;;
 esac
 
@@ -135,6 +143,30 @@ _bd_strip_noncode "$COMMAND"
 # `bash -c 'gh pr merge 9'` and `eval '...'` hide the merge inside one quoted
 # word. Expand those first, so the merge is a command like any other.
 _bd_expand_interpreter_args
+# So do programs that run a quoted argument as a shell command (`watch 'gh pr
+# merge 1'`, `script -c '...'`, `flock f -c '...'`, `tmux new '...'`): each
+# word with a space in it, after one of them as the command word, is read as
+# a command too.
+_bum_runs_args=""
+while IFS= read -r _bum_seg; do
+  case "$_bum_seg" in __BD_ALT__*) _bum_seg="${_bum_seg:10}" ;; esac
+  case "$_bum_seg" in __BD_PIPE__*) _bum_seg="${_bum_seg:11}" ;; esac
+  case "$_bum_seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+  _bd_words "$_bum_seg"
+  _bum_f=0
+  while [ "$_bum_f" -lt "${#TOK[@]}" ] && case "${TOK[_bum_f]}" in [A-Za-z_]*=*) true ;; *) false ;; esac; do _bum_f=$((_bum_f + 1)); done
+  case "${TOK[_bum_f]:-}" in
+    */watch|watch|*/script|script|*/flock|flock|*/parallel|parallel|*/tmux|tmux|*/screen|screen|*/setsid|setsid|*/chronic|chronic|*/unbuffer|unbuffer) ;;
+    *) continue ;;
+  esac
+  for ((_bum_k = _bum_f + 1; _bum_k < ${#TOK[@]}; _bum_k++)); do
+    case "${TOK[_bum_k]}" in *[[:space:]]*) _bum_runs_args="$_bum_runs_args
+${TOK[_bum_k]}" ;; esac
+  done
+done <<BUM_EOF
+$(_bd_segments "$BD_CODE")
+BUM_EOF
+[ -z "$_bum_runs_args" ] || BD_CODE="$BD_CODE$_bum_runs_args"
 
 # A value this hook cannot know without running a shell: a variable, or a
 # substitution (the segmenter leaves `__BD_SUBST__` where `$(...)` or a backtick
@@ -407,6 +439,42 @@ while IFS= read -r SEG; do
   n=${#TOK[@]}
   [ "$n" -gt 0 ] || continue
 
+  # A command word this hook cannot read, in a command whose text names a
+  # merge: a variable or a substitution with nothing after it (`$CMD`,
+  # `""$CMD`, `${CMD%/}`; not `"$CMD"`, one quoted program name), or eval of
+  # anything but one word that reads a variable by name (`eval
+  # "v=\${$name}"`) with an argument this hook cannot read. Either may run
+  # the merge the text names.
+  if [ "$PREV_MERGE" = 0 ]; then
+    f=0
+    while [ "$f" -lt "$n" ] && _bum_is_assignment "${TOK[f]}"; do f=$((f + 1)); done
+    if [ "$f" -lt "$n" ]; then
+      # A word with a / of its own, outside ${...}, names a file
+      # (`"$ROOT/bin/x.sh"`).
+      if [ $((f + 1)) -eq "$n" ] && _bum_unreadable "${TOK[f]}" && [ "${TOKQ[f]:-0}" != 1 ] &&
+         ! printf '%s' "${TOK[f]}" | sed 's/[$][{][^}]*[}]//g' | grep -q /; then
+        _bum_refuse "BLOCKED: the command runs \"$(_bum_show "${TOK[f]}")\", which this hook cannot read, and the command text names a merge." \
+          "Next: run the merge as its own command, written out: $_BUM_SHAPE."
+      fi
+      if [ "${TOK[f]##*/}" = eval ] && [ $((f + 1)) -lt "$n" ]; then
+        _bum_eval_ok=0
+        if [ $((f + 2)) -eq "$n" ]; then
+          case "${TOK[f+1]}" in
+            [A-Za-z_]*'=${$'*'}') _bum_eval_ok=1 ;;
+          esac
+        fi
+        if [ "$_bum_eval_ok" = 0 ]; then
+          for ((k = f + 1; k < n; k++)); do
+            if _bum_unreadable "${TOK[k]}"; then
+              _bum_refuse "BLOCKED: eval of \"$(_bum_show "${TOK[*]:$((f + 1))}")\", which this hook cannot read, in a command whose text names a merge." \
+                "Next: run the merge as its own command, written out: $_BUM_SHAPE."
+            fi
+          done
+        fi
+      fi
+    fi
+  fi
+
   # --- is there a merge in this command, wherever gh stands? -----------------
   # gh anywhere, or a word this hook cannot read that might expand to gh, then
   # `pr merge`, `api`, or `alias`. Finding it anywhere, rather than only first,
@@ -427,6 +495,10 @@ while IFS= read -r SEG; do
     case "${SUB[0]:-} ${SUB[1]:-}" in
       "pr merge") c=$k; kind="merge"; break ;;
     esac
+    # `gh pr $A 7`: a subcommand this hook cannot read may be merge.
+    if [ "${SUB[0]:-}" = pr ] && _bum_unreadable "${SUB[1]:-}"; then
+      _bum_refuse_unreadable "gh pr subcommand" "${SUB[1]}"
+    fi
     case "${SUB[0]:-}" in
       api)   _bum_is_gh "${TOK[k]}" && { c=$k; kind="api"; break; } ;;
       alias) _bum_is_gh "${TOK[k]}" && { c=$k; kind="alias"; break; } ;;
@@ -445,7 +517,7 @@ while IFS= read -r SEG; do
     is_graphql=0
     for ((k = c + 1; k < n; k++)); do
       case "${TOK[k]}" in
-        */[Mm][Ee][Rr][Gg][Ee]|*/[Mm][Ee][Rr][Gg][Ee][/?]*|*/[Mm][Ee][Rr][Gg][Ee][Ss]|*/[Mm][Ee][Rr][Gg][Ee][Ss][/?]*|\
+        */[Mm][Ee][Rr][Gg][Ee]|*/[Mm][Ee][Rr][Gg][Ee][/?#]*|*/[Mm][Ee][Rr][Gg][Ee][Ss]|*/[Mm][Ee][Rr][Gg][Ee][Ss][/?#]*|\
         *[Mm]erge[Pp]ull[Rr]equest*|*[Mm]erge[Bb]ranch*|*[Ee]nable[Pp]ull[Rr]equest[Aa]uto[Mm]erge*|*[Ee]nqueue[Pp]ull[Rr]equest*)
           echo "BLOCKED: gh api on a merge endpoint or mutation. Its checks cannot be verified from here." >&2
           echo "Next: to merge, run $_BUM_SHAPE. To ask whether it merged: gh pr view <number> --repo owner/name --json mergedAt." >&2
