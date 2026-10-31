@@ -46,8 +46,9 @@
   asked about that action in the same Bash call, and otherwise refuses it
   with a message saying to run it as its own command. It writes the
   breadcrumb for a `journal` action the hook did not see. What a push sends
-  is asked of git (`git push --dry-run --porcelain`); a push to a path on
-  this machine is not a tier action. The hook's record of what it asked is
+  is asked of git (`git push --dry-run --porcelain`), one more round trip to
+  the remote per push; a push to a path on this machine is not a tier
+  action. The hook's record of what it asked is
   kept with the command, and the call's shell takes the record of its own
   command, so Bash calls run at the same time cannot use each other's
   approval and a refused ask approves nothing later. An approval covers as
