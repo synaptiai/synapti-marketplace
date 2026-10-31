@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 3.12.0 (2026-10-31)
+
+flow applies the tier settings (`tiers.*`) to every Bash command (#317). A
+hook asks before a merge, a release, a tag push or an action set to
+`confirm`, and flow's `git` and `gh` wrappers check again when the program
+starts, so a script file, an alias or `eval` cannot hide the action from
+them. `/flow:setup` offers GitHub rulesets, which apply however a push or
+merge is made. The test suite runs its files in parallel and reports each
+file's time (#318): a full run on a 12-CPU Mac went from 68.5 to 18.1
+minutes.
 
 ### Added
 
@@ -63,6 +72,17 @@
   than its author. It asks first, and reports when GitHub refuses (a
   private repository on the free plan, no admin rights).
 
+### Changed
+
+- `plugins/flow/tests/run.sh` runs several test files at once, each in a
+  run.sh of its own, as many as the machine has CPUs unless
+  `FLOW_TEST_JOBS=N` says otherwise. It prints each file's output whole and
+  in list order, the time each file took, the files' times longest first,
+  and the time of the whole run. Files start longest first, by the times of
+  the last run. A file with a line `# flow-test: alone` (one that measures
+  its own speed or works to a time budget) runs after the others, by
+  itself. `FLOW_TEST_JOBS=1`, and a run of one file, work as before.
+
 ### Fixed
 
 - `block-unchecked-merge.sh` reads a word with a backslash in it as bash
@@ -92,17 +112,6 @@
   read as one when the shell's name has a backslash in it (`| bas\h`) or
   stands after `stdbuf`, `setsid`, `ionice`, `caffeinate`, `busybox` or
   another program that runs the rest of its line.
-
-### Changed
-
-- `plugins/flow/tests/run.sh` runs several test files at once, each in a
-  run.sh of its own, as many as the machine has CPUs unless
-  `FLOW_TEST_JOBS=N` says otherwise. It prints each file's output whole and
-  in list order, the time each file took, the files' times longest first,
-  and the time of the whole run. Files start longest first, by the times of
-  the last run. A file with a line `# flow-test: alone` (one that measures
-  its own speed or works to a time budget) runs after the others, by
-  itself. `FLOW_TEST_JOBS=1`, and a run of one file, work as before.
 
 ## 3.11.0 (2026-10-31)
 
