@@ -9,6 +9,14 @@
 #   plugins/flow/tests/run.sh              # run all tests
 #   plugins/flow/tests/run.sh <file.test.sh>  # run one file
 #
+# Several files run at once, each in a run.sh of its own: FLOW_TEST_JOBS=N
+# sets how many (default: the number of CPUs; 1 runs them one after another
+# in this process). Each file's output is printed whole, in list order, with
+# the time it took, followed by every file's time, longest first, and the
+# time of the whole run. Files start longest first, by the times the last run
+# recorded in FLOW_TEST_TIMES (default ~/.cache/flow-tests/times).
+# FLOW_TEST_SHARD=K/N runs part K of N (below).
+#
 # Exit:
 #   0 — all assertions passed
 #   1 — at least one assertion failed
@@ -162,6 +170,172 @@ if [ -n "${FLOW_TEST_SHARD+x}" ]; then
   unset _flow_part _flow_i _flow_f _flow_k _flow_n _flow_ok _flow_shard
 fi
 
+# FLOW_TEST_JOBS=N runs up to N files at once. The default is the number of
+# CPUs; 1 runs them one after another in this process, as a single file
+# always is. Each file runs in a run.sh of its own, given that one file, so
+# it sees exactly what it sees when it is run alone: its own state directory
+# and the same environment. Its output is printed whole, in list order, when
+# it ends. The suites never see the variable.
+_flow_jobs=${FLOW_TEST_JOBS-}
+unset FLOW_TEST_JOBS
+if [ -z "$_flow_jobs" ]; then
+  _flow_jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
+fi
+case "$_flow_jobs" in
+  ''|0*|*[!0-9]*|????*)
+    echo "run.sh: FLOW_TEST_JOBS must be a whole number from 1 to 999, got '$_flow_jobs'" >&2
+    exit 2 ;;
+esac
+
+# _flow_secs — seconds since the epoch.
+_flow_secs() { date +%s; }
+
+if [ "$_flow_jobs" -gt 1 ] && [ "${#TEST_FILES[@]}" -gt 1 ]; then
+  _flow_par=$(mktemp -d "${TMPDIR:-/tmp}/flow-run-par.XXXXXX") || {
+    echo "run.sh: cannot create a directory for the parallel run" >&2
+    exit 2
+  }
+  # Stop the files still running when this run is stopped, and remove what it
+  # wrote. A file's own run.sh removes its own state directory.
+  _flow_par_cleanup() {
+    [ -z "${_flow_xargs_pid:-}" ] || pkill -TERM -P "$_flow_xargs_pid" 2>/dev/null
+    [ -z "${_flow_xargs_pid:-}" ] || kill -TERM "$_flow_xargs_pid" 2>/dev/null
+    rm -rf "$_flow_par" 2>/dev/null
+    chmod -R u+rwx "$_flow_run_state" 2>/dev/null; rm -r "$_flow_run_state" 2>/dev/null
+  }
+  trap '_flow_par_cleanup' EXIT
+  trap '_flow_par_cleanup; trap - INT; kill -INT $$' INT
+  trap '_flow_par_cleanup; exit 143' TERM
+
+  _flow_n=${#TEST_FILES[@]}
+  echo "run.sh: running $_flow_n files, up to $_flow_jobs at a time"
+  _flow_start=$(_flow_secs)
+  _flow_i=0
+  for _flow_f in "${TEST_FILES[@]}"; do
+    if [ ! -f "$_flow_f" ] && [ -f "$TESTS_DIR/$_flow_f" ]; then
+      _flow_f="$TESTS_DIR/$_flow_f"
+    fi
+    printf '%s\t%s\0' "$_flow_i" "$_flow_f"
+    _flow_i=$((_flow_i + 1))
+  done > "$_flow_par/list"
+
+  # Files start longest first, by the times the last full run on this machine
+  # took, kept in FLOW_TEST_TIMES (default ~/.cache/flow-tests/times, one
+  # "<seconds> <file name>" line each). A file with no time yet starts first.
+  # The order changes only how soon the run ends; output stays in list order.
+  _flow_times_file=${FLOW_TEST_TIMES:-${XDG_CACHE_HOME:-$HOME/.cache}/flow-tests/times}
+  tr '\0' '\n' < "$_flow_par/list" | awk -F '\t' -v times="$_flow_times_file" '
+    BEGIN { while ((getline line < times) > 0) { split(line, a, " "); t[a[2]] = a[1] + 0 } }
+    { n = $2; sub(/.*\//, "", n); s = (n in t) ? t[n] : 1000000; printf "%d\t%s\t%s\n", s, $1, $2 }
+  ' | sort -t "$(printf '\t')" -k1,1nr -k2,2n | cut -f2- | tr '\n' '\0' > "$_flow_par/start"
+
+  # One worker per file: run.sh on that file alone, with FLOW_TEST_JOBS=1 so
+  # a run.sh the file itself starts runs its fixtures in order. Writes
+  # <i>.out (everything run.sh printed), <i>.rc, <i>.secs and, last, <i>.done.
+  # shellcheck disable=SC2016
+  # A background job of a script starts with SIGINT and SIGQUIT ignored, and
+  # a program cannot undo an ignore it inherits from bash; perl resets both
+  # before xargs starts, so a suite that interrupts its own processes sees
+  # them stop as they do in a run one at a time.
+  perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
+  xargs -0 -n 1 -P "$_flow_jobs" bash -c '
+    dir=$1 runsh=$2 i=${3%%	*} f=${3#*	}
+    s=$(date +%s)
+    printf "run.sh: started %s\n" "${f##*/}"
+    FLOW_TEST_JOBS=1 "$runsh" "$f" > "$dir/$i.out" 2>&1 < /dev/null
+    printf "%s\n" "$?" > "$dir/$i.rc"
+    printf "%s\n" "$(( $(date +%s) - s ))" > "$dir/$i.secs"
+    : > "$dir/$i.done"
+  ' _ "$_flow_par" "$TESTS_DIR/run.sh" < "$_flow_par/start" &
+  _flow_xargs_pid=$!
+
+  TOTAL_PASS=0
+  TOTAL_FAIL=0
+  FAILED_FILES=()
+  RUNNER_ERR=0
+  _flow_times=""
+  _flow_i=0
+  while [ "$_flow_i" -lt "$_flow_n" ]; do
+    # Each file is printed in list order once it has ended; a finished xargs
+    # with no .done for it means its worker never ran or was killed.
+    while [ ! -f "$_flow_par/$_flow_i.done" ]; do
+      if ! kill -0 "$_flow_xargs_pid" 2>/dev/null && [ ! -f "$_flow_par/$_flow_i.done" ]; then
+        break
+      fi
+      sleep 0.2
+    done
+    _flow_f=$(tr '\0' '\n' < "$_flow_par/list" | sed -n "$((_flow_i + 1))p")
+    _flow_f=${_flow_f#*	}
+    _flow_name=${_flow_f##*/}
+    if [ ! -f "$_flow_par/$_flow_i.done" ]; then
+      echo "=== $_flow_name ==="
+      echo "run.sh: $_flow_name did not finish: its worker stopped before it ended" >&2
+      RUNNER_ERR=1
+      FAILED_FILES+=("$_flow_name")
+      _flow_i=$((_flow_i + 1))
+      continue
+    fi
+    _flow_rc=$(cat "$_flow_par/$_flow_i.rc")
+    _flow_s=$(cat "$_flow_par/$_flow_i.secs")
+    _flow_out=$(cat "$_flow_par/$_flow_i.out")
+    # The file's own run.sh printed its block, with the time the file took,
+    # then "=== overall ===" and its totals; the block is printed as it is.
+    printf '%s\n' "$_flow_out" | sed '/^=== overall ===$/,$d'
+    _flow_total=$(printf '%s\n' "$_flow_out" | sed -n 's/^TOTAL pass=\([0-9][0-9]*\) fail=\([0-9][0-9]*\)$/\1 \2/p' | tail -1)
+    if [ -z "$_flow_total" ]; then
+      echo "run.sh: $_flow_name: its run.sh printed no TOTAL line (exit=$_flow_rc); last lines:" >&2
+      printf '%s\n' "$_flow_out" | tail -10 >&2
+      RUNNER_ERR=1
+      FAILED_FILES+=("$_flow_name")
+    else
+      TOTAL_PASS=$((TOTAL_PASS + ${_flow_total% *}))
+      TOTAL_FAIL=$((TOTAL_FAIL + ${_flow_total#* }))
+      case "$_flow_rc" in
+        0) ;;
+        1) FAILED_FILES+=("$_flow_name") ;;
+        *) RUNNER_ERR=1; FAILED_FILES+=("$_flow_name") ;;
+      esac
+    fi
+    _flow_times="$_flow_times$_flow_s $_flow_name
+"
+    [ "${_flow_f%/*}" != "$TESTS_DIR" ] || printf '%s\n' "$_flow_name" >> "$_flow_par/names"
+    _flow_i=$((_flow_i + 1))
+  done
+  touch "$_flow_par/names"
+  wait "$_flow_xargs_pid" 2>/dev/null
+  _flow_xargs_pid=""
+  _flow_elapsed=$(( $(_flow_secs) - _flow_start ))
+
+  echo "=== durations (seconds, longest first) ==="
+  printf '%s' "$_flow_times" | sort -rn -k1,1 | sed 's/^/  /'
+  # Keep this run's times of the suite's own files for the next run's order;
+  # a file not run this time keeps its old time.
+  if mkdir -p "$(dirname "$_flow_times_file")" 2>/dev/null; then
+    {
+      printf '%s' "$_flow_times" | awk -v d="$TESTS_DIR" -v list="$_flow_par/names" '
+        BEGIN { while ((getline l < list) > 0) own[l] = 1 }
+        ($2 in own) { print }'
+      [ -f "$_flow_times_file" ] && awk -v list="$_flow_par/names" '
+        BEGIN { while ((getline l < list) > 0) own[l] = 1 }
+        !($2 in own)' "$_flow_times_file"
+    } > "$_flow_times_file.$$" 2>/dev/null && mv -f "$_flow_times_file.$$" "$_flow_times_file" 2>/dev/null
+    rm -f "$_flow_times_file.$$" 2>/dev/null
+  fi
+  echo "=== overall ==="
+  echo "TOTAL pass=$TOTAL_PASS fail=$TOTAL_FAIL"
+  echo "TIME ${_flow_elapsed}s for ${_flow_n} files, up to ${_flow_jobs} at a time"
+  if [ "${#FAILED_FILES[@]}" -gt 0 ]; then
+    echo "FAILED files: ${FAILED_FILES[*]}"
+  fi
+  if [ "$RUNNER_ERR" != "0" ]; then
+    exit 2
+  fi
+  if [ "$TOTAL_FAIL" != "0" ]; then
+    exit 1
+  fi
+  exit 0
+fi
+
 TOTAL_PASS=0
 TOTAL_FAIL=0
 FAILED_FILES=()
@@ -169,6 +343,8 @@ FAILED_FILES=()
 # test file, malformed SUMMARY) is NOT the same as a test failure. The exit
 # code distinguishes 1 (assertions failed) from 2 (runner error).
 RUNNER_ERR=0
+_flow_times=""
+_flow_start=$(_flow_secs)
 
 for TEST_FILE in "${TEST_FILES[@]}"; do
   # Resolve relative arg against TESTS_DIR.
@@ -183,6 +359,7 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   fi
 
   echo "=== $(basename "$TEST_FILE") ==="
+  _flow_file_start=$(_flow_secs)
   # Parse before sourcing. `source` on a file with a syntax error stops at the
   # error but leaves the subshell alive, so _flow_test_summary still prints a
   # well-formed SUMMARY counting only the assertions that ran — a file bash
@@ -216,6 +393,10 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   } 2>&1)
   RC=$?
   printf '%s\n' "$OUTPUT"
+  _flow_s=$(( $(_flow_secs) - _flow_file_start ))
+  echo "run.sh: $(basename "$TEST_FILE") took ${_flow_s}s"
+  _flow_times="$_flow_times$_flow_s $(basename "$TEST_FILE")
+"
   # Extract last SUMMARY line — tolerate trailing whitespace and CR (a stray
   # CRLF in a test file used to make the anchored regex reject the line).
   SUMMARY=$(printf '%s\n' "$OUTPUT" | tr -d '\r' | grep -E '^SUMMARY pass=[0-9]+ fail=[0-9]+[[:space:]]*$' | tail -1)
@@ -253,8 +434,13 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   echo ""
 done
 
+if [ "${#TEST_FILES[@]}" -gt 1 ]; then
+  echo "=== durations (seconds, longest first) ==="
+  printf '%s' "$_flow_times" | sort -rn -k1,1 | sed 's/^/  /'
+fi
 echo "=== overall ==="
 echo "TOTAL pass=$TOTAL_PASS fail=$TOTAL_FAIL"
+echo "TIME $(( $(_flow_secs) - _flow_start ))s for ${#TEST_FILES[@]} files, one at a time"
 if [ "${#FAILED_FILES[@]}" -gt 0 ]; then
   echo "FAILED files: ${FAILED_FILES[*]}"
 fi

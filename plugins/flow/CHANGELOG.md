@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `plugins/flow/tests/run.sh` runs several test files at once, each in a
+  run.sh of its own, as many as the machine has CPUs unless
+  `FLOW_TEST_JOBS=N` says otherwise. It prints each file's output whole and
+  in list order, the time each file took, the files' times longest first,
+  and the time of the whole run. Files start longest first, by the times of
+  the last run. `FLOW_TEST_JOBS=1`, and a run of one file, work as before.
+
 ## 3.11.0 (2026-10-31)
 
 flow's commands, skills, agents and the references they load now describe the
