@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.11.0 (2026-10-31)
 
 flow's commands, skills, agents and the references they load now describe the
 plugin as it behaves (#316). A prompt audit against Claude Opus 5.5 found 120
