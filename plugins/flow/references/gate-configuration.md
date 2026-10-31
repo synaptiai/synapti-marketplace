@@ -36,7 +36,7 @@ The schema accepts `autonomous`, `journal` or `confirm` for each key. No flow co
 | `journal` | Execute, and write one breadcrumb (UTC time, setting, command) to the git-ignored auto-log trail: `<journal dir>/auto-log/issue-{N}.{YYYY-MM}.md` on a branch naming issue N, `auto-log/session-{YYYY-MM-DD}.md` otherwise. Nothing is written in a repository with no journal directory, and the tracked journal is not touched. |
 | `confirm` | Ask first: a permission prompt that names the action, its setting and the command. In `claude -p` it is a refusal. |
 
-The `tier-gate.sh` PreToolUse hook applies these values to every Bash command that runs one of the actions below. See [`three-tier-safety.md`](three-tier-safety.md) for how it reads a command and what it does not cover.
+The `tier-gate.sh` PreToolUse hook applies these values to every Bash command that runs one of the actions below, and flow's `git` and `gh` wrappers check them again when the program starts. See [`three-tier-safety.md`](three-tier-safety.md) for how each reads a command and what neither covers.
 
 ### Actions
 

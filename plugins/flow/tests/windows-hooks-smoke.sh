@@ -219,6 +219,31 @@ for h in flow-goal-stop.sh reply-style-check.sh session-end-state.sh session-end
 done
 printf '\n'
 
+# --- the SessionStart hook and the git and gh wrappers it puts on PATH -------
+# The wrappers run on every git and gh call of a session, so one that does
+# not start breaks git itself, not only the check.
+if [ -f "$HOOKS/tier-session-start.sh" ] && command -v jq >/dev/null 2>&1; then
+  SMOKE_STATE=$(mktemp -d "${TMPDIR:-/tmp}/flow-smoke-state.XXXXXX") || SMOKE_STATE=""
+  SMOKE_ENV="${SMOKE_STATE:+$SMOKE_STATE/env.sh}"
+  if [ -n "$SMOKE_ENV" ]; then
+    printf '{"session_id":"smoke","hook_event_name":"SessionStart"}' \
+      | CLAUDE_ENV_FILE="$SMOKE_ENV" FLOW_STATE_DIR="$SMOKE_STATE" bash "$HOOKS/tier-session-start.sh" >/dev/null 2>&1
+    rc=$?
+    if [ "$rc" = 0 ] && grep -q 'hooks/shims' "$SMOKE_ENV"; then
+      _ok "tier-session-start wrote the session's PATH line"
+      _out=$(bash -c '. "$1"; command -v git; git --version' _ "$SMOKE_ENV" 2>&1)
+      case "$_out" in
+        *hooks/shims/git*"git version"*) _ok "git runs through flow's wrapper" ;;
+        *) _bad "git through flow's wrapper: $(printf '%s' "$_out" | tr '\n' '|' | cut -c1-300)" ;;
+      esac
+    else
+      _bad "tier-session-start — exit $rc, or no PATH line in CLAUDE_ENV_FILE"
+    fi
+    rm -r "$SMOKE_STATE"
+  fi
+fi
+printf '\n'
+
 # --- the settings resolver, which almost everything depends on ----------------
 if [ -x "$PLUGIN_ROOT/bin/cascade-resolve.sh" ]; then
   OUT=$("$PLUGIN_ROOT/bin/cascade-resolve.sh" --default "fallback" '.nothing.here' 2>/dev/null)

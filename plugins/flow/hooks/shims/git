@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# [flow] git, as Bash commands in a Claude Code session run it by name: checks
+# the tier settings for what this git is about to do, then runs the real git
+# (scripts/lib/tier-runtime.sh). tier-session-start.sh puts this directory
+# first on PATH.
+_tr_lib="${BASH_SOURCE[0]%/*}/../scripts/lib/tier-runtime.sh"
+# shellcheck source=../scripts/lib/tier-runtime.sh
+. "$_tr_lib" || { printf 'flow: tier check — cannot load %s\n' "$_tr_lib" >&2; exit 127; }
+_tr_main git "$@"

@@ -203,6 +203,15 @@
 # follow anywhere in it, or behind a program this hook does not know, it
 # asks.
 #
+# For each Bash call this hook also writes a record of the actions it asked
+# about (so the person approved them) and the ones it journaled, to
+# <state dir>/sessions/<session id>/tier/pending, after removing the record
+# of the call before. The git and gh wrappers that tier-session-start.sh puts
+# first on PATH read it when the program starts (lib/tier-runtime.sh): they
+# refuse a confirm action this hook did not ask about, and journal a journal
+# action it did not journal. Nothing is written for a session without that
+# directory.
+#
 # Values: confirm asks (permissionDecision "ask", with a reason naming the
 # action, the setting and the command); journal writes one breadcrumb to the
 # git-ignored auto-log trail and allows; autonomous allows. merge and release
@@ -392,9 +401,13 @@
 # above (deleting a branch ref), an `eval "v=\${$name}"` whose name
 # variable holds shell text rather than a name, and a heredoc body line
 # (`$CMD`) read by a while loop whose body, on another line, runs a shell
-# that reads the rest of the heredoc. Branch protection,
-# rulesets and tag protection are the mechanism against those; this hook
-# reads the commands an agent writes. `--help` is not exempted: it costs a
+# that reads the rest of the heredoc. The run-time check (the git and gh
+# wrappers, lib/tier-runtime.sh) sees the arguments of each of these when
+# git or gh starts by name, and refuses a merge, release, tag push or
+# confirm action this hook did not ask about; references/three-tier-safety.md
+# lists what neither covers. Branch protection, rulesets and tag protection
+# are the mechanism against those; this hook reads the commands an agent
+# writes. `--help` is not exempted: it costs a
 # prompt, while exempting a value that happens to read `--help` would cost a
 # missed confirmation. For the same reason the parser reads every quoted
 # argument with a space in it, after env, sudo, timeout, xargs, nohup and the
@@ -441,10 +454,74 @@ export CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT"
 
 _tg_note() { printf 'flow: tier-gate — %s\n' "$1" >&2; }
 
+# The record the run-time check reads (lib/tier-runtime.sh) for this Bash
+# call: a directory pending.<time>.<pid> holding the command as Claude Code
+# hands it to the shell (cmdq: the text inside `eval '...'`, each ' written
+# '"'"'), which is
+# how the session's line finds the record of its own call; the actions this
+# hook asked about, and so the person approved, each with how many times it
+# appears (asked: "<key> <n>", or "<key> *" when they cannot be counted);
+# the ones it journaled (journaled); and the tags of a `gh release create
+# --verify-tag` it journaled (verified). TG_CALL_DIR is the session's
+# directory, which exists only when tier-session-start.sh set the check up.
+TG_CALL_DIR=""
+_tg_record() {   # $1 = asked (key, or key:* when uncounted), $2 = journaled keys, $3 = verified tags
+  [ -n "$TG_CALL_DIR" ] || return 0
+  local d k c t sq="'" esc="'\"'\"'"
+  d="$TG_CALL_DIR/pending.$(date +%s).$$"
+  mkdir "$d" 2>/dev/null || return 0
+  printf '%s' "$TG_CMDQ" > "$d/cmdq" 2>/dev/null
+  # A loop, a function or xargs can run an action more times than the
+  # text shows: there each action the gate asked about is uncounted.
+  # Read from the parsed command, so the words in a title or a message
+  # ("fix for login") count for nothing.
+  local many=0 seg w segs=""
+  # In a subshell: the parser exits on an awk failure.
+  if declare -F _bd_segments >/dev/null; then
+    segs=$( { _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE"
+              # A function definition: `name() {`.
+              printf '%s\n' "$BD_CODE" | grep -qE '[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)[[:space:]]*[{(]' && echo __TG_FUNCTION__; } 2>/dev/null)
+  fi
+  while IFS= read -r seg; do
+    [ -n "$seg" ] || continue
+    [ "$seg" = __TG_FUNCTION__ ] && { many=1; break; }
+    case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac
+    case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
+    _bd_words "$seg"
+    for w in ${TOK[@]+"${TOK[@]}"}; do
+      case "$w" in
+        [A-Za-z_]*=*|'{'|'('|'!'|time|-p|if|then|elif|else|do) continue ;;
+        for|while|until|select|function|xargs|parallel) many=1 ;;
+      esac
+      break
+    done
+    [ "$many" = 1 ] && break
+  done <<TG_MANY_EOF
+$segs
+TG_MANY_EOF
+  set -f
+  for k in merge release push prCreate issueAssign issueCreate; do
+    c=0
+    for t in $1; do
+      case "$t" in
+        "$k:*") c='*'; break ;;
+        "$k") c=$((c + 1)) ;;
+      esac
+    done
+    [ "$c" != 0 ] && [ "$many" = 1 ] && c='*'
+    [ "$c" = 0 ] || printf '%s %s\n' "$k" "$c" >> "$d/asked"
+  done
+  for t in $2; do printf '%s\n' "$t" >> "$d/journaled"; done
+  for t in $3; do printf '%s\n' "$t" >> "$d/verified"; done
+  set +f
+  return 0
+}
+
 # The ask for a command this hook could not read. Constant text, so it needs
 # no jq to be valid JSON.
 _tg_ask_unread() {
-  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Flow could not read this command, and it may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Approve only if that is intended."}}'
+  _tg_record "merge:* release:*" "" ""
+  printf '%s\n''{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Flow could not read this command, and it may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Approve only if that is intended."}}'
 }
 
 # Cannot decide: judge the bare text instead. $1 = the text, $2 = why.
@@ -480,6 +557,36 @@ if ! COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/de
   esac
   exit 0
 fi
+
+# A record goes only to the Bash call whose command it holds. One left by a
+# call with the same command, refused at this prompt or by another hook,
+# approves nothing now: it is removed here, before this call writes its own.
+# Any other is removed after a day. TG_CMDQ is the command as Claude Code
+# hands it to the shell, inside `eval '...'` with each ' written '"'"',
+# trailing line ends kept.
+TG_SID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null) || TG_SID=""
+case "$TG_SID" in
+  ''|*[!A-Za-z0-9_-]*) ;;
+  *)
+    _tg_state=$("${BASH:-bash}" "$PLUGIN_ROOT/bin/cascade-resolve.sh" --state-dir 2>/dev/null) || _tg_state=""
+    if [ -n "$_tg_state" ] && [ -d "$_tg_state/sessions/$TG_SID/tier" ] && [ ! -L "$_tg_state/sessions/$TG_SID/tier" ]; then
+      TG_CALL_DIR="$_tg_state/sessions/$TG_SID/tier"
+      find "$TG_CALL_DIR" -maxdepth 1 \( -name 'pending.*' -o -name 'call.*' \) -mmin +1440 -exec rm -r {} + 2>/dev/null
+      _tg_raw=$(printf '%s' "$INPUT" | jq -j '.tool_input.command // empty' 2>/dev/null; printf x)
+      _tg_raw=${_tg_raw%x}
+      _tg_sq="'"; _tg_esc="'\"'\"'"
+      TG_CMDQ="${_tg_raw//$_tg_sq/$_tg_esc}"
+      # The rtk hook puts `rtk ` in front of each command it rewrites; the
+      # session's line compares both texts without it.
+      TG_CMDQ="${TG_CMDQ//rtk /}"
+      for _tg_p in "$TG_CALL_DIR"/pending.*; do
+        [ -f "$_tg_p/cmdq" ] || continue
+        _tg_c=$(cat "$_tg_p/cmdq"; printf x)
+        [ "${_tg_c%x}" = "$TG_CMDQ" ] && rm -r "$_tg_p" 2>/dev/null
+      done
+      unset _tg_raw _tg_sq _tg_esc _tg_p _tg_c
+    fi ;;
+esac
 [ -z "$COMMAND" ] && exit 0
 
 # Cheap reject before any parsing: this hook runs before every Bash call, and
@@ -720,6 +827,10 @@ _tg_command_word() {
       t="${TOK[i]}"
       if [ "$t" = "--" ]; then i=$((i + 1)); break; fi
       if [ "$w" = env ] && { _tg_is_assignment "$t" || [ "$t" = - ]; }; then i=$((i + 1)); continue; fi
+      # `command -v bash` looks a program up and runs nothing.
+      if [ "$w" = command ]; then
+        case "$t" in -*[vV]*) TG_I=$n; return 0 ;; esac
+      fi
       case "$t" in
         -?*)
           _tg_wrapper_opt "$w" "$t" "${TOK[i+1]:-}"
@@ -1127,6 +1238,9 @@ _tg_query_text() {   # $1 = the value after query=, or @file
       f="${v#@}"
       case "$f" in ''|-|*'$'*|*__BD_SUBST__*) return 1 ;; esac
       case "$f" in /*) ;; *) f="${TG_CDBASE:-$CWD}/$f" ;; esac
+      # /dev/stdin, /dev/fd/N and the like are the command's input, not a
+      # file this hook can read: here they would be the hook's own input.
+      case "$f" in /dev/*|/proc/*) return 1 ;; esac
       [ -f "$f" ] && [ -r "$f" ] || return 1
       head -c 200000 "$f" 2>/dev/null || return 1 ;;
     *) printf '%s' "$v" ;;
@@ -1378,7 +1492,7 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
   # `{owner}/{repo}` all read the same; a query string and trailing slashes
   # are not part of the path. A percent-encoded character is read decoded, as
   # the server reads it (`git/refs/tags%2Fv1`, `%72eleases`).
-  ep="${ep%%\?*}"
+  ep="${ep%%#*}"; ep="${ep%%\?*}"
   case "$ep" in *%[0-9A-Fa-f][0-9A-Fa-f]*) ep=$(printf '%b' "${ep//%/\\x}") ;; esac
   while :; do case "$ep" in */) ep="${ep%/}" ;; *) break ;; esac; done
 
@@ -1588,7 +1702,11 @@ _tg_scan() {   # $1 = index of the command word
           [Gg][Hh]) out=$(_tg_gh "$k") ;;
           [Gg][Ii][Tt]) out=$(_tg_git "$k") ;;
           *)
-            if [ "$k" -gt "$1" ] && [ "${TG_PIPED:-0}" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$k"; then
+            # A shell among a program's arguments reads that program's input
+            # only when a pipe feeds this simple command itself
+            # (`echo '...' | xargs bash`); `which bash` in a command with a
+            # pipe elsewhere names a shell and runs none.
+            if [ "$k" -gt "$1" ] && [ "${TG_SEGPIPE:-0}" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$k"; then
               _tg_emit shell "$k"; continue
             fi
             [ "$k" = "$1" ] || continue
@@ -1829,6 +1947,10 @@ _tg_config_write() {   # $1 = index of git, $2 = 1 to leave out git push -u
         t="${TOK[j]}"
         case "$t" in
           --) break ;;
+          # The value of an option that takes one in the next word
+          # (`--sort -committerdate`) is not an option of its own.
+          --sort|--format|--contains|--no-contains|--merged|--no-merged|--points-at)
+            j=$((j + 1)); continue ;;
           --*)
             for c in --set-upstream-to:--set-u --unset-upstream:--uns --track:--tr --no-track:--no-t; do
               _bd_is_opt "$t" "${c%%:*}" "${c#*:}" && up=1
@@ -2126,7 +2248,8 @@ _tg_read_seg() {   # $1 = the segment
   # (TG_ANYPIPE, _tg_read_text), so a shell in this simple command that reads
   # its input may be reading text this hook cannot see.
   TG_PIPED="${TG_ANYPIPE:-0}"
-  case "$seg" in __BD_PIPE__*) TG_PIPED=1; seg="${seg:11}" ;; esac
+  TG_SEGPIPE=0
+  case "$seg" in __BD_PIPE__*) TG_PIPED=1; TG_SEGPIPE=1; seg="${seg:11}" ;; esac
   [ -z "$seg" ] && return 0
   case "$seg" in __BD_UNBALANCED__) return 0 ;; esac
   # Every comparison below is on the words as bash passes them to the
@@ -2390,20 +2513,27 @@ _tg_tag_on_remote() {   # $1 = tag
 }
 
 REASONS=()
+TG_ASKED=""
+TG_JOURNALED=""
+TG_VERIFIED=""
 # Each entry: the setting's label, a tab, the command summary.
 JOURNAL_LINES=()
 while IFS=$'\t' read -r KEY SUMMARY ADIR; do
   case "$KEY" in
     tagUnread)
+      TG_ASKED="$TG_ASKED release:*"
       REASONS+=("A push whose refs, repository or configuration cannot be read or resolved from the command (or that the command changes first) may push or delete a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
       continue ;;
     unknown)
+      TG_ASKED="$TG_ASKED merge:* release:*"
       REASONS+=("A gh api call whose method, endpoint or GraphQL query cannot be read from the command (a variable, a substitution, stdin, a missing file, a query in which the shell expands something, a method that is not GET, HEAD, POST, PUT, PATCH or DELETE, a quoted command nested too deep, or more quoted commands after one program than flow reads) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
       continue ;;
     cmdUnread)
+      TG_ASKED="$TG_ASKED merge:* release:*"
       REASONS+=("A command whose program, subcommand or script flow cannot read from the command text (a variable or a substitution, eval of one, or source of stdin or of no file) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
       continue ;;
     shell)
+      TG_ASKED="$TG_ASKED merge:* release:*"
       REASONS+=("A shell that reads its script from its input (a pipe, or words xargs appends) runs commands flow cannot read, which may merge a pull request or create a release (tiers.merge, tiers.release; Tier 3): flow asks. Command: $SUMMARY")
       continue ;;
     assignUnread)
@@ -2419,10 +2549,13 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
       VTAG="${VREST%%:*}"
       VREPO="${VREST#*:}"
       if git -C "$RUN_DIR" remote get-url origin >/dev/null 2>&1 && ! _tg_gh_repo_is_origin "$VREPO"; then
+        TG_ASKED="$TG_ASKED release"
         REASONS+=("Creating a release is a Tier 3 action (tiers.release). flow asks unless --verify-tag names a tag that is already on origin and gh creates the release in origin's repository, and the repository gh would use${VREPO:+ ($VREPO)} could not be confirmed to be origin's. Command: $SUMMARY")
       elif _tg_tag_on_remote "$VTAG"; then
+        TG_VERIFIED="$TG_VERIFIED $VTAG"
         JOURNAL_LINES+=("tiers.release (--verify-tag, $VTAG already on the remote)"$'\t'"$SUMMARY"$'\t'"$ADIR")
       else
+        TG_ASKED="$TG_ASKED release"
         REASONS+=("Creating a release is a Tier 3 action (tiers.release). flow asks unless --verify-tag names a tag that is already on the remote, and $VTAG could not be found on $TG_REMOTE. Command: $SUMMARY")
       fi
       continue ;;
@@ -2438,6 +2571,7 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
       if [ "$RC" -eq 0 ] && [ "$VALUE" != confirm ]; then
         _tg_note "tiers.$KEY is \"$(printf '%s' "$VALUE" | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-40)\", below the confirm floor for $KEY; ignoring it and asking"
       fi
+      TG_ASKED="$TG_ASKED $KEY"
       REASONS+=("$(_tg_phrase "$KEY") is a Tier 3 action (tiers.$KEY): flow asks before every one. Command: $SUMMARY")
       ;;
     *)
@@ -2446,8 +2580,12 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
         continue
       fi
       case "$VALUE" in
-        confirm) REASONS+=("$(_tg_phrase "$KEY") is a Tier 2 action set to confirm (tiers.$KEY), so it needs your approval. Command: $SUMMARY") ;;
-        journal) JOURNAL_LINES+=("tiers.$KEY (journal)"$'\t'"$SUMMARY"$'\t'"$ADIR") ;;
+        confirm)
+          TG_ASKED="$TG_ASKED $KEY"
+          REASONS+=("$(_tg_phrase "$KEY") is a Tier 2 action set to confirm (tiers.$KEY), so it needs your approval. Command: $SUMMARY") ;;
+        journal)
+          TG_JOURNALED="$TG_JOURNALED $KEY"
+          JOURNAL_LINES+=("tiers.$KEY (journal)"$'\t'"$SUMMARY"$'\t'"$ADIR") ;;
         autonomous) ;;
         *) _tg_note "tiers.$KEY is \"$(printf '%s' "$VALUE" | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-40)\", not autonomous, journal or confirm; allowing $SUMMARY without a tier check" ;;
       esac
@@ -2458,72 +2596,22 @@ done <<< "$ACTIONS"
 if [ "${#REASONS[@]}" -gt 0 ]; then
   REASON="Flow tier gate. ${REASONS[0]}"
   for ((r = 1; r < ${#REASONS[@]}; r++)); do REASON="$REASON Also: ${REASONS[r]}"; done
+  # What is journaled is not written when the call asks, since the person
+  # may refuse; the run-time check writes it if the command runs.
+  _tg_record "${TG_ASKED# }" "" ""
   jq -nc --arg r "$REASON" \
     '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:$r}}'
   exit 0
 fi
 
 [ "${#JOURNAL_LINES[@]}" -gt 0 ] || exit 0
+_tg_record "" "${TG_JOURNALED# }" "${TG_VERIFIED# }"
 
 # --- the journal line goes to the auto-log trail ------------------------------
-# Not the tracked journal: `<journal dir>/auto-log/`, the git-ignored trail
-# log-commits.sh and log-file-changes.sh write, named the same way:
-# issue-{N}.{YYYY-MM}.md on a branch naming issue N (rotated monthly),
-# otherwise session-{YYYY-MM-DD}.md. The path checks below are theirs (see
-# log-file-changes.sh, _flow_autolog). Written only where the repository keeps
-# a flow journal directory: a push in a repository that never ran /flow:setup
-# must not create .decisions/ in it. A `git -C <dir> push` is recorded in
-# <dir>'s repository, on <dir>'s branch.
-
-# One HTML-comment breadcrumb per action, as the other trail entries are,
-# with the comment terminators and control characters neutralized: the trail
-# is fed back to Claude by /flow:explain.
-_tg_crumb_safe() {
-  local v="${1//-->/-- >}"
-  v="${v//<!--/< !--}"
-  printf '%s' "$v" | LC_ALL=C tr '\000-\037\177' ' '
-}
-
-_tg_trail_refused() { _tg_note "could not write to the auto-log trail ($1); allowing"; }
-
-_tg_write_trail() {   # $1 = repository top, $2 = breadcrumbs
-  local top="$1" jdir base branch issue autolog adir user err rc
-  [ -n "$top" ] || return 0
-  jdir=$(cd "$top" && "$PLUGIN_ROOT/bin/journal-dir.sh" 2>/dev/null) || jdir=""
-  [ -n "$jdir" ] || jdir=".decisions"
-  case "$jdir" in /*) base="$jdir" ;; *) base="$top/$jdir" ;; esac
-  [ -d "$base" ] || return 0
-  branch=$(git -C "$top" branch --show-current 2>/dev/null) || branch=""
-  issue=$(printf '%s' "$branch" | grep -oE 'issue-[0-9]+' | head -n 1 | grep -oE '[0-9]+') || issue=""
-  if [ -n "$issue" ]; then
-    autolog="$base/auto-log/issue-$issue.$(date +%Y-%m).md"
-  else
-    autolog="$base/auto-log/session-$(date +%Y-%m-%d).md"
-  fi
-  adir=$(dirname "$autolog")
-  # A symlinked trail file or directory is refused: after `gh pr checkout` of
-  # a hostile fork it could point anywhere. The directory is created by
-  # bin/flow-mkdir.sh --contained at the repository top (nothing below the
-  # top through a symlink); an absolute journal.dir from the user's own
-  # settings is created as configured.
-  [ -L "$autolog" ] && { _tg_trail_refused "the trail file is a symlink"; return 0; }
-  [ -L "$adir" ] && { _tg_trail_refused "the trail directory is a symlink"; return 0; }
-  if ! (cd "$top" && "$PLUGIN_ROOT/bin/flow-mkdir.sh" --contained -- "$adir") >/dev/null 2>&1; then
-    user=$(cd "$top" && "$PLUGIN_ROOT/bin/journal-dir.sh" --user-owned 2>/dev/null) || user=""
-    [ -n "$user" ] || { _tg_trail_refused "its directory could not be created inside the repository"; return 0; }
-    mkdir -p "$adir" 2>/dev/null || { _tg_trail_refused "its directory could not be created"; return 0; }
-  fi
-  # The trail directory ignores itself, so it never dirties the tree.
-  [ -L "$adir/.gitignore" ] && { _tg_trail_refused "its .gitignore is a symlink"; return 0; }
-  { [ -f "$adir/.gitignore" ] || printf '*\n' > "$adir/.gitignore" 2>/dev/null; } || true
-  err=$(printf '%s' "$2" | (cd "$top" && "$PLUGIN_ROOT/bin/journal-append.sh" --file "$autolog" -) 2>&1 >/dev/null)
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    err=$(printf '%s' "$err" | head -n 1 | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-200)
-    _tg_trail_refused "journal-append.sh exit $rc${err:+: $err}"
-  fi
-  return 0
-}
+# lib/tier-trail.sh says where. A `git -C <dir> push` is recorded in <dir>'s
+# repository, on <dir>'s branch.
+# shellcheck source=lib/tier-trail.sh
+. "$SCRIPT_DIR/lib/tier-trail.sh"
 
 AGENT_TYPE=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null) || AGENT_TYPE=""
 AGENT_SAFE=""

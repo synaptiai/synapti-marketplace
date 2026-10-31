@@ -44,10 +44,11 @@ is not journal content.
 
 ### Tier Entry
 
-Written by the `tier-gate.sh` PreToolUse hook before a Bash command runs an action whose tier is `journal` (`references/three-tier-safety.md`), or a `gh release create --verify-tag` whose tag is already on the remote. The time is UTC; the quoted text is the command from its command word on (quoted words keep their quotes, at most 160 characters). Not written when the same command also needed asking, nor in a repository with no journal directory.
+Written by the `tier-gate.sh` PreToolUse hook before a Bash command runs an action whose tier is `journal` (`references/three-tier-safety.md`), or a `gh release create --verify-tag` whose tag is already on the remote. The time is UTC; the quoted text is the command from its command word on (quoted words keep their quotes, at most 160 characters). Not written when the same command also needed asking, nor in a repository with no journal directory. When the hook did not write one, because the command also needed asking or because the action was hidden from the command text (a script file, an alias), flow's git or gh wrapper writes it when the program starts, marked `runtime`, with the program and its arguments as quoted text.
 
 ```
 <!-- auto-log: 2026-10-29T14:48:04Z tiers.push (journal) "git push -u origin HEAD" -->
+<!-- auto-log: 2026-10-29T14:52:11Z tiers.push (journal, runtime) "git push origin HEAD:refs/heads/main" -->
 ```
 
 ### Commit Entry
