@@ -401,21 +401,38 @@ _TR_GH_CMDS=" agent-task alias api attestation auth browse cache codespace compl
 _tr_gh_alias() {
   local out
   out=$("$_TR_REAL" alias list 2>/dev/null) || return 1
+  # The name is read as gh prints it: bare, in double quotes (a name YAML
+  # would read as another type: "yes", "1") or in single quotes (one that
+  # starts with a special character or holds `: `). A name with a backslash
+  # is an escape this reader does not decode, so any lookup then answers
+  # __FLOW_UNREAD__ unless the name was found as written.
   printf '%s\n' "$out" | awk -v name="$1" '
-    have && /^[[:space:]]/ { print "__FLOW_UNREAD__"; done = 1; exit }
-    have { exit }
-    /^[^[:space:]]/ {
-      k = $0; sub(/:[ \t].*/, "", k)
-      # gh quotes a name YAML would read otherwise (`"yes"`, `"1"`).
-      if (k ~ /\\/) { if (index(k, name)) { print "__FLOW_UNREAD__"; done = 1; exit } next }
-      if (k ~ /^".*"$/ || k ~ /^\047.*\047$/) k = substr(k, 2, length(k) - 2)
-      if (k != name) next
-      v = $0; sub(/^[^:]*:[ \t]+/, "", v)
-      if (v ~ /^[|>"]/) { print "__FLOW_UNREAD__"; done = 1; exit }
-      if (v ~ /^\047.*\047$/) { v = substr(v, 2, length(v) - 2); gsub(/\047\047/, "\047", v) }
-      val = v; have = 1
+    /^[[:space:]]/ { if (cur) cont = 1; next }
+    {
+      cur = 0; raw = $0
+      if (raw ~ /^"/) {
+        k = substr(raw, 2); i = index(k, "\": "); if (!i) i = index(k, "\":\t")
+        key = substr(k, 1, i - 1); rest = substr(k, i + 2)
+      } else if (raw ~ /^\047/) {
+        k = substr(raw, 2); i = index(k, "\047: "); if (!i) i = index(k, "\047:\t")
+        key = substr(k, 1, i - 1); gsub(/\047\047/, "\047", key); rest = substr(k, i + 2)
+      } else {
+        i = match(raw, /:[ \t]/); key = substr(raw, 1, i - 1); rest = substr(raw, i + 1)
+      }
+      if (!i) next
+      sub(/^[ \t]+/, "", rest)
+      if (raw ~ /^"/ && key ~ /\\/) bs = 1
+      if (key == name && !have) { have = 1; val = rest; cur = 1 }
     }
-    END { if (have && !done) print val; exit((have || done) ? 0 : 1) }'
+    END {
+      if (have) {
+        if (cont || val ~ /^[|>"]/) { print "__FLOW_UNREAD__"; exit 0 }
+        if (val ~ /^\047.*\047$/) { val = substr(val, 2, length(val) - 2); gsub(/\047\047/, "\047", val) }
+        print val; exit 0
+      }
+      if (bs) { print "__FLOW_UNREAD__"; exit 0 }
+      exit 1
+    }'
 }
 
 # GraphQL: the names of the fields called with arguments in a document that

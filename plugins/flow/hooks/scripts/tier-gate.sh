@@ -481,7 +481,7 @@ _tg_record() {   # $1 = asked (key, or key:* when uncounted), $2 = journaled key
     segs=$( { _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE"
               # A function definition: `name() {`.
               # Read as one line: the header and its body can be on two.
-              printf '%s' "$BD_CODE" | tr '\n' ' ' | grep -qE '[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\([[:space:]]*\)[[:space:]]*[{(]' && echo __TG_FUNCTION__; } 2>/dev/null)
+              printf '%s' "$BD_CODE" | tr '\n' ' ' | grep -qE '[^[:space:];&|()]+[[:space:]]*\([[:space:]]*\)[[:space:]]*([{(]|\[\[|(if|while|until|for|case|select)[[:space:]])' && echo __TG_FUNCTION__; } 2>/dev/null)
   fi
   while IFS= read -r seg; do
     [ -n "$seg" ] || continue
