@@ -3,9 +3,9 @@
 # number (bin/journal-append.sh --session, bin/journal-record.sh --session).
 #
 # Each scenario runs the shipped helper in a scratch repository on a branch
-# with no issue number, the way a goal with no linked issue calls it. The
-# file is named by the local calendar day, as the auto-log hooks name the
-# session trail; a scenario that straddles midnight accepts either day.
+# with no issue number, the way a goal with no linked issue and the tier hook
+# call it. The file is named by the local calendar day, as the auto-log hooks
+# name the session trail; a scenario that straddles midnight accepts either day.
 #
 # Ways it can be wrong, written down before the scenarios:
 #   S1 --session writes somewhere other than <journal dir>/session-<day>.md,

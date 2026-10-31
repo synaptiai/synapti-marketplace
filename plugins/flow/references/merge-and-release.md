@@ -37,7 +37,7 @@ The release branch is named by `conventions.branchPatterns.release`, default `ch
 The Release Preview, shown as text, lists the version, the previous tag, the pull request count, the version files and the changelog.
 
 - **First run**: create the release branch, commit only the bumped files and the changelog, push the branch and open the release pull request, titled `chore(release): <plugin> <version>, marketplace <version>` in a marketplace and `chore(release): <tag>` otherwise. Nothing is pushed to the default branch.
-- **Second run**: `git tag -a` on the merge commit, `git push origin <tag>`, then `gh release create <tag> --verify-tag`. `/flow:release` confirms via `AskUserQuestion` before this step, and again before it creates the release for a tag already on origin. The tag push and the release run as one command, after that one confirmation.
+- **Second run**: `git tag -a` on the merge commit, `git push origin <tag>`, then `gh release create <tag> --verify-tag`. `/flow:release` confirms via `AskUserQuestion` before this step, and again before it creates the release for a tag already on origin. The tag push and the release run as one command, and flow's tier hook asks again before it runs.
 
 ## Why Tier 3 is structural
 

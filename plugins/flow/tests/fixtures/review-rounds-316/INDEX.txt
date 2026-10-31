@@ -1,0 +1,37 @@
+# Review rounds for the flow tier-gate work (issue #316 branch, 2026-10-29 to 2026-10-30)
+
+All seven rounds were found. Every round's reports are the final messages of review subagents in one Claude Code session: main transcript `<transcripts>/148019cc-de64-4bee-8c80-932a311792cc.jsonl`, subagent transcripts in `<transcripts>/148019cc-de64-4bee-8c80-932a311792cc/subagents/agent-<id>.jsonl`. The main transcript labels the last two reviews "round 6" and "round 7" (the question that ended round 7 says "This is review round 7").
+
+| Round | Reviews (subagent id, report time UTC) | Code under review | Hook finding rows | Bypass lines |
+|---|---|---|---|---|
+| 1 | code ae375a9fbdad15857 (2026-10-29 19:09), security a53dc46f82abd23b3 (19:10), error-handling a2096df289b801d03 (19:12) | main...8d2b41ce | 14 | 27 |
+| 2 | security a07d11fdc6d851747 (22:32), code adac421c6b2bb0c6a (22:33); also integration verification abf6ec55298ac94b2 (22:26) | 8d2b41ce..53703f8b | 15 (one, INT-1, is about release.md and only cites the tier-gate test) | 20 |
+| 3 | security a333eb5910a62a407 (2026-10-30 00:12), code a0e5673bb3df6c2fe (00:13) | 53703f8b..d8d5eae0 | 11 | 19 |
+| 4 | security ae053db82555b3627 (02:54), code a4a424547cc589d72 (02:57) | d8d5eae0..f3a39d72 | 11 | 45 |
+| 5 | security a150fafe177ddf3c9 (06:52), code a011a8ba75a41cc6c (06:59) | f3a39d72..c51e2877 | 14 | 47 |
+| 6 | "final review" security ab02673554b3e1e4c (14:35), code aa507b0372acb84ca (14:40) | 45de0559..9456958b | 15 | 36 |
+| 7 | "final review of undo" security ab9ec8b820534b777 (17:09), code a560e5d413564a9ab (17:13) | 9456958b..742f470e | 13 | 25 |
+
+Exact timestamps are in each round file. Totals: 93 finding rows, 219 bypass lines.
+
+## Files
+
+- `round-1.txt` to `round-7.txt`: for each review, the report's opening paragraph, its section headings (which carry P1/P2/P3), and every finding row or line that names tier-gate.sh, block-unchecked-merge.sh, block-destructive.sh or command-parse.sh (or their test files), copied verbatim. Round 4 also carries the code review's repro blocks, which sit outside its findings table. Findings that name none of those files (release.md, flow-judge.sh, CHANGELOG and similar) are left out.
+- `bypasses.tsv`: round, hook, severity, command. It holds only commands the reviewer reported as passing a hook with no prompt or refusal (tier-gate silent or journal-only; block-unchecked-merge or block-destructive exit 0). When a reviewer named two hooks for one command, the command has one line per hook. Conventions:
+  - `⏎` marks a line break in a multi-line command. Reviewers wrote these with `⏎` or with ` / `. The heredoc rows from round 5 (security SEC-5) and round 6 (security SEC-6) used ` / ` and were converted to `⏎`.
+  - Markdown table escapes (`\|`) are turned back into `|`.
+  - A literal `\n` inside printf text is part of the command, not a line break.
+  - Some commands depend on setup the reviewer described: a mirror remote for round 2's `git push 2>&1`, a `CMD` variable set earlier, a tag that exists only on the remote. The finding text in the round file gives that setup.
+- `raw/<agent-id>.md`: each review report's full final message with its timestamp. This includes the removal review (a72a475869ba20ee3, 2026-10-30 22:31, after the hook work moved to #317), which is not counted as a hook round.
+
+## Left out of bypasses.tsv
+
+- Option names or fragments with no full command: round 1 security SEC-3 (`--tag`, `--mirr`, `--follow-tag`, `--del v1`, `-qd origin v1`), SEC-6 (wrapper names only), SEC-7 (`createRef`), the elif/else/select forms of SEC-1, and the two merge forms in code F1 that the report cut short with an ellipsis. Round 2 security SEC-1, SEC-2 and SEC-3 variants written with "..." or as a bare option. Round 4 SEC-5 `git config --rename-section x push`, which the reviewer says was not run. Round 6 code F1 variants written as a pipe tail only. Round 7 code F7 variants (setsid, ionice and others) and the merge versions it did not spell out.
+- False asks, false refusals, performance, test-gap and documentation findings. These are in the round files but are not bypasses.
+- Round 7 code F5: the bypasses it lists happen only on a mutant, not on the reviewed commit.
+
+## Sources searched
+
+- Transcripts: every `*.jsonl` and `*/subagents/*.jsonl` under `<transcripts>/` modified 2026-10-29 to 2026-10-31 that mentions tier-gate (38 files, in session 148019cc-de64-4bee-8c80-932a311792cc and the current session). Each subagent was identified by its first prompt, and the round labels were checked against the main transcript.
+- PR #319 (`gh pr view 319`): one comment (the prompt audit report body), no reviews and no line comments, so no review findings are on the PR.
+- `~/flow-prompt-audit-2026-10-29/`: listed, not used as a source of findings. `r4-probes/` and `r5-probes/` hold reviewer probe folders, `r4-lane-scratch/` and `r5-lane-scratch/msg*.txt` hold the fix lanes' commit messages, and `hs-logs/` holds test logs. These are inputs and fixes, not review reports. `PR-REPORT.md` does not mention tier-gate or bypass.

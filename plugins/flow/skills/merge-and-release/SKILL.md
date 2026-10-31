@@ -34,7 +34,7 @@ Any prerequisite fails, stale approval, unresolved conversations > 0, unfinished
 
 ## Merge Execution (Phases 2–4)
 
-Display the Merge Assessment table as text, confirm via `AskUserQuestion`, and merge only after the user confirms. A merge cancelled at the question stops the command.
+Display the Merge Assessment table as text, confirm via `AskUserQuestion`, and merge only after the user confirms. The `tier-gate.sh` hook asks again when `gh pr merge` runs (`tiers.merge` is always `confirm`). A merge cancelled at the question or declined at the prompt stops the command.
 
 - `merge.strategy`: `squash` | `merge` | `rebase` (default `squash`)
 - `merge.deleteBranch`: default `true`; named in the merge question
@@ -48,6 +48,6 @@ Post-merge: `gh pr view $PR_NUM --json state` must return `MERGED`; then suggest
 
 **Version** (Phase 2): tag = `release.tagPrefix` (default `v`) + version, bumped by semver (`patch`, `minor`, `major`). In a plugin marketplace the version is the marketplace's `metadata.version`, bumped by minor for a minor or major plugin release and by patch for a patch unless a type is named. `bin/flow-release-versions.sh --plan` lists the version files to bump and the files it skips; files that disagree on the current version stop the release. No version file and no prior tag: first release is `v1.0.0`.
 
-**Changelog** (Phase 3) and **Execute** (Phase 4): show the Release Preview as text. The first run commits only the bumped files and the changelog and pushes nothing to the default branch. The second confirms via `AskUserQuestion` before it tags or publishes.
+**Changelog** (Phase 3) and **Execute** (Phase 4): show the Release Preview as text. The first run commits only the bumped files and the changelog and pushes nothing to the default branch. The second confirms via `AskUserQuestion` before it tags or publishes; the tier hook asks again when the command runs.
 
 **Post-release** (Phase 5, second run): `gh release view "$TAG"` must succeed; the summary lists every version file bumped and every file skipped.

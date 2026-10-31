@@ -2,6 +2,97 @@
 
 ## Unreleased
 
+### Added
+
+- `tier-gate.sh`, a PreToolUse hook, applies `tiers.*` to every Bash command:
+  `git push` (push), `gh pr create` (prCreate), assigning an issue
+  (issueAssign), `gh issue create` (issueCreate), `gh pr merge` (merge) and
+  `gh release create` (release), plus the `gh api` REST and GraphQL calls that
+  do the same. `confirm` asks through Claude Code's permission prompt,
+  `journal` writes a breadcrumb to the git-ignored auto-log trail and lets the
+  command run, and `autonomous` lets it run. Merge and release never go below
+  `confirm`; a lower setting is ignored with one line on stderr. Pushing or
+  deleting a tag is the release tier, and so are `gh release edit`, `delete`,
+  `upload` and `delete-asset`. `gh release create --verify-tag` for a tag
+  already on origin, in the repository gh targets, is only journalled, so a
+  release asks once, at the tag push. `/flow:merge` and `/flow:release` still
+  ask their own question first; the hook asks again, and also covers merge
+  and release commands run outside flow. A hook "ask" prompts in an
+  interactive session, including bypassPermissions mode, and refuses in
+  `claude -p`.
+
+  The hook reads the command after shell keywords, groups and wrappers
+  (`env`, `timeout`, `sudo`, `xargs` and others), reads `git` and `gh`
+  options as those programs parse them, and skips redirections. It asks when
+  it cannot tell what a command will do: a push it cannot tell from a tag
+  push (a source that is not a local branch, a glob, a remote chosen by
+  `--repo` or by configuration, a `git config`, `git remote` or upstream
+  change earlier in the command, or `alias`, `exec` or `source` before the
+  push), a program or gh subcommand it cannot read (a variable, a
+  substitution, `"$@"` or `"${A[@]}"`, `eval` of one, `source` of stdin), a
+  shell reading its script from its input in a command with a pipe or a
+  process substitution anywhere (`| bash`, `| { :; bash; }`, `> >(bash)`), a
+  push option it cannot read, and a merge, release or tag push in a quoted
+  command another program runs or in a here-string handed to a shell. A
+  substitution glued to a word (`.../merge$(true)`) is read both with and
+  without it. Text that names none of gh, push, merge or release is not
+  parsed. The hook's header lists what it does not cover.
+- A second check runs when git or gh starts. `tier-session-start.sh`, a
+  SessionStart hook, has Claude Code put flow's `git` and `gh` wrappers first
+  on PATH for the session's Bash commands. A wrapper sees the arguments the
+  program gets, so a script file, an alias, `eval` of built text or a
+  program such as python cannot hide the action from it. It runs a merge, a
+  release, a tag push or an action set to `confirm` only when `tier-gate.sh`
+  asked about that action in the same Bash call, and otherwise refuses it
+  with a message saying to run it as its own command. It writes the
+  breadcrumb for a `journal` action the hook did not see. What a push sends
+  is asked of git (`git push --dry-run --porcelain`), one more round trip to
+  the remote per push; a push to a path on this machine is not a tier
+  action. The hook's record of what it asked is
+  kept with the command, and the call's shell takes the record of its own
+  command, so Bash calls run at the same time cannot use each other's
+  approval and a refused ask approves nothing later. An approval covers as
+  many actions as the hook saw in the command (any number in a loop). git
+  aliases are expanded as git does; a gh alias that is not plain words is
+  treated as a possible merge or release. A journaled `gh release create
+  --verify-tag` approves only itself.
+- `/flow:setup` offers GitHub rulesets, which apply however a push or merge
+  is made: the default branch takes changes only through a pull request and
+  cannot be force-pushed or deleted, tags cannot be moved or deleted, and,
+  if chosen, a pull request needs an approving review from someone other
+  than its author. It asks first, and reports when GitHub refuses (a
+  private repository on the free plan, no admin rights).
+
+### Fixed
+
+- `block-unchecked-merge.sh` reads a word with a backslash in it as bash
+  does, so `gh pr mer\ge 1` is refused like `gh pr merge 1`. It also refuses
+  a merge in a here-string handed to a shell (`bash <<<'gh pr merge 1'`), in
+  `$(bash -c '...')`, in a backquote inside double quotes, after a `2>&1`
+  in the middle of the command, with a substitution glued to a word
+  (`gh pr merge 1$(true)`), and on the line after a here-string
+  (`cat <<<EOF`), which it had read as the start of a heredoc body. A merge
+  printed into a shell that stands in a group, a subshell, a compound command
+  or a process substitution (`echo '...' | { :; bash; }`, `> >(bash)`) is
+  checked as one piped straight into it. It refuses a merge in a quoted
+  command that `watch`, `script`, `flock`, `parallel` or `tmux` runs, a
+  `gh pr` whose subcommand is a variable (`gh pr $A 7`), a variable or
+  substitution standing alone as the command (`""$CMD`, `${CMD%/}`) or
+  `eval` of a variable in a command that names a merge, and a merge whose
+  words a substitution splits (`gh pr mer$(true)ge 7`).
+- `block-destructive.sh` blocks `git reset --hard` and the other commands it
+  guards when a substitution is glued to a word (`git reset --hard$(true)`),
+  on the line after a here-string, when the text is printed into a shell in
+  a group, a subshell, a compound command or a process substitution, and
+  when the option or the command sits in an unquoted `${...}` default,
+  read as bash reads it when the variable is unset: glued to the text
+  around it (`rm -${X:-rf src}`, `git reset --har${X:-d }`), with no space
+  (`git reset ${X:---hard}`), quoted (`rm ${X:-"-rf"} src`), or holding the
+  subcommand (`git ${X:-reset --hard}`). A command printed into a shell is
+  read as one when the shell's name has a backslash in it (`| bas\h`) or
+  stands after `stdbuf`, `setsid`, `ionice`, `caffeinate`, `busybox` or
+  another program that runs the rest of its line.
+
 ### Changed
 
 - `plugins/flow/tests/run.sh` runs several test files at once, each in a

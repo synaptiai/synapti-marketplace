@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, AskUserQuestion, Skill
 
 # Merge PR #$ARGUMENTS
 
-Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion before it runs the merge.
+Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion before it runs the merge. The `tier-gate.sh` hook then asks again when the merge command runs (`tiers.merge` cannot be set below `confirm`), showing the exact command; it is a second check, and it also covers a merge typed outside flow. You may see two prompts for one merge.
 
 ## Required Skills
 
@@ -754,8 +754,10 @@ runs. Offer two options: merge as assessed, or cancel. Ask even when
 `autonomous: true` is set: a merge is Tier 3.
 
 Only after the user confirms via the tool, run the merge with every value
-written literally. If the user cancels, stop without running it. Replace
-each `{…}` below before running:
+written literally. If the user cancels, stop without running it. The
+`tier-gate.sh` hook asks again when the merge command runs, showing the
+command; that second prompt is expected. Replace each `{…}` below before
+running:
 
 - `{PR_NUMBER}` — the PR number from the report
 - `{OWNER/NAME}` — the report's Repository row
@@ -763,9 +765,9 @@ each `{…}` below before running:
 - `{DELETE_BRANCH}` — `--delete-branch` when `DELETE_BRANCH=true`; remove it
   when false
 
-If the merge is refused — by the hook, or by GitHub — stop and report the
-refusal as it was printed. Do not run Phase 4, and do not retry the merge in
-another form.
+If the merge is refused — declined at the prompt, refused by a hook, or
+refused by GitHub — stop and report the refusal as it was printed. Do not run
+Phase 4, and do not retry the merge in another form.
 
 ```bash
 # Literal values, not $PR_NUM or $REPO. block-unchecked-merge.sh reads this
@@ -865,6 +867,6 @@ Suggest: `/flow:release {type}` if this completes a milestone.
 | FlowGoal gate check (v3 opt-in; reads `.flow/goals/*.goal.yaml`) | 1 | Autonomous; blocks on `lifecycle.status != achieved` |
 | Stale-approval check | 1 | Autonomous; warns on stale |
 | Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Journal-and-proceed if user accepts; otherwise blocked |
-| `gh pr merge` | 3 | **Confirm** — asks via `AskUserQuestion` before the command runs |
-| Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — named in the merge question |
+| `gh pr merge` | 3 | **Confirm** — asks via `AskUserQuestion` before the command runs; the `tier-gate.sh` permission prompt asks again when it runs (`tiers.merge`, floor `confirm`) |
+| Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — named in the merge question; `--delete-branch` is part of the merge command the hook's prompt shows |
 | `git checkout <default-branch> && git pull` (post-merge cleanup) | 1 | Autonomous |

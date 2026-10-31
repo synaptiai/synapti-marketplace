@@ -99,6 +99,8 @@ if command -v jq >/dev/null 2>&1; then
     _feed "$HOOKS/block-secrets.sh" "$BENIGN" 0 "block-secrets allows an ordinary command"
   [ -f "$HOOKS/block-unchecked-merge.sh" ] && \
     _feed "$HOOKS/block-unchecked-merge.sh" "$BENIGN" 0 "block-unchecked-merge allows a command that is not a merge"
+  [ -f "$HOOKS/tier-gate.sh" ] && \
+    _feed "$HOOKS/tier-gate.sh" "$BENIGN" 0 "tier-gate allows a command that runs no tiered action"
 else
   _bad "jq missing — cannot build a hook payload to feed"
 fi
@@ -151,6 +153,21 @@ if command -v jq >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
       _feed "$HOOKS/log-file-changes.sh" "$EDIT_PAYLOAD" 0 "log-file-changes answers an edit payload"
     [ -f "$HOOKS/log-commits.sh" ] && \
       _feed "$HOOKS/log-commits.sh" "$COMMIT_PAYLOAD" 0 "log-commits answers a commit payload"
+    # tier-gate's journal breadcrumb goes through the same helper into the
+    # same trail: with the plugin default (tiers.push journal) a push on the
+    # issue-1 branch must add one breadcrumb to auto-log/issue-1.<YYYY-MM>.md.
+    PUSH_PAYLOAD=$(jq -nc --arg cwd "$SMOKE_REPO" \
+      '{session_id:"smoke", cwd:$cwd, tool_name:"Bash", tool_input:{command:"git push origin HEAD"}}')
+    if [ -f "$HOOKS/tier-gate.sh" ]; then
+      _feed "$HOOKS/tier-gate.sh" "$PUSH_PAYLOAD" 0 "tier-gate answers a push payload"
+      if cat "$SMOKE_REPO/.decisions/auto-log/"issue-1.*.md 2>/dev/null | grep -q 'tiers.push (journal) "git push origin HEAD"'; then
+        _ok "tier-gate wrote the push to the payload cwd's auto-log trail"
+      else
+        _bad "tier-gate wrote no breadcrumb to $SMOKE_REPO/.decisions/auto-log/"
+        _out=$(printf '%s' "$PUSH_PAYLOAD" | bash "$HOOKS/tier-gate.sh" 2>&1 >/dev/null)
+        printf 'DIAG: tier-gate stderr=%s\n' "$(printf '%s' "$_out" | tr '\n' '|' | cut -c1-400)"
+      fi
+    fi
     # The trail directory must exist and ignore itself. Both are written by the
     # shell, so they hold on every platform.
     if [ -s "$SMOKE_REPO/.decisions/auto-log/.gitignore" ]; then
@@ -200,6 +217,31 @@ for h in flow-goal-stop.sh reply-style-check.sh session-end-state.sh session-end
     _bad "$h — exit $rc on an empty session"
   fi
 done
+printf '\n'
+
+# --- the SessionStart hook and the git and gh wrappers it puts on PATH -------
+# The wrappers run on every git and gh call of a session, so one that does
+# not start breaks git itself, not only the check.
+if [ -f "$HOOKS/tier-session-start.sh" ] && command -v jq >/dev/null 2>&1; then
+  SMOKE_STATE=$(mktemp -d "${TMPDIR:-/tmp}/flow-smoke-state.XXXXXX") || SMOKE_STATE=""
+  SMOKE_ENV="${SMOKE_STATE:+$SMOKE_STATE/env.sh}"
+  if [ -n "$SMOKE_ENV" ]; then
+    printf '{"session_id":"smoke","hook_event_name":"SessionStart"}' \
+      | CLAUDE_ENV_FILE="$SMOKE_ENV" FLOW_STATE_DIR="$SMOKE_STATE" bash "$HOOKS/tier-session-start.sh" >/dev/null 2>&1
+    rc=$?
+    if [ "$rc" = 0 ] && grep -q 'hooks/shims' "$SMOKE_ENV"; then
+      _ok "tier-session-start wrote the session's PATH line"
+      _out=$(bash -c '. "$1"; command -v git; git --version' _ "$SMOKE_ENV" 2>&1)
+      case "$_out" in
+        *hooks/shims/git*"git version"*) _ok "git runs through flow's wrapper" ;;
+        *) _bad "git through flow's wrapper: $(printf '%s' "$_out" | tr '\n' '|' | cut -c1-300)" ;;
+      esac
+    else
+      _bad "tier-session-start — exit $rc, or no PATH line in CLAUDE_ENV_FILE"
+    fi
+    rm -r "$SMOKE_STATE"
+  fi
+fi
 printf '\n'
 
 # --- the settings resolver, which almost everything depends on ----------------

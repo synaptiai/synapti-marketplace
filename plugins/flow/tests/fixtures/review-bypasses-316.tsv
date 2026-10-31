@@ -1,0 +1,219 @@
+1	tier-gate	P1	if gh release create v1 --notes x; then echo ok; fi
+1	tier-gate	P1	{ git push origin --tags; }
+1	tier-gate	P1	! git push origin v1:refs/tags/v1
+1	tier-gate	P1	for r in a; do gh release create v1; done
+1	tier-gate	P1	make && { gh release create v1; }
+1	tier-gate	P2	gh release edit v1 --draft=false
+1	tier-gate	P1	if true; then gh release create v9; fi
+1	tier-gate	P1	{ git push --tags; }
+1	tier-gate	P1	! git push --tags
+1	tier-gate	P1	for t in v1; do git push origin v1; done
+1	tier-gate	P1	function f { gh release create v9; }
+1	tier-gate	P1	coproc gh release create v9
+1	tier-gate	P1	g\h pr merge 1
+1	tier-gate	P1	gh pr mer\ge 1
+1	tier-gate	P1	gh p\r merge 1
+1	tier-gate	P1	gh rel\ease create v9
+1	tier-gate	P1	git pu\sh --tags
+1	block-unchecked-merge	P1	g\h pr merge 1
+1	block-unchecked-merge	P1	gh pr mer\ge 1
+1	block-unchecked-merge	P1	gh p\r merge 1
+1	tier-gate	P1	git push origin tags/v1
+1	tier-gate	P1	git push origin 'refs/*:refs/*'
+1	tier-gate	P1	git tag v7.0.0 && git push origin v7.0.0
+1	tier-gate	P1	gh release create v7.0.0 --verify-tag
+1	tier-gate	P1	gh release edit v1 --draft=false
+1	tier-gate	P1	gh release delete v1 --cleanup-tag
+1	tier-gate	P2	git -c remote.origin.mirror=true push origin
+2	tier-gate	P1	gh api -X=POST repos/o/r/releases -f tag_name=v9
+2	tier-gate	P2	git --config-env remote.origin.mirror=X push
+2	tier-gate	P2	git push --repo=mir
+2	tier-gate	P2	git -c remote.pushDefault=mir push
+2	tier-gate	P2	git -c branch.main.pushRemote=mir push
+2	tier-gate	P2	watch 'gh release create v9'
+2	tier-gate	P2	watch -n 30 'gh pr merge 1 --squash'
+2	block-unchecked-merge	P2	watch -n 30 'gh pr merge 1 --squash'
+2	tier-gate	P2	script -q /dev/null -c 'git push --tags'
+2	tier-gate	P2	flock /tmp/l -c 'gh release create v9'
+2	tier-gate	P2	trap 'gh release create v9' EXIT
+2	tier-gate	P3	git push --force-with-lease=v5:<sha> origin HEAD:v5
+2	tier-gate	P3	gh api repos/o/r/git/refs -F ref=@ref.txt
+2	tier-gate	P3	git -c push.followTags=2 push
+2	tier-gate	P3	export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.mirror GIT_CONFIG_VALUE_0=true; git push
+2	tier-gate	P1	git push 2>&1
+2	tier-gate	P1	git push >/dev/null
+2	tier-gate	P1	git push -q 2>&1 | tail -2
+2	tier-gate	P2	GIT_DIR=.git git -C ../other push origin rel
+2	tier-gate	P2	git --git-dir=.git -C ../other push origin rel
+3	tier-gate	P1	gh api graphql -f query='mutation { updatePullRequest(input:{pullRequestId:"x", title:"Say \"hi"}) { clientMutationId } createRelease(input:{repositoryId:"x", tagName:"v9"}) { clientMutationId } }'
+3	tier-gate	P2	git push --tags>/dev/null
+3	tier-gate	P2	git push --follow-tags>/dev/null
+3	tier-gate	P2	git push --mirror>/dev/null
+3	tier-gate	P2	git push --tags</dev/null
+3	tier-gate	P2	git -c push.followTags=true push>/dev/null
+3	tier-gate	P2	gh api -X PUT repos/o/r/pulls/1/merge>/dev/null
+3	tier-gate	P2	git config push.followTags true && git push
+3	tier-gate	P2	git config remote.origin.mirror true && git push
+3	tier-gate	P2	git config --add remote.origin.push 'refs/tags/*' && git push
+3	tier-gate	P2	git remote add m2 ../remote.git --mirror=push && git push m2
+3	tier-gate	P3	git push 2>&1 --tags
+3	tier-gate	P3	git push origin 2>&1 v1.0.0
+3	tier-gate	P3	gh release 2>&1 create v9
+3	tier-gate	P3	gh api 2>&1 -X POST repos/o/r/releases -f tag_name=v9
+3	tier-gate	P1	bash <<<'gh release create v9'
+3	tier-gate	P1	sh <<<"git push --tags"
+3	tier-gate	P1	bash 0<<<'gh pr merge 1'
+3	block-unchecked-merge	P1	bash <<<'gh pr merge 1'
+4	tier-gate	P1	watch gh\ release create v9
+4	tier-gate	P1	ssh h gh\ release create v9
+4	tier-gate	P1	watch git\ push --tags
+4	tier-gate	P1	ssh h git\ push --tags
+4	tier-gate	P1	watch "gh pr" merge 1
+4	tier-gate	P1	ssh h 'gh pr' merge 1
+4	tier-gate	P1	eval export GIT_DIR=../other/.git; git push
+4	tier-gate	P1	GIT_DIR+=../other/.git git push
+4	tier-gate	P1	export GIT_DIR+=../other/.git; git push
+4	tier-gate	P1	set -a; GIT_DIR+=../other/.git; git push
+4	tier-gate	P1	declare -x GIT_DIR+=../other/.git; git push
+4	tier-gate	P2	eval 'cd ../other'; git push
+4	tier-gate	P2	eval cd ../other; git push
+4	tier-gate	P2	eval "export GIT_DIR=../other/.git"; git push
+4	tier-gate	P2	source /dev/stdin <<<'cd ../other'; git push
+4	tier-gate	P2	git branch -u mir/main && git push
+4	tier-gate	P2	git branch --set-upstream-to=mir/main; git push
+4	tier-gate	P2	git push -u mir main && git push
+4	tier-gate	P2	git checkout -b x mir/main && git push
+4	tier-gate	P2	git switch -c y --track mir/main && git push
+4	tier-gate	P3	printf '[push]\n\tfollowTags = true\n' >> .git/config && git push
+4	tier-gate	P3	cp ../other/.git/config .git/config && git push
+4	block-destructive	P1	git reset --hard&>/dev/null
+4	block-destructive	P1	git reset HEAD~1 --hard&>/dev/null
+4	block-destructive	P1	git restore .&>/dev/null
+4	block-destructive	P1	git checkout .&>/dev/null
+4	block-destructive	P1	git checkout -- .&>/dev/null
+4	block-destructive	P1	git reset --hard>/dev/null
+4	tier-gate	P2	eval 'export GH_REPO=o/r'; gh release create v1.0 --verify-tag
+4	tier-gate	P2	eval export GH_REPO=o/r; gh release create v1.0 --verify-tag
+4	tier-gate	P2	eval "export GH_REPO=o/r"; gh release create v1.0 --verify-tag
+4	tier-gate	P2	source /dev/stdin <<< 'export GH_REPO=o/r'; gh release create v1.0 --verify-tag
+4	tier-gate	P2	eval 'cd ../other'; gh release create v1.0 --verify-tag
+4	block-unchecked-merge	P2	gh pr >& /dev/null merge 7
+4	block-unchecked-merge	P2	gh pr &> /dev/null merge 7
+4	tier-gate	P2	printf 'push.followTags\ntrue\n' | xargs git config; git push origin master
+4	tier-gate	P2	xargs git config < /tmp/f; git push origin master
+4	tier-gate	P3	gh pr $"merge" 7
+4	tier-gate	P3	gh release $"create" v9
+4	tier-gate	P3	git push $"--tags"
+4	tier-gate	P3	git push $'--tags'
+4	tier-gate	P3	gh pr $A 7
+4	tier-gate	P3	git push $OPTS
+4	block-unchecked-merge	P3	gh pr $"merge" 7
+4	block-unchecked-merge	P3	gh pr $A 7
+5	tier-gate	P1	gh api -X PUT repos/o/r/pulls/1/merge$(true)
+5	tier-gate	P1	gh api -X PUT repos/o/r/pulls/1/merge`true`
+5	tier-gate	P1	gh api -X POST repos/o/r/merges$(true) -f base=main -f head=x
+5	tier-gate	P1	gh api repos/o/r/releases$(true) -f tag_name=v9
+5	tier-gate	P1	gh api -X POST repos/o/r/releases$(true) -f tag_name=v9
+5	block-unchecked-merge	P1	gh api -X PUT repos/o/r/pulls/1/merge$(true)
+5	block-unchecked-merge	P1	gh api -X PUT repos/o/r/pulls/1/merge`true`
+5	block-unchecked-merge	P1	gh api -X POST repos/o/r/merges$(true) -f base=main -f head=x
+5	block-destructive	P1	git reset --hard$(true)
+5	block-destructive	P1	git reset --hard`true`
+5	block-destructive	P1	git reset$(true) --hard
+5	block-destructive	P1	$(true)git reset --hard
+5	block-destructive	P1	git checkout .$(true)
+5	block-destructive	P1	git checkout -- .$(true)
+5	block-destructive	P1	git checkout$(true) .
+5	block-destructive	P1	git restore .$(true)
+5	block-destructive	P1	git restore$(true) .
+5	block-destructive	P1	git clean$(true) -fd
+5	block-destructive	P1	git branch --delete$(true) --force feat
+5	block-destructive	P1	rm$(true) -rf src
+5	block-unchecked-merge	P1	gh pr merge$(true) 1
+5	block-unchecked-merge	P1	gh pr merge$(true) 1 --repo o/r --squash
+5	tier-gate	P2	CMD='gh release create v9'; ""$CMD
+5	tier-gate	P2	''$CMD
+5	tier-gate	P2	"$E"$CMD
+5	tier-gate	P2	"${E}"$CMD
+5	tier-gate	P2	"$@"$CMD
+5	tier-gate	P2	CMD='gh pr merge 1'; ""$CMD
+5	block-unchecked-merge	P2	CMD='gh pr merge 1'; ""$CMD
+5	tier-gate	P2	CMD='git push --tags'; ""$CMD
+5	tier-gate	P2	CMD='gh release create v9'; ${CMD%/}
+5	tier-gate	P2	CMD=gh_release_create_v9; ${CMD//_/ }
+5	tier-gate	P2	CMD='gh pr merge 1'; ${CMD%/}
+5	block-unchecked-merge	P2	CMD='gh pr merge 1'; ${CMD%/}
+5	tier-gate	P2	CD=cdx; ${CD/x/} ../other && git push origin master
+5	tier-gate	P2	E=eval; ${E%/} 'cd ../other' && git push origin master
+5	tier-gate	P2	CMD="gh release create v9"⏎cat >/dev/null <<EOF⏎x⏎EOF⏎$CMD
+5	tier-gate	P2	bash <<'EOF'⏎CMD='gh release create v9'; $CMD⏎EOF
+5	tier-gate	P2	CMD=';gh release create v9'; eval "X=$CMD"
+5	tier-gate	P2	eval X=$CMD
+5	block-unchecked-merge	P2	eval X=$CMD
+5	tier-gate	P3	gh api graphql -f query$(true)='mutation{mergePullRequest(...)}'
+5	tier-gate	P3	gh api --method$(true) POST repos/o/r/releases
+5	tier-gate	P3	gh api -X$(true) POST repos/o/r/releases -f tag_name=v9
+5	tier-gate	P2	eval "v=$CMD"; gh pr list
+5	tier-gate	P2	eval v=$CMD; gh pr list
+5	tier-gate	P3	"$A"$B; gh pr list
+6	tier-gate	P1	echo 'gh pr merge 7' | { :; bash; }
+6	tier-gate	P1	echo 'gh pr merge 7' | ( :; bash )
+6	tier-gate	P1	echo 'gh pr merge 7' | (bash)
+6	tier-gate	P1	echo 'gh pr merge 7' | if true; then bash; fi
+6	tier-gate	P1	printf 'x\ngh pr merge 7\n' | { read -r _; bash; }
+6	tier-gate	P1	echo 'gh pr merge 7' > >(bash)
+6	tier-gate	P1	echo 'gh pr merge 7' | tee >(bash)
+6	tier-gate	P1	echo 'git push origin --delete v1' | { :; bash; }
+6	tier-gate	P1	A=(gh pr); A+=(merge 7); command "${A[@]}"
+6	tier-gate	P1	A=(gh pr); A+=(merge 7); X=1 "${A[@]}"
+6	tier-gate	P1	A=(gh pr); A+=(merge 7); sudo "${A[@]}"
+6	tier-gate	P1	A=(gh pr); A+=(merge 7); command "${A[@]:0}"
+6	tier-gate	P1	set -- gh pr; set -- "$@" merge 7; X=1 "$@"
+6	tier-gate	P1	git branch -m feat tmp && git tag feat && git push origin feat
+6	tier-gate	P1	git branch -m tmp && git tag feat && git push origin feat
+6	block-destructive	P1	rm ${X:- -rf} /tmp/zz
+6	block-destructive	P1	rm ${X:- -r -f} /tmp/zz
+6	block-destructive	P1	git clean ${X:- -f}
+6	block-destructive	P1	git clean ${X:- -fdx} .
+6	block-destructive	P1	git branch ${X:- -D} feat
+6	block-unchecked-merge	P1	${X:-gh pr merge 7}
+6	tier-gate	P3	A=(gh pr); A+=(merge 7); "${A[@]}"
+6	tier-gate	P3	CMD="gh pr merge 7"; tcsh <<EOF⏎$CMD⏎EOF
+6	block-destructive	P3	echo 'git reset --hard' | { :; bash; }
+6	block-destructive	P3	git reset ${X:---hard}
+6	block-destructive	P3	git reset ${X:-HEAD --hard}
+6	block-destructive	P3	${X:-git reset --hard}
+6	tier-gate	P1	echo 'gh pr merge 1' | (bash)
+6	tier-gate	P1	printf 'x\ngh pr merge 1\n' | { read -r x; bash; }
+6	tier-gate	P1	gh pr view 1 | (cat; bash)
+6	tier-gate	P2	git pu$(true)sh --tags
+6	tier-gate	P2	g$(true)h rel$(true)ease create v9
+6	tier-gate	P2	g$(true)h pr mer$(true)ge 7 --repo o/r --squash --admin
+6	block-unchecked-merge	P2	gh pr mer$(true)ge 7
+6	tier-gate	P2	SH=bash; echo 'gh pr merge 1' | "$SH"
+6	block-destructive	P3	echo 'git reset --hard' | bas\h
+7	block-destructive	P1	rm -r${X:-f src}
+7	block-destructive	P1	rm -r${X:-f }src
+7	block-destructive	P1	rm -${X:-rf src}
+7	block-destructive	P1	rm -f -${X:-r src}
+7	block-destructive	P1	git clean -${X:-f }
+7	block-destructive	P1	git clean -${X:-fd }
+7	block-destructive	P1	git branch -${X:-D wip}
+7	tier-gate	P1	echo "To merge, run: cat <<true > notes.md"⏎$CMD⏎true
+7	tier-gate	P1	printf '%s\n' 'Usage: gh pr merge <<EOF | tee log'⏎$CMD⏎EOF
+7	tier-gate	P1	cat <<"EOF > notes.md"⏎release notes⏎EOF > notes.md⏎$CMD⏎EOF
+7	tier-gate	P1	cat <<EOF | sed 'e'⏎$CMD⏎EOF⏎# merge
+7	tier-gate	P3	gh api ${X:- repos/o/r/releases} -f tag_name=v1
+7	tier-gate	P3	gh api -X POST ${X:- repos/o/r/releases}
+7	tier-gate	P3	gh api ${X:- -X PUT} repos/o/r/pulls/7/merge
+7	tier-gate	P3	gh api -X PUT ${X:- repos/o/r/pulls/7/merge}
+7	block-unchecked-merge	P3	g${X:-h pr merge 7}
+7	block-destructive	P3	git reset --hard${X:- }
+7	block-destructive	P3	git reset -${X:--hard }
+7	block-destructive	P3	git reset --har${X:-d }
+7	block-destructive	P3	git ${X:-reset --hard}
+7	block-destructive	P3	git ${X:-branch -D} feat
+7	block-destructive	P3	rm ${X:-"-rf"} src
+7	block-unchecked-merge	P3	eval "v=\${$n}" >x\⏎gh pr merge 7
+7	tier-gate	P1	cat <<'EOF' > x.sh⏎CMD="gh pr merge 7"⏎$CMD⏎EOF⏎bash x.sh
+7	block-destructive	P3	echo 'git reset --hard' | stdbuf -i0 bash

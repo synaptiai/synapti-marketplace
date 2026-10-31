@@ -30,14 +30,32 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 
 The schema accepts `autonomous`, `journal` or `confirm` for each key. No flow command or hook reads these values: what flow does for each action is set by the command that runs it, as below, and changing a value does not change it. Nothing applies them to a Bash command run outside flow's commands.
 
-| Key | Default | Action | What flow does |
-|-----|---------|--------|----------------|
-| `push` | journal | `git push` to remote | `/flow:pr`, `/flow:address`, `/flow:release`, the `/flow:watch branch` loop and `bin/promote-proposal.sh` (run for `/flow:learn` proposals) push without asking |
-| `prCreate` | journal | `gh pr create` | `/flow:pr`, `/flow:release` and `bin/promote-proposal.sh` (a draft pull request) open the pull request without asking |
-| `issueAssign` | journal | `gh issue edit --add-assignee` | `/flow:start` assigns the issue without asking |
-| `issueCreate` | journal | `gh issue create` | `/flow:issue` creates the issue without asking; `/flow:review` and `/flow:address` file a follow-up issue only in `minimalScope` mode, after asking via `AskUserQuestion`; while a FlowGoal is active, `ask-issue-create.sh` asks first (below) |
-| `merge` | confirm | `gh pr merge` | `/flow:merge` asks via `AskUserQuestion` before it merges, in autonomous mode too |
-| `release` | confirm | `gh release create` | `/flow:release` asks via `AskUserQuestion` before it creates and pushes the tag and creates the GitHub release, in autonomous mode too |
+| Value | Behavior |
+|-------|----------|
+| `autonomous` | Execute without any user interaction |
+| `journal` | Execute, and write one breadcrumb (UTC time, setting, command) to the git-ignored auto-log trail: `<journal dir>/auto-log/issue-{N}.{YYYY-MM}.md` on a branch naming issue N, `auto-log/session-{YYYY-MM-DD}.md` otherwise. Nothing is written in a repository with no journal directory, and the tracked journal is not touched. |
+| `confirm` | Ask first: a permission prompt that names the action, its setting and the command. In `claude -p` it is a refusal. |
+
+The `tier-gate.sh` PreToolUse hook applies these values to every Bash command that runs one of the actions below, and flow's `git` and `gh` wrappers check them again when the program starts. See [`three-tier-safety.md`](three-tier-safety.md) for how each reads a command and what neither covers.
+
+### Actions
+
+| Key | Default | Allowed values | Action |
+|-----|---------|----------------|--------|
+| `push` | journal | autonomous, journal, confirm | `git push` of branches to a remote |
+| `prCreate` | journal | autonomous, journal, confirm | `gh pr create` (`gh pr new`); `gh api` POST to `.../pulls`; GraphQL `createPullRequest` |
+| `issueAssign` | journal | autonomous, journal, confirm | `gh issue edit --add-assignee`; `gh api` POST to `.../issues/{n}/assignees`, PATCH or PUT on `.../issues/{n}` with an assignee field; GraphQL `addAssigneesToAssignable` |
+| `issueCreate` | journal | autonomous, journal, confirm | `gh issue create` (`gh issue new`); `gh api` POST to `.../issues`; GraphQL `createIssue` |
+| `merge` | confirm | confirm (floor) | `gh pr merge`; `gh api` PUT or POST to `.../pulls/{n}/merge` or `.../merges`; GraphQL `mergePullRequest`, `enablePullRequestAutoMerge`, `enqueuePullRequest`, and any mutation whose name holds Merge |
+| `release` | confirm | confirm (floor) | `gh release create` (`gh release new`), journaled with `--verify-tag` when the tag is already on origin (below); `gh release edit`, `delete`, `upload`, `delete-asset`; `gh api` POST to `.../releases` or `.../releases/{id}/assets`, PATCH on `.../releases/{id}`, DELETE on `.../releases/{id}` or `.../releases/assets/{id}`; GraphQL `createRelease`, `updateRelease`, and any mutation whose name holds Release or Ref; pushing a tag (below) |
+
+Pushing a tag is the `release` tier, not `push`: `git push` with `--tags`, `--follow-tags`, `--mirror` or `-c push.followTags=true`, or any push in a repository whose git configuration sets `push.followTags` to true (a `-c` on the command line overrides it); `git push <remote> tag <name>`; a refspec with `refs/tags/` on either side (`HEAD:refs/tags/v1`); a refspec whose source or destination is a tag that exists in the repository (`git push origin v1.2.0`, while a branch named `v1-fix` stays `push`), or a `tags/<name>` source; a push to a remote whose configuration sets `remote.<name>.mirror`, or whose `remote.<name>.push` refspecs send tags when the command names no refspec; and `gh api` POST to `.../git/refs` with a `refs/tags/` ref. Options are read as git reads them, so an abbreviation git accepts (`--tag`, `--mirr`, `--follow-tag`, `--del`) or a bundle of short options (`-qd`) counts. Deleting a tag is `release` too: `git push <remote> :<tag>`, `--delete`/`-d <tag>`, and `gh api` DELETE or PATCH on `.../git/refs/tags/<tag>`; deleting a name that is neither a tag nor a known branch (local, or remote-tracking on that remote) asks, since it may be a tag on the remote. A command that pushes a branch and a tag is `release`. A push whose source is not a local branch may push a tag, so it asks too: a name that does not exist yet (`git tag v7 && git push origin v7`), a glob (`refs/*:refs/*`), a commit, or a variable (`git push origin "$TAG"`). So does setting a remote's `mirror` or `push` for one command (`-c`, `--config-env`, `GIT_CONFIG_*`). `git -C <dir>`, `--git-dir`, `--work-tree`, and `GIT_DIR=` or `GIT_WORK_TREE=` before git name the repository the push acts on: its tags, its `push.followTags`, its remotes' configuration and its auto-log trail are used. When that repository cannot be found, the push asks.
+
+`gh release create <tag> --verify-tag` is journaled instead of asked when gh creates the release in origin's repository and `git ls-remote --tags origin` finds the tag there within 5 seconds: that tag's push was already confirmed. The repository gh uses is `-R`/`--repo`, else `GH_REPO`, else the remote `gh repo set-default` chose or the only remote, and it must be origin's. Without `--verify-tag`, with the tag missing from origin, when the check fails or times out, when the repository cannot be confirmed to be origin's, with `GH_HOST` set, or after a `cd` or a `GH_REPO` setting earlier in the same command, it asks.
+
+`gh release edit` (which publishes a draft with `--draft=false`), `gh release delete`, `gh release upload` and `gh release delete-asset` are `release`: each changes a release, or the files people download from it. `gh api` also counts for these: PATCH on `.../releases/{id}`, DELETE on `.../releases/{id}` or `.../releases/assets/{id}`, and POST to `.../releases/{id}/assets` are `release`; PATCH or PUT on `.../issues/{n}` with an `assignee` or `assignees` field is `issueAssign`; and a GraphQL mutation named `mergePullRequest` or `enablePullRequestAutoMerge` (`merge`), `createRelease` or `updateRelease` (`release`), `createPullRequest` (`prCreate`), `createIssue` (`issueCreate`) or `addAssigneesToAssignable` (`issueAssign`), read from `-f`/`-F query=...`, `query=@file` or `--input file`. Any other mutation field whose name holds Merge, in any case, or is `enqueuePullRequest`, is `merge`, and one whose name holds Release or Ref (`createRef`, `updateRef`, `deleteRef`, `deleteRelease`) is `release`. A GraphQL query that cannot be read (a variable, stdin, a missing file) asks, since it may merge or release.
+
+`merge` and `release` cannot be lowered: a value below `confirm` is ignored with one warning on stderr naming the setting, and the action still asks. A value outside the three for the other keys, or a setting the cascade cannot read, lets the action run with one warning.
 
 ## Timeout Settings
 

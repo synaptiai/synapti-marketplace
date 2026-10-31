@@ -46,9 +46,9 @@ assert_equal "preflight bump release_pr tag" "$WF_PHASES" "release.workflow.yaml
 assert_contains "ask_user_to_release" "$(cat "$PLUGIN_DIR/workflows/release.workflow.yaml")" "the workflow records the AskUserQuestion confirmation before the tag phase acts"
 
 # The release asks its own question before the tag, the tag push and the
-# release are created, and before the release for a tag already on origin.
-# The release pull request run creates nothing that needs Tier 3, so it does
-# not ask.
+# release are created, and before the release for a tag already on origin;
+# the tier hook's prompt on those commands is a second check. The release pull
+# request run creates nothing that needs Tier 3, so it does not ask.
 # _rel_section_line <section label> <pattern>: the first line matching the
 # pattern inside the Phase 4 section headed ### `RELEASE_RUN=<label>`.
 _rel_section_line() {

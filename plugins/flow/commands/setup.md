@@ -50,7 +50,7 @@ else
 fi
 ```
 
-On `TIMEOUT_BIN=missing`, add the coreutils install to **Manual Steps Required** in the Phase 6 summary: without it the verdict judge and the goal judge report that they could not start (exit 4).
+On `TIMEOUT_BIN=missing`, add the coreutils install to **Manual Steps Required** in the Phase 7 summary: without it the verdict judge and the goal judge report that they could not start (exit 4).
 
 **Skill(capability-discovery)**: Detect tech stack, quality commands, existing agents/skills, and LSP capabilities.
 
@@ -62,7 +62,7 @@ Based on detection, create `.claude/settings.flow.json` (project-shared, committ
 mkdir -p .claude
 ```
 
-**Ensure `.claude/settings.flow.local.json` is gitignored** (idempotent — adds the line only if missing). Without this, a downstream user creating a personal-pin file as documented in Phase 6 below would commit it accidentally, leaking their machine-local preferences and weakening the project-local override layer:
+**Ensure `.claude/settings.flow.local.json` is gitignored** (idempotent — adds the line only if missing). Without this, a downstream user creating a personal-pin file as documented in Phase 7 below would commit it accidentally, leaking their machine-local preferences and weakening the project-local override layer:
 
 Also ignore `.claude/*.lock` — `flow-migrate-settings.sh` (and other writers) create a transient `<file>.lock` beside the settings file; the trap removes it, but a hard kill (SIGKILL) could leave one behind, and it must never be committed.
 
@@ -102,7 +102,7 @@ Write `.claude/settings.flow.json` with:
 - `learning.enabled: true`. Not `learning.proposalDir` or `learning.transcriptDir`: Flow reads those from the user settings file only, so a value written here would be ignored
 - `journal.dir` (default `.decisions`). Written here it is a repository setting, so it must resolve inside the repository; a directory outside the checkout belongs in the user's own `~/.claude/settings.flow.json`
 - LSP settings (`lsp.enabled: true`, `lsp.timeout: 5000`, `lsp.diagnosticsAsQuality: true`)
-- Tier classification (`tiers.*`, recorded for reference: no command or hook reads it), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings
+- Tier classification (`tiers.*`), timeouts, debugging settings, verdict settings, testing settings, visualVerification settings. The `tier-gate.sh` hook applies `tiers.*` to every Bash command: `push`, `prCreate`, `issueAssign` and `issueCreate` take `autonomous`, `journal` or `confirm`; `merge` and `release` (which includes pushing a tag) are always `confirm`, and a lower value there is ignored with a warning
 
 **On re-run** (existing settings detected): Read current settings and merge — preserve user customizations, only add new keys that don't exist yet.
 
@@ -140,7 +140,7 @@ On **Upgrade now**, apply the rewrite. This block re-resolves the helper path in
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-migrate-settings.sh" --apply ".claude/settings.flow.json"
 ```
 
-It writes atomically and preserves all other keys. Note the change in the Phase 6 summary so the user reviews the one-line diff before committing.
+It writes atomically and preserves all other keys. Note the change in the Phase 7 summary so the user reviews the one-line diff before committing.
 
 ### Strip legacy auto-log lines (re-run only)
 
@@ -179,7 +179,7 @@ On **Strip them now**, apply the rewrite. As with the migration above, this bloc
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-strip-auto-log.sh" --apply
 ```
 
-This rewrites tracked files, so note it in the Phase 6 summary — the user reviews the deletions before committing, and a large diff here is expected on a first run.
+This rewrites tracked files, so note it in the Phase 7 summary — the user reviews the deletions before committing, and a large diff here is expected on a first run.
 
 ## Phase 3: LSP Server Setup
 
@@ -363,13 +363,95 @@ Commands use different prefixes:
 - flow: `/flow:start`, `/flow:commit`, `/flow:pr`
 ```
 
-## Phase 5: CLAUDE.md Integration
+## Phase 5: GitHub Rulesets
+
+flow's tier checks (the `tier-gate.sh` hook and the `git` and `gh` wrappers) run on this machine and are best-effort: a program other than git or gh, git run by its full path, or a login shell gets past them (`references/three-tier-safety.md`). Rules on GitHub apply to every push and merge, from any machine or tool. Offer them here; skip this phase in a repository with no GitHub remote.
+
+Read what the repository has. The block prints `RULESETS=` one of `none`, `flow` (both of flow's rulesets exist), `other` (the repository has rulesets, not both of flow's), `unavailable` (GitHub refused: a private repository on the free plan, or no admin rights), `unreadable` (any other failure) or `noremote` (no git remote; skip this phase), and `REPO=owner/name`:
+
+```bash
+# SETUP_RULESETS_BEGIN
+REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || REPO=""
+if ! git remote 2>/dev/null | grep -q .; then
+  printf '%s\n' "RULESETS=noremote"
+  printf '%s\n' "REPO="
+elif [ -z "$REPO" ]; then
+  printf '%s\n' "RULESETS=unreadable"
+  printf '%s\n' "REPO="
+else
+  printf '%s\n' "REPO=$REPO"
+  if ! OUT=$(gh api --paginate "repos/$REPO/rulesets" --jq '.[].name' 2>&1); then
+    case "$OUT" in
+      *"HTTP 403"*|*"HTTP 404"*|*"Upgrade to GitHub Pro"*) printf '%s\n' "RULESETS=unavailable" ;;
+      *) printf '%s\n' "RULESETS=unreadable" ;;
+    esac
+  elif printf '%s\n' "$OUT" | grep -qx 'flow: default branch' && printf '%s\n' "$OUT" | grep -qx 'flow: tags'; then
+    printf '%s\n' "RULESETS=flow"
+  elif [ -n "$OUT" ]; then
+    printf '%s\n' "RULESETS=other"
+  else
+    printf '%s\n' "RULESETS=none"
+  fi
+fi
+# SETUP_RULESETS_END
+```
+
+On `flow`, report that flow's rulesets are in place and go on. On `unavailable` or `unreadable`, add a line to **Manual Steps Required** in the Phase 7 summary: rulesets could not be read or created here, and an owner of the repository can add them under Settings → Rules. On `noremote`, skip this phase. Otherwise (`none` or `other`, naming the existing rulesets on `other`; a flow ruleset that already exists is reported as `FAILED=` with GitHub's message when created again), use the AskUserQuestion tool, saying what each choice does on GitHub and what it does not:
+
+- **Protect the default branch and tags** (recommended): the default branch accepts changes only through a pull request and cannot be force-pushed or deleted; a tag cannot be moved or deleted once it is on GitHub. Merging a pull request and creating a new tag or release still need only write access.
+- **The same, and require one approving review**: a pull request also needs an approving review from someone other than its author, given after its last push, before it can be merged; a push after the approval dismisses it. This is the setting that stops a merge made with your own credentials, by you or by an agent. A maintainer who works alone cannot then merge their own pull requests.
+- **Skip**: create nothing.
+
+Only after the user picks one of the first two, run the block below with `REPO` from the block above and `APPROVALS` set to `0` for the first choice or `1` for the second. If the user skips, create nothing. Each ruleset's result is printed as `CREATED=<name>` or `FAILED=<name>: <GitHub's message>`:
+
+```bash
+# SETUP_RULESETS_CREATE_BEGIN
+if [ -z "${REPO:-}" ] || ! printf '%s' "${APPROVALS:-}" | grep -qx '[01]'; then
+  printf '%s\n' "FAILED=all: REPO and APPROVALS (0 or 1) must be set"
+else
+  BODY=$(mktemp "${TMPDIR:-/tmp}/flow-ruleset.XXXXXX") || BODY=""
+  if [ -z "$BODY" ]; then
+    printf '%s\n' "FAILED=all: could not create a temporary file"
+  else
+    jq -n --argjson n "$APPROVALS" '{
+      name: "flow: default branch", target: "branch", enforcement: "active",
+      conditions: {ref_name: {include: ["~DEFAULT_BRANCH"], exclude: []}},
+      rules: [
+        {type: "deletion"}, {type: "non_fast_forward"},
+        {type: "pull_request", parameters: {
+          required_approving_review_count: $n, dismiss_stale_reviews_on_push: ($n > 0),
+          require_code_owner_review: false, require_last_push_approval: ($n > 0),
+          required_review_thread_resolution: false}}]}' > "$BODY"
+    if ERR=$(gh api -X POST "repos/$REPO/rulesets" --input "$BODY" 2>&1 >/dev/null); then
+      printf '%s\n' "CREATED=flow: default branch"
+    else
+      printf '%s\n' "FAILED=flow: default branch: $(printf '%s' "$ERR" | head -n 1)"
+    fi
+    jq -n '{
+      name: "flow: tags", target: "tag", enforcement: "active",
+      conditions: {ref_name: {include: ["~ALL"], exclude: []}},
+      rules: [{type: "deletion"}, {type: "non_fast_forward"},
+              {type: "update", parameters: {update_allows_fetch_and_merge: false}}]}' > "$BODY"
+    if ERR=$(gh api -X POST "repos/$REPO/rulesets" --input "$BODY" 2>&1 >/dev/null); then
+      printf '%s\n' "CREATED=flow: tags"
+    else
+      printf '%s\n' "FAILED=flow: tags: $(printf '%s' "$ERR" | head -n 1)"
+    fi
+    rm -f "$BODY"
+  fi
+fi
+# SETUP_RULESETS_CREATE_END
+```
+
+Report each line in the Phase 7 summary. A `FAILED=` line goes under **Manual Steps Required** with GitHub's message.
+
+## Phase 6: CLAUDE.md Integration
 
 Use the AskUserQuestion tool with contextual options to ask: "Add flow workflow section to CLAUDE.md?"
 
 If yes, append the workflow section from `templates/CLAUDE-flow.md` to the existing CLAUDE.md.
 
-## Phase 6: Summary
+## Phase 7: Summary
 
 ```markdown
 ## Flow Setup Complete
@@ -444,4 +526,6 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 | Upgrade deprecated keys in an existing `.claude/settings.flow.json` (`flow-migrate-settings.sh --apply`) | 2 | AskUserQuestion before rewriting the committed file; atomic, preserves other keys |
 | Write `.claude/CLAUDE.md` flow integration block | 1 | Autonomous, project file |
 | Install LSP servers (when user opts in) | 2 | Journal-and-proceed (touches user environment outside repo) |
+| Read the repository's GitHub rulesets | 1 | Autonomous, read-only |
+| Create flow's GitHub rulesets (default branch, tags) | 3 | **Confirm**: AskUserQuestion first, naming what each choice does and does not stop; nothing is created on Skip |
 | `mkdir -p .decisions/` | 1 | Autonomous |

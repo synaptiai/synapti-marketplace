@@ -42,7 +42,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | Skill | Loading | Body words | Purpose |
 |-------|---------|------------|---------|
 | architecture-patterns | dispatched | 594 | Document system design decisions with mapped user flows, coupling analysis, failure modes, and explicit n... |
-| autonomous-workflow | ambient | 598 | Execute development workflows through Explore-Plan-Code-Verify phases with task-driven tracking, Tier 1/2... |
+| autonomous-workflow | ambient | 599 | Execute development workflows through Explore-Plan-Code-Verify phases with task-driven tracking, Tier 1/2... |
 | brainstorming | dispatched | 440 | Generate 2-4 distinct approaches with trade-off analysis across simplicity, flexibility, performance, eff... |
 | branch-and-task-management | dispatched | 401 | Create feature branches with naming conventions, load full issue context and impact analysis, and decompo... |
 | capability-discovery | dispatched | 552 | Discover available agents, skills, quality commands (lint, test, typecheck), tech stack, verification cap... |
@@ -61,7 +61,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | holdout-validation | dispatched | 597 | Cross-reference agent self-review claims and evidence-bundle entries against actual file state using hidd... |
 | issue-crafting | dispatched | 425 | Craft well-structured GitHub issues with solution-agnostic outcomes, duplicate detection (open and closed... |
 | llm-operator-principles | ambient | 590 | Frame Claude's identity as an LLM operator that does not tire, treats convergence as zero findings (not e... |
-| merge-and-release | dispatched · reference-only | 566 | Reference document describing merge prerequisites (approval, CI checks, mergeable, conversations resolved... |
+| merge-and-release | dispatched · reference-only | 594 | Reference document describing merge prerequisites (approval, CI checks, mergeable, conversations resolved... |
 | merge-conflict-resolution | dispatched | 551 | Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolv... |
 | pr-lifecycle | dispatched · reference-only | 581 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
 | preflight-checks | dispatched · reference-only | 543 | Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue e... |

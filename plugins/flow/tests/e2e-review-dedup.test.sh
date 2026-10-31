@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# flow-test: alone
+# (run.sh runs this file by itself: its stub replies are timed against timeoutMs of 300 ms.)
 # End-to-end: the System One decision point review.dedup. At the synthesis step
 # of /flow:review and /flow:pr, bin/flow-s1-dedup.sh asks, per candidate pair
 # of consolidated findings, whether the two describe the same defect, and in on

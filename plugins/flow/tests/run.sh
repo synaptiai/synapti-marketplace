@@ -81,6 +81,22 @@ unset CLAUDE_PROJECT_DIR
 # fences the suites extract read them: an operator's or reviewer's value would
 # point those fences at another tree.
 unset REVIEW_TREE REVIEW_RUN_PR_COMMANDS
+# Run inside a Claude Code session with flow installed, PATH starts with
+# flow's git and gh wrappers (hooks/scripts/tier-session-start.sh), which
+# would refuse a suite's tag push to a scratch remote. The suites see the
+# same PATH they see outside a session; a suite about the wrappers sets them
+# up itself.
+unset FLOW_TIER_DIR FLOW_TIER_CALL
+_flow_path=""
+_flow_ifs=$IFS
+IFS=:
+for _flow_d in $PATH; do
+  case "$_flow_d" in */flow/hooks/shims|*/flow/*/hooks/shims) continue ;; esac
+  _flow_path="${_flow_path:+$_flow_path:}$_flow_d"
+done
+IFS=$_flow_ifs
+PATH=$_flow_path
+unset _flow_path _flow_ifs _flow_d
 # Per-user state goes to a directory of this run's own. A suite that runs a
 # hook or a script without setting FLOW_STATE_DIR or HOME itself would
 # otherwise write into the real ~/.claude/flow-state: the quality-ledger

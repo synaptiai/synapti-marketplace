@@ -51,17 +51,19 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # Targets: every target must be a SAFE_DIRS basename for the command to pass;
 # one unsafe target (`rm -rf node_modules src`) blocks, and so does a
 # recursive+force rm with no visible target (`ls | xargs rm -rf`) because the
-# targets cannot be verified. Redirections (`2>/dev/null`, `> out`) are not
-# targets.
+# targets cannot be verified. Redirections (`2>/dev/null`, `> out`, and one
+# glued to a word: `src&>/dev/null` is the target src) are not targets.
 #
-# Quoting: each simple command is tokenised the way the shell does, on
-# unquoted whitespace, with single and double quotes removed and their
-# contents kept as part of the token. So `rm "-rf" src`, `rm '-fr' src` and
+# Quoting: each simple command is read into the words bash hands the program
+# (_bd_words in lib/command-parse.sh, the reader every hook shares): quotes
+# removed, a backslash removed where bash removes it, redirections set aside
+# wherever they stand. So `rm "-rf" src`, `rm '-fr' src`, `r\m -rf src` and
 # `rm "--recursive" --force src` carry the same flags as `rm -rf src`, and
 # `rm -rf "my dir"` has the one target `my dir`. (An earlier version split on
-# bare whitespace and let a quoted flag through unseen.) Variable targets
-# (`"$DIR"`) are not expanded and therefore count as unsafe (fail-safe), as
-# does a target with an unterminated quote.
+# bare whitespace and let a quoted flag through unseen, and a later one read
+# `--hard&>/dev/null` as one word.) Variable targets (`"$DIR"`) are not
+# expanded and therefore count as unsafe (fail-safe), as does a target with an
+# unterminated quote.
 # ---------------------------------------------------------------------------
 SAFE_DIRS="node_modules|\.next|dist|build|tmp|\.cache|__pycache__|coverage|\.turbo|\.parcel-cache|\.vite"
 
@@ -76,7 +78,7 @@ fi
 . "$_BD_LIB"
 # Readable is not the same as loaded: a truncated library defines nothing, and
 # the first call to it would exit 127, which lets the command run.
-for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_git_parse _bd_is_whole_tree _bd_is_redirection _bd_is_opt; do
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _bd_words _bd_git_parse _bd_is_whole_tree _bd_is_opt; do
   if ! type "$_bd_fn" >/dev/null 2>&1; then
     echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so command safety cannot be verified." >&2
     exit 2
@@ -91,12 +93,18 @@ fi
 # Returns 0 when the segment runs rm with recursive+force and at least one
 # target outside SAFE_DIRS; 1 otherwise.
 _rm_segment_is_destructive() {
-  # Fast path: a segment without the letters "rm" cannot name rm; skip the
-  # character-level tokeniser (hooks run on every Bash call, commands can be
-  # long heredocs).
-  case "$1" in *rm*) ;; *) return 1 ;; esac
-  local -a TOK=()
-  _rm_tokenise "$1"
+  # Fast path: a segment without the letters "rm" (in any case: a
+  # case-insensitive filesystem runs `RM`), or a quote or backslash inside
+  # them (`r"m"`, `r\m`), cannot name rm; skip the tokeniser (hooks run on
+  # every Bash call, commands can be long heredocs).
+  case "$1" in *[Rr][Mm]*|*[Rr][\\\'\"]*|*[\\\'\"][Mm]*) ;; *) return 1 ;; esac
+  # _bd_words fills all of these; they are local so it does not leave them
+  # behind in the hook's own shell.
+  # shellcheck disable=SC2034
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=()
+  # shellcheck disable=SC2034
+  local BD_RIN=0
+  _bd_words "$1"
   local n=${#TOK[@]} i idx=-1 base tok
   for ((i = 0; i < n; i++)); do
     # A command word is a program name, never a 40KB argument. Skipping the
@@ -106,20 +114,18 @@ _rm_segment_is_destructive() {
     # PATH_MAX; nothing runnable is longer.
     [ "${#TOK[i]}" -le 4096 ] || continue
     base="${TOK[i]##*/}"     # /bin/rm -> rm
-    base="${base#\\}"        # \rm -> rm
-    if [ "$base" = "rm" ]; then idx=$i; break; fi
+    case "$base" in [Rr][Mm]) idx=$i; break ;; esac
   done
   if [ "$idx" -lt 0 ]; then return 1; fi
   if [ "$idx" -gt 0 ]; then
     base="${TOK[idx-1]##*/}"
-    if [ "$base" = "git" ]; then return 1; fi   # git rm exemption (see above)
+    case "$base" in [Gg][Ii][Tt]) return 1 ;; esac   # git rm exemption (see above)
   fi
 
-  local REC=0 FORCE=0 END_OPTS=0 SKIP_NEXT=0
+  local REC=0 FORCE=0 END_OPTS=0
   local -a RM_TARGETS=()
   for ((i = idx + 1; i < n; i++)); do
     tok="${TOK[i]}"
-    if [ "$SKIP_NEXT" = "1" ]; then SKIP_NEXT=0; continue; fi   # target of a bare redirection operator
     if [ "$END_OPTS" = "0" ]; then
       case "$tok" in
         --) END_OPTS=1; continue ;;
@@ -132,10 +138,6 @@ _rm_segment_is_destructive() {
           continue ;;
       esac
     fi
-    case "$tok" in
-      '>'|'>>'|'<'|[0-9]'>'|[0-9]'>>') SKIP_NEXT=1; continue ;;   # bare redirection: next token is its file
-      '>'*|'<'*|[0-9]'>'*) continue ;;                            # attached redirection (2>/dev/null)
-    esac
     RM_TARGETS+=("$tok")
   done
 
@@ -154,6 +156,16 @@ _rm_segment_is_destructive() {
   fi
   return 1
 }
+
+# A word glued to a substitution is also read without it (`git reset
+# --hard$(true)` is git reset --hard): each segment with a substitution glued
+# to other text is followed by that second reading (_bd_segments), which
+# every rule below reads too.
+BD_SEG_ALT=1
+# An unquoted ${...} that holds whitespace is split into the words bash's
+# word splitting makes of it (`rm ${X:- -rf} src`, `git clean ${X:- -f}`),
+# not read as one word (_bd_words).
+BD_SPLIT_EXP=1
 
 # Strip comments and heredoc bodies once; every rule below reads BD_CODE.
 _bd_strip_noncode "$COMMAND"
@@ -318,14 +330,9 @@ while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
   _bd_git_parse "$SEG" || continue
   [ "$GIT_SUB" = "branch" ] || continue
-  BR_BIG_D=0; BR_SMALL_D=0; BR_FORCE=0; BR_TARGETS=""; BR_SKIP=0
+  BR_BIG_D=0; BR_SMALL_D=0; BR_FORCE=0; BR_TARGETS=""
   for ((BI = 0; BI < GIT_ARGN; BI++)); do
     BTOK="${GIT_ARGS[BI]}"
-    if [ "$BR_SKIP" = "1" ]; then BR_SKIP=0; continue; fi
-    case "$BTOK" in
-      '>'|'>>'|'<'|[0-9]'>'|[0-9]'>>') BR_SKIP=1; continue ;;
-    esac
-    if _bd_is_redirection "$BTOK"; then continue; fi
     if _bd_is_opt "$BTOK" "--delete" "--d"; then BR_SMALL_D=1; continue; fi
     if _bd_is_opt "$BTOK" "--force" "--f"; then BR_FORCE=1; continue; fi
     case "$BTOK" in
@@ -522,7 +529,6 @@ while IFS= read -r SEG; do
       SEEN_SEP=0; WHOLE=0
       for ((GI = 0; GI < GIT_ARGN; GI++)); do
         GTOK="${GIT_ARGS[GI]}"
-        _bd_is_redirection "$GTOK" && continue
         if [ "$SEEN_SEP" = "0" ]; then
           [ "$GTOK" = "--" ] && { SEEN_SEP=1; continue; }
           case "$GTOK" in -*) continue ;; esac
@@ -539,7 +545,6 @@ while IFS= read -r SEG; do
       SEEN_SEP=0; WHOLE=0; STAGED=0; WORKTREE=0
       for ((GI = 0; GI < GIT_ARGN; GI++)); do
         GTOK="${GIT_ARGS[GI]}"
-        _bd_is_redirection "$GTOK" && continue
         if [ "$SEEN_SEP" = "0" ]; then
           case "$GTOK" in
             --) SEEN_SEP=1; continue ;;
@@ -578,7 +583,6 @@ while IFS= read -r SEG; do
       exit_clean=0
       for ((GI = 0; GI < GIT_ARGN; GI++)); do
         GTOK="${GIT_ARGS[GI]}"
-        _bd_is_redirection "$GTOK" && continue
         if _bd_is_opt "$GTOK" "--force" "--f"; then
           exit_clean=1
         else

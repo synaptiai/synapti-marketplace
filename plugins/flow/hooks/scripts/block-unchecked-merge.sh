@@ -51,9 +51,13 @@
 # mutation is refused outright, as is one whose whole endpoint is a variable, or
 # a GraphQL call whose query comes from a file.
 #
+# Words are read as bash passes them: quotes and backslash escapes removed, so
+# `gh pr me""rge 7` and `g\h pr mer\ge 7` are gh pr merge 7 and are checked as
+# such.
+#
 # Not covered, by design. This hook catches merges written in good faith, or
 # misdirected by a variable or a directory. It does not stop deliberate
-# evasion: a quote or backslash inside the word (`m\erge`), a command held in a
+# evasion: an ANSI-C quoted word (`$'m\x65rge'`), a whole command held in a
 # variable and run as `$CMD`, a gh alias defined in an earlier call, a script
 # piped into a shell, a gh extension, or curl to the REST API. Branch protection
 # with required checks is the mechanism for that, as #170 says.
@@ -86,7 +90,7 @@ fi
 . "$_BD_LIB"
 # Readable is not the same as loaded. A truncated or broken library defines
 # nothing, every call below fails, no merge is found, and the hook allows.
-for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _rm_tokenise _bd_is_redirection; do
+for _bd_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _bd_words; do
   if ! type "$_bd_fn" >/dev/null 2>&1; then
     echo "BLOCKED: the command parser did not load ($_bd_fn is undefined), so merge readiness cannot be verified." >&2
     echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
@@ -113,15 +117,56 @@ COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
 if ! _BUM_BARE=$(printf '%s' "$COMMAND" | LC_ALL=C tr -d "'\"\\\\"); then
   _BUM_BARE=merge
 fi
+# A substitution can split the word itself (`gh pr mer$(true)ge 7`), so the
+# text is also judged with each one removed.
 case "$_BUM_BARE" in
   *[Mm][Ee][Rr][Gg][Ee]*|*[Gg][Rr][Aa][Pp][Hh][Qq][Ll]*) ;;
+  *'$('*|*'`'*)
+    _BUM_BARE=$(printf '%s' "$_BUM_BARE" | sed -e 's/[$]([^()]*)//g' -e 's/`[^`]*`//g' 2>/dev/null) || _BUM_BARE=merge
+    case "$_BUM_BARE" in
+      *[Mm][Ee][Rr][Gg][Ee]*|*[Gg][Rr][Aa][Pp][Hh][Qq][Ll]*) ;;
+      *) exit 0 ;;
+    esac ;;
   *) exit 0 ;;
 esac
+
+# A word glued to a substitution is also read without it, marked as that
+# second reading (_bd_segments): `gh pr merge$(x) 7` may be gh pr merge 7.
+BD_SEG_ALT=1
+BD_SEG_MARK=1
+# An unquoted ${...} that holds whitespace is split into the words bash's
+# word splitting makes of it (`${X:-gh pr merge 7}`), not read as one word
+# (_bd_words).
+BD_SPLIT_EXP=1
 
 _bd_strip_noncode "$COMMAND"
 # `bash -c 'gh pr merge 9'` and `eval '...'` hide the merge inside one quoted
 # word. Expand those first, so the merge is a command like any other.
 _bd_expand_interpreter_args
+# So do programs that run a quoted argument as a shell command (`watch 'gh pr
+# merge 1'`, `script -c '...'`, `flock f -c '...'`, `tmux new '...'`): each
+# word with a space in it, after one of them as the command word, is read as
+# a command too.
+_bum_runs_args=""
+while IFS= read -r _bum_seg; do
+  case "$_bum_seg" in __BD_ALT__*) _bum_seg="${_bum_seg:10}" ;; esac
+  case "$_bum_seg" in __BD_PIPE__*) _bum_seg="${_bum_seg:11}" ;; esac
+  case "$_bum_seg" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
+  _bd_words "$_bum_seg"
+  _bum_f=0
+  while [ "$_bum_f" -lt "${#TOK[@]}" ] && case "${TOK[_bum_f]}" in [A-Za-z_]*=*) true ;; *) false ;; esac; do _bum_f=$((_bum_f + 1)); done
+  case "${TOK[_bum_f]:-}" in
+    */watch|watch|*/script|script|*/flock|flock|*/parallel|parallel|*/tmux|tmux|*/screen|screen|*/setsid|setsid|*/chronic|chronic|*/unbuffer|unbuffer) ;;
+    *) continue ;;
+  esac
+  for ((_bum_k = _bum_f + 1; _bum_k < ${#TOK[@]}; _bum_k++)); do
+    case "${TOK[_bum_k]}" in *[[:space:]]*) _bum_runs_args="$_bum_runs_args
+${TOK[_bum_k]}" ;; esac
+  done
+done <<BUM_EOF
+$(_bd_segments "$BD_CODE")
+BUM_EOF
+[ -z "$_bum_runs_args" ] || BD_CODE="$BD_CODE$_bum_runs_args"
 
 # A value this hook cannot know without running a shell: a variable, or a
 # substitution (the segmenter leaves `__BD_SUBST__` where `$(...)` or a backtick
@@ -191,11 +236,14 @@ _bum_is_gh() {
   return 1
 }
 
+# NAME=value, NAME+=value and NAME[index]=value are assignments.
 _bum_is_assignment() {
   case "$1" in
     [A-Za-z_]*=*)
       local name="${1%%=*}"
-      case "$name" in *[!A-Za-z0-9_]*) return 1 ;; esac
+      name="${name%+}"
+      case "$name" in *\[*\]) name="${name%%\[*}" ;; esac
+      case "$name" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac
       return 0 ;;
   esac
   return 1
@@ -272,12 +320,6 @@ _bum_judge_merge() {
   while [ "$i" -lt "$n" ]; do
     tok="${TOK[i]}"
     nxt="${TOK[i+1]:-}"
-    # A bare redirection operator takes the next word as its target, which is
-    # a file name and not a selector.
-    case "$tok" in
-      '>'|'>>'|'<'|'<<<'|[0-9]'>'|[0-9]'>>'|[0-9]'<') i=$((i + 2)); continue ;;
-    esac
-    if _bd_is_redirection "$tok"; then i=$((i + 1)); continue; fi
     case "$tok" in
       --repo)
         repo="$nxt"; repo_n=$((repo_n + 1)); i=$((i + 2))
@@ -378,13 +420,60 @@ MERGE_DEL=()
 MERGE_ADMIN=()
 MERGE_MHC=()
 
+PREV_MERGE=0
 while IFS= read -r SEG; do
   [ -z "$SEG" ] && continue
   case "$SEG" in __BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
-  TOK=()
-  _rm_tokenise "$SEG"
+  # SEG_ALT=1: the reading of the segment before this one with its
+  # substitutions removed (_bd_segments). PREV_MERGE=1: that segment was
+  # already read as a merge.
+  SEG_ALT=0
+  case "$SEG" in __BD_ALT__*) SEG_ALT=1; SEG="${SEG:10}" ;; *) PREV_MERGE=0 ;; esac
+  case "$SEG" in __BD_PIPE__*) SEG="${SEG:11}" ;; esac
+  # The words as bash passes them to the program (_bd_words, the reader every
+  # hook shares): `g\h pr mer\ge 7` runs gh pr merge 7, `$"merge"` is merge,
+  # and a redirection is set aside wherever it stands, with or without a space
+  # before its target (`gh pr >& /dev/null merge 7`, `2>&1`, `&>>log`), so
+  # neither the operator nor its target is read as a word of the merge.
+  _bd_words "$SEG"
   n=${#TOK[@]}
   [ "$n" -gt 0 ] || continue
+
+  # A command word this hook cannot read, in a command whose text names a
+  # merge: a variable or a substitution with nothing after it (`$CMD`,
+  # `""$CMD`, `${CMD%/}`; not `"$CMD"`, one quoted program name), or eval of
+  # anything but one word that reads a variable by name (`eval
+  # "v=\${$name}"`) with an argument this hook cannot read. Either may run
+  # the merge the text names.
+  if [ "$PREV_MERGE" = 0 ]; then
+    f=0
+    while [ "$f" -lt "$n" ] && _bum_is_assignment "${TOK[f]}"; do f=$((f + 1)); done
+    if [ "$f" -lt "$n" ]; then
+      # A word with a / of its own, outside ${...}, names a file
+      # (`"$ROOT/bin/x.sh"`).
+      if [ $((f + 1)) -eq "$n" ] && _bum_unreadable "${TOK[f]}" && [ "${TOKQ[f]:-0}" != 1 ] &&
+         ! printf '%s' "${TOK[f]}" | sed 's/[$][{][^}]*[}]//g' | grep -q /; then
+        _bum_refuse "BLOCKED: the command runs \"$(_bum_show "${TOK[f]}")\", which this hook cannot read, and the command text names a merge." \
+          "Next: run the merge as its own command, written out: $_BUM_SHAPE."
+      fi
+      if [ "${TOK[f]##*/}" = eval ] && [ $((f + 1)) -lt "$n" ]; then
+        _bum_eval_ok=0
+        if [ $((f + 2)) -eq "$n" ]; then
+          case "${TOK[f+1]}" in
+            [A-Za-z_]*'=${$'*'}') _bum_eval_ok=1 ;;
+          esac
+        fi
+        if [ "$_bum_eval_ok" = 0 ]; then
+          for ((k = f + 1; k < n; k++)); do
+            if _bum_unreadable "${TOK[k]}"; then
+              _bum_refuse "BLOCKED: eval of \"$(_bum_show "${TOK[*]:$((f + 1))}")\", which this hook cannot read, in a command whose text names a merge." \
+                "Next: run the merge as its own command, written out: $_BUM_SHAPE."
+            fi
+          done
+        fi
+      fi
+    fi
+  fi
 
   # --- is there a merge in this command, wherever gh stands? -----------------
   # gh anywhere, or a word this hook cannot read that might expand to gh, then
@@ -406,6 +495,10 @@ while IFS= read -r SEG; do
     case "${SUB[0]:-} ${SUB[1]:-}" in
       "pr merge") c=$k; kind="merge"; break ;;
     esac
+    # `gh pr $A 7`: a subcommand this hook cannot read may be merge.
+    if [ "${SUB[0]:-}" = pr ] && _bum_unreadable "${SUB[1]:-}"; then
+      _bum_refuse_unreadable "gh pr subcommand" "${SUB[1]}"
+    fi
     case "${SUB[0]:-}" in
       api)   _bum_is_gh "${TOK[k]}" && { c=$k; kind="api"; break; } ;;
       alias) _bum_is_gh "${TOK[k]}" && { c=$k; kind="alias"; break; } ;;
@@ -424,7 +517,7 @@ while IFS= read -r SEG; do
     is_graphql=0
     for ((k = c + 1; k < n; k++)); do
       case "${TOK[k]}" in
-        */[Mm][Ee][Rr][Gg][Ee]|*/[Mm][Ee][Rr][Gg][Ee][/?]*|*/[Mm][Ee][Rr][Gg][Ee][Ss]|*/[Mm][Ee][Rr][Gg][Ee][Ss][/?]*|\
+        */[Mm][Ee][Rr][Gg][Ee]|*/[Mm][Ee][Rr][Gg][Ee][/?#]*|*/[Mm][Ee][Rr][Gg][Ee][Ss]|*/[Mm][Ee][Rr][Gg][Ee][Ss][/?#]*|\
         *[Mm]erge[Pp]ull[Rr]equest*|*[Mm]erge[Bb]ranch*|*[Ee]nable[Pp]ull[Rr]equest[Aa]uto[Mm]erge*|*[Ee]nqueue[Pp]ull[Rr]equest*)
           echo "BLOCKED: gh api on a merge endpoint or mutation. Its checks cannot be verified from here." >&2
           echo "Next: to merge, run $_BUM_SHAPE. To ask whether it merged: gh pr view <number> --repo owner/name --json mergedAt." >&2
@@ -494,6 +587,16 @@ while IFS= read -r SEG; do
     esac
     _bum_takes_value "${TOK[k]}" && k=$((k + 1))
   done
+  # A merge seen only once the substitutions are removed (`gh pr merge$(x)
+  # 7`): what the substitution adds to the words, a number or an option,
+  # cannot be read, so it is refused whatever the checks say. One already
+  # read as a merge with them in place was judged there.
+  if [ "$SEG_ALT" = 1 ]; then
+    [ "$PREV_MERGE" = 1 ] && continue
+    _bum_refuse "BLOCKED: gh pr merge, but a command substitution is glued to one of its words, so what it merges cannot be read from the command." \
+      "Next: write the merge without the substitution: $_BUM_SHAPE."
+  fi
+  PREV_MERGE=1
   # Text that does not balance is read line by line as well (see _bd_segments),
   # and a merge found in a line that ends inside an open quote may be half of
   # one: which half gh would run cannot be read. Refused, with how to write it.

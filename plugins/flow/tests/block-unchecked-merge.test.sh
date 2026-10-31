@@ -426,6 +426,110 @@ S=$(_bum_stub "$QUEUED" "" "")
 _bum_run "$S" 'gh pr me""rge 7 --repo acme/widgets --squash'
 assert_exit 2 "$?" "me\"\"rge is merge"
 
+# A shell reads a here-string as its script, with or without a space after
+# <<<, with a file descriptor before it, or fed through a pipe; a shell inside
+# a substitution runs its -c argument; a backquote inside double quotes runs
+# its command; and 2>&1 is a redirection, not the end of a command. On a queued pull request each is refused. The same text given
+# to a program that only reads it, or a merge-free command with 2>&1, is not.
+_flow_test_begin "a merge handed to a shell on its input or in a substitution is read"
+S=$(_bum_stub "$QUEUED" "" "")
+for CMD in \
+  "bash <<< 'gh pr merge 7 --repo acme/widgets --squash'" \
+  "bash <<<'gh pr merge 7 --repo acme/widgets --squash'" \
+  'sh <<<"gh pr merge 7 --repo acme/widgets --squash"' \
+  "bash 0<<<'gh pr merge 7 --repo acme/widgets --squash'" \
+  "<<<'gh pr merge 7 --repo acme/widgets --squash' bash" \
+  "cat <<<'gh pr merge 7 --repo acme/widgets --squash' | bash" \
+  'bash <<<gh\ pr\ merge\ 7\ --repo\ acme/widgets\ --squash' \
+  "x=\$(bash -c 'gh pr merge 7 --repo acme/widgets --squash')" \
+  "y=\`sh -c 'gh pr merge 7 --repo acme/widgets --squash'\`" \
+  'x="`gh pr merge 7 --repo acme/widgets --squash`"' \
+  'gh pr 2>&1 merge 7 --repo acme/widgets --squash' \
+  'gh pr merge 2>&1 7 --repo acme/widgets --squash'; do
+  _bum_run "$S" "$CMD"
+  assert_exit 2 "$?" "refused: $CMD"
+done
+for CMD in \
+  "cat <<<'gh pr merge 7 --repo acme/widgets --squash'" \
+  "grep -c merge <<<'gh pr merge 7 --repo acme/widgets --squash'" \
+  'gh pr view 7 2>&1' \
+  'gh pr view 7 &>/dev/null' \
+  'git commit -m "run \`gh pr merge 7 --repo acme/widgets --squash\` later"'; do
+  _bum_run "$S" "$CMD"
+  assert_exit 0 "$?" "allowed: $CMD"
+done
+
+# A substitution's output can be empty, so `merge$(x)` may be merge: a merge
+# seen only once the substitution is removed is refused on a green pull
+# request too, since what the substitution adds (a number, --admin) cannot be
+# read. A merge endpoint glued to one is refused like any merge endpoint. A
+# merge whose --body is a substitution was read as a merge with it in place,
+# and is judged as before.
+_flow_test_begin "a merge word glued to a substitution is read"
+S=$(_bum_stub "$QUEUED" "" "")
+G=$(_bum_stub "$GREEN" "" "")
+for CMD in \
+  'gh pr merge$(true) 7' \
+  'gh pr merge$(true) 7 --repo acme/widgets --squash' \
+  'gh pr merge`true` 7 --repo acme/widgets --squash' \
+  'gh api -X PUT repos/acme/widgets/pulls/7/merge$(true)' \
+  'gh api -X PUT repos/acme/widgets/pulls/7/merge"$(true)"'; do
+  _bum_run "$S" "$CMD"
+  assert_exit 2 "$?" "refused on a queued pull request: $CMD"
+  _bum_run "$G" "$CMD"
+  assert_exit 2 "$?" "refused on a green pull request: $CMD"
+done
+_bum_run "$G" 'gh pr merge 7 --repo acme/widgets --squash --body "$(cat notes.md)"'
+assert_exit 0 "$?" "a merge with a substitution as its --body, on a green pull request, is allowed"
+_bum_run "$G" 'gh pr merge 7 --repo acme/widgets --squash --subject "Release $(date +%F)"'
+assert_exit 0 "$?" "a merge with a substitution inside its --subject, on a green pull request, is allowed"
+
+# bash splits an unquoted ${...} that holds whitespace into words, so a merge
+# inside its default is a gh whose name is a parameter expansion: refused on
+# a green pull request too.
+_flow_test_begin "a merge inside an unquoted \${...} default is read"
+G=$(_bum_stub "$GREEN" "" "")
+for CMD in \
+  '${X:-gh pr merge 7}' \
+  '${X:-gh pr merge 7 --repo acme/widgets --squash}' \
+  '${X:-gh} pr merge 7 --repo acme/widgets --squash'; do
+  _bum_run "$G" "$CMD"
+  assert_exit 2 "$?" "refused on a green pull request: $CMD"
+done
+
+# Text printed into a pipe or a process substitution that a shell reads is a
+# command, wherever the shell stands in the command.
+_flow_test_begin "a merge piped into a shell in a group or subshell is checked"
+S=$(_bum_stub "$QUEUED" "" "")
+for CMD in \
+  "echo 'gh pr merge 7 --repo acme/widgets --squash' | { :; bash; }" \
+  "echo 'gh pr merge 7 --repo acme/widgets --squash' | (bash)" \
+  "echo 'gh pr merge 7 --repo acme/widgets --squash' > >(bash)"; do
+  _bum_run "$S" "$CMD"
+  assert_exit 2 "$?" "refused on a queued pull request: $CMD"
+done
+
+# bash removes a backslash inside a word before running it, so each of these is
+# gh pr merge: on a queued pull request each is refused, and on a green one the
+# same spelling merges, so it was read as the merge and not refused for its shape.
+_flow_test_begin "backslash spellings of a merge are read as the merge"
+S=$(_bum_stub "$QUEUED" "" "")
+G=$(_bum_stub "$GREEN" "" "")
+for CMD in \
+  'g\h pr merge 7 --repo acme/widgets --squash' \
+  'gh pr mer\ge 7 --repo acme/widgets --squash' \
+  'gh p\r merge 7 --repo acme/widgets --squash' \
+  '\g\h pr merge 7 --repo acme/widgets --squash' \
+  'gh pr merge 7 --re\po acme/widgets --sq\uash' \
+  'ba\sh -c "gh pr merge 7 --repo acme/widgets --squash"'; do
+  _bum_run "$S" "$CMD"
+  assert_exit 2 "$?" "queued: $CMD"
+  _bum_run "$G" "$CMD"
+  assert_exit 0 "$?" "green: $CMD"
+done
+_bum_run "$S" 'gh pr mer\ge 7'
+assert_exit 2 "$?" "a backslash spelling with no --repo is refused for its shape"
+
 # --- gh api and gh alias: refused, not parsed ----------------------------------
 _flow_test_begin "gh api on a merge is refused outright"
 for CMD in \
@@ -483,6 +587,13 @@ _bum_run "$S" "$(printf '# clean up first \\\ngh pr merge 7 --repo acme/widgets 
 assert_exit 2 "$?" "a merge after a comment ending in a backslash is still checked"
 _bum_run "$S" "$(printf 'ls # list \\\ngh pr merge 7 --repo acme/widgets --squash')"
 assert_exit 2 "$?" "and after a trailing comment ending in a backslash"
+
+_flow_test_begin "a here-string is not a heredoc: the lines after it are commands"
+S=$(_bum_stub "$QUEUED" "" "")
+_bum_run "$S" "$(printf 'cat <<<EOF\ngh pr merge 7 --repo acme/widgets --squash\nEOF')"
+assert_exit 2 "$?" "a merge on the line after cat <<<EOF is checked"
+_bum_run "$S" "$(printf "cat <<<'EOF'\ngh pr merge 7 --repo acme/widgets --squash\nEOF")"
+assert_exit 2 "$?" "and after a quoted here-string word"
 
 _flow_test_begin "an apostrophe in a heredoc body does not hide what follows"
 S=$(_bum_stub "$QUEUED" "" "")

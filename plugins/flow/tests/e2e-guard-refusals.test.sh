@@ -48,6 +48,16 @@
 #   R11 a repository value that is not a GitHub owner/name (a ; in it) is
 #      accepted and echoed into the command the user is told to type, and the
 #      suggested command drops --admin and --match-head-commit
+#   R12 a redirection between the words of a merge, with a space before its
+#      target (`gh pr >& /dev/null merge 58`, also &>, &>>, >|, <>, <<, <&,
+#      N>&), the subcommand written `$"merge"`, or the merge printed into a
+#      pipe that a shell reads as its script, hides the merge
+#   D1 a redirection glued to the last word of a discard (`git reset
+#      --hard&>/dev/null`, `git restore .>x`, `rm -rf src>>log`) hides the
+#      option or the whole-tree pathspec, so the discard runs; or a glued
+#      `2>` that bash reads as part of the word (`.2>x` is the path .2) is
+#      read as the whole tree; or a discard printed into a pipe that a shell
+#      reads as its script (`echo '...' | bash`) runs unread
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -660,4 +670,146 @@ e2e_expect_equal 2 "$E2E_RC" "exit status"
 e2e_expect_err "A call to GitHub also failed, so running the delete again may help."
 e2e_expect_err "--json number,baseRefName,headRefOid"
 _expect_next_step
+e2e_expect_clean_edges
+
+# --- R12: redirections between the words of a merge ---------------------------
+
+_flow_test_begin "merge-guard-redirection-between-words"
+e2e_new merge-guard-redirection-between-words
+e2e_describe "a check failed, and the merge has a redirection between its words with a space before the target, its subcommand written \$\"merge\", or is printed into a pipe a shell reads (R12): each is read as the merge and refused for the failing check"
+e2e_repo feature/r12
+e2e_gh_fixture pr-58 "$FAILING"
+while IFS= read -r C; do
+  e2e_run_hook "$MERGE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
+  e2e_expect_err "test [failure]"
+done <<'ROWS'
+gh pr >& /dev/null merge 58 --repo acme/web --squash
+gh pr &> /dev/null merge 58 --repo acme/web --squash
+gh pr &>> log merge 58 --repo acme/web --squash
+gh pr >| log merge 58 --repo acme/web --squash
+gh pr <> f merge 58 --repo acme/web --squash
+gh pr <& 0 merge 58 --repo acme/web --squash
+gh pr 2>& 1 merge 58 --repo acme/web --squash
+gh pr 0<& 3 merge 58 --repo acme/web --squash
+gh pr 1<> f merge 58 --repo acme/web --squash
+gh pr merge 58 >& /dev/null --repo acme/web --squash
+gh pr $"merge" 58 --repo acme/web --squash
+echo 'gh pr merge 58 --repo acme/web --squash' | bash
+printf '%s\n' "gh pr merge 58 --repo acme/web --squash" | sudo sh -s
+ROWS
+e2e_expect_clean_edges
+
+# --- D1: a redirection glued to the last word of a discard ---------------------
+
+_flow_test_begin "discard-glued-redirection"
+e2e_new discard-glued-redirection
+e2e_describe "every discard block-destructive refuses, with a redirection glued to its last word (&>, >, >>, &>>, >|, <), or printed into a pipe a shell reads as its script (D1): each is still refused; a glued 2> that bash reads as part of the word, the non-discarding forms, and harmless text piped into a shell are allowed"
+e2e_repo work
+while IFS= read -r FORM; do
+  for OP in '&>/dev/null' '>/dev/null' '>>log' '&>>log' '>|log' '</dev/null'; do
+    e2e_run_hook "$DELETE_HOOK" "$(_payload "$FORM$OP")"
+    e2e_expect_equal 2 "$E2E_RC" "exit status for: $FORM$OP"
+  done
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$FORM 2>/dev/null")"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for: $FORM 2>/dev/null"
+done <<'ROWS'
+git reset --hard
+git reset HEAD~1 --hard
+git reset --har
+git restore .
+git restore --worktree .
+git checkout .
+git checkout -- .
+git clean -fd
+git clean --force
+rm -rf src
+rm -r -f src
+ROWS
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+git checkout .2>/dev/null
+git restore .2>x
+git checkout -- src/a.py&>/dev/null
+git reset --soft HEAD~1&>/dev/null
+git restore --staged .&>/dev/null
+git clean -n&>/dev/null
+rm -rf node_modules&>/dev/null
+git status&>/dev/null
+echo 'git status' | bash
+git log | bash scripts/fmt.sh
+ROWS
+# Text piped into a shell that reads its script from its input is a command.
+for C in "echo 'git reset --hard' | bash" "printf '%s\n' 'rm -rf src' | sh -s" "echo 'git checkout -- .' | sudo bash -x" \
+  "echo 'git reset --hard' | { :; bash; }" "echo 'git reset --hard' | (bash)" "printf '%s\n' x 'git reset --hard' | { read -r _; bash; }" \
+  "echo 'rm -rf src' > >(bash)" "echo 'rm -rf src' | tee >(bash)"; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
+done
+e2e_expect_clean_edges
+
+# --- D2: a substitution glued to a word of a discard ---------------------------
+
+_flow_test_begin "discard-glued-substitution"
+e2e_new discard-glued-substitution
+e2e_describe "every discard block-destructive refuses, with a command substitution glued to its program, subcommand, option or path (\$(true), backquotes): a substitution's output can be empty, so each is still refused (D2); the same with a non-discarding form, or a substitution as a whole argument, is allowed"
+e2e_repo work
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+git reset --hard$(true)
+git reset --hard`true`
+git reset$(true) --hard
+$(true)git reset --hard
+git checkout .$(true)
+git checkout -- .$(true)
+git checkout$(true) .
+git restore .$(true)
+git restore$(true) .
+git clean$(true) -fd
+git branch --delete$(true) --force feat
+rm$(true) -rf src
+ROWS
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+git reset --soft HEAD~1$(true)
+git clean -n$(true)
+git checkout "$(git rev-parse --abbrev-ref HEAD)"
+git restore --staged "$(git diff --name-only | head -n 1)"
+x=$(git rev-parse HEAD) && git status
+ROWS
+e2e_expect_clean_edges
+
+# --- D3: an unquoted ${...} with whitespace in it is split ----------------------
+
+_flow_test_begin "discard-split-expansion"
+e2e_new discard-split-expansion
+e2e_describe "every discard block-destructive refuses, with its option inside an unquoted \${...} default that holds whitespace (\${X:- -rf}): bash splits the expansion into words, so each is still refused (D3); a non-discarding option in the same place is allowed"
+e2e_repo work
+( _e2e_git_env; cd "$E2E_REPO" && git branch feat ) || _flow_assert_fail "discard-split-expansion: could not create the branch"
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 2 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+rm ${X:- -rf} src
+rm ${X:- -r -f} src
+git clean ${X:- -f}
+git clean ${X:- -fdx} .
+git branch ${X:- -D} feat
+git reset ${X:- --hard}
+${X:-git reset --hard}
+ROWS
+while IFS= read -r C; do
+  e2e_run_hook "$DELETE_HOOK" "$(_payload "$C")"
+  e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+done <<'ROWS'
+git clean ${X:- -n}
+rm ${X:- -f} a.txt
+git reset ${X:- --soft} HEAD~1
+ROWS
 e2e_expect_clean_edges
