@@ -88,7 +88,7 @@ _tr_setup() {
   # argument names stdin (`-`, `@-`, `@/dev/stdin`).
   cat > "$E2E_DIR/fakegh/gh" <<FAKE
 #!/bin/sh
-[ "\$1 \$2" = "alias list" ] && exec "$TR_REAL_GH" alias list
+[ "\$1 \$2" = "alias list" ] && GH_CONFIG_DIR="$E2E_HOME/.config/gh" exec "$TR_REAL_GH" alias list
 printf '%s\\n' "\$*" >> "$E2E_DIR/gh-calls.log"
 for a in "\$@"; do
   case "\$a" in -|*@-|*@/dev/stdin) printf 'stdin: %s\\n' "\$(cat)" >> "$E2E_DIR/gh-calls.log"; break ;; esac
