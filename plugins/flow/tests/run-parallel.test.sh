@@ -136,3 +136,11 @@ assert_equal 0 "$RP_RC" "one at a time, the fixture passes"
 _rp_run sigint-parallel 2 "$RP_TMP/h.test.sh" "$RP_TMP/b.test.sh"
 assert_equal 0 "$RP_RC" "in parallel, the fixture passes"
 assert_contains "PASS <unset> — a program that sends itself SIGINT exits 130" "$RP_OUT" "the file saw exit 130"
+
+# P10: a file marked `# flow-test: alone` starts after every other file, and
+# its output still comes in list order.
+printf '%s\n' '# flow-test: alone' 'assert_equal 1 1 "alone"' > "$RP_TMP/i.test.sh"
+_rp_run alone 3 "$RP_TMP/i.test.sh" "$RP_TMP/a.test.sh" "$RP_TMP/b.test.sh"
+assert_equal "i" "$(printf '%s\n' "$RP_OUT" | sed -n 's/^run.sh: started \(.*\)\.test\.sh$/\1/p' | tail -n 1)" "the marked file starts last"
+assert_equal "i a b" "$(printf '%s\n' "$RP_OUT" | sed -n 's/^=== \(.*\)\.test\.sh ===$/\1/p' | tr '\n' ' ' | sed 's/ $//')" "output in list order"
+assert_equal 0 "$RP_RC" "exit status"

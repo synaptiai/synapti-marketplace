@@ -15,6 +15,8 @@
 # the time it took, followed by every file's time, longest first, and the
 # time of the whole run. Files start longest first, by the times the last run
 # recorded in FLOW_TEST_TIMES (default ~/.cache/flow-tests/times).
+# A file with a line `# flow-test: alone` runs after the others, by itself:
+# for a file that measures its own speed or works to a time budget.
 # FLOW_TEST_SHARD=K/N runs part K of N (below).
 #
 # Exit:
@@ -197,9 +199,14 @@ if [ "$_flow_jobs" -gt 1 ] && [ "${#TEST_FILES[@]}" -gt 1 ]; then
   }
   # Stop the files still running when this run is stopped, and remove what it
   # wrote. A file's own run.sh removes its own state directory.
+  # Every process under the one that starts the workers, deepest first.
+  _flow_killtree() {
+    local c
+    for c in $(pgrep -P "$1" 2>/dev/null); do _flow_killtree "$c"; done
+    kill -TERM "$1" 2>/dev/null
+  }
   _flow_par_cleanup() {
-    [ -z "${_flow_xargs_pid:-}" ] || pkill -TERM -P "$_flow_xargs_pid" 2>/dev/null
-    [ -z "${_flow_xargs_pid:-}" ] || kill -TERM "$_flow_xargs_pid" 2>/dev/null
+    [ -z "${_flow_xargs_pid:-}" ] || _flow_killtree "$_flow_xargs_pid"
     rm -rf "$_flow_par" 2>/dev/null
     chmod -R u+rwx "$_flow_run_state" 2>/dev/null; rm -r "$_flow_run_state" 2>/dev/null
   }
@@ -227,7 +234,18 @@ if [ "$_flow_jobs" -gt 1 ] && [ "${#TEST_FILES[@]}" -gt 1 ]; then
   tr '\0' '\n' < "$_flow_par/list" | awk -F '\t' -v times="$_flow_times_file" '
     BEGIN { while ((getline line < times) > 0) { split(line, a, " "); t[a[2]] = a[1] + 0 } }
     { n = $2; sub(/.*\//, "", n); s = (n in t) ? t[n] : 1000000; printf "%d\t%s\t%s\n", s, $1, $2 }
-  ' | sort -t "$(printf '\t')" -k1,1nr -k2,2n | cut -f2- | tr '\n' '\0' > "$_flow_par/start"
+  ' | sort -t "$(printf '\t')" -k1,1nr -k2,2n | cut -f2- > "$_flow_par/order"
+  # A file with a line `# flow-test: alone` (one that measures its own
+  # speed, or works to a time budget) runs after the others, by itself, so
+  # the load of the files around it cannot change its result.
+  : > "$_flow_par/start"; : > "$_flow_par/alone"
+  while IFS= read -r _flow_l; do
+    if grep -qx '# flow-test: alone' "${_flow_l#*	}" 2>/dev/null; then
+      printf '%s\0' "$_flow_l" >> "$_flow_par/alone"
+    else
+      printf '%s\0' "$_flow_l" >> "$_flow_par/start"
+    fi
+  done < "$_flow_par/order"
 
   # One worker per file: run.sh on that file alone, with FLOW_TEST_JOBS=1 so
   # a run.sh the file itself starts runs its fixtures in order. Writes
@@ -237,8 +255,7 @@ if [ "$_flow_jobs" -gt 1 ] && [ "${#TEST_FILES[@]}" -gt 1 ]; then
   # a program cannot undo an ignore it inherits from bash; perl resets both
   # before xargs starts, so a suite that interrupts its own processes sees
   # them stop as they do in a run one at a time.
-  perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
-  xargs -0 -n 1 -P "$_flow_jobs" bash -c '
+  _flow_worker='
     dir=$1 runsh=$2 i=${3%%	*} f=${3#*	}
     s=$(date +%s)
     printf "run.sh: started %s\n" "${f##*/}"
@@ -246,7 +263,13 @@ if [ "$_flow_jobs" -gt 1 ] && [ "${#TEST_FILES[@]}" -gt 1 ]; then
     printf "%s\n" "$?" > "$dir/$i.rc"
     printf "%s\n" "$(( $(date +%s) - s ))" > "$dir/$i.secs"
     : > "$dir/$i.done"
-  ' _ "$_flow_par" "$TESTS_DIR/run.sh" < "$_flow_par/start" &
+  '
+  {
+    perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
+      xargs -0 -n 1 -P "$_flow_jobs" bash -c "$_flow_worker" _ "$_flow_par" "$TESTS_DIR/run.sh" < "$_flow_par/start"
+    perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
+      xargs -0 -n 1 -P 1 bash -c "$_flow_worker" _ "$_flow_par" "$TESTS_DIR/run.sh" < "$_flow_par/alone"
+  } &
   _flow_xargs_pid=$!
 
   TOTAL_PASS=0
