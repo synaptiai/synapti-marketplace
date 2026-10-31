@@ -704,3 +704,20 @@ e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
 _tr_exec 'rtk gh pr merge 5 --squash && rtk git status --short'
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_equal 1 "$(grep -c 'pr merge 5' "$E2E_DIR/gh-calls.log")" "the merge ran"
+
+#   W38 a gh alias whose name gh prints in quotes (yes, on, 1) is not found,
+#       and its merge runs unchecked
+#   W39 a function whose header and body are on separate lines is counted
+#       once, and its second call is refused
+
+_tr_alias_case "a name gh prints in quotes (yes)" 'aliases:
+    "yes": pr merge
+' 'gh yes 5'
+_tr_alias_case "a number as the name" 'aliases:
+    "1": pr merge
+' 'gh 1 5'
+
+_tr_setup tr-approved-function-lines "W39: an approved function written over several lines, called twice: both merges run"
+_tr_call "$(printf 'm ( )\n{\n  gh pr merge $1 --squash\n}\nm 7; m 8')"
+e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
+e2e_expect_equal 2 "$(grep -c 'pr merge' "$E2E_DIR/gh-calls.log")" "both merges ran"

@@ -405,9 +405,12 @@ _tr_gh_alias() {
     have && /^[[:space:]]/ { print "__FLOW_UNREAD__"; done = 1; exit }
     have { exit }
     /^[^[:space:]]/ {
-      k = $0; sub(/: .*/, "", k)
+      k = $0; sub(/:[ \t].*/, "", k)
+      # gh quotes a name YAML would read otherwise (`"yes"`, `"1"`).
+      if (k ~ /\\/) { if (index(k, name)) { print "__FLOW_UNREAD__"; done = 1; exit } next }
+      if (k ~ /^".*"$/ || k ~ /^\047.*\047$/) k = substr(k, 2, length(k) - 2)
       if (k != name) next
-      v = $0; sub(/^[^:]*: /, "", v)
+      v = $0; sub(/^[^:]*:[ \t]+/, "", v)
       if (v ~ /^[|>"]/) { print "__FLOW_UNREAD__"; done = 1; exit }
       if (v ~ /^\047.*\047$/) { v = substr(v, 2, length(v) - 2); gsub(/\047\047/, "\047", v) }
       val = v; have = 1
