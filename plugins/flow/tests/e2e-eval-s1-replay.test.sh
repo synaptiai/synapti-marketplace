@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# flow-test: alone
+# (run.sh runs this file by itself: its replays stop at a time budget.)
 # End-to-end: the review-precision replay of the System One sites review.dedup
 # and review.confidence (bin/flow-eval-s1-replay.sh and its Python half), and
 # the scorer and runner changes it needs (bin/_flow_eval.py score-review,
