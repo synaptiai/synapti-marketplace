@@ -36,12 +36,12 @@ fi
 # Fixtures: two that pass (one slow, so the fast one ends first), one with a
 # failing assertion, one with no SUMMARY, one that does not parse, and one
 # that prints its state directory.
-printf '%s\n' 'sleep 2' 'assert_equal 1 1 "slow one"' 'assert_equal 2 2 "slow two"' > "$RP_TMP/a.test.sh"
+printf '%s\n' 'sleep 4' 'assert_equal 1 1 "slow one"' 'assert_equal 2 2 "slow two"' > "$RP_TMP/a.test.sh"
 printf '%s\n' 'assert_equal x x "fast"' > "$RP_TMP/b.test.sh"
 printf '%s\n' '_flow_test_begin "scenario-c"' 'assert_equal 1 2 "c compares"' > "$RP_TMP/c.test.sh"
 printf '%s\n' 'exit 3' > "$RP_TMP/d.test.sh"
 printf '%s\n' 'if then' > "$RP_TMP/e.test.sh"
-printf '%s\n' 'sleep 2' 'printf "STATE=%s\n" "$FLOW_STATE_DIR"' 'assert_equal 1 1 "state"' > "$RP_TMP/f.test.sh"
+printf '%s\n' 'sleep 4' 'printf "STATE=%s\n" "$FLOW_STATE_DIR"' 'assert_equal 1 1 "state"' > "$RP_TMP/f.test.sh"
 RP_ALL=("$RP_TMP/a.test.sh" "$RP_TMP/b.test.sh" "$RP_TMP/c.test.sh" "$RP_TMP/d.test.sh" "$RP_TMP/e.test.sh" "$RP_TMP/f.test.sh" "$RP_TMP/missing.test.sh")
 
 # _rp_run <case> <jobs> <file>... — sets RP_OUT and RP_RC.
@@ -96,11 +96,12 @@ done
 assert_contains "=== durations (seconds, longest first) ===" "$RP_OUT" "the durations list"
 assert_match '^TIME [0-9]+s for 7 files, up to 4 at a time$' "$(printf '%s\n' "$RP_OUT" | grep '^TIME ')" "the run's time"
 assert_match '^TIME [0-9]+s for 7 files, one at a time$' "$(printf '%s\n' "$RP_SERIAL_OUT" | grep '^TIME ')" "the run's time one at a time"
-# The two slow files (2 s each) overlap, so the run takes less than the
-# files' times added up.
+# The two slow files (4 s each) overlap, so the run takes at least 2 s less
+# than the files' times added up; the margin absorbs each file's start-up time,
+# counted in whole seconds, on a slow machine.
 _rp_sum=$(printf '%s\n' "$RP_OUT" | sed -n 's/^run.sh: .* took \([0-9][0-9]*\)s$/\1/p' | awk '{ s += $1 } END { print s + 0 }')
 _rp_total=$(printf '%s\n' "$RP_OUT" | sed -n 's/^TIME \([0-9][0-9]*\)s .*/\1/p')
-assert_equal 1 "$([ "$_rp_total" -lt "$_rp_sum" ] && echo 1 || echo 0)" "the run takes less than its files' times added up ($_rp_total s, $_rp_sum s)"
+assert_equal 1 "$([ "$_rp_total" -le $((_rp_sum - 2)) ] && echo 1 || echo 0)" "the run takes at least 2 s less than its files' times added up ($_rp_total s, $_rp_sum s)"
 
 # P7: a malformed FLOW_TEST_JOBS runs nothing.
 for _rp_bad in 0 -1 x 1x 1000 ''; do
