@@ -16,7 +16,7 @@ Exact timestamps are in each round file. Totals: 93 finding rows, 219 bypass lin
 
 ## Files
 
-- `round-1.md` to `round-7.md`: for each review, the report's opening paragraph, its section headings (which carry P1/P2/P3), and every finding row or line that names tier-gate.sh, block-unchecked-merge.sh, block-destructive.sh or command-parse.sh (or their test files), copied verbatim. Round 4 also carries the code review's repro blocks, which sit outside its findings table. Findings that name none of those files (release.md, flow-judge.sh, CHANGELOG and similar) are left out.
+- `round-1.txt` to `round-7.txt`: for each review, the report's opening paragraph, its section headings (which carry P1/P2/P3), and every finding row or line that names tier-gate.sh, block-unchecked-merge.sh, block-destructive.sh or command-parse.sh (or their test files), copied verbatim. Round 4 also carries the code review's repro blocks, which sit outside its findings table. Findings that name none of those files (release.md, flow-judge.sh, CHANGELOG and similar) are left out.
 - `bypasses.tsv`: round, hook, severity, command. It holds only commands the reviewer reported as passing a hook with no prompt or refusal (tier-gate silent or journal-only; block-unchecked-merge or block-destructive exit 0). When a reviewer named two hooks for one command, the command has one line per hook. Conventions:
   - `⏎` marks a line break in a multi-line command. Reviewers wrote these with `⏎` or with ` / `. The heredoc rows from round 5 (security SEC-5) and round 6 (security SEC-6) used ` / ` and were converted to `⏎`.
   - Markdown table escapes (`\|`) are turned back into `|`.
