@@ -19,7 +19,7 @@ Local, reversible actions. Execute without asking.
 
 ### Tier 2: Journal-and-Proceed
 
-Team-visible but recoverable. Execute and log to decision journal.
+Team-visible but recoverable. Runs without asking.
 
 | Action | Rationale | Recovery |
 |--------|-----------|----------|

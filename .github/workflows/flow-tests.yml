@@ -40,18 +40,19 @@ jobs:
     # fourth file (FLOW_TEST_SHARD=K/N). In one piece it took 31 to 41 minutes
     # in the passing runs of 2026-10-15 to 2026-10-29 against a 45-minute
     # limit, and slower runners were cancelled while still passing. Per-file
-    # times from run 40837192187 on main (2026-10-29) put the parts at about
-    # 9, 12, 5 and 12 minutes of tests, plus a minute or two of setup per job.
+    # times from run 41145324569 (2026-10-30) put the parts at about 9, 4, 12
+    # and 21 minutes of tests, plus a minute or two of setup per job; a part
+    # is every fourth file, so adding a file can move time between parts.
     # macOS skips the System One suites and took 15 to 24 minutes in one job
     # in the same runs.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, shard: 1, shards: 4, timeout: 20 }
-          - { os: ubuntu-latest, shard: 2, shards: 4, timeout: 20 }
-          - { os: ubuntu-latest, shard: 3, shards: 4, timeout: 20 }
-          - { os: ubuntu-latest, shard: 4, shards: 4, timeout: 20 }
+          - { os: ubuntu-latest, shard: 1, shards: 4, timeout: 30 }
+          - { os: ubuntu-latest, shard: 2, shards: 4, timeout: 30 }
+          - { os: ubuntu-latest, shard: 3, shards: 4, timeout: 30 }
+          - { os: ubuntu-latest, shard: 4, shards: 4, timeout: 30 }
           - { os: macos-latest, shard: 1, shards: 1, timeout: 45 }
     name: test (${{ matrix.os }}, ${{ matrix.shard }} of ${{ matrix.shards }})
     runs-on: ${{ matrix.os }}

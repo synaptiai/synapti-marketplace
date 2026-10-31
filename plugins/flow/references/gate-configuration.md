@@ -28,7 +28,7 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 }
 ```
 
-### Values
+The schema accepts `autonomous`, `journal` or `confirm` for each key. No flow command or hook reads these values: what flow does for each action is set by the command that runs it, as below, and changing a value does not change it. Nothing applies them to a Bash command run outside flow's commands.
 
 | Value | Behavior |
 |-------|----------|

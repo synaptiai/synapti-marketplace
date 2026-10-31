@@ -421,9 +421,12 @@ e2e_user_settings() {
 # PATH=<dir> to e2e_run_block, e2e_run_fence or e2e_run_bin.
 e2e_path_without() {
   local tools="$E2E_DIR/path-without-$(printf '%s' "$*" | tr -c 'A-Za-z0-9' '-')" d f n skip x
+  # One variable, so every ':' is split: bash 5 does not split at a literal
+  # ':' written between two expansions, and bash 3.2 does.
+  local dirs="$E2E_BIN:$PATH"
   mkdir -p "$tools"
   local IFS=:
-  for d in $E2E_BIN:$PATH; do
+  for d in $dirs; do
     [ -d "$d" ] || continue
     for f in "$d"/*; do
       n="${f##*/}"; skip=""
