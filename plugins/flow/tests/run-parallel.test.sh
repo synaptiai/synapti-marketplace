@@ -116,7 +116,11 @@ done
 printf '%s\n' '1 a.test.sh' '50 f.test.sh' '9 keep.test.sh' > "$RP_TMP/times"
 _rp_run order 1 "$RP_TMP/a.test.sh"
 _rp_run order 2 "$RP_TMP/a.test.sh" "$RP_TMP/b.test.sh" "$RP_TMP/f.test.sh"
-assert_equal "b f a" "$(printf '%s\n' "$RP_OUT" | sed -n 's/^run.sh: started \(.*\)\.test\.sh$/\1/p' | tr '\n' ' ' | sed 's/ $//')" "a file with no time starts first, then the longest"
+# Two files start at once, so the first two may print in either order; the
+# file with the shortest time starts once one of them has ended.
+_rp_started=$(printf '%s\n' "$RP_OUT" | sed -n 's/^run.sh: started \(.*\)\.test\.sh$/\1/p')
+assert_equal "b f" "$(printf '%s\n' "$_rp_started" | head -n 2 | sort | tr '\n' ' ' | sed 's/ $//')" "a file with no time and the longest start first"
+assert_equal "a" "$(printf '%s\n' "$_rp_started" | tail -n 1)" "the shortest starts last"
 assert_equal "$(printf '%s\n' '1 a.test.sh' '50 f.test.sh' '9 keep.test.sh')" "$(cat "$RP_TMP/times")" "the times file keeps its entries"
 
 # P4: a file whose own run.sh dies (it kills it) is a runner error, and the
