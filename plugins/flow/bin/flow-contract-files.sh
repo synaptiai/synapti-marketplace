@@ -49,6 +49,13 @@ case "${1:-}" in
     ;;
 esac
 
+# A FlowGoal lives in the runtime directory (flow.runtime.stateDir,
+# bin/flow-runtime-dir.sh, default .flow), named from the repository top as
+# git names a changed path.
+RT=$("${BASH:-bash}" "$(cd "$(dirname "$0")" && pwd)/flow-runtime-dir.sh" 2>/dev/null) || RT=""
+RT=${RT#./}
+[ -n "$RT" ] || RT=".flow"
+
 # Classify one path. LC_ALL is pinned so that the case patterns below compare
 # bytes the same way under every locale the caller might have set.
 kind_of() {
@@ -69,7 +76,7 @@ kind_of() {
     # A FlowGoal carries interface_contracts, so editing one is a contract change.
     *.goal.yaml)
       case "$p" in
-        .flow/goals/*|*/.flow/goals/*) echo goal-contract; return 0 ;;
+        "$RT"/goals/*|*/"$RT"/goals/*) echo goal-contract; return 0 ;;
       esac
       ;;
   esac

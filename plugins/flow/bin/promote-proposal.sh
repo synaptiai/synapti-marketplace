@@ -493,15 +493,23 @@ if [ "$PROPOSAL_TYPE" = "exception" ]; then
     echo "promote-proposal.sh: run this from the project whose team dismissed the finding" >&2
     exit 1
   fi
-  EXC_FILE="$EXC_REPO/.flow/review-exceptions.md"
+  # The exceptions file lives in that project's runtime directory
+  # (flow.runtime.stateDir, bin/flow-runtime-dir.sh, default .flow), resolved
+  # in the project, as bin/flow-review-exceptions.sh resolves it to read it.
+  EXC_RT=$(cd "$EXC_REPO" && "${BASH:-bash}" "$(dirname "$FLOW_BIN_LIB")/flow-runtime-dir.sh") || EXC_RT=""
+  EXC_RT=${EXC_RT#./}
+  [ -n "$EXC_RT" ] || EXC_RT=".flow"
+  EXC_DIR="$EXC_REPO/$EXC_RT"
+  EXC_FILE="$EXC_DIR/review-exceptions.md"
   if [ -L "$EXC_FILE" ]; then
     echo "promote-proposal.sh: refusing — $EXC_FILE is a symlink (potential redirect attack)" >&2
     exit 1
   fi
   # mkdir -p and > both follow a symlinked DIRECTORY, so a pre-staged
   # .flow -> elsewhere redirects the write out of the repository entirely.
-  if [ -L "$EXC_REPO/.flow" ]; then
-    echo "promote-proposal.sh: refusing — $EXC_REPO/.flow is a symlink (potential redirect attack)" >&2
+  # bin/flow-mkdir.sh --check refuses a symlink on any name of the way.
+  if [ -L "$EXC_DIR" ] || ! (cd "$EXC_REPO" && "$(dirname "$FLOW_BIN_LIB")/flow-mkdir.sh" --check -- "./$EXC_RT") >/dev/null 2>&1; then
+    echo "promote-proposal.sh: refusing — $EXC_DIR is a symlink or lies under one (potential redirect attack)" >&2
     exit 1
   fi
   EXC_ROW=$(PROPOSAL="$PROPOSAL" python3 - <<'PYEOF'
@@ -597,7 +605,7 @@ PYEOF
     exit 0
   fi
 
-  mkdir -p "$(dirname "$EXC_FILE")" || {
+  (cd "$EXC_REPO" && "$(dirname "$FLOW_BIN_LIB")/flow-mkdir.sh" -- "./$EXC_RT") >/dev/null 2>&1 || {
     echo "promote-proposal.sh: cannot create $(dirname "$EXC_FILE")" >&2
     exit 2
   }
@@ -612,8 +620,8 @@ PYEOF
   # past both guards above, and reported as success. mktemp refuses to reuse an
   # existing path, and the trap stops a failure between here and the mv from
   # leaving the temp behind.
-  EXC_TMP=$(mktemp "$EXC_REPO/.flow/.review-exceptions.XXXXXX" 2>/dev/null) || {
-    echo "promote-proposal.sh: mktemp failed in $EXC_REPO/.flow" >&2
+  EXC_TMP=$(mktemp "$EXC_DIR/.review-exceptions.XXXXXX" 2>/dev/null) || {
+    echo "promote-proposal.sh: mktemp failed in $EXC_DIR" >&2
     exit 2
   }
   trap 'rm -f "$EXC_TMP"' EXIT

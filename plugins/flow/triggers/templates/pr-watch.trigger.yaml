@@ -2,7 +2,7 @@
 #
 # Generates a user-invoked /loop prompt that monitors a PR's CI + review state.
 # /flow:watch pr <N> copies this template, substitutes ${PR} with the actual PR
-# number, and writes to .flow/triggers/pr-<N>-watch.trigger.yaml.
+# number, and writes to <runtime dir>/triggers/pr-<N>-watch.trigger.yaml.
 #
 # target.command is the work each iteration does; the loop prompt runs it
 # through /flow:run trigger pr-<N>-watch, which checks this policy first.

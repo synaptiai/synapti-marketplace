@@ -24,7 +24,7 @@
 #   --ref-prefix   the start of each record's ref, e.g. pr:275/review-cycle:2;
 #                  each pair adds /pair:<id a>+<id b>
 #   --run-id       records, and the state sent for each pair, go beside
-#                  .flow/runs/<id> when that run exists
+#                  <runtime dir>/runs/<id> when that run exists
 #
 # FLOW_S1_DEDUP_BUDGET_S may lower the 90-second limit on asking (whole
 # seconds, 1 to 90; any other value is 90).

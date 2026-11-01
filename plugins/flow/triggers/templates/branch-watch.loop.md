@@ -3,10 +3,10 @@
 You are running flow watch mode for the branch `${BRANCH}` in ${REPO}. Each iteration keeps it up to date with `${DEFAULT_BRANCH}` and keeps its checks passing.
 
 Read these on each iteration:
-- `.flow/triggers/branch-${BRANCH_SLUG}-watch.trigger.yaml` — the trigger (allowed_actions, forbidden_actions, stop_conditions)
-- `.flow/goals/` — the active FlowGoal for this branch, if any, for its verification commands
+- `${RUNTIME_DIR}/triggers/branch-${BRANCH_SLUG}-watch.trigger.yaml` — the trigger (allowed_actions, forbidden_actions, stop_conditions)
+- `${RUNTIME_DIR}/goals/` — the active FlowGoal for this branch, if any, for its verification commands
 
-Read none of them through a symbolic link: when `.flow`, `.flow/triggers`, `.flow/goals` or the file is one, skip it and say so.
+Read none of them through a symbolic link: when `${RUNTIME_DIR}` or a directory above it, `${RUNTIME_DIR}/triggers`, `${RUNTIME_DIR}/goals` or the file is one, skip it and say so.
 
 On each iteration:
 1. Check that you are on `${BRANCH}` (`git branch --show-current`). If not, stop the iteration and say so; never switch branches yourself.

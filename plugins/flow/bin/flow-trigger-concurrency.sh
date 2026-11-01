@@ -5,10 +5,12 @@
 # Usage:
 #   flow-trigger-concurrency.sh <trigger-id>
 #
-# Run from the repository root. Reads .flow/triggers/<id>.trigger.yaml for its
+# Run from the repository root. The runtime directory is flow.runtime.stateDir
+# (bin/flow-runtime-dir.sh, default .flow). Reads
+# <runtime dir>/triggers/<id>.trigger.yaml for its
 # concurrency.policy (when the trigger sets none, the setting
 # flow.triggers.defaultConcurrency, read with cascade-resolve.sh, applies),
-# and every .flow/runs/<run>/run.yaml for runs this
+# and every <runtime dir>/runs/<run>/run.yaml for runs this
 # trigger started: a run whose metadata.trigger is <id> and whose
 # state.status is active is in flight. A run that records no trigger, or
 # another trigger, is never this trigger's, whatever its workflow.
@@ -20,8 +22,8 @@
 #                             (shipped as skip_if_running) applies
 #   IN_FLIGHT=<run id>        one line per run in flight, oldest id first
 #
-# Never read (each is skipped, with one line on stderr): a symbolic link at
-# .flow, .flow/runs, a run directory or a run.yaml (it can point outside the
+# Never read (each is skipped, with one line on stderr): a symbolic link on
+# the way to <runtime dir>/runs, a run directory or a run.yaml (it can point outside the
 # checkout), and a run.yaml that is not a YAML mapping.
 #
 # Exits: 0 the check ran; 1 the id is not a trigger id, the trigger is
@@ -60,7 +62,10 @@ while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
 done
 SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || { printf 'flow-trigger-concurrency: cannot find its own directory\n' >&2; exit 1; }
 
-python3 - "${1-}" "$SELF_DIR/cascade-resolve.sh" <<'PYEOF'
+RT=$("${BASH:-bash}" "$SELF_DIR/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || { printf 'flow-trigger-concurrency: the runtime directory could not be resolved\n' >&2; exit 1; }
+
+python3 - "${1-}" "$SELF_DIR/cascade-resolve.sh" "$RT" <<'PYEOF'
 import os, sys
 try:
     _flow_cwd = os.path.realpath(os.getcwd())
@@ -84,7 +89,7 @@ except ImportError:
 POLICIES = ("skip_if_running", "queue", "cancel_previous")
 tid = sys.argv[1]
 # The trigger schema's id pattern: no '/', no '..', so the name stays inside
-# .flow/triggers.
+# <runtime dir>/triggers.
 if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", tid):
     fail("%r is not a trigger id (lower-case letters, digits and '-')" % tid[:80])
 
@@ -106,10 +111,22 @@ def is_link(path):
     except OSError:
         return False
 
-tpath = os.path.join(".flow", "triggers", tid + ".trigger.yaml")
-for d in (".flow", os.path.join(".flow", "triggers")):
-    if is_link(d):
-        fail("%s is a symbolic link; the trigger is not read" % d)
+RT = sys.argv[3]
+
+def link_on_way(path):
+    # The first directory from the runtime directory's first name down to
+    # `path` that is a symbolic link, or None.
+    parts = path.split("/")
+    for i in range(1, len(parts) + 1):
+        d = "/".join(parts[:i])
+        if d not in (".", "") and is_link(d):
+            return d
+    return None
+
+tpath = os.path.join(RT, "triggers", tid + ".trigger.yaml")
+d = link_on_way(RT + "/triggers")
+if d is not None:
+    fail("%s is a symbolic link; the trigger is not read" % d)
 try:
     trigger = yaml.safe_load(read_regular(tpath))
 except OSError as e:
@@ -140,9 +157,9 @@ if policy not in POLICIES:
     fail("concurrency.policy %r in %s is not one of %s" % (str(policy)[:40], tpath, ", ".join(POLICIES)))
 
 in_flight = []
-runs = os.path.join(".flow", "runs")
-if is_link(".flow") or is_link(runs):
-    warn("%s is a symbolic link; no run under it is read" % (".flow" if is_link(".flow") else runs))
+runs = RT + "/runs"
+if link_on_way(runs) is not None:
+    warn("%s is a symbolic link; no run under it is read" % link_on_way(runs))
 elif os.path.isdir(runs):
     for name in sorted(os.listdir(runs)):
         rdir = os.path.join(runs, name)

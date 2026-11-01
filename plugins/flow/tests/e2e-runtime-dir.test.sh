@@ -126,3 +126,74 @@ _refused dotdot-cancels '"build/../x"' "it has a .. component" build
 _refused link-inside "\"$RT\"" "build is a symlink" link-inside
 _refused link-outside "\"$RT\"" "build is a symlink" link-outside
 _refused top '"."' "it names the repository top itself" ""
+
+# --- writers and readers in bin/ (D8) -------------------------------------
+
+GOAL_FIXTURE="$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml"
+ACTIVITY_FIXTURE="$REPO_ROOT/plugins/flow/tests/fixtures/activity/valid.yaml"
+RUN_ID=2026-05-20T143000Z-issue-42
+
+_flow_test_begin "flow-goal-record --create writes the goal under the runtime directory; flow-active-goal reads it there (D8)"
+e2e_new runtime-dir-goal-record
+e2e_describe "flow.runtime.stateDir build/flow-runtime; create goal issue-42 on its branch, then look it up"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+e2e_run_bin bin/flow-goal-record.sh --create --goal-file "$GOAL_FIXTURE"
+e2e_expect_equal 0 "$E2E_RC" "flow-goal-record's exit status"
+e2e_expect_equal yes "$([ -f "$E2E_REPO/$RT/goals/issue-42.goal.yaml" ] && echo yes || echo no)" "$RT/goals/issue-42.goal.yaml exists"
+e2e_run_bin bin/flow-active-goal.sh --path
+e2e_expect_equal 0 "$E2E_RC" "flow-active-goal's exit status"
+e2e_expect_equal "$RT/goals/issue-42.goal.yaml" "$E2E_OUT" "the active goal's path"
+e2e_run_bin bin/flow-active-goal.sh --id --runtime-dir "$RT"
+e2e_expect_equal issue-42 "$E2E_OUT" "the active goal's id with --runtime-dir"
+_no_default_dir
+
+_flow_test_begin "flow-active-goal: a goal under .flow is not read when the setting names another directory (D8)"
+e2e_new runtime-dir-goal-elsewhere
+e2e_describe "flow.runtime.stateDir build/flow-runtime; an active goal only under .flow/goals"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+e2e_goal issue-42 feature/issue-42-search-fix active "true"
+e2e_run_bin bin/flow-active-goal.sh --id
+e2e_expect_equal 1 "$E2E_RC" "flow-active-goal's exit status (no goal)"
+e2e_expect_equal "" "$E2E_OUT" "stdout"
+
+_flow_test_begin "flow-record-activity writes the run under the runtime directory (D8)"
+e2e_new runtime-dir-record-activity
+e2e_describe "flow.runtime.stateDir build/flow-runtime; record activity task-ac1 for run $RUN_ID"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+e2e_run_bin bin/flow-record-activity.sh --run-id "$RUN_ID" --activity-file "$ACTIVITY_FIXTURE"
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_equal yes "$([ -f "$E2E_REPO/$RT/runs/$RUN_ID/activities/001-task-ac1.yaml" ] && echo yes || echo no)" "the activity under $RT/runs"
+e2e_expect_file_has "$RT/runs/$RUN_ID/events.jsonl" 'activity_recorded'
+_no_default_dir
+
+_flow_test_begin "flow-record-activity: a symlink inside the runtime directory is refused as under .flow (D8)"
+e2e_new runtime-dir-record-activity-link
+e2e_describe "flow.runtime.stateDir build/flow-runtime, whose runs is a symlink to a directory outside the repository"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+mkdir -p "$E2E_REPO/$RT" "$E2E_DIR/outside-runs"
+ln -s "$E2E_DIR/outside-runs" "$E2E_REPO/$RT/runs"
+e2e_run_bin bin/flow-record-activity.sh --run-id "$RUN_ID" --activity-file "$ACTIVITY_FIXTURE"
+e2e_expect_equal 2 "$E2E_RC" "the exit status"
+e2e_expect_err "$RT/runs is a symlink"
+e2e_expect_equal 0 "$(find "$E2E_DIR/outside-runs" -type f | wc -l | tr -d ' ')" "files written outside the repository"
+
+_flow_test_begin "flow-watch-create (issue) writes the trigger and the watch folder under the runtime directory (D8)"
+e2e_new runtime-dir-watch-issue
+e2e_describe "flow.runtime.stateDir build/flow-runtime, its triggers folder made by the pre-flight; issue 7"
+e2e_repo feature/issue-7-watch
+_state_dir "\"$RT\""
+mkdir -p "$E2E_REPO/$RT/triggers"
+e2e_run_bin bin/flow-watch-create.sh --kind issue --repo o/r --now 2026-01-01T00:00:00Z --issue 7
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "TRIGGER_FILE=$RT/triggers/issue-7-watch.trigger.yaml"
+e2e_expect_equal yes "$([ -f "$E2E_REPO/$RT/watch/.gitignore" ] && echo yes || echo no)" "$RT/watch/.gitignore exists"
+e2e_expect_file_has .claude/flow-loop-issue-7-watch.md "\`$RT/watch/issue-7.json\`"
+e2e_expect_file_lacks .claude/flow-loop-issue-7-watch.md ".flow/"
+e2e_run_bin bin/flow-trigger-concurrency.sh issue-7-watch
+e2e_expect_equal 0 "$E2E_RC" "flow-trigger-concurrency's exit status"
+e2e_expect_line "POLICY_SOURCE=trigger"
+_no_default_dir

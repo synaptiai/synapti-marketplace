@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# [flow] Record or update a FlowGoal in .flow/goals/<id>.goal.yaml.
+# [flow] Record or update a FlowGoal in <runtime dir>/goals/<id>.goal.yaml.
+# The runtime directory is flow.runtime.stateDir (bin/flow-runtime-dir.sh,
+# default .flow).
 #
 # Two modes:
 #   --create:           write a new goal YAML from scratch (refuses if existing
@@ -25,11 +27,13 @@
 #   --merge            the fragment's lifecycle fields are merged into the
 #                      goal's current lifecycle instead of replacing it
 #   --increment-turns  lifecycle.turns_evaluated becomes its current value + 1
+#   --runtime-dir DIR  the runtime directory the caller already resolved (a
+#                      hook asks once per run); otherwise it is resolved here
 #   Both read the current lifecycle under the goal's lock, so a caller that
 #   changes one field never writes back a stale copy of the others.
 #
-# .flow/goals is created if it is missing, and never through a symlink: when
-# .flow or .flow/goals is one (a repository can commit such a link to a
+# <runtime dir>/goals is created if it is missing, and never through a
+# symlink: when a directory on the way to it is one (a repository can commit such a link to a
 # directory outside the checkout), nothing is written and the helper exits 2.
 #
 # Every message is one line of text: a value in it is escaped and, when no
@@ -57,7 +61,7 @@
 #       --increment-turns), is terminal, or is not in the --from-status given;
 #       a transition the lifecycle does not permit
 #   2 — python3 or PyYAML missing; an input that cannot be read for a reason
-#       of the system; .flow or .flow/goals refused or not made (a symlink
+#       of the system; <runtime dir>/goals refused or not made (a symlink
 #       included); an existing goal that cannot be read (not UTF-8, not valid
 #       YAML, nested too deep, a symlink or not a regular file), or whose
 #       status cannot be determined (--create); the goal's lock refused; the
@@ -97,7 +101,7 @@ wants_help() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --create|--update-lifecycle|--merge|--increment-turns) shift ;;
-      --goal-file|--goal-id|--lifecycle-file|--from-status) [ $# -ge 2 ] || return 1; shift 2 ;;
+      --goal-file|--goal-id|--lifecycle-file|--from-status|--runtime-dir) [ $# -ge 2 ] || return 1; shift 2 ;;
       -h|--help) return 0 ;;
       *) return 1 ;;
     esac
@@ -129,6 +133,7 @@ import os
 import subprocess
 import yaml
 from _flow_cli import Messages, name_max, open_regular, schema_problem, shown, yaml_problem
+from _repo_dir import runtime_dir
 from _journal_atomic import (
     JournalAtomicError,
     acquire_lock,
@@ -142,11 +147,8 @@ from _journal_atomic import (
 messages = Messages("flow-goal-record.sh")
 say, refuse = messages.say, messages.refuse
 
-GOALS_DIR = os.path.join(".flow", "goals")
-
-
 def _make_goals_dir():
-    """Create .flow/goals; refuse, exit 2, when .flow or it is a symlink or not a directory."""
+    """Create <runtime dir>/goals; refuse, exit 2, when a directory on the way is a symlink or not a directory."""
     try:
         ensure_repo_dir(GOALS_DIR, create=True)
     except JournalAtomicError as e:
@@ -155,9 +157,10 @@ def _make_goals_dir():
 
 options = messages.read_arguments(
     sys.argv[2:],
-    ("--goal-file", "--goal-id", "--lifecycle-file", "--from-status"),
+    ("--goal-file", "--goal-id", "--lifecycle-file", "--from-status", "--runtime-dir"),
     ("--create", "--update-lifecycle", "--merge", "--increment-turns"),
 )
+GOALS_DIR = os.path.join(runtime_dir(options["--runtime-dir"] or None), "goals")
 # The last of --create and --update-lifecycle given wins, as the shell's
 # loop had it.
 mode = ""
@@ -173,7 +176,7 @@ from_status_arg = options["--from-status"]
 merge_arg = options["--merge"]
 increment_turns_arg = options["--increment-turns"]
 
-# A goal's id names .flow/goals/<id>.goal.yaml, <id>.goal.yaml.lock and,
+# A goal's id names <runtime dir>/goals/<id>.goal.yaml, <id>.goal.yaml.lock and,
 # while it is written, <id>.goal.yaml.<8 random characters>.tmp, the
 # longest. The schema's pattern holds an id to 64 characters; where the file
 # system takes shorter names, the limit is lower. A name longer than that
@@ -343,7 +346,7 @@ if mode == "create":
 
     # The goal's text is made here, once, and written as it is. PyYAML reads
     # some files it cannot write (nesting too deep), and that is the file's
-    # fault: found here, before .flow/goals is made, it is refused.
+    # fault: found here, before <runtime dir>/goals is made, it is refused.
     try:
         goal_text = yaml_text(goal)
     except RecursionError:
@@ -415,7 +418,7 @@ if mode == "create":
         )
 
 elif mode == "update-lifecycle":
-    # A goal reached through a symlinked .flow or .flow/goals is outside the
+    # A goal reached through a symlinked runtime directory or goals is outside the
     # repository: acquire_lock() below refuses it, before anything is written.
     target = os.path.join(GOALS_DIR, f"{goal_id_arg}.goal.yaml")
     lockfile = target + ".lock"

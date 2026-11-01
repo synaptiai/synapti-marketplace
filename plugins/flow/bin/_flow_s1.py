@@ -773,8 +773,10 @@ def threshold_for(t, model):
 def record_path(a):
     """Where records go, or None when the path is not safe to write."""
     if a.run_id:
-        parts = [os.path.join(a.repo_top, ".flow"), os.path.join(a.repo_top, ".flow", "runs"),
-                 os.path.join(a.repo_top, ".flow", "runs", a.run_id)]
+        # Each directory from the runtime directory's first name down to the
+        # run (the runtime directory is --runtime-dir, relative to the top).
+        names = [n for n in (a.runtime_dir or ".flow").split("/") if n and n != "."] + ["runs", a.run_id]
+        parts = [os.path.join(a.repo_top, *names[:i]) for i in range(1, len(names) + 1)]
         if os.path.lexists(parts[-1]):
             for p in parts:
                 if os.path.islink(p) or not os.path.isdir(p):
@@ -1184,7 +1186,7 @@ def main():
     ap = argparse.ArgumentParser()
     for name in ("site", "state-file", "state-format", "current", "run-id", "ref", "provider",
                  "base-url", "model", "api-key-env", "timeout-ms", "max-timeout-ms", "state-token-cap", "mode",
-                 "questions", "repo-top", "state-dir", "subcommand", "items-file", "batch"):
+                 "questions", "repo-top", "state-dir", "subcommand", "items-file", "batch", "runtime-dir"):
         ap.add_argument("--" + name, default="")
     a = ap.parse_args()
     # A byte that is not UTF-8 arrives as a lone surrogate, which no record

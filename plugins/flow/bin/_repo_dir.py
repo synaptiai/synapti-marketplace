@@ -731,12 +731,23 @@ def check_runtime_dir(value):
 _RUNTIME_DIR = []
 
 
-def runtime_dir():
+def runtime_dir(given=None):
     """The runtime directory, as bin/flow-runtime-dir.sh prints it: the
     flow.runtime.stateDir the settings cascade gives (cascade-resolve.sh),
     checked by check_runtime_dir(), relative to the repository top. A refused
     value prints runtime_dir_warning() on stderr and gives .flow. Asked once
-    per process."""
+    per process.
+
+    `given` is a directory the caller already resolved (a hook passes the
+    one it asked for with --runtime-dir, so one hook run asks once): it is
+    checked as a setting is, and the settings are not read."""
+    if given is not None:
+        if given == RUNTIME_DIR_DEFAULT:
+            return given
+        answer, reason = check_runtime_dir(given)
+        if reason is not None:
+            sys.stderr.write(runtime_dir_warning(reason) + "\n")
+        return answer
     if not _RUNTIME_DIR:
         import subprocess
         helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cascade-resolve.sh")

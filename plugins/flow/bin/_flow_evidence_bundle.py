@@ -11,8 +11,8 @@ declares as Iron Laws:
      or the conversation transcript. This module never reads those
      sources; the only data it touches are the goal YAML, the deterministic
      check report (a JSON string), the evidence sidecars under
-     `.flow/runs/<run_id>/evidence/`, and an optional previous-turn
-     verdict file under `.flow/runs/<run_id>/last-verdict.json`.
+     `<runtime dir>/runs/<run_id>/evidence/`, and an optional previous-turn
+     verdict file under `<runtime dir>/runs/<run_id>/last-verdict.json`.
 
   2. Every untrusted content section is wrapped in a `<<<UNTRUSTED_*>>>`
      fence. The judge's system prompt instructs it to treat fenced
@@ -638,7 +638,7 @@ def _assemble_evidence_section(run_dir: str, goal_acs: list, goal_unreadable: li
 
 
 def _assemble_previous_verdict_section(run_dir: str) -> str:
-    """Read the previous turn's verdict from .flow/runs/<id>/last-verdict.json
+    """Read the previous turn's verdict from <runtime dir>/runs/<id>/last-verdict.json
     if it exists. Returns an empty string when absent — the assembler omits
     the section entirely in that case (first-turn case).
 
@@ -760,7 +760,7 @@ def assemble_bundle(
       report_json: the JSON string emitted by
         flow-run-deterministic-checks.sh. Passed in (not re-read) so
         the assembler doesn't shell out.
-      run_dir: filesystem path to `.flow/runs/<run-id>/` for this goal.
+      run_dir: filesystem path to `<runtime dir>/runs/<run-id>/` for this goal.
         When None or non-existent, the evidence/verdict sections are
         empty/omitted — still a valid bundle, just thin.
 
@@ -816,7 +816,7 @@ def assemble_bundle(
     ]
 
     # Evidence + previous verdict sections are scoped to the run dir. A run
-    # directory reached through a symlinked .flow, .flow/runs or run directory
+    # directory reached through a symlinked runtime directory, runs or run directory
     # belongs to the target of the link: it is not read, it is named on
     # stderr, and the bundle is assembled as for a goal with no run directory.
     # ensure_repo_dir() is the rule every flow writer applies.

@@ -81,7 +81,8 @@
 #
 # file_change entries (and git-status paths) under an --ignore-prefix
 # (resolved against the current working directory) are skipped: callers pass
-# the decision journal directory, .flow/, and .screenshots/ so bookkeeping
+# the decision journal directory, the runtime directory (.flow/ unless
+# flow.runtime.stateDir names another), and .screenshots/ so bookkeeping
 # writes never dirty the gate. The same prefixes are excluded from the
 # digest (git `:(exclude)` pathspecs), so a bookkeeping write made through
 # Bash does not move it either — recorder and gate must pass the same set.

@@ -6,7 +6,7 @@
 # /flow:watch branch fills ${BRANCH} (the branch name), ${BRANCH_SLUG} (the
 # name made into an id: lower case, every run of other characters a '-'),
 # ${DEFAULT_BRANCH}, ${REPO} and ${NOW}, writes the result to
-# .flow/triggers/branch-<slug>-watch.trigger.yaml, and writes the loop prompt
+# <runtime dir>/triggers/branch-<slug>-watch.trigger.yaml, and writes the loop prompt
 # from branch-watch.loop.md to .claude/flow-loop-branch-<slug>-watch.md.
 #
 # Plugin CANNOT invoke /loop. User invokes it manually using the generated

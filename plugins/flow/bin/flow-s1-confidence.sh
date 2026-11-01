@@ -25,7 +25,7 @@
 #   --ref-prefix   the start of each record's ref, e.g. pr:275/review-cycle:2;
 #                  each finding adds /<id>. At most 150 characters
 #   --run-id       records, and the state sent for each finding, go beside
-#                  .flow/runs/<id> when that run exists
+#                  <runtime dir>/runs/<id> when that run exists
 #   --demoted-out  where the demoted ids are written, one per line, when there
 #                  are any; a file left there by an earlier run is removed
 #                  when there are none

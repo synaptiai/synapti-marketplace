@@ -25,7 +25,7 @@
 #               include (the change is part of the issue's work),
 #               include-cleanup (included as cleanup, in a separate improve:
 #               or chore: commit) or exclude (left out)
-#   --run-id    records go to .flow/runs/<id>/system-one.jsonl when that run
+#   --run-id    records go to <runtime dir>/runs/<id>/system-one.jsonl when that run
 #               exists; empty means none
 #   --issue-cache  a directory the caller made for one prompt: the issue is
 #               fetched once for every file of that prompt, and a failed fetch

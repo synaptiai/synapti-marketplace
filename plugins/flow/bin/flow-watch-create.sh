@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# [flow] Write a watch-mode trigger (.flow/triggers/<id>.trigger.yaml) and its
+# [flow] Write a watch-mode trigger (<runtime dir>/triggers/<id>.trigger.yaml) and its
 # loop prompt (.claude/flow-loop-<id>.md) from the plugin's issue-watch or
 # branch-watch template, after checking the filled trigger against the schema
 # and the trigger-policy rules. /flow:watch issue <N> and /flow:watch branch
