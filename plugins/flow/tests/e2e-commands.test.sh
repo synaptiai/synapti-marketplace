@@ -48,6 +48,15 @@
 #      default branch (origin/HEAD) is known, or printed as 0 when no default
 #      branch can be found
 #   B4 outside a git repository the block prints counts it could not take
+#
+# goal.md, the /flow:goal status scan
+#   G1 with active goals on several branches, the first in filename order is
+#      shown instead of the one on the current branch
+#   G2 with no active goal on the current branch, another branch's goal is
+#      shown, or the output does not say that goals are active elsewhere
+#   G3 two active goals on the current branch are not reported as such
+#   G4 an unreadable or refused goal stops being reported once the branch
+#      decides which goal is shown
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -492,4 +501,70 @@ e2e_expect_line "STATE=unavailable"
 e2e_expect_line "REASON=not in a git repository"
 e2e_expect_no_out "UNCOMMITTED="
 e2e_expect_no_out "AHEAD="
+e2e_expect_clean_edges
+
+# --- goal.md: the /flow:goal status scan --------------------------------------
+
+GOAL_MD="$E2E_PLUGIN_DIR/commands/goal.md"
+GOAL_SCAN_MARK='GOAL_SCAN_BLOCK_BEGIN'
+
+_flow_test_begin "/flow:goal status: the active goal on the current branch is shown, not the first by file name (G1)"
+e2e_new goal-status-current-branch
+e2e_describe "two active goals: a-other owns feature/other, z-here owns feature/e2e, the current branch; a-other sorts first"
+e2e_repo feature/e2e
+e2e_goal a-other feature/other active true
+e2e_goal z-here feature/e2e active true
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=ok"
+e2e_expect_line "ACTIVE_GOAL=.flow/goals/z-here.goal.yaml"
+e2e_expect_line "BRANCH=feature/e2e"
+e2e_expect_no_line "ACTIVE_GOAL=.flow/goals/a-other.goal.yaml"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: no active goal on this branch is none, with the count of goals active elsewhere (G2)"
+e2e_new goal-status-other-branch-only
+e2e_describe "one active goal, a-other, owning feature/other; the current branch is feature/e2e"
+e2e_repo feature/e2e
+e2e_goal a-other feature/other active true
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=none"
+e2e_expect_line "BRANCH=feature/e2e"
+e2e_expect_line "OTHER_BRANCH_ACTIVE=1"
+e2e_expect_no_out "ACTIVE_GOAL="
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: two active goals on this branch are reported, not one of them (G3)"
+e2e_new goal-status-degenerate
+e2e_describe "two active goals, g-one and g-two, both owning feature/e2e, the current branch"
+e2e_repo feature/e2e
+e2e_goal g-one feature/e2e active true
+e2e_goal g-two feature/e2e active true
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=degenerate"
+e2e_expect_out "REASON=2 active goals on branch 'feature/e2e'"
+e2e_expect_no_out "ACTIVE_GOAL="
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: an unreadable goal is still named beside the branch's active goal (G4)"
+e2e_new goal-status-unreadable-sibling
+e2e_describe "z-here, active, owns feature/e2e; a-broken is not YAML"
+e2e_repo feature/e2e
+e2e_goal z-here feature/e2e active true
+printf 'lifecycle: [unclosed\n' > "$E2E_REPO/.flow/goals/a-broken.goal.yaml"
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=ok"
+e2e_expect_line "ACTIVE_GOAL=.flow/goals/z-here.goal.yaml"
+e2e_expect_out "GOAL_UNREADABLE=.flow/goals/a-broken.goal.yaml"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: an unreadable goal with no active goal on this branch is unknown, not none (G4)"
+e2e_new goal-status-unreadable-no-match
+e2e_describe "a-other, active, owns feature/other; b-broken is not YAML; the current branch is feature/e2e"
+e2e_repo feature/e2e
+e2e_goal a-other feature/other active true
+printf 'lifecycle: [unclosed\n' > "$E2E_REPO/.flow/goals/b-broken.goal.yaml"
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=unavailable"
+e2e_expect_no_line "STATE=none"
+e2e_expect_out "GOAL_UNREADABLE=.flow/goals/b-broken.goal.yaml"
 e2e_expect_clean_edges

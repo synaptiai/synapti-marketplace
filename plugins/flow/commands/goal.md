@@ -57,7 +57,7 @@ STOP_MODE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh
 
 ### `/flow:goal` — default (no arguments)
 
-Equivalent to `/flow:goal status`. Shows an active goal: the scan below reads every goal file and reports the first one, in filename order, whose `lifecycle.status` is `active`. It does not filter by branch, so with active goals on several branches it can show one that belongs to another branch; `/flow:goal history --status active` lists them all.
+Equivalent to `/flow:goal status`. Shows the active goal for the current branch: the one whose `scope.branch` is the branch checked out, as `bin/flow-active-goal.sh --branch-strict` picks it. A goal active on another branch is never shown in its place; the output counts those instead, and `/flow:goal history --status active` lists them. On a detached HEAD, where there is no branch to match, it shows the most recently modified active goal.
 
 ### `/flow:goal status`
 
@@ -121,7 +121,7 @@ def one_line(v):
     return " ".join(str(v).splitlines()).strip()[:200]
 
 
-active = ""
+active_count = 0
 unreadable = []
 for path in sorted(glob.glob('.flow/goals/*.goal.yaml')):
     if os.path.islink(path):
@@ -142,18 +142,19 @@ for path in sorted(glob.glob('.flow/goals/*.goal.yaml')):
             lifecycle = {}
         if not isinstance(lifecycle, dict):
             raise ValueError("lifecycle is not a mapping")
-        # Every file is read, not just those before the first active one: which
-        # unreadable goals got reported would otherwise depend on filename order.
-        if lifecycle.get('status') == 'active' and not active:
-            active = path
+        # Every file is read: which unreadable goals get reported does not
+        # depend on filename order. Which active goal is shown is decided
+        # below, by branch, by bin/flow-active-goal.sh.
+        if lifecycle.get('status') == 'active':
+            active_count += 1
     except Exception as exc:
         unreadable.append("GOAL_UNREADABLE=%s — %s" % (path, one_line(exc)))
 
 for line in unreadable:
     print(line)
-if active:
+if active_count:
     print("STATE=ok")
-    print("ACTIVE_GOAL=%s" % active)
+    print("ACTIVE_COUNT=%d" % active_count)
 elif unreadable:
     print("STATE=unavailable")
     print("REASON=%d goal file(s) could not be read, so whether one of them is active is unknown" % len(unreadable))
@@ -167,14 +168,52 @@ if [ "$GOAL_SCAN_EXIT" -ne 0 ] || [ "$(printf '%s\n' "$GOAL_SCAN" | grep -c '^ST
   GOAL_SCAN="STATE=unavailable
 REASON=the goal scan did not complete (exit $GOAL_SCAN_EXIT), so whether a goal is active is unknown"
 fi
+# The scan found at least one readable active goal. The one shown is the one
+# bin/flow-active-goal.sh --branch-strict picks: the active goal whose
+# scope.branch is the current branch. A known branch that owns none gets none,
+# never another branch's goal; with no branch (detached HEAD) it is the most
+# recently modified active goal.
+ACTIVE_GOAL=""
+GOAL_BRANCH=$(git branch --show-current 2>/dev/null)
+if [ "$(printf '%s\n' "$GOAL_SCAN" | sed -n 's/^STATE=//p')" = "ok" ]; then
+  ACTIVE_COUNT=$(printf '%s\n' "$GOAL_SCAN" | sed -n 's/^ACTIVE_COUNT=//p')
+  GOAL_UNREADABLE_LINES=$(printf '%s\n' "$GOAL_SCAN" | grep '^GOAL_UNREADABLE=')
+  ACTIVE_GOAL=$("$FLOW_ROOT/bin/flow-active-goal.sh" --branch-strict --path 2>/dev/null); GOAL_PICK_EXIT=$?
+  GOAL_PICK_ERR=""
+  if [ "$GOAL_PICK_EXIT" -ne 0 ] && [ "$GOAL_PICK_EXIT" -ne 1 ]; then
+    # The helper says why on stderr; its first line is asked for again here.
+    GOAL_PICK_ERR=$({ "$FLOW_ROOT/bin/flow-active-goal.sh" --branch-strict --path >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+    GOAL_PICK_ERR=${GOAL_PICK_ERR#flow-active-goal.sh: }
+  fi
+  case "$GOAL_PICK_EXIT" in
+    0)
+      GOAL_SCAN="STATE=ok
+ACTIVE_GOAL=$ACTIVE_GOAL" ;;
+    1)
+      ACTIVE_GOAL=""
+      GOAL_SCAN="STATE=none
+OTHER_BRANCH_ACTIVE=$ACTIVE_COUNT" ;;
+    3)
+      ACTIVE_GOAL=""
+      GOAL_SCAN="STATE=degenerate
+REASON=${GOAL_PICK_ERR#degenerate state — }" ;;
+    *)
+      ACTIVE_GOAL=""
+      GOAL_SCAN="STATE=unavailable
+REASON=flow-active-goal.sh exited $GOAL_PICK_EXIT${GOAL_PICK_ERR:+: $GOAL_PICK_ERR}, so which goal is active on this branch is unknown" ;;
+  esac
+  [ -n "$GOAL_UNREADABLE_LINES" ] && GOAL_SCAN="$GOAL_UNREADABLE_LINES
+$GOAL_SCAN"
+fi
 printf '%s\n' "$GOAL_SCAN"
-ACTIVE_GOAL=$(printf '%s\n' "$GOAL_SCAN" | sed -n 's/^ACTIVE_GOAL=//p')
+printf '%s\n' "BRANCH=${GOAL_BRANCH:-\"(unknown — detached HEAD or not a repository)\"}"
 # GOAL_SCAN_BLOCK_END
 ```
 
 Render the scan:
 
-- `STATE=none` — print `No active FlowGoal. Use /flow:goal create to start one.`
+- `STATE=none` — print `No active FlowGoal on <BRANCH>. Use /flow:goal create to start one.` When `OTHER_BRANCH_ACTIVE=<n>` follows, add `<n> active goal(s) on other branches; /flow:goal history --status active lists them.`
+- `STATE=degenerate` — print `Several active goals on <BRANCH>: <REASON>`, and suggest `/flow:goal history --status active` and `/flow:goal clear <id>` for the extras. Show none of them as the active goal.
 - `STATE=unavailable` — print `Cannot tell whether a FlowGoal is active: <REASON>`, then one line per `GOAL_UNREADABLE=<path> — <reason>` so the user sees which file could not be read. Do NOT offer `/flow:goal create`: one of the files named may already hold an active goal.
 - `STATE=ok` — read the path from `ACTIVE_GOAL=` and format as below. Any `GOAL_UNREADABLE=` lines still print above it.
 

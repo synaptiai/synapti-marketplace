@@ -139,7 +139,7 @@ Each `risk_map` row carries the three columns of the journal table (`Area | Plau
 
 | Command | Purpose | Tier |
 |---|---|---|
-| `/flow:goal` (or `/flow:goal status`) | Show the active goal + AC pass/fail state | autonomous |
+| `/flow:goal` (or `/flow:goal status`) | Show the active goal for the current branch + AC pass/fail state | autonomous |
 | `/flow:goal create <kind> [id]` | Create a goal from issue / PR-review / PR-address / adhoc | journal |
 | `/flow:goal inspect <id>` | Read-only deep dump of a specific goal | autonomous |
 | `/flow:goal evaluate <id>` | Run deterministic checks + (optional) judge; update lifecycle | autonomous for a non-terminal verdict; confirm (AskUserQuestion) before writing `achieved` or `failed` |
