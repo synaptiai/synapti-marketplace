@@ -237,7 +237,7 @@
             "journal",
             "transcripts"
           ],
-          "description": "Where /flow:learn mines patterns from. 'journal' reads .decisions/*.md and .flow/runs/*/events.jsonl (what flow wrote). 'transcripts' reads the session transcripts under ~/.claude/projects/<project>/ via bin/flow-mine-corrections.sh, which is where user corrections actually live. Both are read-only and local."
+          "description": "Where /flow:learn mines patterns from. 'journal' reads .decisions/*.md and runs/*/events.jsonl under the runtime directory (flow.runtime.stateDir, default .flow): what flow wrote. 'transcripts' reads the session transcripts under ~/.claude/projects/<project>/ via bin/flow-mine-corrections.sh, which is where user corrections actually live. Both are read-only and local."
         },
         "transcriptDir": {
           "type": "string",
@@ -594,7 +594,7 @@
     },
     "flow": {
       "type": "object",
-      "description": "Flow runtime layer: goals, workflows, triggers and runs under .flow/. Goals are enforced by the Stop hook and the commands that create them. See references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
+      "description": "Flow runtime layer: goals, workflows, triggers and runs in the runtime directory (flow.runtime.stateDir, default .flow). Goals are enforced by the Stop hook and the commands that create them. See references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
       "properties": {
         "runtime": {
           "type": "object",
@@ -602,7 +602,7 @@
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Switch for FlowRun records under .flow/runs/. When false, commands skip creating and updating runs (FLOW_RUN_STATE=skip) and the SessionEnd hook writes no resume hint; existing runs stay readable. Goals, workflows and triggers have their own switches (flow.goals.enabled, flow.workflows.enabled, flow.triggers.enabled)."
+              "description": "Switch for FlowRun records in runs/ under the runtime directory (flow.runtime.stateDir, default .flow). When false, commands skip creating and updating runs (FLOW_RUN_STATE=skip) and the SessionEnd hook writes no resume hint; existing runs stay readable. Goals, workflows and triggers have their own switches (flow.goals.enabled, flow.workflows.enabled, flow.triggers.enabled)."
             },
             "stateDir": {
               "type": "string",
@@ -613,7 +613,7 @@
               "type": "integer",
               "default": 30,
               "minimum": 1,
-              "description": "Days an ended FlowRun is kept. At the end of each session the SessionEnd hook removes runs under .flow/runs/ whose run.yaml says completed or cancelled and was last written more than this many days ago. Active and blocked runs, and runs git tracks, are never removed. A value that is not a whole number of at least 1 means 30."
+              "description": "Days an ended FlowRun is kept. At the end of each session the SessionEnd hook removes runs in runs/ under the runtime directory (flow.runtime.stateDir, default .flow) whose run.yaml says completed or cancelled and was last written more than this many days ago. Active and blocked runs, and runs git tracks, are never removed. A value that is not a whole number of at least 1 means 30."
             }
           },
           "additionalProperties": false
