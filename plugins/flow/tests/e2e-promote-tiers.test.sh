@@ -32,6 +32,10 @@
 #      were confirm, or no longer pushes and opens the draft pull request
 #   P8 --dry-run says it would push and open a pull request when a confirm
 #      tier means it would stop first
+#   P9 an exception promotion whose runtime directory flow-mkdir.sh could not
+#      check (exit 3: python3 missing, or the check did not run) is reported
+#      as a symlink attack, hiding the real reason; or one it refused (exit 2)
+#      is no longer reported as a symlink
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -260,3 +264,62 @@ e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_out "DRY-RUN: tiers.push is confirm"
 e2e_expect_no_out "DRY-RUN: would commit + push + open draft PR"
 e2e_expect_clean_edges
+
+# _exception_proposal — an exception proposal, outside the checkout.
+_exception_proposal() {
+  PROPOSAL_FILE="$E2E_DIR/proposals/exc-check.md"
+  mkdir -p "$E2E_DIR/proposals"
+  cat > "$PROPOSAL_FILE" <<'PROPOSAL'
+---
+name: "exc-check"
+description: "[flow-learned] Test exception proposal."
+type: exception
+source-sessions:
+  - "2026-10-30 test session"
+evidence-count: 2
+status: proposal
+proposed: "2026-10-30"
+---
+
+# exc-check
+
+## Pattern Detected
+
+The same finding was dismissed on two pull requests.
+
+## Evidence
+
+issue-1.md, issue-2.md
+
+## Exception row
+
+| Prefer explicit loops | plugins/flow/bin/** | team readability call | issue-1, issue-2 |
+PROPOSAL
+}
+
+_flow_test_begin "an exception whose runtime directory could not be checked says so, not symlink (P9)"
+e2e_new promote-exception-mkdir-unchecked
+e2e_describe "an exception proposal; flow-mkdir.sh --check exits 3 (the check did not run)"
+_flow_checkout
+_exception_proposal
+e2e_plugin_copy bin/flow-mkdir.sh '#!/bin/sh
+echo "flow-mkdir.sh: cannot check ./.flow: the check did not run (python3 exited 127; 127 is python3 not installed)" >&2
+exit 3'
+e2e_run_bin FLOW_REPO_ROOT="$E2E_REPO" "$PROMOTE" --proposal "$PROPOSAL_FILE"
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_err "could not be checked"
+e2e_expect_err "flow-mkdir.sh: cannot check ./.flow: the check did not run"
+e2e_expect_err_lacks "symlink"
+e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/review-exceptions.md" ] && echo yes || echo no)" "whether the exceptions file was written"
+
+e2e_new promote-exception-mkdir-refused
+e2e_describe "an exception proposal; flow-mkdir.sh --check refuses (exit 2)"
+_flow_checkout
+_exception_proposal
+e2e_plugin_copy bin/flow-mkdir.sh '#!/bin/sh
+echo "flow-mkdir.sh: refusing — ./.flow is a symlink; nothing is written under it" >&2
+exit 2'
+e2e_run_bin FLOW_REPO_ROOT="$E2E_REPO" "$PROMOTE" --proposal "$PROPOSAL_FILE"
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_err "is a symlink or lies under one"
+e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/review-exceptions.md" ] && echo yes || echo no)" "whether the exceptions file was written"

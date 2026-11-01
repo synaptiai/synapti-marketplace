@@ -507,11 +507,25 @@ if [ "$PROPOSAL_TYPE" = "exception" ]; then
   fi
   # mkdir -p and > both follow a symlinked DIRECTORY, so a pre-staged
   # .flow -> elsewhere redirects the write out of the repository entirely.
-  # bin/flow-mkdir.sh --check refuses a symlink on any name of the way.
-  if [ -L "$EXC_DIR" ] || ! (cd "$EXC_REPO" && "$(dirname "$FLOW_BIN_LIB")/flow-mkdir.sh" --check -- "./$EXC_RT") >/dev/null 2>&1; then
+  # bin/flow-mkdir.sh --check refuses a symlink on any name of the way (exit
+  # 2); exit 3 means it could not check, which says nothing about a symlink,
+  # so its own message is shown instead.
+  if [ -L "$EXC_DIR" ]; then
     echo "promote-proposal.sh: refusing — $EXC_DIR is a symlink or lies under one (potential redirect attack)" >&2
     exit 1
   fi
+  EXC_CHECK_RC=0
+  EXC_CHECK_ERR=$(cd "$EXC_REPO" && "$(dirname "$FLOW_BIN_LIB")/flow-mkdir.sh" --check -- "./$EXC_RT" 2>&1 >/dev/null) || EXC_CHECK_RC=$?
+  case $EXC_CHECK_RC in
+    0) ;;
+    3)
+      [ -n "$EXC_CHECK_ERR" ] && printf '%s\n' "$EXC_CHECK_ERR" >&2
+      echo "promote-proposal.sh: refusing — $EXC_DIR could not be checked, so nothing is written to it" >&2
+      exit 1 ;;
+    *)
+      echo "promote-proposal.sh: refusing — $EXC_DIR is a symlink or lies under one (potential redirect attack)" >&2
+      exit 1 ;;
+  esac
   EXC_ROW=$(PROPOSAL="$PROPOSAL" python3 - <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
@@ -605,7 +619,8 @@ PYEOF
     exit 0
   fi
 
-  (cd "$EXC_REPO" && "$(dirname "$FLOW_BIN_LIB")/flow-mkdir.sh" -- "./$EXC_RT") >/dev/null 2>&1 || {
+  # flow-mkdir.sh's own line on stderr says why it could not.
+  (cd "$EXC_REPO" && "$(dirname "$FLOW_BIN_LIB")/flow-mkdir.sh" -- "./$EXC_RT") >/dev/null || {
     echo "promote-proposal.sh: cannot create $(dirname "$EXC_FILE")" >&2
     exit 2
   }
