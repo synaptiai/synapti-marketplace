@@ -18,6 +18,13 @@
 #     via flow.goals.judge.model cascade key.
 #
 # Stdin: same Stop event payload that flow-goal-stop.sh received.
+#
+# Usage: flow-goal-evaluator.sh [--runtime-dir <dir>]
+#   --runtime-dir  the runtime directory flow-goal-stop.sh resolved
+#                  (flow.runtime.stateDir, bin/flow-runtime-dir.sh, default
+#                  .flow), so one Stop event asks once; without it the
+#                  directory is resolved here. Goals and runs are read and
+#                  written under it.
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -83,8 +90,8 @@ _flow_warned_once() {
   return 1
 }
 
-# _run_dir_check [--check] <run id> — bin/flow-mkdir.sh on .flow/runs/<run id>,
-# the rule every flow writer applies: none of .flow, .flow/runs and the run
+# _run_dir_check [--check] <run id> — bin/flow-mkdir.sh on $RT/runs/<run id>,
+# the rule every flow writer applies: no directory on the way to the run
 # directory may be a symlink or anything but a directory. A repository can
 # commit such a link, and every write through it would land wherever it
 # points. Without --check the run directory is created, one component at a
@@ -94,7 +101,7 @@ _flow_warned_once() {
 _run_dir_check() {
   local mode="" out
   if [ "${1:-}" = "--check" ]; then mode="--check"; shift; fi
-  if out=$("${PLUGIN_ROOT}/bin/flow-mkdir.sh" $mode -- ".flow/runs/$1" 2>&1); then
+  if out=$("${PLUGIN_ROOT}/bin/flow-mkdir.sh" $mode -- "$RT/runs/$1" 2>&1); then
     return 0
   fi
   out=${out#flow-mkdir.sh: }
@@ -141,6 +148,11 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
 # _flow_cli.open_regular, which never waits on a FIFO in the goal's place and
 # reads nothing but a regular file.
 export FLOW_PY_BIN="$PLUGIN_ROOT/bin"
+# The runtime directory: the one flow-goal-stop.sh passed, or resolved here.
+RT=""
+if [ "${1:-}" = "--runtime-dir" ] && [ -n "${2:-}" ]; then RT="$2"; fi
+[ -n "$RT" ] || RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
 
 # Recursion guard (mirrors flow-goal-stop.sh). The judge subprocess sets
 # this env var; if we see it, we're inside the judge and the parent flow-
@@ -206,7 +218,7 @@ if [ "$STOP_ACTIVE" = "true" ] && [ -f "$THROTTLE_FILE" ]; then
     # throttle decision is the primary outcome.
     ACTIVE_GOAL_HELPER="${PLUGIN_ROOT}/bin/flow-active-goal.sh"
     if [ -x "$ACTIVE_GOAL_HELPER" ]; then
-      THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path --branch-strict 2>/dev/null)
+      THROTTLE_GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path --branch-strict --runtime-dir "$RT" 2>/dev/null)
       if [ -z "$THROTTLE_GOAL_PATH" ]; then
         # No active goal owns the current branch — nothing to attribute the
         # throttle-block event to. The throttle decision below still fires; only
@@ -245,16 +257,16 @@ PYEOF
             THROTTLE_RUN_ID=""
             ;;
         esac
-        if [ -n "$THROTTLE_RUN_ID" ] && { [ -d ".flow/runs/$THROTTLE_RUN_ID" ] || [ -L ".flow/runs/$THROTTLE_RUN_ID" ]; }; then
+        if [ -n "$THROTTLE_RUN_ID" ] && { [ -d "$RT/runs/$THROTTLE_RUN_ID" ] || [ -L "$RT/runs/$THROTTLE_RUN_ID" ]; }; then
           # symlink defense on events.jsonl — the bash `>>`
-          # follows symlinks; a planted symlink at .flow/runs/<id>/events.jsonl
+          # follows symlinks; a planted symlink at $RT/runs/<id>/events.jsonl
           # would redirect the throttle-block payload to any user-writable
           # target. Refuse the write if the file is a symlink, or if the run
           # directory is one or lies under one. Matches the
           # defense scope in bin/flow-active-goal.sh and bin/journal-record.sh.
-          EVENTS_FILE=".flow/runs/$THROTTLE_RUN_ID/events.jsonl"
+          EVENTS_FILE="$RT/runs/$THROTTLE_RUN_ID/events.jsonl"
           if ! THROTTLE_REFUSED=$(_run_dir_check --check "$THROTTLE_RUN_ID"); then
-            echo "flow-goal-evaluator: refusing to append throttle event — .flow/runs/$THROTTLE_RUN_ID is a symlink, lies under one, or cannot be checked ($THROTTLE_REFUSED)" >&2
+            echo "flow-goal-evaluator: refusing to append throttle event — $RT/runs/$THROTTLE_RUN_ID is a symlink, lies under one, or cannot be checked ($THROTTLE_REFUSED)" >&2
           elif [ ! -L "$EVENTS_FILE" ]; then
             jq -nc \
                 --arg type "throttle-block" \
@@ -282,7 +294,7 @@ fi
 # is unavailable — the Stop hook must not block the user on infra failure.
 GOAL_HELPER="${PLUGIN_ROOT}/bin/flow-active-goal.sh"
 if [ -x "$GOAL_HELPER" ]; then
-  ACTIVE_GOAL=$("$GOAL_HELPER" --path --branch-strict 2>/dev/null)
+  ACTIVE_GOAL=$("$GOAL_HELPER" --path --branch-strict --runtime-dir "$RT" 2>/dev/null)
 else
   ACTIVE_GOAL=""
 fi
@@ -313,7 +325,7 @@ _write_lifecycle() {
     set --
   fi
   if ! rec_err=$("${PLUGIN_ROOT}/bin/flow-goal-record.sh" --update-lifecycle \
-      --goal-id "$GOAL_ID" --lifecycle-file "$frag" --from-status active --merge "$@" 2>&1 >/dev/null); then
+      --goal-id "$GOAL_ID" --lifecycle-file "$frag" --from-status active --merge --runtime-dir "$RT" "$@" 2>&1 >/dev/null); then
     echo "flow-goal-evaluator: lifecycle write failed for goal $GOAL_ID ($mode) — NOT updated: $(printf '%s' "$rec_err" | head -c 300)" >&2
     return 1
   fi
@@ -396,10 +408,10 @@ esac
 # a run, whose stuck state is kept in per-user state instead (_stuck_file).
 # Every step below tests RUN_DIR, so they all keep state in the same place.
 # The directory is created here, before any of that state is read or written:
-# .flow/runs/ is not tracked, so a fresh clone or worktree has a goal with a
+# $RT/runs/ is not tracked, so a fresh clone or worktree has a goal with a
 # run id and no run directory, and the steps of the first turn would otherwise
 # split its state between per-user state and the run. It is never created
-# through a symlinked .flow or .flow/runs, and a run directory that is a
+# through a symlink on the way to $RT/runs, and a run directory that is a
 # symlink, lies under one, or cannot be created is refused, as
 # bin/flow-record-verdict.sh refuses a symlinked run directory. Then RUN_ID is
 # cleared too, so no run file is written (_record_verdict), and the goal keeps
@@ -414,10 +426,10 @@ if [ -n "$RUN_ID" ]; then
     _run_refused=""
   fi
   if [ -n "$_run_refused" ]; then
-    echo "flow-goal-evaluator: refusing run directory .flow/runs/$RUN_ID — $_run_refused; the goal's state is kept in per-user state and no run file is written" >&2
+    echo "flow-goal-evaluator: refusing run directory $RT/runs/$RUN_ID — $_run_refused; the goal's state is kept in per-user state and no run file is written" >&2
     RUN_ID=""
   else
-    RUN_DIR=".flow/runs/$RUN_ID"
+    RUN_DIR="$RT/runs/$RUN_ID"
   fi
 fi
 
@@ -460,7 +472,7 @@ _record_verdict() {
   # CI logs and looks like an error to readers — but PRESERVE failure
   # diagnostics by re-emitting our own message on non-zero exit.
   FLOW_RECORD_VERDICT_QUIET=1 "${PLUGIN_ROOT}/bin/flow-record-verdict.sh" \
-    --run-id "$RUN_ID" --verdict-file "$vtmp" \
+    --run-id "$RUN_ID" --verdict-file "$vtmp" --runtime-dir "$RT" \
     >/dev/null 2>/dev/null \
     || echo "flow-goal-evaluator: last-verdict.json write failed (delta computation on next turn will fall back to 'unchanged')" >&2
 }
@@ -484,7 +496,7 @@ _check_stuck() {
 
   # symlink defense on stuck-counter. The read+write below
   # use shell redirection which follows symlinks; a hostile project could
-  # plant a symlink at .flow/runs/<id>/stuck-counter pointing at e.g.
+  # plant a symlink at $RT/runs/<id>/stuck-counter pointing at e.g.
   # ~/.bashrc and the integer write would overwrite it. Refuse to operate
   # on the counter if it's a symlink (counter stays at 0 for this turn —
   # stuck-detection becomes a no-op for this run, which is the safe

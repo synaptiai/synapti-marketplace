@@ -21,7 +21,8 @@
 # flow.runtime.runRetentionDays days ago (default 30), judged by run.yaml's
 # modification time; active and blocked runs are kept.
 #
-# Nothing is written through a symlink: when .flow, .flow/runs or a run's
+# Nothing is written through a symlink: when a directory on the way to
+# <runtime dir>/runs, or a run's
 # directory is one (a repository can commit such a link to a directory
 # outside the checkout), no event is appended there and the refusal is
 # printed on stderr instead.
@@ -81,8 +82,11 @@ python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.
 ENABLED=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 [ "$ENABLED" != "true" ] && exit 0
 
-# Find active FlowRuns. If none, exit silently.
-[ -d .flow/runs ] || exit 0
+# Find active FlowRuns under the runtime directory (flow.runtime.stateDir,
+# bin/flow-runtime-dir.sh, default .flow). If none, exit silently.
+RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+[ -d "$RT/runs" ] || exit 0
 
 # How many days an ended run is kept (flow.runtime.runRetentionDays). Anything
 # but a whole number of at least 1 is the default, 30, so a 0 cannot remove
@@ -94,7 +98,7 @@ esac
 
 # What the block prints on stdout is for the user and goes to stderr; its own
 # stderr, where an unexpected traceback would land, is discarded.
-python3 - "$PLUGIN_ROOT" "$RETENTION_DAYS" <<'PYEOF' >&2 2>/dev/null
+python3 - "$PLUGIN_ROOT" "$RETENTION_DAYS" "$RT" <<'PYEOF' >&2 2>/dev/null
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -123,6 +127,7 @@ except ImportError:
 
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 active_runs = []
+RUN_YAMLS = os.path.join(glob.escape(os.path.join(sys.argv[3], "runs")), "*", "run.yaml")
 
 # Remove runs that ended (completed or cancelled) and whose run.yaml was last
 # written more than flow.runtime.runRetentionDays days ago. An active or
@@ -141,7 +146,7 @@ if retention_days < 1:
     retention_days = 30
 cutoff = time.time() - retention_days * 86400
 if shutil.rmtree.avoids_symlink_attacks:
-    for run_yaml_path in glob.glob(".flow/runs/*/run.yaml"):
+    for run_yaml_path in glob.glob(RUN_YAMLS):
         run_dir = os.path.dirname(run_yaml_path)
         try:
             ensure_repo_dir(run_dir)
@@ -156,7 +161,7 @@ if shutil.rmtree.avoids_symlink_attacks:
         except Exception:
             continue
 
-for run_yaml_path in glob.glob(".flow/runs/*/run.yaml"):
+for run_yaml_path in glob.glob(RUN_YAMLS):
     try:
         # A FIFO named run.yaml is opened at once and refused, and skipped.
         with open_regular(run_yaml_path) as f:
@@ -187,7 +192,7 @@ for run_id, run_yaml_path in active_runs:
     try:
         append_jsonl(events_path, event)
     except JournalAtomicError as e:
-        # A run found through a symlinked .flow, .flow/runs or run directory
+        # A run found through a symlinked runtime directory, runs or run directory
         # is outside the repository; the module refuses it before writing.
         print(f"flow: {e} (no session_end event for {run_id})")
         continue

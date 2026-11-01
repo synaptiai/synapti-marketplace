@@ -197,3 +197,52 @@ e2e_run_bin bin/flow-trigger-concurrency.sh issue-7-watch
 e2e_expect_equal 0 "$E2E_RC" "flow-trigger-concurrency's exit status"
 e2e_expect_line "POLICY_SOURCE=trigger"
 _no_default_dir
+
+# --- hooks (D8) --------------------------------------------------------------
+
+STOP_PAYLOAD='{"session_id":"e2e-runtime-dir","stop_hook_active":false}'
+
+# _goal_at <dir> — the fixture goal issue-42 (active, branch
+# feature/issue-42-search-fix) under <dir>/goals in the scratch repository.
+_goal_at() {
+  mkdir -p "$E2E_REPO/$1/goals"
+  cp "$GOAL_FIXTURE" "$E2E_REPO/$1/goals/issue-42.goal.yaml"
+}
+
+_flow_test_begin "Stop hook: the active goal is found under the runtime directory (D8)"
+e2e_new runtime-dir-stop-hook
+e2e_describe "flow.runtime.stateDir build/flow-runtime; active goal issue-42 under it; stopHookEnforcement warn"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+_goal_at "$RT"
+e2e_run_hook hooks/scripts/flow-goal-stop.sh "$STOP_PAYLOAD"
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_out "Active goal: issue-42"
+e2e_expect_no_out "no active flow goal"
+_no_default_dir
+
+_flow_test_begin "Stop hook: a goal under .flow is not read when the setting names another directory (D8)"
+e2e_new runtime-dir-stop-hook-elsewhere
+e2e_describe "flow.runtime.stateDir build/flow-runtime; active goal issue-42 only under .flow/goals"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+_goal_at .flow
+e2e_run_hook hooks/scripts/flow-goal-stop.sh "$STOP_PAYLOAD"
+e2e_expect_line '{"decision":"approve","reason":"no active flow goal"}'
+
+_flow_test_begin "SessionEnd: runs under the runtime directory get session_end and old ended runs are removed (D8)"
+e2e_new runtime-dir-session-end
+e2e_describe "flow.runtime.stateDir build/flow-runtime; an active run, and a completed run 40 days old, under it"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+for r in active-run:active old-run:completed; do
+  id=${r%%:*}; st=${r#*:}
+  mkdir -p "$E2E_REPO/$RT/runs/$id"
+  printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowRun\nmetadata:\n  id: %s\n  workflow: start-issue\nstate:\n  status: %s\n' "$id" "$st" > "$E2E_REPO/$RT/runs/$id/run.yaml"
+done
+python3 -c 'import os, sys, time; t = time.time() - 40 * 86400; os.utime(sys.argv[1], (t, t))' "$E2E_REPO/$RT/runs/old-run/run.yaml"
+e2e_run_hook hooks/scripts/session-end-state.sh '{"session_id":"e2e-runtime-dir"}'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_file_has "$RT/runs/active-run/events.jsonl" session_end
+e2e_expect_equal removed "$([ -e "$E2E_REPO/$RT/runs/old-run" ] && echo kept || echo removed)" "the completed run 40 days old"
+_no_default_dir
