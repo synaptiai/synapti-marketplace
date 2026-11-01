@@ -362,3 +362,31 @@ e2e_run_block commands/status.md TRIGGERS_BLOCK
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_line "STATE=disabled"
 e2e_expect_clean_edges
+
+# /flow:workflow inspect and graph receive "<subcommand> <id>" in $ARGUMENTS;
+# the id is the second word. Read whole, the path names no workflow (W1). An
+# id that is not a workflow id is refused before it reaches a path (W2).
+_flow_test_begin "/flow:workflow inspect and graph find the workflow named after the subcommand (W1, W2)"
+e2e_new workflow-inspect-id
+e2e_describe "/flow:workflow inspect start-issue: the fence prints the start-issue workflow"
+e2e_repo feature/e2e
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" 'cat "$WF_PATH"' 'inspect start-issue'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_out "id: start-issue"
+e2e_expect_clean_edges
+
+e2e_new workflow-graph-id
+e2e_describe "/flow:workflow graph debug: the fence prints the debug workflow's phases"
+e2e_repo feature/e2e
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" 'python3 - "$WF_PATH"' 'graph debug'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_out "diagnose"
+e2e_expect_clean_edges
+
+e2e_new workflow-inspect-bad-id
+e2e_describe "/flow:workflow inspect ../../etc/passwd: refused as not a workflow id"
+e2e_repo feature/e2e
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" 'cat "$WF_PATH"' 'inspect ../../etc/passwd'
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_err "not a workflow id"
+e2e_expect_clean_edges
