@@ -292,6 +292,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-goal-judge-run.sh — runs the goal judge for /flow:goal evaluate, as the Stop hook runs it
   ├── flow-judge.sh         — runs the goal judge or the verdict judge through the claude CLI with every tool disallowed
   ├── flow-trigger-schema-check.sh — validates a FlowTrigger YAML against the plugin's trigger schema
+  ├── flow-trigger-concurrency.sh — a trigger's concurrency policy and its runs in flight, for /flow:run trigger and /flow:trigger run
   ├── flow-watch-create.sh  — writes an issue-watch or branch-watch trigger and its loop prompt for /flow:watch
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
   ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink (exit 2), or says the check could not run (exit 3); needs python3 but not PyYAML

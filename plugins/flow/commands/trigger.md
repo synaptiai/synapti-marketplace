@@ -66,7 +66,17 @@ Before enabling: invoke `Skill(trigger-policy)` in `validate` mode. Refuse to en
 
 ### `/flow:trigger run <id>`
 
-Execute the target command ONCE. Does NOT schedule future execution. Run it exactly as `/flow:run trigger <id>` does (`commands/run.md`): validate the trigger with `Skill(trigger-policy)` in `enforce` mode and abort on a violation, apply `concurrency.policy`, invoke the trigger's `target.command` (for a PR watch, `/flow:address <N>`), and append a `trigger-fired` artifact to the linked decision journal.
+Execute the target command ONCE. Does NOT schedule future execution. Run it exactly as `/flow:run trigger <id>` does (`commands/run.md`): validate the trigger with `Skill(trigger-policy)` in `enforce` mode and abort on a violation, run the concurrency check below and apply its `CONCURRENCY_POLICY` to its `IN_FLIGHT` runs as `/flow:run` step 4 says, invoke the trigger's `target.command` (for a PR watch, `/flow:address <N>`) so that the FlowRun it creates records `metadata.trigger: <id>`, and append a `trigger-fired` artifact to the linked decision journal.
+
+```bash
+# TRIGGER_RUN_CONCURRENCY_BLOCK_BEGIN
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+RUN_ARGS=$(printf '%s' "$_RAW" | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')
+TRIGGER_ID=""
+case "$RUN_ARGS" in *" "*) TRIGGER_ID=${RUN_ARGS#* } ;; esac
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-trigger-concurrency.sh" "$TRIGGER_ID"
+# TRIGGER_RUN_CONCURRENCY_BLOCK_END
+```
 
 ### `/flow:trigger delete <id>`
 

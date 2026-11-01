@@ -65,7 +65,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | merge-conflict-resolution | dispatched | 552 | Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolv... |
 | pr-lifecycle | dispatched · reference-only | 599 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
 | preflight-checks | dispatched · reference-only | 543 | Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue e... |
-| run-state-management | dispatched | 580 | Manage FlowRun state at `.flow/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry, write ac... |
+| run-state-management | dispatched | 593 | Manage FlowRun state at `.flow/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry, write ac... |
 | runtime-verification | dispatched | 597 | Verify code works at runtime through build verification (mandatory), LSP diagnostics, ad-hoc verification... |
 | specification-capture | dispatched | 574 | Capture the four specification elements (non-goals, failure modes, interface contracts, risk map) for an... |
 | tdd-patterns | dispatched | 576 | Guide test-driven development through the mandatory Red-Green-Refactor cycle: a test is RED only when it... |

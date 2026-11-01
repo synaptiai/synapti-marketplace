@@ -77,7 +77,7 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 
 - **FlowGoal** — a trigger's `target.goal` field links to an active FlowGoal. The trigger's stop_conditions usually include `goal_status == achieved`.
 - **FlowWorkflow** — a trigger's `target.workflow` field declares which workflow it expects to run (e.g., `address-pr` for a PR-watch trigger).
-- **FlowRun** — every `/flow:run trigger <id>` invocation creates a new FlowRun. Repeated triggers create repeated runs; resumability still works per-run.
+- **FlowRun** — every `/flow:run trigger <id>` invocation whose target command keeps run state creates a new FlowRun, with the trigger's id in `metadata.trigger`. The concurrency check (`bin/flow-trigger-concurrency.sh <id>`) counts a run as this trigger's in flight only when that field is the trigger's id and `state.status` is `active`. Repeated triggers create repeated runs; resumability still works per-run.
 
 ## /flow:watch UX (proof of plugin constraint)
 

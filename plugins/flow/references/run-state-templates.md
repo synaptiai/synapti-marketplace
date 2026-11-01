@@ -21,6 +21,7 @@ metadata:
   workflow: ${WORKFLOW_ID}      # start-issue | debug | address-pr | review-pr | merge-pr | release
   workflow_version: 1
   goal: ${GOAL_ID:-null}        # linked FlowGoal id, or null
+  trigger: ${TRIGGER_ID}        # only when /flow:run trigger <id> or /flow:trigger run <id> started the command; omit otherwise
   created_at: '${NOW}'
 context:
   repo: ${REPO}

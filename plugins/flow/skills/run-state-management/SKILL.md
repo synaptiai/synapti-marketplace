@@ -18,7 +18,7 @@ The invoking command MUST pass:
 
 1. **Workflow id** — `start-issue | debug | address-pr | review-pr | merge-pr | release` (matches `plugins/flow/workflows/<id>.workflow.yaml`).
 2. **Run id** — `<ISO-8601-compact-timestamp>-<target-slug>`, e.g. `2026-05-20T143000Z-issue-42`.
-3. **Context** — repo, branch, issue/pr number, linked journal path, linked goal id (or `null`).
+3. **Context** — repo, branch, issue/pr number, linked journal path, linked goal id (or `null`), and the trigger id when a trigger started the command (`metadata.trigger`; omitted otherwise).
 4. **Phase** — initial phase id (`preflight` at creation; the workflow's phase order thereafter).
 
 ## Outputs
