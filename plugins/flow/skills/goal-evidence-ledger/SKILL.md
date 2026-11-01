@@ -1,6 +1,6 @@
 ---
 name: goal-evidence-ledger
-description: "Maintain the append-only evidence ledger: `.flow/runs/<run-id>/evidence/*.evidence.yaml` sidecars plus matching `.txt` raw captures, written only via `bin/flow-record-evidence.sh`. Use when goal-evaluator runs a verification command, when /flow:address captures verification evidence on a FlowRun, or when /flow:goal evaluate produces a judge report. Evidence that lives only in the transcript dies with the session; only file-backed, schema-validated sidecars prove ACs durably and satisfy the judge's Independence Protocol."
+description: "Maintain the append-only evidence ledger: `<runtime dir>/runs/<run-id>/evidence/*.evidence.yaml` sidecars plus matching `.txt` raw captures, written only via `bin/flow-record-evidence.sh`. Use when goal-evaluator runs a verification command, when /flow:address captures verification evidence on a FlowRun, or when /flow:goal evaluate produces a judge report. Evidence that lives only in the transcript dies with the session; only file-backed, schema-validated sidecars prove ACs durably and satisfy the judge's Independence Protocol."
 allowed-tools: Bash, Read, Write
 context: fork
 agent: general-purpose

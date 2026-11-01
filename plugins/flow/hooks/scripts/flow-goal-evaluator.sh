@@ -153,6 +153,8 @@ RT=""
 if [ "${1:-}" = "--runtime-dir" ] && [ -n "${2:-}" ]; then RT="$2"; fi
 [ -n "$RT" ] || RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh") || RT=""
 [ -n "$RT" ] || RT=".flow"
+# lib/goal-s1.sh passes it to flow-s1.sh.
+_GOAL_S1_RT="$RT"
 
 # Recursion guard (mirrors flow-goal-stop.sh). The judge subprocess sets
 # this env var; if we see it, we're inside the judge and the parent flow-

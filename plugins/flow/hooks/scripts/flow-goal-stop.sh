@@ -139,6 +139,8 @@ SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9_-' | head -c 64)
 # treated as absent.
 RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh") || RT=""
 [ -n "$RT" ] || RT=".flow"
+# lib/goal-s1.sh passes it to flow-s1.sh.
+_GOAL_S1_RT="$RT"
 ACTIVE_GOAL=$(python3 - "$PLUGIN_ROOT/bin" "$RT" <<'PYEOF' 2>/dev/null
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.

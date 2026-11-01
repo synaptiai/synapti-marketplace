@@ -121,6 +121,8 @@ _goal_s1_ask_all() {
   local root="$1" site="$2" rid="$3" n w="$_GOAL_S1_DIR" rc q line ns=() run=()
   shift 3
   [ -z "$rid" ] || run=(--run-id "$rid")
+  # The runtime directory the hook resolved, so the client does not ask again.
+  [ -z "$rid" ] || [ -z "${_GOAL_S1_RT:-}" ] || run+=(--runtime-dir "$_GOAL_S1_RT")
   for n in "$@"; do
     [ "${#ns[@]}" -lt "$_GOAL_S1_MAX" ] || break
     ns+=("$n")
@@ -174,6 +176,7 @@ _goal_s1_ask_each() {
   local batch=() run=()
   shift 3
   [ -z "$rid" ] || run=(--run-id "$rid")
+  [ -z "$rid" ] || [ -z "${_GOAL_S1_RT:-}" ] || run+=(--runtime-dir "$_GOAL_S1_RT")
   for n in "$@"; do
     [ "$asked" -lt "$_GOAL_S1_MAX" ] || break
     asked=$((asked + 1))

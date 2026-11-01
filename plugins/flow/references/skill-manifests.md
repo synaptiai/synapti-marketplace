@@ -54,9 +54,9 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | debugging-patterns | dispatched | 578 | Isolate root causes through structured evidence gathering, pattern analysis, hypothesis testing (max 3 at... |
 | evidence-based-development | ambient | 439 | Enforce evidence-based claims through file:line citations, P1/P2/P3 prioritization proportional to eviden... |
 | feedback-resolution | dispatched | 595 | Address PR review feedback through surgical fixes traceable to specific comments, apply the Boy Scout Rul... |
-| goal-contract-capture | dispatched | 581 | Capture a FlowGoal contract as `.flow/goals/<id>.goal.yaml` — outcome, acceptance criteria with verificat... |
+| goal-contract-capture | dispatched | 581 | Capture a FlowGoal contract as `<runtime dir>/goals/<id>.goal.yaml` — outcome, acceptance criteria with v... |
 | goal-evaluator | dispatched | 600 | Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, disp... |
-| goal-evidence-ledger | dispatched | 554 | Maintain the append-only evidence ledger: `.flow/runs/<run-id>/evidence/*.evidence.yaml` sidecars plus ma... |
+| goal-evidence-ledger | dispatched | 554 | Maintain the append-only evidence ledger: `<runtime dir>/runs/<run-id>/evidence/*.evidence.yaml` sidecars... |
 | goal-lifecycle | dispatched | 544 | Enforce the FlowGoal state machine: every `lifecycle.status` transition (draft → active → {waiting_for_us... |
 | holdout-validation | dispatched | 600 | Cross-reference agent self-review claims and evidence-bundle entries against actual file state using hidd... |
 | issue-crafting | dispatched | 425 | Craft well-structured GitHub issues with solution-agnostic outcomes, duplicate detection (open and closed... |
@@ -65,7 +65,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | merge-conflict-resolution | dispatched | 552 | Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolv... |
 | pr-lifecycle | dispatched · reference-only | 599 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
 | preflight-checks | dispatched · reference-only | 543 | Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue e... |
-| run-state-management | dispatched | 588 | Manage FlowRun state at `.flow/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry, write ac... |
+| run-state-management | dispatched | 588 | Manage FlowRun state at `<runtime dir>/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry... |
 | runtime-verification | dispatched | 597 | Verify code works at runtime through build verification (mandatory), LSP diagnostics, ad-hoc verification... |
 | specification-capture | dispatched | 574 | Capture the four specification elements (non-goals, failure modes, interface contracts, risk map) for an... |
 | tdd-patterns | dispatched | 576 | Guide test-driven development through the mandatory Red-Green-Refactor cycle: a test is RED only when it... |

@@ -35,6 +35,10 @@
 #                   when that run exists (the runtime directory is
 #                   flow.runtime.stateDir, bin/flow-runtime-dir.sh, default
 #                   .flow)
+#   --runtime-dir   the runtime directory the caller already resolved (a hook
+#                   asks once per run); a value that is absolute, starts
+#                   with ~ or has a .. component is ignored and the
+#                   directory is resolved here
 #   --ref           what the questions were about, as the caller names it
 #                   (e.g. pr:275/inline:12345, goal:issue-274/AC2): written
 #                   into the records, never sent to the provider, so a shadow
@@ -136,10 +140,10 @@ SUB="${1:-}"
 case "$SUB" in ask|ask-many) ;; *) usage "the first argument must be 'ask' or 'ask-many'" ;; esac
 shift
 
-SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""; ITEMS_FILE=""
+SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""; ITEMS_FILE=""; RT_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms|--items-file)
+    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms|--items-file|--runtime-dir)
       [ $# -ge 2 ] || usage "$1 needs a value"
       if [ "$SUB" = ask-many ]; then
         case "$1" in --state-file|--state-format|--current|--ref) usage "$1 is not an ask-many argument: each item names its own" ;; esac
@@ -155,6 +159,7 @@ while [ $# -gt 0 ]; do
         --ref) REF="$2" ;;
         --max-timeout-ms) MAX_TIMEOUT_MS="$2" ;;
         --items-file) ITEMS_FILE="$2" ;;
+        --runtime-dir) RT_ARG="$2" ;;
       esac
       shift 2 ;;
     *) usage "unknown argument: $1" ;;
@@ -262,7 +267,10 @@ TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
 # the records.
 RT=""
 if [ -n "$RUN_ID" ]; then
-  RT=$(cd "$TOP" 2>/dev/null && "${BASH:-bash}" "$SELF_DIR/flow-runtime-dir.sh") || RT=""
+  case "/$RT_ARG/" in
+    //|/[/~]*|*/../*) RT=$(cd "$TOP" 2>/dev/null && "${BASH:-bash}" "$SELF_DIR/flow-runtime-dir.sh") || RT="" ;;
+    *) RT="$RT_ARG" ;;
+  esac
 fi
 
 # Every value is passed as --name=value: a separate word that starts with a

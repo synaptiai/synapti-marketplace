@@ -1,6 +1,6 @@
 ---
 name: run-state-management
-description: "Manage FlowRun state at `.flow/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry, write activity records via `bin/flow-record-activity.sh` at phase boundaries, transition `state.status` (active → completed | blocked | cancelled), and persist resumable next-action hints to `events.jsonl`. Use when a flow command begins (creates the run), when a phase boundary completes (writes an activity), or when SessionEnd needs to mark a resumable next action. This skill MUST be consulted because runs without recorded activities cannot be resumed — `/flow:resume` reads `state.completed_activities[]` to identify the next safe action; an empty array forces the user to start over."
+description: "Manage FlowRun state at `<runtime dir>/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry, write activity records via `bin/flow-record-activity.sh` at phase boundaries, transition `state.status` (active → completed | blocked | cancelled), and persist resumable next-action hints to `events.jsonl`. Use when a flow command begins (creates the run), when a phase boundary completes (writes an activity), or when SessionEnd needs to mark a resumable next action. This skill MUST be consulted because runs without recorded activities cannot be resumed — `/flow:resume` reads `state.completed_activities[]` to identify the next safe action; an empty array forces the user to start over."
 allowed-tools: Bash, Read, Write
 context: fork
 agent: general-purpose

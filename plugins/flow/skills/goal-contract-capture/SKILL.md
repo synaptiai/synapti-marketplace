@@ -1,6 +1,6 @@
 ---
 name: goal-contract-capture
-description: "Capture a FlowGoal contract as `.flow/goals/<id>.goal.yaml` — outcome, acceptance criteria with verification commands, specification (non-goals, failure modes, interface contracts, risk map), constraints, evaluator binding, continuation policy, lifecycle. Use when /flow:start passes the Spec Validation Gate, when /flow:goal create runs, or when /flow:debug confirms a hypothesis. Acceptance criteria alone are not a contract: without an evaluator binding and boundaries the Stop hook cannot enforce evidence and goals cannot resume."
+description: "Capture a FlowGoal contract as `<runtime dir>/goals/<id>.goal.yaml` — outcome, acceptance criteria with verification commands, specification (non-goals, failure modes, interface contracts, risk map), constraints, evaluator binding, continuation policy, lifecycle. Use when /flow:start passes the Spec Validation Gate, when /flow:goal create runs, or when /flow:debug confirms a hypothesis. Acceptance criteria alone are not a contract: without an evaluator binding and boundaries the Stop hook cannot enforce evidence and goals cannot resume."
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 agent: general-purpose
 ---

@@ -28,6 +28,8 @@
 #   D8 a writer or reader keeps using .flow when the setting names another
 #      directory, so state is written where flow does not read it, or read
 #      from where it was not written
+#   D9 a hook resolves the runtime directory more than once per run (each
+#      bin script it calls asking again)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -316,3 +318,54 @@ e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" 'for IGNORE in'
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_file_has .gitignore "$RT/watch/"
 e2e_expect_file_lacks .gitignore ".flow/watch/"
+
+# --- one resolver call per hook run (D9) -------------------------------------
+
+_flow_test_begin "Stop hook with System One: records go to the run under the runtime directory, resolved once (D8, D9)"
+e2e_new runtime-dir-stop-s1
+e2e_describe "flow.runtime.stateDir build/flow-runtime; trusted goal with run run-e2e and evidence for AC2; goal.warn-evidence on against a stub; the resolver counts its calls"
+e2e_repo feature/issue-42-search-fix
+e2e_plugin_copy bin/flow-runtime-dir.sh '#!/usr/bin/env bash
+printf "call\n" >> "$E2E_DIR/resolver-calls"
+exec "$(dirname "$0")/flow-runtime-dir-real.sh" "$@"'
+cp "$E2E_PLUGIN_DIR/bin/flow-runtime-dir.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-runtime-dir-real.sh"
+_state_dir "\"$RT\""
+python3 - "$GOAL_FIXTURE" "$E2E_DIR/goal.yaml" <<'PY'
+import sys, yaml
+with open(sys.argv[1], encoding="utf-8") as f:
+    g = yaml.safe_load(f)
+g["scope"]["run_id"] = "run-e2e"
+g["objective"]["acceptance_criteria"] = [{"id": "AC2", "text": "The search results read well.", "must_pass": True,
+    "status": "pending", "evidence_ref": None, "last_evaluated_at": None, "last_result": None}]
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    yaml.safe_dump(g, f, sort_keys=False)
+PY
+e2e_run_bin bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/goal.yaml"
+cat > "$E2E_DIR/ev.yaml" <<'YAML'
+apiVersion: flow.synapti.ai/v1
+kind: FlowEvidence
+metadata:
+  id: ev-ac2
+  goal: issue-42
+  run_id: run-e2e
+  created_at: '2026-10-01T10:00:00Z'
+evidence:
+  type: command_result
+  command: 'bash tests/check-AC2.sh'
+  exit_code: 0
+  proves:
+    - AC2
+  limitations:
+    - 'checks only the default locale'
+YAML
+printf 'ok: AC2 holds\n' > "$E2E_DIR/ev.out"
+e2e_run_bin bin/flow-record-evidence.sh --run-id run-e2e --evidence-file "$E2E_DIR/ev.yaml" --raw-output "$E2E_DIR/ev.out"
+e2e_expect_equal 0 "$E2E_RC" "flow-record-evidence's exit status"
+e2e_stub_start a '{"body":{"model":"jev-1.13.0","answers":{"evidence_supports":{"type":"noul","noul":0.99}}}}'
+e2e_user_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,timeoutMs:3000,uses:{"goal.warn-evidence":"on"}}}')"
+: > "$E2E_DIR/resolver-calls"
+e2e_run_hook hooks/scripts/flow-goal-stop.sh "$STOP_PAYLOAD"
+e2e_expect_equal 0 "$E2E_RC" "the hook's exit status"
+e2e_expect_equal yes "$([ -s "$E2E_REPO/$RT/runs/run-e2e/system-one.jsonl" ] && echo yes || echo no)" "$RT/runs/run-e2e/system-one.jsonl written"
+e2e_expect_equal 1 "$(wc -l < "$E2E_DIR/resolver-calls" | tr -d ' ')" "resolver calls during the Stop hook run"
+_no_default_dir
