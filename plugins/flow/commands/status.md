@@ -274,7 +274,62 @@ else
       elif [ -f "$RUN_DIR/events.jsonl" ]; then
         ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
       fi
-      printf '%s\n' "RUN=id=$run verdict=$VERDICT activities=$ACT_COUNT"
+      # The run's workflow (metadata.workflow), phase (state.current_phase)
+      # and status (state.status), from run.yaml. `-` is a run.yaml or field
+      # that is absent; `unreadable` a run.yaml that does not parse or is not
+      # shaped as a run; `not-read` a run.yaml that is a symlink; `unknown` a
+      # reader that could not run (python3 or PyYAML missing). Each value is
+      # one token: a character outside [A-Za-z0-9._/-] becomes `_`.
+      RUN_WORKFLOW="-"; RUN_PHASE="-"; RUN_STATUS="-"
+      if [ -L "$RUN_DIR/run.yaml" ]; then
+        printf '%s\n' "refusing — $RUN_DIR/run.yaml is a symlink; runs are not read through it" >&2
+        RUN_WORKFLOW="not-read"; RUN_PHASE="not-read"; RUN_STATUS="not-read"
+      elif [ -f "$RUN_DIR/run.yaml" ]; then
+        RUN_FIELDS=$(python3 - "$RUN_DIR/run.yaml" <<'PY' 2>/dev/null
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+import re
+import yaml
+
+
+def token(v):
+    if v is None or v == "":
+        return "-"
+    return re.sub(r"[^A-Za-z0-9._/-]", "_", str(v))[:80]
+
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if data is None:
+        data = {}
+    metadata = data.get("metadata") if isinstance(data, dict) else None
+    state = data.get("state") if isinstance(data, dict) else None
+    metadata = {} if metadata is None else metadata
+    state = {} if state is None else state
+    if not isinstance(data, dict) or not isinstance(metadata, dict) or not isinstance(state, dict):
+        raise ValueError("not shaped as a run")
+except Exception:
+    sys.exit(3)
+print(token(metadata.get("workflow")), token(state.get("current_phase")), token(state.get("status")))
+PY
+        ); RUN_FIELDS_EXIT=$?
+        if [ "$RUN_FIELDS_EXIT" -eq 0 ] && [ -n "$RUN_FIELDS" ]; then
+          RUN_WORKFLOW=${RUN_FIELDS%% *}; RUN_FIELDS=${RUN_FIELDS#* }
+          RUN_PHASE=${RUN_FIELDS%% *}; RUN_STATUS=${RUN_FIELDS#* }
+        elif [ "$RUN_FIELDS_EXIT" -eq 3 ]; then
+          RUN_WORKFLOW="unreadable"; RUN_PHASE="unreadable"; RUN_STATUS="unreadable"
+        else
+          RUN_WORKFLOW="unknown"; RUN_PHASE="unknown"; RUN_STATUS="unknown"
+        fi
+      fi
+      printf '%s\n' "RUN=id=$run verdict=$VERDICT activities=$ACT_COUNT workflow=$RUN_WORKFLOW phase=$RUN_PHASE status=$RUN_STATUS"
     done
   fi
 fi
@@ -534,12 +589,12 @@ A five-line operational dashboard — the fastest read of "where am I, and what'
 
 - **Active work**: {issue/PR in flight, or "none"}
 - **Goal**: {GOAL_ID} {lifecycle} — {verifiable}/{total} ACs verified  (or "none (no active goal on this branch)", or the ⚠ degenerate / needs-attention marker when 0 verifiable ACs)
-- **Latest run**: {run id} — verdict {verdict}, {activities} activities (from the first `RUN=` line, the most recent; or "no runs")
+- **Workflow**: {workflow} @ {phase} ({status}) — run {run id}, verdict {verdict}, {activities} activities (from the first `RUN=` line, the most recent; or "no runs")
 - **Evidence**: {Findings Ledger one-liner — P1/P2/P3 per Render Rules}
 - **Next safe action**: {from Suggestions Logic}
 ```
 
-When the FlowGoal State section reports `STATE=disabled`, the Goal line renders `FlowGoals turned off (flow.goals.enabled is false)` instead. The Recent Runs block prints only each run's id, verdict and activity count; it does not read the run's workflow, phase or status, so do not show them.
+When the FlowGoal State section reports `STATE=disabled`, the Goal line renders `FlowGoals turned off (flow.goals.enabled is false)` instead. The Workflow line shows the values the `RUN=` line printed, by the rules under Recent Runs below.
 
 ### `--full`
 
@@ -587,11 +642,11 @@ The complete verbose dashboard (every section):
 {When STATE=empty: render "No FlowRuns yet."}
 {When STATE=ok: render a table of the most recent 3 runs}
 
-| Run ID | Verdict | Activities |
-|--------|---------|------------|
-| `{run}` | `{verdict}` | {activities} |
+| Run ID | Workflow | Phase | Status | Verdict | Activities |
+|--------|----------|-------|--------|---------|------------|
+| `{run}` | `{workflow}` | `{phase}` | `{status}` | `{verdict}` | {activities} |
 
-`verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read; `verdict=not-read` and `activities=not-read` mean the file is a symlink, which is not read through (the block names it on stderr). Render them differently — never collapse the second or the third into the first, or `activities=not-read` into 0.
+`verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read; `verdict=not-read` and `activities=not-read` mean the file is a symlink, which is not read through (the block names it on stderr). `workflow`, `phase` and `status` come from the run's `run.yaml` (`metadata.workflow`, `state.current_phase`, `state.status`) with the same values: `-` when the file or the field is absent, `unreadable` when the file does not parse or is not shaped as a run, `not-read` when it is a symlink, and `unknown` when the reader could not run (python3 or PyYAML missing). Render them differently — never collapse `unreadable`, `not-read` or `unknown` into `-`, or `activities=not-read` into 0.
 
 ### Active Triggers
 {When STATE=disabled: render "(Triggers turned off — `flow.triggers.enabled` is false in your settings; set it to true to turn them back on)"}
@@ -620,7 +675,7 @@ A single machine-readable JSON object for tooling/debugging — no prose, no tab
 {
   "branch": "{branch}",
   "goal": {"id": "{GOAL_ID}", "lifecycle": "{status}", "acs": {"total": N, "verifiable": M}},
-  "run": {"id": "{RUN_ID}", "verdict": "{verdict}", "activities": N},
+  "run": {"id": "{RUN_ID}", "workflow": "{workflow}", "phase": "{phase}", "status": "{status}", "verdict": "{verdict}", "activities": N},
   "findings": {"p1": N, "p2": N, "p3": N},
   "next_action": "{suggestion}"
 }

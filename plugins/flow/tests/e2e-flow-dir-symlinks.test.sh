@@ -253,8 +253,8 @@
 #      repository commits there reads a file outside the repository into the
 #      judge's prompt; or it lists and reads the sidecars through a symlinked
 #      evidence directory; or it calls a refused name a symlink when it is not
-#      a directory; or /flow:status reads a run's verdict or events through a
-#      symlinked file
+#      a directory; or /flow:status reads a run's verdict, events or run.yaml
+#      through a symlinked file
 #   L60 the walk has no end: a link loop outside the repository hangs the
 #      writer, a chain longer than the limit is followed and a directory
 #      created at its end, or a directory under a regular file is reported
@@ -1562,7 +1562,7 @@ if _want status-runs-real; then
   e2e_repo feature/issue-42-e2e
   _run_with_events
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
-  e2e_expect_equal "$(printf 'STATE=ok\nRUN=id=%s verdict=- activities=1' "$RID")" "$(_section 'Recent Runs')" "the Recent Runs section"
+  e2e_expect_equal "$(printf 'STATE=ok\nRUN=id=%s verdict=- activities=1 workflow=start-issue phase=code status=active' "$RID")" "$(_section 'Recent Runs')" "the Recent Runs section"
 fi
 
 # _run_bundle — the judge's evidence bundle for goal g-link and run $RID,
@@ -3170,24 +3170,28 @@ if _want bundle-output-ref-not-dir; then
 fi
 
 if _want status-runs-verdict-link; then
-  _flow_test_begin "/flow:status recent runs: a run's verdict and events are not read through symlinked files (L59)"
+  _flow_test_begin "/flow:status recent runs: a run's verdict, events and run.yaml are not read through symlinked files (L59)"
   e2e_new status-runs-verdict-link
-  e2e_describe "an active run with one event; its last-verdict.json is a symlink to a file outside the repository whose verdict is achieved, and its events.jsonl a symlink to a file outside it with two lines"
+  e2e_describe "an active run with one event; its last-verdict.json is a symlink to a file outside the repository whose verdict is achieved, its events.jsonl a symlink to a file outside it with two lines, and its run.yaml a symlink to a run outside it whose workflow is outside-workflow"
   e2e_repo feature/issue-42-e2e
   _run_with_events
   mkdir -p "$E2E_DIR/outside"
   printf '%s\n' '{"verdict":"achieved"}' > "$E2E_DIR/outside/verdict.json"
   printf 'one\ntwo\n' > "$E2E_DIR/outside/events.jsonl"
+  printf 'metadata:\n  workflow: outside-workflow\nstate:\n  status: completed\n  current_phase: outside\n' > "$E2E_DIR/outside/run.yaml"
   mv "$E2E_REPO/.flow/runs/$RID/events.jsonl" "$E2E_DIR/events.orig"
+  mv "$E2E_REPO/.flow/runs/$RID/run.yaml" "$E2E_DIR/run.orig"
   ln -s "$E2E_DIR/outside/verdict.json" "$E2E_REPO/.flow/runs/$RID/last-verdict.json" &&
-    ln -s "$E2E_DIR/outside/events.jsonl" "$E2E_REPO/.flow/runs/$RID/events.jsonl" ||
+    ln -s "$E2E_DIR/outside/events.jsonl" "$E2E_REPO/.flow/runs/$RID/events.jsonl" &&
+    ln -s "$E2E_DIR/outside/run.yaml" "$E2E_REPO/.flow/runs/$RID/run.yaml" ||
     _flow_assert_fail "$E2E_NAME: could not plant the run files"
-  printf 'planted: .flow/runs/%s/last-verdict.json and events.jsonl -> files in <scratch>/%s/outside\n' "$RID" "$E2E_NAME" >> "$E2E_ARTIFACT"
+  printf 'planted: .flow/runs/%s/last-verdict.json, events.jsonl and run.yaml -> files in <scratch>/%s/outside\n' "$RID" "$E2E_NAME" >> "$E2E_ARTIFACT"
   BEFORE=$(_outside_state)
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/status.md" "$STATUS_MD_MARK"
-  e2e_expect_equal "$(printf 'STATE=ok\nRUN=id=%s verdict=not-read activities=not-read' "$RID")" "$(_section 'Recent Runs')" "the Recent Runs section"
+  e2e_expect_equal "$(printf 'STATE=ok\nRUN=id=%s verdict=not-read activities=not-read workflow=not-read phase=not-read status=not-read' "$RID")" "$(_section 'Recent Runs')" "the Recent Runs section"
   e2e_expect_err "refusing — .flow/runs/$RID/last-verdict.json is a symlink; $RUNS_NOTE"
   e2e_expect_err "refusing — .flow/runs/$RID/events.jsonl is a symlink; $RUNS_NOTE"
+  e2e_expect_err "refusing — .flow/runs/$RID/run.yaml is a symlink; $RUNS_NOTE"
   _expect_untouched
 fi
 

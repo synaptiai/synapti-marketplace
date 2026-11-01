@@ -224,6 +224,40 @@ if command -v jq >/dev/null 2>&1; then
   assert_match 'RUN=id=r-none verdict=-' "$VOUT2" "no verdict file at all keeps the empty default"
   assert_match 'RUN=id=r-ok verdict=achieved' "$VOUT2" "a readable verdict is rendered verbatim"
   assert_not_contains "unreadable" "$VOUT2" "nothing readable is reported unreadable"
+
+  # Ways the run.yaml fields can be wrong: absent fields, or no run.yaml, read
+  # as a value; an unparseable or wrong-shaped run.yaml read as absent; a
+  # reader that cannot run (python3 or PyYAML missing) read as either; a value
+  # with a space or `=` splitting the KEY=value line.
+  _flow_test_begin "status.md: each run's workflow, phase and status come from its run.yaml"
+  VW3=$(_sdu_workdir); mkdir -p "$VW3/.flow/runs/r-ok" "$VW3/.flow/runs/r-none" "$VW3/.flow/runs/r-bad"
+  printf 'metadata:\n  id: r-ok\n  workflow: start-issue\nstate:\n  status: active\n  current_phase: code\n' > "$VW3/.flow/runs/r-ok/run.yaml"
+  printf 'state: [unclosed\n' > "$VW3/.flow/runs/r-bad/run.yaml"
+  VOUT3=$(cd "$VW3" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RUNS_BLOCK" 2>/dev/null)
+  assert_contains "RUN=id=r-ok verdict=- activities=0 workflow=start-issue phase=code status=active" "$VOUT3" "a readable run.yaml gives its workflow, phase and status"
+  assert_contains "RUN=id=r-none verdict=- activities=0 workflow=- phase=- status=-" "$VOUT3" "a run with no run.yaml shows - for each"
+  assert_contains "RUN=id=r-bad verdict=- activities=0 workflow=unreadable phase=unreadable status=unreadable" "$VOUT3" "an unparseable run.yaml is unreadable, not absent"
+
+  _flow_test_begin "status.md: a wrong-shaped run.yaml is unreadable, a missing field is -, and a value stays one token"
+  VW4=$(_sdu_workdir); mkdir -p "$VW4/.flow/runs/r-shape" "$VW4/.flow/runs/r-partial" "$VW4/.flow/runs/r-odd"
+  printf 'metadata:\n  workflow: debug\nstate: [active]\n' > "$VW4/.flow/runs/r-shape/run.yaml"
+  printf 'metadata:\n  workflow: review-pr\nstate:\n  status: blocked\n' > "$VW4/.flow/runs/r-partial/run.yaml"
+  printf 'metadata:\n  workflow: "a b=c"\nstate:\n  status: completed\n  current_phase: verify\n' > "$VW4/.flow/runs/r-odd/run.yaml"
+  VOUT4=$(cd "$VW4" && CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RUNS_BLOCK" 2>/dev/null)
+  assert_contains "RUN=id=r-shape verdict=- activities=0 workflow=unreadable phase=unreadable status=unreadable" "$VOUT4" "a state that is not a mapping is unreadable"
+  assert_contains "RUN=id=r-partial verdict=- activities=0 workflow=review-pr phase=- status=blocked" "$VOUT4" "a run with no current_phase shows phase=-"
+  assert_contains "RUN=id=r-odd verdict=- activities=0 workflow=a_b_c phase=verify status=completed" "$VOUT4" "a space or = in a value becomes _"
+
+  _flow_test_begin "status.md: a run.yaml reader that cannot run leaves the fields unknown"
+  VW5=$(_sdu_workdir); mkdir -p "$VW5/.flow/runs/r-ok" "$VW5/stub"
+  printf 'metadata:\n  workflow: start-issue\nstate:\n  status: active\n' > "$VW5/.flow/runs/r-ok/run.yaml"
+  # The section's directory check runs python3 too, and with every python3
+  # failing the section stops before any run. This one fails only for the
+  # run.yaml reader (python3 - <path to a run.yaml>).
+  printf '#!/bin/sh\n[ "$1" = - ] && case "$2" in *run.yaml) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v python3)" > "$VW5/stub/python3"
+  chmod +x "$VW5/stub/python3"
+  VOUT5=$(cd "$VW5" && PATH="$VW5/stub:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" bash "$RUNS_BLOCK" 2>/dev/null)
+  assert_contains "RUN=id=r-ok verdict=- activities=0 workflow=unknown phase=unknown status=unknown" "$VOUT5" "a dead reader is neither absent nor unreadable"
 else
   _flow_test_begin "jq prerequisite for the Recent Runs verdict"
   _flow_assert_pass "SKIP: jq not installed"
