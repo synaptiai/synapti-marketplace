@@ -152,6 +152,9 @@ case "$args" in
   "issue view "*) n=${args#issue view }; f=issue-${n%% *} ;;
   "repo view --json "*) f=repo ;;
   "pr list --state open --limit 100 --json number,author,assignees") f=prs ;;
+  # /flow:pr's existing-PR check: open-prs-<head>, a / in the branch as _.
+  "pr list --head "*" --state open --json number,url")
+    h=${args#pr list --head }; h=${h%% *}; f=open-prs-$(printf '%s' "$h" | tr / _) ;;
   "api repos/"*"/issues/"*"/comments") n=${args%/comments}; f=comments-${n##*/} ;;
   "api repos/"*"/pulls/"*"/reviews") n=${args%/reviews}; f=reviews-${n##*/} ;;
   "api repos/"*"/pulls/comments/"*) f=pull-comment-${args##*/} ;;
@@ -179,6 +182,8 @@ case "$args" in
     h=${args#*--head }; h=${h%% *}; b=${args#*--base }; b=${b%% *}
     f=prs-all-$(printf '%s' "$h" | tr / _)-$(printf '%s' "$b" | tr / _) ;;
   "api repos/"*"/compare/"*) f=compare-${args#*/compare/} ;;
+  # bin/flow-review-exceptions.sh resolves its ref: commit-<ref>, a / as _.
+  "api repos/"*"/commits/"*) f=commit-$(printf '%s' "${args#*/commits/}" | tr / _) ;;
   # /flow:release asks whether a tag has a GitHub release: release-<tag>.
   "api repos/"*"/releases/tags/"*) f=release-${args##*/releases/tags/} ;;
   # and creates one: release-create-<tag>, the release's JSON.

@@ -39,8 +39,9 @@ true
 
 ```!
 # Output: `###`-headed sections + KEY=value per
-# `references/command-output-format.md`. STATE=blocked when on default branch
-# (cannot create a PR from main); STATE=ok otherwise.
+# `references/command-output-format.md`. Branch Context reports STATE=blocked
+# on the default branch (cannot create a PR from main); Branch Delta reports
+# STATE=blocked when the branch has no commits ahead of the default branch.
 
 printf '%s\n' "### Branch Context"
 BRANCH=$(git branch --show-current 2>/dev/null)
@@ -57,19 +58,38 @@ else
   # Section: Branch Delta vs Default
   printf '%s\n' ""
   printf '%s\n' "### Branch Delta"
-  printf '%s\n' "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || printf '%s\n' "0")"
+  # A branch with no commits ahead of the default branch has nothing to open a
+  # pull request for: STATE=blocked, and /flow:pr stops. A count git could not
+  # read (the default branch has no local ref) is not a zero: it is reported
+  # as unavailable rather than stopping a branch that may have commits.
+  # The diff stat below is printed only when there are commits to show, so the
+  # section carries one STATE line.
+  DELTA_OK=0
+  if COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null) && [ -n "$COMMITS_AHEAD" ]; then
+    printf '%s\n' "COMMITS_AHEAD=$COMMITS_AHEAD"
+    [ "$COMMITS_AHEAD" = "0" ] || DELTA_OK=1
+    if [ "$COMMITS_AHEAD" = "0" ]; then
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "ERROR=\"No commits ahead of $DEFAULT_BRANCH: there is nothing to open a pull request for\""
+    fi
+  else
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "ERROR=\"Cannot count the commits ahead of $DEFAULT_BRANCH: git rev-list $DEFAULT_BRANCH..HEAD failed (is $DEFAULT_BRANCH fetched?)\""
+  fi
   # The porcelain count is read once and used for both the count and the
   # gate on the UNCOMMITTED_LINE listing.
   UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
   printf '%s\n' "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
   [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
-  printf '%s\n' ""
-  printf '%s\n' "#### Diff stat"
-  DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
-  if [ -z "$DIFF_STAT" ]; then
-    printf '%s\n' "STATE=empty"
-  else
-    printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
+  if [ "$DELTA_OK" = 1 ]; then
+    printf '%s\n' ""
+    printf '%s\n' "#### Diff stat"
+    DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
+    if [ -z "$DIFF_STAT" ]; then
+      printf '%s\n' "STATE=empty"
+    else
+      printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
+    fi
   fi
 
   # Section: Issue Context (extracted from branch name `feature/issue-N-...`)
@@ -240,6 +260,7 @@ true
 
 **Skill invocation:** `Skill(capability-discovery)` — detect quality commands.
 
+If either `### Branch Context` or `### Branch Delta` reports `STATE=blocked`, stop: show the `ERROR=` line and do not continue to Phase 2. A `### Branch Delta` that reports `STATE=unavailable` could not count the commits ahead; fetch the default branch (`git fetch origin <default>:<default>`) and run `/flow:pr` again, or confirm with `git log` that the branch has commits of its own before going on.
 If uncommitted changes exist, offer to run `/flow:commit` first.
 If PR already exists, offer to update instead.
 
