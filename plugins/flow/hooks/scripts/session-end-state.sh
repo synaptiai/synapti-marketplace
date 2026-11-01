@@ -137,7 +137,8 @@ RUN_YAMLS = os.path.join(glob.escape(os.path.join(sys.argv[3], "runs")), "*", "r
 # git cannot say whether the directory is tracked, it is kept. The run directory is checked with
 # ensure_repo_dir (no name below the repository top may be a symlink), then
 # removed with shutil.rmtree, which does not follow symlinks inside it on a
-# platform where it can avoid them, and is skipped where it cannot.
+# platform where it can avoid them, and is skipped where it cannot. A run
+# that cannot be removed is named on one line, with the reason.
 import shutil
 import subprocess
 import time
@@ -164,9 +165,15 @@ if shutil.rmtree.avoids_symlink_attacks:
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
             if tracked.returncode != 0 or tracked.stdout.strip():
                 continue
-            shutil.rmtree(run_dir)
         except Exception:
             continue
+        # A removal that fails part way can leave the run directory without
+        # its run.yaml, and nothing prunes it again: say so.
+        try:
+            shutil.rmtree(run_dir)
+        except OSError as e:
+            reason = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in str(e.strerror or e))
+            print("flow: could not remove ended run %s: %s" % (os.path.basename(run_dir), reason))
 
 for run_yaml_path in glob.glob(RUN_YAMLS):
     try:

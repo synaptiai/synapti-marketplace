@@ -20,6 +20,9 @@
 #   K6 a run.yaml that cannot be read or parsed is treated as ended
 #   K7 runs are removed while flow.runtime.enabled is false, when the hook
 #      otherwise does nothing with runs
+#   K9 an ended run that cannot be removed (a file inside it cannot be
+#      deleted) fails silently, so a run directory left half removed, perhaps
+#      without its run.yaml and never pruned again, goes unreported
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -144,3 +147,21 @@ e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_equal kept "$(_exists 2026-07-01T000000Z-issue-1)" "the committed run"
 e2e_expect_equal removed "$(_exists 2026-07-02T000000Z-issue-2)" "the untracked run"
 e2e_expect_equal "" "$(cd "$E2E_REPO" && git status --porcelain -- .flow/runs)" "git status of .flow/runs (no deleted file)"
+
+_flow_test_begin "SessionEnd: an ended run that cannot be removed is reported (K9)"
+if [ "$(id -u)" -eq 0 ]; then
+  _flow_assert_pass "SKIP: run as root, which removes a file whatever its directory's mode"
+else
+  e2e_new retention-undeletable
+  e2e_describe "a completed run 60 days old holding a file inside a directory that cannot be written (mode 555)"
+  e2e_repo feature/issue-7-retention
+  _run 2026-08-01T000000Z-issue-1 completed 60
+  mkdir -p "$E2E_REPO/.flow/runs/2026-08-01T000000Z-issue-1/activities"
+  printf 'x\n' > "$E2E_REPO/.flow/runs/2026-08-01T000000Z-issue-1/activities/001-start.yaml"
+  chmod 555 "$E2E_REPO/.flow/runs/2026-08-01T000000Z-issue-1/activities"
+  e2e_run_hook "$HOOK" "$PAYLOAD"
+  chmod 755 "$E2E_REPO/.flow/runs/2026-08-01T000000Z-issue-1/activities"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_err "flow: could not remove ended run 2026-08-01T000000Z-issue-1: "
+  e2e_expect_err_lacks "Traceback"
+fi
