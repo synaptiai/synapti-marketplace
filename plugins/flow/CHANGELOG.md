@@ -51,8 +51,7 @@ and no script reads.
   flow's `git` wrapper, and with `confirm` the script stops before the push
   and names it to run as its own command.
 - The force-push guard refuses a git command that carries a force flag and
-  a backquoted substitution in any word; it looked only for `$` before. A
-  plain variable after a literal subcommand is allowed (see Fixed).
+  a backquoted substitution in any word; it looked only for `$` before.
 - `/flow:goal status` shows the active goal of the current branch.
 - `/flow:status` Recent Runs shows each run's workflow, phase and status, and
   bare `/flow` prints uncommitted changes, commits ahead and conflicts.
@@ -69,8 +68,10 @@ and no script reads.
 - `/flow:pr`'s push, `/flow:release`'s release pull request and tag push,
   and `/flow:review`'s checkout of another author's pull request were refused
   by flow's own force-push or destructive-command guard before they ran.
-  The force-push guard reads a variable after a literal git subcommand as an
-  argument (`git worktree remove --force "$TREE"`).
+  The force-push guard reads a variable as an argument when the word right
+  after `git` is `worktree`, `branch` or `tag`, which never run their
+  arguments as a command (`git worktree remove --force "$TREE"`). After any
+  other subcommand, or after a global option, a variable is still refused.
 - `/flow:start`'s specification manifest block had an unclosed quote.
 - `/flow:workflow inspect` and `graph` read the subcommand as part of the
   workflow id and never found a workflow.

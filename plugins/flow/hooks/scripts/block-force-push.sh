@@ -217,7 +217,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
   #
   # A force flag on `git` with no `push` — `git branch -f` — is none of these
   # and stays allowed, because no push is being forced.
-  function judge(seg,   W, n, i, w, has, ispush, v, nm, ispush_word, sc) {
+  function judge(seg,   W, n, i, w, has, ispush, v, nm, ispush_word) {
     n = tokenize(seg, W)
     has = 0; ispush = 0; ispush_word = 0
     for (i = 1; i <= n; i++) {
@@ -266,28 +266,21 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       # carries its own force flag and forces no push, so it is accounted for.
       # If the subcommand is not a literal at all the guard cannot see what it
       # is, and a force flag beside it is not something it can account for.
-      # The subcommand is the first word after git that is not a global
-      # option; -C, -c, --git-dir, --work-tree, --namespace, --config-env and
-      # --super-prefix take the next word as their value. An expansion at or
-      # before it may name any subcommand, push included.
-      sc = 0
-      for (i = 2; i <= n; i++) {
-        if (W[i] ~ /\$/ || index(W[i], BT)) { push_word = 1; risky = 1; return }
-        if (W[i] == "-C" || W[i] == "-c" || W[i] == "--git-dir" || W[i] == "--work-tree" ||
-            W[i] == "--namespace" || W[i] == "--config-env" || W[i] == "--super-prefix") {
-          i++
-          if (i <= n && (W[i] ~ /\$/ || index(W[i], BT))) { push_word = 1; risky = 1; return }
-          continue
-        }
-        if (W[i] ~ /^-/) continue
-        sc = i; break
-      }
-      # After a literal subcommand, a parameter expansion (`"$TREE"`) is an
-      # argument: word splitting cannot turn it into another subcommand. A
-      # command substitution can run anything, so it stays unaccounted for.
-      if (sc > 0) {
-        for (i = sc + 1; i <= n; i++) {
+      # A variable is read as an argument only right after one of the
+      # subcommands that never run their arguments as a command: worktree,
+      # branch and tag, as the word straight after git. Any global option
+      # before the subcommand may take the next word as its value, so the
+      # subcommand cannot be read from the words; and other subcommands run
+      # their arguments (rebase -x, bisect run, submodule foreach). Both keep
+      # the rule that any expansion is unaccounted for. A command
+      # substitution in any word stays unaccounted for: it runs a command.
+      if (n >= 2 && (W[2] == "worktree" || W[2] == "branch" || W[2] == "tag")) {
+        for (i = 3; i <= n; i++) {
           if (W[i] ~ /\$\(/ || index(W[i], BT)) { push_word = 1; risky = 1; return }
+        }
+      } else {
+        for (i = 2; i <= n; i++) {
+          if (W[i] ~ /\$/ || index(W[i], BT)) { push_word = 1; risky = 1; return }
         }
       }
       # git runs an alias as the subcommand it names, and `-c alias.p=push`
