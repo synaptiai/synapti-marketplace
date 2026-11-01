@@ -613,7 +613,7 @@
               "type": "integer",
               "default": 30,
               "minimum": 1,
-              "description": "Days an ended FlowRun is kept. At the end of each session the SessionEnd hook removes runs under .flow/runs/ whose run.yaml says completed or cancelled and was last written more than this many days ago. Active and blocked runs are never removed. A value that is not a whole number of at least 1 means 30."
+              "description": "Days an ended FlowRun is kept. At the end of each session the SessionEnd hook removes runs under .flow/runs/ whose run.yaml says completed or cancelled and was last written more than this many days ago. Active and blocked runs, and runs git tracks, are never removed. A value that is not a whole number of at least 1 means 30."
             }
           },
           "additionalProperties": false

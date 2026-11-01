@@ -131,12 +131,15 @@ RUN_YAMLS = os.path.join(glob.escape(os.path.join(sys.argv[3], "runs")), "*", "r
 
 # Remove runs that ended (completed or cancelled) and whose run.yaml was last
 # written more than flow.runtime.runRetentionDays days ago. An active or
-# blocked run, a run.yaml that cannot be read or parsed, and anything reached
-# through a symlink are left alone. The run directory is checked with
+# blocked run, a run.yaml that cannot be read or parsed, a run directory that
+# holds a file git tracks (a team that commits its runs would otherwise see
+# them deleted), and anything reached through a symlink are left alone. When
+# git cannot say whether the directory is tracked, it is kept. The run directory is checked with
 # ensure_repo_dir (no name below the repository top may be a symlink), then
 # removed with shutil.rmtree, which does not follow symlinks inside it on a
 # platform where it can avoid them, and is skipped where it cannot.
 import shutil
+import subprocess
 import time
 try:
     retention_days = int(sys.argv[2])
@@ -156,6 +159,10 @@ if shutil.rmtree.avoids_symlink_attacks:
                 data = yaml.safe_load(f) or {}
             status = (data.get("state") or {}).get("status")
             if status not in ("completed", "cancelled"):
+                continue
+            tracked = subprocess.run(["git", "ls-files", "--", run_dir],
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
+            if tracked.returncode != 0 or tracked.stdout.strip():
                 continue
             shutil.rmtree(run_dir)
         except Exception:

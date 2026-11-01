@@ -92,7 +92,7 @@ Every `.flow/` mutation that has long-term significance ALSO writes a journal ma
 1. **Not a database.** No queries beyond `glob.glob` + per-file YAML parsing. Adding query semantics is out of scope.
 2. **Not a CI artifact store.** Use existing CI artifact mechanisms; `.flow/runs/` is for local resumability.
 3. **Not Temporal.** No exactly-once execution. No deterministic replay. Resume reads `state.completed_activities[]` and tells the user where to pick up — the user decides whether to re-run partially-completed phases.
-4. **Not a long-term archive.** At the end of each session the SessionEnd hook removes runs that ended (`completed` or `cancelled`) and whose `run.yaml` was last written more than `flow.runtime.runRetentionDays` days ago (default 30; a value that is not a whole number of at least 1 means 30). Active and blocked runs are kept, and so is a run whose `run.yaml` cannot be parsed. Nothing is removed while `flow.runtime.enabled` is false, or through a symlinked `.flow`, `.flow/runs` or run directory.
+4. **Not a long-term archive.** At the end of each session the SessionEnd hook removes runs that ended (`completed` or `cancelled`) and whose `run.yaml` was last written more than `flow.runtime.runRetentionDays` days ago (default 30; a value that is not a whole number of at least 1 means 30). Active and blocked runs are kept, and so is a run whose `run.yaml` cannot be parsed and any run directory that holds a file git tracks, so a team that commits its runs never sees them deleted. Nothing is removed while `flow.runtime.enabled` is false, or through a symlinked `.flow`, `.flow/runs` or run directory.
 
 ## Resumability
 

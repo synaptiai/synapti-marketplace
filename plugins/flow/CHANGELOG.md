@@ -17,8 +17,9 @@ and no script reads.
 
 - `flow.runtime.runRetentionDays` takes effect: at the end of each session the
   SessionEnd hook removes runs under `.flow/runs/` that ended (completed or
-  cancelled) more than that many days ago (default 30). Active and blocked
-  runs are kept, and nothing is removed through a symlink or while
+  cancelled) more than that many days ago (default 30). This is on by
+  default. Active and blocked runs are kept, a run directory that holds a
+  file git tracks is kept, and nothing is removed through a symlink or while
   `flow.runtime.enabled` is false.
 - `closedLoop.enabled`, `closedLoop.requireRuntimeVerification` and
   `visualVerification.enabled` take effect in `/flow:start` and `/flow:pr`:

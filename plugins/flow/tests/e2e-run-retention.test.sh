@@ -128,3 +128,19 @@ _settings '{"flow":{"runtime":{"enabled":false}}}'
 _run 2026-06-01T000000Z-issue-1 completed 60
 e2e_run_hook "$HOOK" "$PAYLOAD"
 e2e_expect_equal kept "$(_exists 2026-06-01T000000Z-issue-1)" "the completed run 60 days old"
+
+# K8: a team that commits .flow/runs/ would see a removed run as a deleted
+# file in git. A run directory that holds a file git tracks is never removed.
+_flow_test_begin "SessionEnd: a run that git tracks is never removed (K8)"
+e2e_new retention-tracked
+e2e_describe "two completed runs 60 days old; one is committed to git, the other is not"
+e2e_repo feature/issue-7-retention
+_run 2026-07-01T000000Z-issue-1 completed 60
+_run 2026-07-02T000000Z-issue-2 completed 60
+(cd "$E2E_REPO" && git add .flow/runs/2026-07-01T000000Z-issue-1 && git -c user.name=e2e -c user.email=e2e@example.invalid commit -q -m "track a run")
+python3 -c 'import os, time; t = time.time() - 60 * 86400; os.utime("'"$E2E_REPO"'/.flow/runs/2026-07-01T000000Z-issue-1/run.yaml", (t, t))'
+e2e_run_hook "$HOOK" "$PAYLOAD"
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_equal kept "$(_exists 2026-07-01T000000Z-issue-1)" "the committed run"
+e2e_expect_equal removed "$(_exists 2026-07-02T000000Z-issue-2)" "the untracked run"
+e2e_expect_equal "" "$(cd "$E2E_REPO" && git status --porcelain -- .flow/runs)" "git status of .flow/runs (no deleted file)"
