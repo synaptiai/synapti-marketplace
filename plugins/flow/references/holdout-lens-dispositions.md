@@ -20,7 +20,7 @@ Path A's A.4 consolidator treats holdout findings differently from agent finding
 | Both lenses raise the same finding (same file, line ±2, priority ±1) | `consensus` (HIGH confidence) |
 | Only one lens raises the finding | `unchallenged` (MEDIUM confidence) — the lens divergence is itself a signal that the claim is ambiguously evidenced |
 
-Holdout findings NEVER receive `validated`, `refined`, or `kept` dispositions because those are outputs of the A.3 challenge round, which holdout findings do not participate in. Adversarial challenge (AGREE/DISAGREE/REFINE) exists for subjective judgment about priority and severity. Holdout findings are objective claim-verification — the file state is the arbiter, not reviewer opinion. Asking a challenger to DISAGREE with "the file does not contain test X" produces either vacuous AGREE responses or DISAGREE responses with no basis. See `commands/review.md` A.1 and `skills/team-coordination/SKILL.md` Phase 3 for the full rationale.
+Holdout findings NEVER receive `validated`, `refined`, or `kept` dispositions because those are outputs of the A.3 challenge round, which holdout findings do not participate in. Adversarial challenge (AGREE/DISAGREE/REFINE) exists for subjective judgment about priority and severity. Holdout findings are objective claim-verification — the file state is the arbiter, not reviewer opinion. Asking a challenger to DISAGREE with "the file does not contain test X" produces either vacuous AGREE responses or DISAGREE responses with no basis. See `commands/review.md` A.1 and `references/paired-review-protocol.md` (Phase 1) for the full rationale.
 
 ## Path B
 

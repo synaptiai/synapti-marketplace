@@ -53,7 +53,7 @@ None of the current contracts use `type: [...]`, so the gap is latent today. If 
 
 The script tries `import jsonschema` first for full Draft-07 validation. If the package is not installed, it falls back to a shape-check implemented with the standard `json` and `re` modules — covers the keywords listed above. The fallback prints a stderr NOTE so callers (and CI) can see when stricter validation was skipped.
 
-Producers MUST validate inputs **before** invoking a skill. The pattern:
+To check a payload by hand before invoking a skill:
 
 ```bash
 PAYLOAD='{"selfReviewFindings": [...], "evidenceBundle": [...], "fileList": [...]}'
@@ -93,9 +93,11 @@ The contracts above govern *runtime payloads* a skill receives. The skill itself
 | Key | Type | Required | Purpose |
 |---|---|---|---|
 | `name` | string | yes | Stable skill identifier. Kebab-case by convention. Used by orchestration code (`Skill(<name>)`), and by `plugins/flow/schemas/<name>/` (the shipped schema). |
-| `description` | string | yes | One-line trigger description. The string Claude sees when deciding whether to invoke. Lead with the artifact and include either a "MUST be consulted" or "Use when…" clause (per the description-trigger memory at `feedback_skill_descriptions`). |
+| `description` | string | yes | One-line trigger description. The string Claude sees when deciding whether to invoke. Lead with the artifact and include either a "MUST be consulted" or "Use when…" clause. |
 | `allowed-tools` | string list | no | Tool whitelist. When present, restricts the skill to a specific tool set (e.g. `[Read, Grep, Bash(grep:*), Bash(rg:*)]`). Omit to inherit the parent's tool budget. Narrowing is preferred over expanding. |
 | `disable-model-invocation` | boolean | no | When `true`, Claude Code will NOT autonomously invoke this skill — only an orchestrator (a command's prompt) can call it via `Skill(<name>)`. Use for reference docs that are not standalone entry points (e.g. `pr-lifecycle`, `preflight-checks`). |
+| `agent` | string | no | The subagent type the skill runs as. `bin/flow-load-skills.sh` treats an `agent:` line the same way as `context: fork` (below). |
+| `context` | string | no | `fork` runs the skill in a forked subagent context. `bin/flow-load-skills.sh` reads it: a skill with `context: fork` (or an `agent:` line) is loaded into a command as its `## Contract` section only, and its full body loads when the command invokes `Skill(<name>)`. A skill with neither is inlined whole. |
 | `paths` | string list | no | Restricts the skill's *automatic* invocation to files matching one or more glob patterns. Skills with `paths:` only fire when the conversation context references a matching file. Use when a skill applies only to a specific subsystem (e.g. `tdd-patterns: paths: ["**/*test*", "**/spec/**"]`). |
 
 ### Schema rules
@@ -103,14 +105,13 @@ The contracts above govern *runtime payloads* a skill receives. The skill itself
 - `name` and `description` are required. A SKILL.md without both will not register.
 - `disable-model-invocation: true` and `paths: [...]` are mutually compatible: `disable-model-invocation` blocks model-side invocation entirely, `paths` narrows the *file context* under which it would otherwise fire.
 - Unknown frontmatter keys are silently ignored by Claude Code. They do not error — but they also have no effect. Contributors adding fields should either document them here or remove them.
-- The `description` field is matched by the trigger model character-for-character; cosmetic edits (rewording, capitalization) materially change invocation rate. The `feedback_skill_descriptions` memory entry captures the empirical impact.
+- The `description` field is matched by the trigger model character-for-character; cosmetic edits (rewording, capitalization) materially change invocation rate.
 
 ### Conventional fields not in this schema
 
 These appear in some plugins but are NOT recognized by Claude Code itself — they are documentation-only for human contributors:
 
 - `version`, `last-updated`, `author`, `tags` — all unrecognized; either inline them in the body or delete.
-- `agent: <name>` — used by some compound-engineering skills to declare a preferred sub-agent. Honored by orchestration code that reads it; not by Claude Code's native skill resolver.
 
 When in doubt: if the key isn't in the table above, it's probably unrecognized. Document it inline if it carries meaning to the orchestrator that uses the skill.
 

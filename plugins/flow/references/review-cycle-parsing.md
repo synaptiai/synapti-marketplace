@@ -4,7 +4,7 @@ Reference document for `skills/code-review-methodology/SKILL.md` § Review cycle
 
 ## Counting cycles
 
-Count CHANGES_REQUESTED reviews on the PR to determine the cycle number. The `FLOW_REVIEW_CYCLE:N` marker in each review body gives the same number authoritatively when present.
+The cycle number is one more than the number of prior `FLOW_REVIEW_CYCLE:N` markers in the PR's review bodies. Do not count CHANGES_REQUESTED reviews: a review of your own pull request is posted as a comment and never carries that state.
 
 ## Parsing prior markers
 

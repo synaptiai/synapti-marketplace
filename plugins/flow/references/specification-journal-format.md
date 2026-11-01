@@ -1,6 +1,6 @@
 # Specification Journal Format (specification-capture output contract)
 
-Reference document. The canonical shape of the `## Specification` section that the `specification-capture` skill writes to `.decisions/issue-{N}.md`, the return payload it hands back to the invoking command, and the manifest metadata the invoker emits. Producers (`skills/specification-capture/SKILL.md`) and consumers (`commands/start.md` Phase 1 gates and Phase 2 planner dispatch, `commands/design.md`, `commands/brainstorm.md`, `agents/implementation-planner.md`, the Phase 4 evidence-bundle producer, `skills/goal-contract-capture/SKILL.md`) cite this file so the four-element check runs against a published shape rather than an implicit convention.
+Reference document. The canonical shape of the `## Specification` section that the `specification-capture` skill writes to `<journal dir>/issue-{N}.md` (the journal dir being what `bin/journal-dir.sh` prints; default `.decisions`), the return payload it hands back to the invoking command, and the manifest metadata the invoker emits. Producers (`skills/specification-capture/SKILL.md`) and consumers (`commands/start.md` Phase 1 gates and Phase 2 planner dispatch, `commands/design.md`, `commands/brainstorm.md`, `agents/implementation-planner.md`, the Phase 4 evidence-bundle producer, `skills/goal-contract-capture/SKILL.md`) cite this file so the four-element check runs against a published shape rather than an implicit convention.
 
 ## The four elements
 
@@ -11,7 +11,7 @@ Reference document. The canonical shape of the `## Specification` section that t
 | 3 | `### Interface contracts` | Schemas, signatures, shapes it must honor | task `Interface contract:` |
 | 4 | `### Risk map` | Where the core logic is most likely to be subtly wrong, and the check that tells right from wrong | task `Risk areas:`, task `Test plan:`, bundle `### Risk map coverage` |
 
-Elements 1-3 are lists. Element 4 is a table. Every element subsection MUST be present and non-empty; `none — {one-clause reason}` is the only permitted empty value for a failure-mode category, and `disabled — specFirst.riskMap=false` is the only permitted non-table value for the risk map.
+Elements 1-3 are lists. Element 4 is a table. For `/flow:start`, every element subsection MUST be present and non-empty; `/flow:design` and `/flow:brainstorm` capture the subset in the per-invoker scope of `skills/specification-capture/SKILL.md` (design: non-goals and interface contracts, risk map recommended; brainstorm: non-goals). In any captured subsection, `none — {one-clause reason}` is the only permitted empty value for a failure-mode category, and `disabled — specFirst.riskMap=false` is the only permitted non-table value for the risk map.
 
 ## Section shape
 
@@ -69,13 +69,13 @@ Example (rate-limited login, issue #142):
 
 ## Return payload
 
-The skill returns this shape to the invoking command. It MUST match the journal contents byte-for-byte under each subsection heading (the invoker's verification gate 3 compares them):
+The skill returns this shape to the invoking command. It MUST match the journal contents byte-for-byte under each subsection heading (`/flow:start`'s verification check 4 compares them):
 
 ```markdown
 ## Captured Specification
 
 **Issue**: #{N}
-**Journal**: .decisions/issue-{N}.md
+**Journal**: <journal dir>/issue-{N}.md
 **Source**: {extracted-from-issue | user-confirmed | mixed}
 
 ### Non-goals
@@ -108,7 +108,7 @@ The two must agree, and a reader is the dangerous one to get wrong. A reader tha
 
 ## Staleness
 
-The journal is the source of truth. A journal section is reused verbatim only when all four subsections are present AND the issue has not been updated since the journal was last written (`git log -1 --format=%cd .decisions/issue-{N}.md` versus the issue's `updatedAt` from `gh issue view --json updatedAt`). Otherwise the skill fills only the missing or stale elements — it never re-prompts for elements the journal already holds.
+The journal is the source of truth. A journal section is reused verbatim only when all four subsections are present AND the issue has not been updated since the journal was last written (`git log -1 --format=%cd <journal dir>/issue-{N}.md` versus the issue's `updatedAt` from `gh issue view --json updatedAt`). Otherwise the skill fills only the missing or stale elements — it never re-prompts for elements the journal already holds.
 
 ## Anti-patterns
 

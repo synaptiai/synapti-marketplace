@@ -12,7 +12,14 @@ The table `/flow:merge` shows before it merges: each prerequisite's status, the 
 
 ## Which run this is
 
-Phase 2 tells the two runs apart from the repository's state: whether the current version is tagged, and whether a release pull request for the version is open or merged.
+Phase 2 works out which run this is from the repository's state: whether the current version's tag is on origin, whether GitHub has a release for it, and whether a release pull request for the version is merged. It prints one of four values:
+
+- `RELEASE_RUN=pr`: the current version is released; this run bumps the version files and opens the release pull request.
+- `RELEASE_RUN=tag`: the release pull request is merged and its version has no tag; this run tags the merge commit and publishes the GitHub release.
+- `RELEASE_RUN=untagged`: the default branch carries a version with no tag and no merged release pull request; the command asks whether to tag it or stop.
+- `RELEASE_RUN=publish`: the tag is on origin but GitHub has no release for it; the command asks whether to publish the release, skip it and plan the next version, or stop.
+
+It stops with `STATE=blocked` when the tag exists only in this clone, when a release branch from an earlier run has no pull request, or when GitHub has only a draft release for the tag, and names the commands that resolve each.
 
 ## Version files
 

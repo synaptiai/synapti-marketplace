@@ -19,7 +19,7 @@ Local, reversible actions. Execute without asking.
 
 ### Tier 2: Journal-and-Proceed
 
-Team-visible but recoverable. Runs without asking.
+Team-visible but recoverable. Tier 2 actions push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate`, `tiers.issueAssign` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks). A PR comment runs without asking; a `--force-with-lease` push is a push and follows `tiers.push`.
 
 | Action | Rationale | Recovery |
 |--------|-----------|----------|
@@ -37,7 +37,7 @@ Hard to reverse or high-impact. Always require human confirmation.
 | Action | Rationale | Recovery Difficulty |
 |--------|-----------|-------------------|
 | PR merge | Changes default branch | Revert commit |
-| Release creation, and pushing a tag | Public artifact | Delete release + tag |
+| Release creation, and pushing or deleting a tag | Public artifact | Delete release + tag |
 | Force push (`--force`) | Overwrites remote | Very difficult |
 | Branch deletion (force) | Loses unmerged work | Reflog only |
 
@@ -114,7 +114,8 @@ Hooks provide structural enforcement for dangerous operations:
 | Hook | Action | Behavior |
 |------|--------|----------|
 | `block-force-push.sh` | `git push --force` | Exit 2 (block) |
-| `block-destructive.sh` | `rm -rf`, `git reset --hard` | Exit 2 (block) |
+| `block-destructive.sh` | `rm -rf`, deleting an unmerged branch, `git reset --hard` and destructive `git clean` | Exit 2 (block) |
+| `block-unchecked-merge.sh` | `gh pr merge` and `gh api` merge calls | Exit 2 (block) while a check is queued, running or failed, for `--auto` on a base branch that requires no checks, and for any merge not written as `gh pr merge <number> --repo owner/name --squash\|--merge\|--rebase` |
 | `block-secrets.sh` | Inline credentials | Exit 2 (block) |
 | `ask-issue-create.sh` | `gh issue create` while a FlowGoal is active (and `minimalScope` is false) | JSON `permissionDecision: ask` (prompt names the goal and the fix-it-here rule) |
 | `tier-gate.sh` | `git push` (a tag push counts as release), `gh pr create`, `gh issue edit --add-assignee`, `gh issue create`, `gh pr merge`, `gh release create`, `edit`, `delete`, `upload` and `delete-asset`, and `gh api` writes to the same endpoints | `tiers.*`: `confirm` asks (merge and release always do), `journal` writes a breadcrumb to the auto-log trail, `autonomous` allows |

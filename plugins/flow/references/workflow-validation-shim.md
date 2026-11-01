@@ -42,14 +42,14 @@ schema_path = sys.argv[2]
 with open(workflow_path, "r", encoding="utf-8") as f:
     wf = yaml.safe_load(f)
 
-# Pre-validation migration (v3.0.x deprecation shim).
+# Pre-validation migration (completion_gate.requires deprecation shim).
 gate = (wf or {}).get("completion_gate") or {}
 if "requires" in gate and "documented_requirements" not in gate:
     gate["documented_requirements"] = gate.pop("requires")
     wf["completion_gate"] = gate
     print(
         f"WARN: {workflow_path}: completion_gate.requires is deprecated — "
-        f"rename to completion_gate.documented_requirements (will be required in v3.1)",
+        f"rename to completion_gate.documented_requirements (only this shim accepts the old name)",
         file=sys.stderr,
     )
 elif "requires" in gate and "documented_requirements" in gate:

@@ -199,13 +199,12 @@ if [ "${CLAUDE_HOOK_GOAL_JUDGE_MODE:-}" = "true" ]; then
 fi
 ```
 
-`flow-goal-evaluator.sh` sets this env var when invoking the judge:
+`bin/flow-judge.sh`, which `flow-goal-evaluator.sh` runs to start the judge, exports this variable and bounds the judge with whichever of `timeout` / `gtimeout` is available (see Prerequisites below), at `flow.goals.judge.timeoutSeconds` (default 60):
 
 ```bash
-CLAUDE_HOOK_GOAL_JUDGE_MODE=true "$TIMEOUT_BIN" 60 claude --print ...
+export CLAUDE_HOOK_GOAL_JUDGE_MODE=true
+exec "$TIMEOUT_BIN" "$TIMEOUT_S" claude --print --disallowedTools '*' ...
 ```
-
-where `$TIMEOUT_BIN` resolves to whichever of `timeout` / `gtimeout` is available (see Prerequisites below).
 
 The judge's own Stop hook sees the env var and short-circuits. No recursion possible.
 

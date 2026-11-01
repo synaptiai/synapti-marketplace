@@ -382,7 +382,7 @@ The plugin ships five canonical reference documents (under `plugins/flow/referen
 Plus the existing references documenting policy, parser rules, and configuration:
 
 - [`finding-ledger-parser.md`](references/finding-ledger-parser.md) — `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` marker grammar
-- [`gate-configuration.md`](references/gate-configuration.md) — the eleven quality gates flow enforces
+- [`gate-configuration.md`](references/gate-configuration.md) — the twelve quality gates flow enforces
 - [`decision-journal-schema.md`](references/decision-journal-schema.md) — `.decisions/` file format
 - [`three-tier-safety.md`](references/three-tier-safety.md) — Tier 1/2/3 action classification
 - [`skill-manifests.md`](references/skill-manifests.md) — command → required-skill mapping (kept in lockstep with command files)
