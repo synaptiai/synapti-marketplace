@@ -20,7 +20,8 @@ and no script reads.
   cancelled) more than that many days ago (default 30). This is on by
   default. Active and blocked runs are kept, a run directory that holds a
   file git tracks is kept, and nothing is removed through a symlink or while
-  `flow.runtime.enabled` is false.
+  `flow.runtime.enabled` is false. A run that cannot be removed is named on
+  one line with the reason.
 - `closedLoop.enabled`, `closedLoop.requireRuntimeVerification` and
   `visualVerification.enabled` take effect in `/flow:start` and `/flow:pr`:
   false turns off the fix-and-retry loop (the agent asks on a failure),
@@ -30,17 +31,23 @@ and no script reads.
   `/flow:merge`, `/flow:release` and the tier hook still ask.
   `bin/flow-trigger-tier3-check.sh` runs that check.
 - `flow.triggers.defaultConcurrency` is the concurrency policy of a trigger
-  that sets none, and `flow.triggers.allowTriggerCreationFromTriggeredRun`
-  lets a trigger's runs create triggers. A triggered run records its trigger
-  id (`metadata.trigger`), and the in-flight check matches on it.
+  that sets none, and `flow.triggers.allowTriggerCreationFromTriggeredRun`,
+  read from your user settings only, lets a trigger's runs create triggers.
+  A triggered run records its trigger id (`metadata.trigger`), and the
+  in-flight check matches on it. The in-flight check stops when it cannot
+  read the runs directory or a run's `run.yaml`, so an unreadable run is
+  never taken as not running.
 - `flow.runtime.stateDir` takes effect: every command, hook and script keeps
   runtime state (goals, runs, triggers, watch state, review exceptions) in
   that directory, `bin/flow-runtime-dir.sh` prints it, and `/flow:status`
   shows it. It must be a relative path below the repository top with no
-  `..` and no symlink on the way; anything else prints one warning and
-  `.flow` is used. It is not `FLOW_STATE_DIR`, the per-user state directory.
+  `..`, no symlink on the way, and names made only of letters, digits, `.`,
+  `_` and `-`; anything else prints one warning and `.flow` is used. It is not `FLOW_STATE_DIR`, the per-user state directory.
 - `bin/flow-release-pr.sh` does the first `/flow:release` run's branch, bump,
-  commit and push, and undoes them on a failure.
+  commit and push, and undoes them on a failure. It stops before creating
+  anything when the release branch name starts with `+` or `-`, or the
+  version plan fails, and it commits a changelog edit that was already
+  staged.
 - `tests/e2e-fence-guards.test.sh` runs every bash fence in `commands/*.md`
   through the four PreToolUse Bash guards and fails on a refusal.
 
