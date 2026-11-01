@@ -160,7 +160,7 @@
         },
         "markerTrust": {
           "type": "object",
-          "description": "Trust filter for FLOW_REVIEW_CYCLE / FLOW_RESOLUTION_CYCLE markers honored by /flow:merge and /flow:status. SECURITY PIN: read from plugins/flow/settings.json ONLY (does NOT use the standard cascade) so a hostile fork PR cannot ship a permissive trust list via .claude/settings.flow.local.json after gh pr checkout. See references/gate-configuration.md for the threat model.",
+          "description": "Trust filter for FLOW_REVIEW_CYCLE / FLOW_RESOLUTION_CYCLE markers honored by /flow:merge and /flow:status. Resolved through the settings cascade, first valid value wins; the user and plugin tiers are read only from a flow install outside the repository. /flow:merge warns at every merge when the resolved list includes NONE, FIRST_TIMER, FIRST_TIME_CONTRIBUTOR or MANNEQUIN. See references/finding-ledger-parser.md for the threat model.",
           "properties": {
             "allowedAssociations": {
               "type": "array",
