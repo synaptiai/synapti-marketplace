@@ -304,7 +304,8 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── commit-journal-churn.sh — commits leftover decision-journal changes as a housekeeping commit
   └── flow-strip-auto-log.sh — removes auto-log lines older journals committed (dry-run unless --apply; /flow:setup offers it)
   Release
-  └── flow-release-versions.sh — finds the version files /flow:release bumps, checks they agree, and writes the new version to all of them
+  ├── flow-release-versions.sh — finds the version files /flow:release bumps, checks they agree, and writes the new version to all of them
+  └── flow-release-pr.sh    — creates the release branch, commits the bump and pushes it for /flow:release's first run, and undoes it all on a failure
   System One (optional; see System One below)
   ├── flow-s1.sh, flow-s1-mode.sh — asks the configured provider one decision point's questions; decides a site's mode
   ├── flow-s1-dedup.sh, flow-s1-confidence.sh, flow-s1-challenge.sh, flow-classify-s1.sh — the review.dedup, review.confidence, review.challenge and classify.serves-issue sites

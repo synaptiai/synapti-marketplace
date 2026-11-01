@@ -1052,6 +1052,26 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_equal "" "$(_status)" "the working tree"
 done
 
+_flow_test_begin "Phase 4 pr: with tiers.push confirm the block commits and stops before the push"
+# flow's git wrapper refuses a confirm push the tier hook did not ask about, so
+# a push from the script could only fail; the push has to be its own command.
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-push-confirm-$E2E_FENCE_SHELLS"
+  e2e_describe "npm package released as v1.2.3; the project sets tiers.push to confirm; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"tiers":{"push":"confirm"}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _git add .claude/settings.flow.json
+  _git commit -q -m settings
+  _pr_block
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=committed"
+  e2e_expect_out "git push -u origin chore/release-1.3.0"
+  e2e_expect_equal "chore/release-1.3.0" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "chore(release): v1.3.0" "$(_head_subject)" "the bump commit's subject"
+  e2e_expect_equal "" "$(_git ls-remote origin refs/heads/chore/release-1.3.0)" "origin's release branch (not pushed)"
+done
+
 _flow_test_begin "Phase 4 pr: a failed commit or push puts everything back as it was (P5)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_new "release-pr-commit-fails-$E2E_FENCE_SHELLS"
