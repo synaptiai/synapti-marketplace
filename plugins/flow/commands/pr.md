@@ -559,7 +559,21 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 - `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed.
 - Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the PR body that the System One step was refused, with its `ERROR`.
 
-2. **Integration verification** — dispatch Agent(integration-verifier):
+2. **Integration verification** — first read the verification settings; each line the block prints decides one check:
+   ```bash
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+   # Only the boolean false turns a check off; any other value keeps it on.
+   _off() { [ "$("$FLOW_ROOT/bin/cascade-resolve.sh" --default true "$1" 2>/dev/null)" = "false" ]; }
+   if _off '.closedLoop.enabled'; then printf '%s\n' "CLOSED_LOOP=off"; else printf '%s\n' "CLOSED_LOOP=on"; fi
+   if _off '.closedLoop.requireRuntimeVerification'; then printf '%s\n' "RUNTIME_VERIFICATION=optional"; else printf '%s\n' "RUNTIME_VERIFICATION=required"; fi
+   if _off '.visualVerification.enabled'; then printf '%s\n' "VISUAL_VERIFICATION=off"; else printf '%s\n' "VISUAL_VERIFICATION=on"; fi
+   ```
+
+   - `CLOSED_LOOP=off` (`closedLoop.enabled` is false): tell the agent to run each check once and report a failure without fixing and retrying; then ask the user with `AskUserQuestion` whether to fix it now or open the PR with the failure noted.
+   - `RUNTIME_VERIFICATION=optional` (`closedLoop.requireRuntimeVerification` is false): runtime verification may be skipped; record `skipped: closedLoop.requireRuntimeVerification is false` in the PR body.
+   - `VISUAL_VERIFICATION=off` (`visualVerification.enabled` is false): leave the visual-verification sentence out of the prompt below, and record visual verification as `SKIP` with that reason.
+
+   Then dispatch Agent(integration-verifier):
    ```
    Agent(integration-verifier):
      "Verify runtime behavior for this branch. Invoke Skill(runtime-verification)
@@ -575,7 +589,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    - If visual verification task was created in Phase 2: `TaskUpdate(visualVerificationTaskId, status: "completed", result: "{agent's visual verification findings}")`
    - Record screenshot paths and the per-viewport `Observed:` blocks from agent results as evidence — they become the bundle's `### Visual analysis` subsection (`references/evidence-bundle-format.md`)
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
-4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation.
+4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation, unless the block printed `RUNTIME_VERIFICATION=optional`.
 5. **Visual verification enforcement**: If `visualVerification.requireVisualVerification` is `true` and integration-verifier returned visual verification as BLOCKED:
    - Use `AskUserQuestion` with a Proactive-Autonomy escalation:
      > **Situation** — Visual verification is required (`requireVisualVerification: true`) but no browser tools are available. UI files changed: {list}.

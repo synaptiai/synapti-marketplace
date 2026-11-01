@@ -460,7 +460,7 @@
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "When false, /flow:start does not run visual verification and records it as SKIP with this reason. When true, a UI-facing change is verified with screenshots."
+          "description": "When false, /flow:start and /flow:pr do not run visual verification and records it as SKIP with this reason. When true, a UI-facing change is verified with screenshots."
         },
         "screenshotDir": {
           "type": "string",
@@ -546,7 +546,7 @@
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "When false, /flow:start runs each build-and-run step and runtime check once and asks the user on a failure instead of fixing and retrying."
+          "description": "When false, /flow:start and /flow:pr run each build-and-run step and runtime check once and asks the user on a failure instead of fixing and retrying."
         },
         "maxBuildIterations": {
           "type": "integer",
@@ -566,7 +566,7 @@
         "requireRuntimeVerification": {
           "type": "boolean",
           "default": true,
-          "description": "When false, /flow:start Phase 4 may skip runtime verification without an escalation and records the skip; the completion gate accepts it. When true, a skip outside the runtime-verification skill's whitelist needs an escalation."
+          "description": "When false, /flow:start and /flow:pr may skip runtime verification without an escalation and records the skip; the completion gate accepts it. When true, a skip outside the runtime-verification skill's whitelist needs an escalation."
         }
       }
     },

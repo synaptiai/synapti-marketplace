@@ -165,15 +165,15 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `fixForwardMaxIterations` | `10` | `/flow:start`, `/flow:pr`, `/flow:review`, `/flow:address` fix loops |
 | `autonomous` | `false` | `llm-operator-principles` skill, `/flow:setup`; merge and release still ask |
 | `minimalScope` | `false` | `hooks/scripts/ask-issue-create.sh`, `/flow:review`, `/flow:address` |
-| `closedLoop.enabled` | `true` | `/flow:start` verification settings block (`CLOSED_LOOP=`): false runs each build-and-run and runtime check once and asks on a failure |
-| `closedLoop.requireRuntimeVerification` | `true` | `/flow:start` verification settings block (`RUNTIME_VERIFICATION=`): false lets Phase 4 skip runtime verification without an escalation |
+| `closedLoop.enabled` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`CLOSED_LOOP=`): false runs each build-and-run and runtime check once and asks on a failure |
+| `closedLoop.requireRuntimeVerification` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`RUNTIME_VERIFICATION=`): false lets Phase 4 skip runtime verification without an escalation |
 | `closedLoop.maxBuildIterations` | `5` | `/flow:start` Phase 3, `/flow:resolve`, `runtime-verification` skill |
 | `closedLoop.maxServerRetries` | `3` | `/flow:start`, `runtime-verification` skill |
 | `closedLoop.maxDebugIterations` | `5` | `/flow:start` Phase 3, `debugging-patterns` skill |
 | `lsp.enabled` | `true` | `capability-discovery` and `runtime-verification` skills |
 | `lsp.timeout` | `5000` (ms) | `capability-discovery` and `runtime-verification` skills |
 | `lsp.diagnosticsAsQuality` | `true` | `runtime-verification` and `autonomous-workflow` skills |
-| `visualVerification.enabled` | `true` | `/flow:start` verification settings block (`VISUAL_VERIFICATION=`): false skips visual verification, recorded as SKIP |
+| `visualVerification.enabled` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`VISUAL_VERIFICATION=`): false skips visual verification, recorded as SKIP |
 | `visualVerification.viewports` | desktop 1280×720, tablet 768×1024, mobile 375×812 | `visual-verification` skill |
 | `visualVerification.maxIterations` | `3` | `integration-verifier` agent |
 | `visualVerification.requireVisualVerification` | `false` | `/flow:pr` Phase 4 |
