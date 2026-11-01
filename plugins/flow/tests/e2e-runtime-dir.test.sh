@@ -128,6 +128,16 @@ _refused dotdot-cancels '"build/../x"' "it has a .. component" build
 _refused link-inside "\"$RT\"" "build is a symlink" link-inside
 _refused link-outside "\"$RT\"" "build is a symlink" link-outside
 _refused top '"."' "it names the repository top itself" ""
+# D10: the directory is put into jq filters, GitHub API URLs, gitignore lines
+# and loop prompts. A name with a character outside letters, digits, `.`,
+# `_` and `-` could reshape one of them (`x" or true or "` in a jq filter,
+# `?ref=` in a contents URL), so it is refused.
+_refused quote '"x\" or true or \"y"' "a name holds a character other than letters, digits, ., _ and -" ""
+_refused query '".flow/x?ref=main&q="' "a name holds a character other than letters, digits, ., _ and -" ""
+_refused hash '"a#b"' "a name holds a character other than letters, digits, ., _ and -" ""
+_refused percent '"a%2e"' "a name holds a character other than letters, digits, ., _ and -" ""
+_refused space '"my runtime"' "a name holds a character other than letters, digits, ., _ and -" ""
+_refused backtick '"a`id`"' "a name holds a character other than letters, digits, ., _ and -" ""
 
 # --- writers and readers in bin/ (D8) -------------------------------------
 

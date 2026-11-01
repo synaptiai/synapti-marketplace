@@ -11,7 +11,8 @@
 #
 # The value is a path relative to the repository top (the nearest directory
 # at or above the working directory with a .git entry). It is refused when it
-# starts with /, \, ~ or a drive, has a `..` component, names the top itself,
+# starts with /, \, ~ or a drive, has a `..` component, has a name with a
+# character other than letters, digits, ., _ and -, names the top itself,
 # or does not end below the top with no symlink and nothing but directories
 # on the way: ensure_inside_repo() in bin/_repo_dir.py, the rule journal.dir
 # is held to (bin/journal-dir.sh). A refused value, or one that cannot be

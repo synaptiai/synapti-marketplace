@@ -159,8 +159,9 @@ else
       printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       ;;
     *)
-      # LINKED is all digits by the case above, so the path below carries no
-      # value that could reshape the jq filter or the request it goes into.
+      # LINKED is all digits by the case above, and flow-runtime-dir.sh prints
+      # only names of letters, digits, ., _ and -, so the path below carries
+      # no value that could reshape the jq filter or the request it goes into.
       # Goals are under the runtime directory (flow.runtime.stateDir, default
       # .flow), named from the top as the file list of the pull request names them.
       FLOW_GOAL_RT=$("${LINKED_HELPER%/flow-pr-linked-issue.sh}/flow-runtime-dir.sh") || FLOW_GOAL_RT=""

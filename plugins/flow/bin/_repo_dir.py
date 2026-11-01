@@ -38,6 +38,7 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 
 import ntpath
 import os
+import re
 import stat
 import sys
 
@@ -685,7 +686,8 @@ def check_runtime_dir(value):
     (RUNTIME_DIR_DEFAULT, reason) for one that is refused.
 
     Usable: a relative path, with no `..` component, not starting with `/`,
-    `\\`, `~` or a drive, that names a directory below the repository top
+    `\\`, `~` or a drive, each name only letters, digits, `.`, `_` and `-`
+    (the directory goes into jq filters and URLs), that names a directory below the repository top
     (not the top itself), reached with no symlink and nothing but
     directories on the way (ensure_inside_repo()). It is taken from the
     repository top. The directory need not exist yet.
@@ -710,6 +712,11 @@ def check_runtime_dir(value):
         return RUNTIME_DIR_DEFAULT, "it has a .. component"
     if not names:
         return RUNTIME_DIR_DEFAULT, "it names the repository top itself"
+    # The directory is put into jq filters, GitHub API URLs, gitignore lines
+    # and loop prompts: a name with any other character (a quote, ?, #, &, %,
+    # a space, a backquote) could reshape one of them.
+    if any(re.fullmatch(r"[A-Za-z0-9._-]+", n) is None for n in names):
+        return RUNTIME_DIR_DEFAULT, "a name holds a character other than letters, digits, ., _ and -"
     rel = "/".join(names)
     try:
         top = _repo_top(os.path.realpath(os.getcwd()))
