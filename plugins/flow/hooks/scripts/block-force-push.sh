@@ -217,7 +217,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
   #
   # A force flag on `git` with no `push` — `git branch -f` — is none of these
   # and stays allowed, because no push is being forced.
-  function judge(seg,   W, n, i, w, has, ispush, v, nm, ispush_word) {
+  function judge(seg,   W, n, i, w, has, ispush, v, nm, ispush_word, sc) {
     n = tokenize(seg, W)
     has = 0; ispush = 0; ispush_word = 0
     for (i = 1; i <= n; i++) {
@@ -266,7 +266,30 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       # carries its own force flag and forces no push, so it is accounted for.
       # If the subcommand is not a literal at all the guard cannot see what it
       # is, and a force flag beside it is not something it can account for.
-      for (i = 2; i <= n; i++) if (W[i] ~ /\$/) { push_word = 1; risky = 1; return }
+      # The subcommand is the first word after git that is not a global
+      # option; -C, -c, --git-dir, --work-tree, --namespace, --config-env and
+      # --super-prefix take the next word as their value. An expansion at or
+      # before it may name any subcommand, push included.
+      sc = 0
+      for (i = 2; i <= n; i++) {
+        if (W[i] ~ /\$/ || index(W[i], BT)) { push_word = 1; risky = 1; return }
+        if (W[i] == "-C" || W[i] == "-c" || W[i] == "--git-dir" || W[i] == "--work-tree" ||
+            W[i] == "--namespace" || W[i] == "--config-env" || W[i] == "--super-prefix") {
+          i++
+          if (i <= n && (W[i] ~ /\$/ || index(W[i], BT))) { push_word = 1; risky = 1; return }
+          continue
+        }
+        if (W[i] ~ /^-/) continue
+        sc = i; break
+      }
+      # After a literal subcommand, a parameter expansion (`"$TREE"`) is an
+      # argument: word splitting cannot turn it into another subcommand. A
+      # command substitution can run anything, so it stays unaccounted for.
+      if (sc > 0) {
+        for (i = sc + 1; i <= n; i++) {
+          if (W[i] ~ /\$\(/ || index(W[i], BT)) { push_word = 1; risky = 1; return }
+        }
+      }
       # git runs an alias as the subcommand it names, and `-c alias.p=push`
       # defines one for this invocation only.
       if (seg ~ /alias\.[^ ]*=/) { push_word = 1; risky = 1; return }
