@@ -607,7 +607,7 @@
             "stateDir": {
               "type": "string",
               "default": ".flow",
-              "description": "The runtime directory: where flow keeps goals, runs, triggers, watch state, workflow overrides and review exceptions, relative to the repository top. Every reader and writer takes it from bin/flow-runtime-dir.sh (runtime_dir() in bin/_repo_dir.py for Python). It must be a relative path with no '..' component that ends inside the repository with no symlink on the way; any other value prints one warning naming this setting and .flow is used. Not the per-user state directory (FLOW_STATE_DIR, ~/.claude/flow-state by default), which is a different place."
+              "description": "The runtime directory: where flow keeps goals, runs, triggers, watch state, workflow overrides and review exceptions, relative to the repository top. Every reader and writer takes it from bin/flow-runtime-dir.sh (runtime_dir() in bin/_repo_dir.py for Python). It must be a relative path with no '..' component that ends inside the repository with no symlink on the way; any other value prints one warning naming this setting and .flow is used. Not the per-user state directory (FLOW_STATE_DIR, ~/.claude/flow-state by default), which is a different place. duplication.excludePaths lists .flow/** by default: add the configured directory there to keep its files out of duplicate-code scans."
             },
             "runRetentionDays": {
               "type": "integer",

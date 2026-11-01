@@ -9,7 +9,9 @@ described 3.9-era behaviour or behaviour flow never had. The audit also found
 shipped command steps that flow's own guards refuse, and settings that
 nothing read; both are fixed. Every bash fence in a command now passes flow's
 Bash guards, checked by a test, and every setting in the plugin defaults
-takes effect.
+takes effect, except `timeouts.teammateTimeout` and
+`visualVerification.screenshotDir`, which are instructions the agent follows
+and no script reads.
 
 ### Added
 
@@ -47,6 +49,9 @@ takes effect.
   the tier hook no longer asks at that push; `tiers.push` applies through
   flow's `git` wrapper, and with `confirm` the script stops before the push
   and names it to run as its own command.
+- The force-push guard refuses a git command that carries a force flag and
+  a backquoted substitution in any word; it looked only for `$` before. A
+  plain variable after a literal subcommand is allowed (see Fixed).
 - `/flow:goal status` shows the active goal of the current branch.
 - `/flow:status` Recent Runs shows each run's workflow, phase and status, and
   bare `/flow` prints uncommitted changes, commits ahead and conflicts.

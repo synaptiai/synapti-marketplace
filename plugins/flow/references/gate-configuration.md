@@ -180,7 +180,7 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `visualVerification.flows` | `on` | `visual-verification` skill |
 | `visualVerification.maxFlowSteps` | `8` | `visual-verification` skill |
 | `visualVerification.screenshotDir` | `.screenshots` | [`visual-verification-output.md`](visual-verification-output.md) (agent instruction) |
-| `duplication.enabled`, `minLines`, `minTokens`, `excludePaths` | `true`, `5`, `20`, test, vendor, build, journal and `.flow` paths | `bin/flow-clone-scan.sh`, run by `/flow:pr` and `/flow:review` |
+| `duplication.enabled`, `minLines`, `minTokens`, `excludePaths` | `true`, `5`, `20`, test, vendor, build, journal and `.flow` paths | `bin/flow-clone-scan.sh`, run by `/flow:pr` and `/flow:review` With `flow.runtime.stateDir` set, add that directory to `excludePaths`; the default lists `.flow` only. |
 | `flow.runtime.enabled` | `true` | every command that creates a FlowRun, `hooks/scripts/session-end-state.sh` |
 | `flow.runtime.stateDir` | `.flow` | `bin/flow-runtime-dir.sh` and `runtime_dir()` in `bin/_repo_dir.py`, which every reader and writer of runtime state (goals, runs, triggers, watch state, workflow overrides, review exceptions) uses: a relative path with no `..` component that ends inside the repository with no symlink on the way, any other value warns once and `.flow` is used. Not `FLOW_STATE_DIR`, the per-user state directory |
 | `flow.runtime.runRetentionDays` | `30` | `hooks/scripts/session-end-state.sh`: removes runs that ended (completed or cancelled) and whose `run.yaml` was last written more than this many days ago |
