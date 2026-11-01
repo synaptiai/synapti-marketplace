@@ -28,7 +28,7 @@ The **Synapti Plugin Marketplace** is a curated collection of Claude Code plugin
 | [Context Ledger](./plugins/context-ledger/) | Product Development | Evidence-based product development with traceable decisions, explicit trade-offs, and constrained spec generation. | 1.0.0 |
 | [Decipon](./plugins/decipon/) | Content Analysis, Deep Research | Detects manipulation, propaganda, and disinformation patterns using the NCI Protocol. Analyzes content across 20 indicators with fact-checking capabilities. | 1.5.0 |
 | [Dossier](./plugins/dossier/) | Documentation | Evidence-first project documentation: builds a 23-file audit-ready package where every claim carries a state and a citation, verifies it by falsification, and refuses to certify a package it cannot ground. Includes post-merge CI that refreshes affected documents after a PR merges. | 1.2.2 |
-| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 3.11.0 |
+| [Flow](./plugins/flow/) | Workflow, Automation | Skill-driven workflow plugin for GitHub development with excellence-by-default quality gates. Composable skills, safety hooks, agent teams, LSP code intelligence, holdout validation, and learning loop. | 3.12.0 |
 | [gh-workflow](./plugins/gh-workflow/) | Workflow, Automation | Generic GitHub workflow commands for issue management, PR creation, code review, and releases. Works with any repository by auto-detecting settings. | 1.9.1 |
 | [Prompt Decorators ↗](https://github.com/synaptiai/prompt-decorators/tree/main/claude-code-plugin) | Prompt Engineering | Enhance prompts automatically with composable decorators (143 across 14 categories — reasoning, structure, tone, verification, and eight developer categories). Inline `::Name`/`+++Name` syntax, always-on config, and an opt-in Haiku-powered auto-selector that picks 0-3 decorators per prompt. | 0.1.1 |
 | [Thanos](./plugins/thanos/) | Code Review, Architecture | Read-only simplicity reviewer for code diffs, design documents and architecture: lists what can be removed, merged or simplified, each with a simpler alternative. `/thanos:snap` reviews, `/thanos:rethink` redesigns a subsystem from its essence. | 0.1.0 |
@@ -430,7 +430,7 @@ claude plugin install gh-workflow
 | `/flow address <pr>` | Systematic feedback resolution |
 | `/flow merge <pr>` | Merge with prerequisite verification (Tier 3) |
 | `/flow resolve [pr or branch]` | Resolve merge conflicts and verify the result |
-| `/flow release <type>` | Changelog + semantic version release (Tier 3) |
+| `/flow release <type>` | Release in two runs: a release PR that bumps the version files and changelog, then, after it is merged, the tag and GitHub release (Tier 3) |
 | `/flow status` | Read-only workflow overview |
 | `/flow learn` | Analyze decision patterns, propose new skills |
 | `/flow setup` | Initialize flow for a repository |
@@ -457,9 +457,9 @@ claude plugin install flow
 /flow start → /flow commit → /flow pr → /flow review → /flow address → /flow merge → /flow release
      │             │             │            │              │              │              │
      ▼             ▼             ▼            ▼              ▼              ▼              ▼
-  Branch +     Classify +    Review +     Quality       Resolve        Merge +        Tag +
-  implement    atomic        agents       check         feedback       cleanup       changelog
-               commits       + PR                                     (Tier 3)
+  Branch +     Classify +    Review +     Quality       Resolve        Merge +        Release PR,
+  implement    atomic        agents       check         feedback       cleanup       then tag +
+               commits       + PR                                     (Tier 3)       GitHub release
 ```
 
 **[Full Flow Documentation →](./plugins/flow/README.md)**
@@ -677,12 +677,16 @@ synapti-marketplace/
     │   ├── README.md
     │   ├── agents/                   # 10 specialized agents
     │   ├── commands/                 # 23 workflow commands (17 work + 6 runtime/admin)
-    │   ├── hooks/                    # Safety, ledger, goal and session hooks
+    │   ├── hooks/                    # Safety, tier, ledger, goal and session hooks; shims/ holds the git and gh tier wrappers
     │   ├── bin/                      # Helper scripts the commands and hooks call
     │   ├── skills/                   # 32 composable skills
     │   ├── workflows/                # Process definitions for each command
+    │   ├── triggers/                 # Trigger templates /flow:watch fills
+    │   ├── schemas/                  # JSON Schemas for goals, workflows, triggers, runs, evidence and skill inputs
+    │   ├── system-one/               # The questions Flow can ask a System One provider
     │   ├── templates/                # PR, issue, skill proposal templates
     │   ├── references/               # Safety tiers, checklists, manifests
+    │   ├── evals/                    # Seeded-bug tasks and recorded eval runs
     │   └── tests/                    # Test suite (tests/run.sh), including end-to-end scenarios
     │
     ├── gh-workflow/                   # GitHub workflow plugin

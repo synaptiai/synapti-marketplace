@@ -66,7 +66,7 @@ what would be published.}
 
 ### Transcript Citations
 
-{User corrections mined from session transcripts by `/flow:learn` Phase 2 (`bin/flow-mine-corrections.sh`). Every line was re-read and verified before being listed; quote only the user's words, truncated. Delete this subsection when the pattern has no transcript evidence.}
+{User corrections mined from session transcripts in `/flow:learn` Phase 1 (`bin/flow-mine-corrections.sh`) and judged in Phase 2. Every line was re-read and verified before being listed; quote only the user's words, truncated. Delete this subsection when the pattern has no transcript evidence.}
 
 - `{transcript_path}:{line_no}` @ {timestamp} (session `{session_id}`): "{what the user said}"
 - `{transcript_path}:{line_no}` @ {timestamp} (session `{session_id}`): "{what the user said}"
