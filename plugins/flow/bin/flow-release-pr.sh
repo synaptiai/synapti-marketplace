@@ -224,7 +224,12 @@ fi
 # tiers.push confirm: the push has to be its own command, so the tier hook
 # can ask before it runs. flow's git wrapper refuses a confirm push the hook
 # did not ask about, so pushing from here would only fail.
-PUSH_TIER=$("$_dir/cascade-resolve.sh" --default journal '.tiers.push' 2>/dev/null) || PUSH_TIER=journal
+# When the setting cannot be read, cascade-resolve.sh says why on stderr, and
+# the run goes on as journal and says so, as promote-proposal.sh does.
+if ! PUSH_TIER=$("$_dir/cascade-resolve.sh" --default journal '.tiers.push'); then
+  PUSH_TIER=journal
+  printf '%s\n' "PR_WARN=\"tiers.push could not be read; treating it as journal\""
+fi
 if [ "$PUSH_TIER" = confirm ]; then
   printf '%s\n' "PR_STATE=committed"
   printf '%s\n' "PR_TITLE=\"$PR_TITLE\""

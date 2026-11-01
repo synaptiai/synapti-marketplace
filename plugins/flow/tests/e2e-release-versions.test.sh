@@ -103,6 +103,8 @@
 #   P12 the plan that names the version files fails, or names none, and the
 #      run goes on with no file checked for changes of its own and nothing
 #      said about the plan
+#   P13 tiers.push cannot be read, and the run treats it as journal with
+#      nothing said, so a confirm the user set is skipped silently
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
@@ -1298,6 +1300,22 @@ esac'
   e2e_expect_equal "refs/heads/main" "$(_git ls-remote --heads origin | cut -f2)" "origin's branches (only main; nothing pushed)"
   e2e_expect_file_has package.json '"version": "1.2.3"'
 done
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
+
+_flow_test_begin "Phase 4 pr: tiers.push that cannot be read is named, and read as journal (P13)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-push-tier-unreadable-$E2E_FENCE_SHELLS"
+  e2e_describe "cascade-resolve.sh fails with a message of its own; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  e2e_plugin_copy bin/cascade-resolve.sh '#!/bin/sh
+echo "cascade-resolve.sh: settings file is not valid JSON" >&2
+exit 1'
+  _pr_block
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=pushed"
+  e2e_expect_line 'PR_WARN="tiers.push could not be read; treating it as journal"'
+  e2e_expect_err "cascade-resolve.sh: settings file is not valid JSON"
 done
 E2E_FENCE_SHELLS="$ALL_SHELLS"
 
