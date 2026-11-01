@@ -23,14 +23,19 @@
 #   IN_FLIGHT=<run id>        one line per run in flight, oldest id first
 #
 # Never read (each is skipped, with one line on stderr): a symbolic link on
-# the way to <runtime dir>/runs, a run directory or a run.yaml (it can point outside the
-# checkout), and a run.yaml that is not a YAML mapping.
+# the way to <runtime dir>/runs, a run directory or a run.yaml. It can point
+# outside the checkout, and it cannot be a run this trigger started: flow
+# creates a run directory only through flow-mkdir.sh, which refuses a
+# symbolic link on the way. A run directory with no run.yaml is skipped
+# silently.
 #
 # Exits: 0 the check ran; 1 the id is not a trigger id, the trigger is
 # missing, a symbolic link, not a regular file or not a YAML mapping, the
 # policy (the trigger's or the setting's) is not one of the three, the setting
-# cannot be read, or python3 or PyYAML is missing (one flow-trigger-concurrency
-# line on stderr says which).
+# cannot be read, a run.yaml cannot be read, is not valid YAML or is not a
+# YAML mapping (it may be this trigger's active run, so the check cannot say
+# what is in flight), or python3 or PyYAML is missing (one
+# flow-trigger-concurrency line on stderr says which).
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -176,15 +181,13 @@ elif os.path.isdir(runs):
                 continue
             if e.errno == errno.ELOOP:
                 warn("%s is a symbolic link; it is not read" % ryaml)
-            else:
-                warn("cannot read %s: %s; skipped" % (ryaml, e.strerror))
-            continue
+                continue
+            # It may be this trigger's active run: the check cannot answer.
+            fail("cannot read %s: %s" % (ryaml, e.strerror))
         except (yaml.YAMLError, UnicodeDecodeError):
-            warn("%s is not valid YAML; skipped" % ryaml)
-            continue
+            fail("%s is not valid YAML" % ryaml)
         if not isinstance(run, dict):
-            warn("%s is not a YAML mapping; skipped" % ryaml)
-            continue
+            fail("%s is not a YAML mapping" % ryaml)
         meta = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
         state = run.get("state") if isinstance(run.get("state"), dict) else {}
         if meta.get("trigger") == tid and state.get("status") == "active":

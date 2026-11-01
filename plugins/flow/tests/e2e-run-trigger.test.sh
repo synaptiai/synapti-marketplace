@@ -17,8 +17,10 @@
 #   C4 another trigger's active run of the same workflow counts as this one's
 #   C5 a run.yaml, run directory, .flow/runs or .flow that is a symbolic link
 #      is read (it points outside the checkout)
-#   C6 a run.yaml that is not YAML, or not a mapping, stops the check with a
-#      traceback instead of being skipped with a warning
+#   C6 a run.yaml that cannot be read, is not YAML, or is not a mapping is
+#      skipped, so the trigger's active run in it never counts as in flight
+#      and skip_if_running starts a second run; or it stops the check with a
+#      traceback instead of one flow-trigger-concurrency line
 #   C7 a trigger id with '/' or '..' reads a file outside .flow/triggers
 #   C8 a missing trigger reads as "nothing in flight" rather than an error
 #   C9 the run schema refuses a run without metadata.trigger (every run not
@@ -158,22 +160,35 @@ e2e_expect_no_out "IN_FLIGHT="
 e2e_expect_err "symbolic link"
 e2e_expect_clean_edges
 
-_flow_test_begin "a run.yaml that is not YAML, or not a mapping, is skipped with a warning (C6)"
-e2e_new run-trigger-bad-run-yaml
-e2e_describe "two broken run.yaml files beside the trigger's active run"
-e2e_repo main
-_trigger pr-42-watch skip_if_running
-_run 2026-10-30T100000Z-pr-42 address-pr active pr-42-watch
-mkdir -p "$E2E_REPO/.flow/runs/2026-10-30T110000Z-bad" "$E2E_REPO/.flow/runs/2026-10-30T120000Z-list"
-printf 'metadata: [unclosed\n' > "$E2E_REPO/.flow/runs/2026-10-30T110000Z-bad/run.yaml"
-printf -- '- a\n- b\n' > "$E2E_REPO/.flow/runs/2026-10-30T120000Z-list/run.yaml"
-e2e_run_block "$RUN_MD" RUN_CONCURRENCY_BLOCK 'trigger pr-42-watch'
-e2e_expect_equal 0 "$E2E_RC" "the exit status"
-e2e_expect_line "IN_FLIGHT=2026-10-30T100000Z-pr-42"
-e2e_expect_err "2026-10-30T110000Z-bad"
-e2e_expect_err "2026-10-30T120000Z-list"
-e2e_expect_err_lacks "Traceback"
-e2e_expect_clean_edges
+_flow_test_begin "a run.yaml that cannot be read, is not YAML, or is not a mapping stops the check (C6)"
+for broken in not-yaml not-mapping unreadable; do
+  e2e_new "run-trigger-run-yaml-$broken"
+  e2e_describe "a run.yaml that is $broken beside the trigger's active run"
+  e2e_repo main
+  _trigger pr-42-watch skip_if_running
+  _run 2026-10-30T100000Z-pr-42 address-pr active pr-42-watch
+  BROKEN="$E2E_REPO/.flow/runs/2026-10-30T110000Z-$broken/run.yaml"
+  case "$broken" in
+    not-yaml) mkdir -p "${BROKEN%/*}"; printf 'metadata: [unclosed\n' > "$BROKEN" ;;
+    not-mapping) mkdir -p "${BROKEN%/*}"; printf -- '- a\n- b\n' > "$BROKEN" ;;
+    unreadable)
+      if [ "$(id -u)" -eq 0 ]; then
+        _flow_assert_pass "SKIP: run as root, which reads a file whatever its mode"
+        continue
+      fi
+      _run 2026-10-30T110000Z-unreadable address-pr active pr-42-watch
+      chmod 000 "$BROKEN" ;;
+  esac
+  e2e_run_block "$RUN_MD" RUN_CONCURRENCY_BLOCK 'trigger pr-42-watch'
+  [ -f "$BROKEN" ] && chmod 644 "$BROKEN"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_no_out "CONCURRENCY_POLICY="
+  e2e_expect_no_out "IN_FLIGHT="
+  e2e_expect_err "flow-trigger-concurrency: "
+  e2e_expect_err "2026-10-30T110000Z-$broken"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_clean_edges
+done
 
 _flow_test_begin "a trigger id that is not an id, or names no trigger, is an error (C7, C8)"
 e2e_new run-trigger-bad-id
