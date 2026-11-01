@@ -1,6 +1,6 @@
 ---
 name: merge-conflict-resolution
-description: "Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolve git merge conflicts through per-file strategy selection (accept-ours, accept-theirs, manual-merge, rebase), manual conflict hunk parsing, and post-resolution verification (orphaned markers, build, tests). Use when a branch has conflicts with its merge target or when rebasing onto an updated base. This skill MUST be consulted because silently dropping changes is non-negotiable; every conflict resolution must account for both sides."
+description: "Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolve git merge conflicts through per-file strategy selection (accept-ours, accept-theirs, manual-merge, ask-user), manual conflict hunk parsing, and post-resolution verification (orphaned markers, build, tests). Use when a branch has conflicts with its merge target or when rebasing onto an updated base. This skill MUST be consulted because silently dropping changes is non-negotiable; every conflict resolution must account for both sides."
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, TaskCreate, TaskList, TaskUpdate, AskUserQuestion
 context: fork
 agent: general-purpose
@@ -45,7 +45,7 @@ Settings: `conflictResolution.autoResolveTrivial` (default `true`), `conflictRes
 | accept-ours | Their change is superseded by ours | Tier 1 for trivial |
 | accept-theirs | Our change is superseded by theirs | Tier 1 for trivial |
 | manual-merge | Both changes are needed | Tier 2 — show rationale |
-| rebase | Linear history wanted, few conflicts | Tier 2 — show rationale |
+| ask-user | Competing hunks, or a delete-modify conflict | The user decides via `AskUserQuestion` |
 
 Create one task per file (type, complexity, strategy, hunks) and display the Conflict Analysis table. Trivial files auto-proceed when `autoResolveTrivial` is true; semantic, structural, and delete-modify files show both sides and the proposed strategy via `AskUserQuestion` first. Never "take ours for everything" — analyze each conflict individually, and verify that "identical" changes really are identical.
 

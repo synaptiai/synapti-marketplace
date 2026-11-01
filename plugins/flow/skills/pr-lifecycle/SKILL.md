@@ -28,10 +28,10 @@ Iron law: **no PR without verification — a PR body that cannot show test, lint
 All five must hold before creation; otherwise stop:
 
 1. All quality commands (lint, test, typecheck) pass — output captured for the PR body.
-2. Self-review completed against the `code-quality-principles` checklist.
+2. Self-review completed (the Phase 3 review fan-out).
 3. Change classification shows no out-of-context files.
 4. Every acceptance criterion has a "Met" or "Interpreted" status with concrete evidence.
-5. No P1 findings remain from code review.
+5. No P1 or P2 findings remain from code review; P3 findings are fixed in the PR.
 
 "Get the PR up and fix it after", "the reviewer will catch it", "small change", and "CI will validate it" are not exemptions. The quality gates flow enforces are mapped in [`gate-configuration.md`](../../references/gate-configuration.md#quality-gates).
 
@@ -45,7 +45,7 @@ Priority cascade: (1) CODEOWNERS entries for paths in the diff; (2) file experti
 
 ## Push and Create
 
-`git push -u origin <branch>` and `gh pr create` are Tier 2 (journal-and-proceed). Afterwards verify with `gh pr view --json number,url,state,title`, surface the URL, and suggest `/flow:review {number}`.
+`git push -u origin HEAD` and `gh pr create` follow `tiers.push` and `tiers.prCreate` (default journal: run, one auto-log breadcrumb; confirm asks). Afterwards verify with `gh pr view --json number,url,state,title`, surface the URL, and suggest `/flow:review {number}`.
 
 ## Merge Prerequisite: Finding-Ledger Check (`/flow:merge` Phase 1)
 

@@ -23,7 +23,7 @@ git -C "${REVIEW_TREE:-.}" diff --text --no-ext-diff --no-textconv "origin/$DEFA
 
 ### Step 2: Scan for Error Handling Gaps
 
-Use Grep to find patterns in changed files:
+These patterns scan every tracked file; keep only hits in files the Step 1 diff lists:
 
 **Empty catch blocks:**
 ```bash

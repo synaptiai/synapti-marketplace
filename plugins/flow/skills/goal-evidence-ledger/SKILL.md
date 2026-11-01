@@ -1,6 +1,6 @@
 ---
 name: goal-evidence-ledger
-description: "Maintain the append-only evidence ledger: `.flow/runs/<run-id>/evidence/*.evidence.yaml` sidecars plus matching `.txt` raw captures, written only via `bin/flow-record-evidence.sh`. Use when goal-evaluator runs a verification command, when /flow:start or /flow:address captures verification evidence on a FlowRun, or when /flow:goal evaluate produces a judge report. Evidence that lives only in the transcript dies with the session; only file-backed, schema-validated sidecars prove ACs durably and satisfy the judge's Independence Protocol."
+description: "Maintain the append-only evidence ledger: `.flow/runs/<run-id>/evidence/*.evidence.yaml` sidecars plus matching `.txt` raw captures, written only via `bin/flow-record-evidence.sh`. Use when goal-evaluator runs a verification command, when /flow:address captures verification evidence on a FlowRun, or when /flow:goal evaluate produces a judge report. Evidence that lives only in the transcript dies with the session; only file-backed, schema-validated sidecars prove ACs durably and satisfy the judge's Independence Protocol."
 allowed-tools: Bash, Read, Write
 context: fork
 agent: general-purpose
@@ -10,7 +10,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: no AC transitions to `pass` without a FlowEvidence sidecar whose `proves: [<AC.id>]` names it, and every non-trivial sidecar declares what it does NOT prove. Invoked by `goal-evaluator` (Step 2, once per verification command), by `/flow:start` Phase 4 and `/flow:address` (verification-evidence sidecars on the FlowRun), and by `/flow:goal evaluate` for judge reports. Inputs: evidence id, type, proves list, and optional command, exit code, raw-output path, limitations, negative cases. Returns the sidecar path, which the caller sets as the AC's `evidence_ref`. Permitted skips: `limitations` on `holdout_validation` and `verdict` types; the raw `.txt` when nothing was captured. The helper is never skipped.
+Iron law: no AC transitions to `pass` without a FlowEvidence sidecar whose `proves: [<AC.id>]` names it, and every non-trivial sidecar declares what it does NOT prove. Invoked by `goal-evaluator` (Step 2, once per verification command), by `/flow:address` (verification-evidence sidecars on the FlowRun), and by `/flow:goal evaluate` for judge reports. Inputs: evidence id, type, proves list, and optional command, exit code, raw-output path, limitations, negative cases. Returns the sidecar path, which the caller sets as the AC's `evidence_ref`. Permitted skips: `limitations` on `holdout_validation` and `verdict` types; the raw `.txt` when nothing was captured. The helper is never skipped.
 
 ## Inputs
 
@@ -75,6 +75,8 @@ The helper writes atomically and copies the raw output beside the sidecar; it re
 ```bash
 bin/journal-record.sh --issue {N} --type evidence-captured --metadata evidence_id=<id> --metadata goal_id=<goal-id> --metadata proves=<comma-list of AC ids>
 ```
+
+With no linked issue, pass `--session` in place of `--issue {N}`.
 
 ### Step 5: Link
 

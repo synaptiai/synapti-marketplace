@@ -36,16 +36,9 @@ Grep for issue keywords and check `git log --oneline -10 -- <related path>`. Map
 
 ## Task Decomposition
 
-For each acceptance criterion:
+One atomic task per acceptance criterion: implementation, test and verification evidence in the same task, never split into sibling tasks (`commands/start.md` Phase 2). The task fields (criterion, non-goals, failure modes, interface contract, risk areas, reuse check, outline, test plan, verification command, expected evidence) are in `agents/implementation-planner.md` Step 3.
 
-```
-TaskCreate(
-  subject: "Implement: {criterion summary}",
-  description: "Acceptance criterion: {full text}\nLikely files: {paths}\nVerification: {how to check}"
-)
-```
-
-Rules: at least one task per criterion; add infrastructure tasks (migrations, config) when needed; add a verification task at the end; set dependencies with addBlockedBy for sequential work.
+Rules: at least one task per criterion; add infrastructure tasks (migrations, config) when needed; add a final "Run quality checks and self-review" task; set dependencies with addBlockedBy for sequential work.
 
 ## Parallel Task Detection
 

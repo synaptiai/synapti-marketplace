@@ -10,7 +10,7 @@ agent: Explore
 
 ## Contract
 
-Iron law: **a commit that violates project conventions is defective regardless of code quality; conventions are not optional.** Invoked by `/flow:commit` Phase 4 (message generation and validation) and by the `convention-checker` agent during `/flow:pr` and `/flow:address` reviews. Reads rules from CLAUDE.md, then `conventions.*` settings, then defaults; infers project-specific patterns from recent history when they differ. Returns a violation table (violation, P2/P3 severity, fix) covering commit messages, branch name, PR format, and issue linkage, or an explicit "no violations". Permitted skips: none — an unconfigured rule is reported as inferred, never treated as absent.
+Iron law: **a commit that violates project conventions is defective regardless of code quality; conventions are not optional.** Invoked by `/flow:commit` Phase 4 (message generation and validation) and by the `convention-checker` agent during `/flow:pr`, `/flow:review` and `/flow:address` reviews. Reads rules from CLAUDE.md, then `conventions.*` settings, then defaults; infers project-specific patterns from recent history when they differ. Returns a violation table (violation, P2/P3 severity, fix) covering commit messages, branch name, PR format, and issue linkage, or an explicit "no violations". Permitted skips: none — an unconfigured rule is reported as inferred, never treated as absent.
 
 ## Convention Sources (priority order)
 

@@ -1,6 +1,6 @@
 ---
 name: goal-evaluator
-description: "Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, dispatch the goal-evaluator-judge only for fuzzy criteria, then return a structured verdict and write non-terminal lifecycle updates. Use when /flow:goal evaluate runs, or when /flow:start Phase 4 or /flow:debug converts AC evidence into a verdict. A lifecycle transition without deterministic evidence is silent premature completion."
+description: "Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, dispatch the goal-evaluator-judge only for fuzzy criteria, then return a structured verdict and write non-terminal lifecycle updates. Use when /flow:goal evaluate runs, or when /flow:debug converts AC evidence into a verdict. A lifecycle transition without deterministic evidence is silent premature completion."
 allowed-tools: Bash, Read, Edit
 agent: general-purpose
 ---

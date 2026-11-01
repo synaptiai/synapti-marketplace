@@ -9,7 +9,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no contract element invented: every specification element is lifted from the journal or escalated. Invoked by `/flow:start` (Phase 1, after the Spec Validation Gate), `/flow:goal create`, and `/flow:debug` (after the confirmed hypothesis) with a goal id, scope, source, and invocation reason (`start | goal-create | review | address | debug`). Returns the written goal path plus a `goal-created` journal artifact; the caller then invokes `goal-lifecycle`. Permitted skips: `review` and `address` invocations skip the specification block (they inherit the issue's capture). Nothing else may be skipped: a `goal-create` with no linked issue records its `goal-created` artifact in the session journal instead of an issue journal.
+Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no contract element invented: every specification element is lifted from the journal or escalated. Invoked by `/flow:start` (Phase 1, after the Spec Validation Gate), `/flow:goal create`, and `/flow:debug` (after the confirmed hypothesis) with a goal id, scope, source, and invocation reason (`start | goal-create | review | address | debug`). Returns the written goal path, in `draft`; the caller then invokes `goal-lifecycle` for `draft → active`, which records the `goal-created` journal artifact. Permitted skips: `review` and `address` invocations skip the specification block (they inherit the issue's capture). Nothing else may be skipped.
 
 ## Inputs
 
@@ -20,7 +20,7 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 
 ## Outputs
 
-`.flow/goals/<id>.goal.yaml` conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated), plus `bin/journal-record.sh --issue {N} --type goal-created --metadata goal_id=<id> --metadata source=<src>`. With no linked issue, `--session` replaces `--issue {N}`: the artifact goes to `<journal dir>/session-{YYYY-MM-DD}.md`, dated by the local calendar day.
+`.flow/goals/<id>.goal.yaml` conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated). This skill writes no journal artifact: `goal-lifecycle` records `goal-created` on `draft → active`, in the session journal when the goal has no linked issue.
 
 ## Workflow
 
@@ -31,9 +31,9 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 5. **`specification`**: lift from the journal's `## Specification` section written by `specification-capture`: `non_goals` from `### Non-goals`, `failure_modes` from `### Failure modes`, `interface_contracts` from `### Interface contracts`, and `risk_map` from the `### Risk map` table, where each row `Area | Plausible wrong version | Discriminating check` becomes `{area, plausible_wrong_version, discriminating_check}`. When the journal has no `### Risk map`, omit the `risk_map` key. Never invent rows or fill an empty block with placeholders; an empty non-goals, failure-modes, or interface-contracts block is a six-field escalation.
 6. **`constraints`**: `tdd_required`, `require_all_pass`, `no_calendar_estimates`, `no_tier3_without_confirmation` all `true`; `denied_paths` and `allowed_paths` only when the goal narrows scope.
 7. **`evaluator`**: `type: flow_verdict_judge` (`hybrid` when fuzzy criteria exist, `deterministic` when every AC has a command), `command: /flow:goal evaluate`, `judge_agent: goal-evaluator-judge`, `evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md`, `denied_context: [implementation_rationale, self_review_findings]`.
-8. **`continuation`**: `mode: flow_managed`, `on_incomplete: continue_next_activity`, `on_blocked: six_field_escalation`, `on_complete: mark_achieved`, `max_iterations` from settings (default 20).
-9. **`lifecycle`**: `status: active`, `current_phase` by reason (`start`: explore, `review`: fan-out, `address`: categorize, `debug`: fix), `current_activity`, `turns_evaluated: 0`, `last_evaluation: {result: incomplete, reason: "Goal created; evidence not yet collected.", at: <now>}`. Never `achieved` at creation.
-10. **Write, record, verify**: run the helper, surface any non-zero exit with its stderr, append the journal artifact, then read the file back and confirm it parses and matches the schema.
+8. **`continuation`**: `mode: flow_managed`, `on_incomplete: continue_next_activity`, `on_blocked: six_field_escalation`, `on_complete: mark_achieved`, `max_iterations: 20`.
+9. **`lifecycle`**: `status: draft`, `current_phase` by reason (`start`: explore, `review`: fan-out, `address`: categorize, `debug`: fix), `current_activity`, `turns_evaluated: 0`, `last_evaluation: {result: incomplete, reason: "Goal created; evidence not yet collected.", at: <now>}`. Never `active` or `achieved` at creation.
+10. **Write and verify**: run the helper, surface any non-zero exit with its stderr, then read the file back and confirm it parses and matches the schema.
 
 ## Trust
 
