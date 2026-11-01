@@ -86,7 +86,7 @@ Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 3 — irreversib
 
 - **No native /loop invocation.** This is the canonical project-local replacement.
 - **Recursion denied.** `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` default to `false`. `trigger-policy` rejects a trigger that sets `_modify_triggers` or `_enable_triggers` to `true`, and one that sets `_create_triggers` to `true` unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is `true`. Nothing checks at run time whether a triggered command creates, enables or modifies a trigger.
-- **Tier 3 forbidden.** `policy.forbidden_actions` MUST include both `merge` and `release`. The `trigger-policy` skill rejects triggers that don't.
+- **Tier 3 forbidden.** `policy.forbidden_actions` must include both `merge` and `release`; the `trigger-policy` skill rejects a trigger that does not, unless `flow.triggers.allowAutonomousMerge` is `true` in your user settings. Either way `/flow:merge` and `/flow:release` ask before they merge or release, and the tier hook asks again.
 
 ## Critical references
 

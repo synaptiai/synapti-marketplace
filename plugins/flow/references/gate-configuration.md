@@ -195,11 +195,12 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `flow.triggers.enabled` | `true` | `/flow:trigger`, `/flow:watch`, `/flow:run`, `/flow:status` |
 | `flow.triggers.allowedTypes` | `["manual","hook","loop_prompt"]` | `/flow:trigger`, `trigger-policy` skill |
 | `flow.triggers.maxActiveTriggers` | `5` | `trigger-policy` skill |
+| `flow.triggers.allowAutonomousMerge` | `false` | `trigger-policy` skill step 2 (`bin/flow-trigger-tier3-check.sh`), from the user settings only: `true` accepts a trigger that does not forbid merge or release; the tier hook still asks |
 | `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | `trigger-policy` skill (step 3, `bin/flow-trigger-recursion-check.sh`) |
 | `flow.triggers.defaultConcurrency` | `skip_if_running` | `/flow:run trigger`, `/flow:trigger run` (`bin/flow-trigger-concurrency.sh`), `trigger-policy` skill (step 6) |
 | `replyStyle.enabled`, `constructions`, `extraPatterns` | `false`, not set, not set | `hooks/scripts/reply-style-check.sh` |
 
-Settings that nothing reads (setting them changes nothing): `flow.runtime.stateDir` (the runtime directory is always `.flow`), `flow.triggers.allowAutonomousMerge`.
+Settings that nothing reads (setting them changes nothing): `flow.runtime.stateDir` (the runtime directory is always `.flow`).
 
 ## Quality Gates
 

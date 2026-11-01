@@ -725,7 +725,7 @@
             "allowAutonomousMerge": {
               "type": "boolean",
               "default": false,
-              "description": "Fixed at false. Merge and release always need confirmation: /flow:merge and /flow:release ask with AskUserQuestion, and the tier-gate hook asks again when the command runs. No trigger can grant merge or release autonomy, and setting this to true changes nothing."
+              "description": "When true in the user's settings, a trigger may leave merge and release out of policy.forbidden_actions, so its target command may run /flow:merge or /flow:release. Those commands still ask before they merge or release, and the tier hook asks again: tiers.merge and tiers.release never go below confirm. A repository's own settings cannot turn it on (read with --no-repo-settings)."
             },
             "allowTriggerCreationFromTriggeredRun": {
               "type": "boolean",

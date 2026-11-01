@@ -9,11 +9,9 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: `merge` and `release` MUST appear in every trigger's `policy.forbidden_actions` — triggers cannot grant Tier 3 autonomy regardless of any other configuration. Invoked in `validate` mode (read-only) by `/flow:trigger enable` and by `/flow:watch` (every mode) before a trigger YAML is kept or enabled, and in `enforce` mode by `/flow:run` step 3 and `/flow:trigger run` before the target command is dispatched. Returns the JSON report below with exit 0 (pass or soft warning), 1 (policy violation), or 2 (schema invalid); the caller aborts on non-zero. Permitted skips: none — every step runs; the only non-blocking outcome is `concurrency_warning`.
+Iron law: `merge` and `release` MUST appear in every trigger's `policy.forbidden_actions` unless the user's own settings allow otherwise, and the tier hook still asks before any merge or release. Invoked in `validate` mode (read-only) by `/flow:trigger enable` and by `/flow:watch` (every mode) before a trigger YAML is kept or enabled, and in `enforce` mode by `/flow:run` step 3 and `/flow:trigger run` before the target command is dispatched. Returns the JSON report below with exit 0 (pass or soft warning), 1 (policy violation), or 2 (schema invalid); the caller aborts on non-zero. Permitted skips: none — every step runs; the only non-blocking outcome is `concurrency_warning`.
 
 ## Inputs
-
-The invoking command MUST pass:
 
 1. **Trigger YAML path** — a template under `plugins/flow/triggers/templates/` or a project-local `.flow/triggers/<id>.trigger.yaml`.
 2. **Mode** — `validate | enforce`.
@@ -29,15 +27,19 @@ A JSON report: `trigger_id`, `schema_valid`, one list per violation kind (`tier3
    ```bash
    "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-trigger-schema-check.sh" "${TRIGGER_YAML}"
    ```
-2. **Tier 3 absolute deny**: `policy.forbidden_actions` must contain both `merge` AND `release`. Missing either → `tier3_violations.append({"action": "merge_or_release", "reason": "must be forbidden"})`. Hard fail.
-3. **Recursion policy**: `recursion_policy.triggered_runs_may_modify_triggers` and `_enable_triggers` must be `false` or unset; `_create_triggers` too, unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is `true`. Exit 2 → each `RECURSION_VIOLATION=<flag>` line goes into `recursion_violations`; exit 1: stop.
+2. **Tier 3 deny**: `policy.forbidden_actions` must contain `merge` and `release`, unless `flow.triggers.allowAutonomousMerge` is `true` in the user's settings, not a repository's; the tier hook still asks. Exit 2 → each `TIER3_VIOLATION=<action>` goes into `tier3_violations`, a hard fail; exit 1: stop.
+
+   ```bash
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-trigger-tier3-check.sh" "${TRIGGER_YAML}"
+   ```
+3. **Recursion policy**: `recursion_policy.triggered_runs_may_modify_triggers` and `_enable_triggers` must be `false` or unset; `_create_triggers` too, unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is `true`. Exit 2 → each `RECURSION_VIOLATION=<flag>` goes into `recursion_violations`; exit 1: stop.
 
    ```bash
    "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-trigger-recursion-check.sh" "${TRIGGER_YAML}"
    ```
-4. **Allowed types**: `trigger.type` must be in `flow.triggers.allowedTypes` (cascade-resolved; default `[manual, hook, loop_prompt]`). `github_actions | local_cron | local_daemon` are schema-valid but not enabled by default — `flow.triggers.allowedTypes` must opt them in; surface as `tier3_violations` unless the project's setting permits them.
-5. **Active-trigger count**: count `.flow/triggers/*.trigger.yaml` with `metadata.enabled: true` and lifecycle != disabled. If count >= `flow.triggers.maxActiveTriggers` (cascade-resolved; default 5), refuse to enable a new trigger — the user must `/flow:trigger disable` one first.
-6. **Concurrency sanity**: `cancel_previous` (from `concurrency.policy`, else `flow.triggers.defaultConcurrency`) on a trigger whose target invokes a Tier 2 action (push) → `concurrency_violations` warning; cancel_previous + Tier 2 can produce partial commits. Soft warning only — never a hard fail.
+4. **Allowed types**: `trigger.type` must be in `flow.triggers.allowedTypes` (cascade-resolved; default `[manual, hook, loop_prompt]`). Any other schema-valid type (`github_actions`, `local_cron`, `local_daemon`) not listed there → `tier3_violations`.
+5. **Active-trigger count**: count `.flow/triggers/*.trigger.yaml` with `metadata.enabled: true` and lifecycle != disabled. If count >= `flow.triggers.maxActiveTriggers` (cascade-resolved; default 5), refuse to enable another; the user disables one first.
+6. **Concurrency sanity**: `cancel_previous` (from `concurrency.policy`, else `flow.triggers.defaultConcurrency`) on a trigger whose target pushes → `concurrency_violations` warning (a cancelled push can leave partial commits); never a hard fail.
 7. **Target workflow cross-reference**: when `target.workflow` is set, the workflow must exist in the flow plugin, `PLUGIN_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/workflows/${WF}.workflow.yaml"` (plugin-root resolution, `references/plugin-root-resolution.md`), or in the project, `LOCAL_PATH=".flow/workflows/${WF}.workflow.yaml"` (`[ -f "$PLUGIN_PATH" ] || [ -f "$LOCAL_PATH" ]`). Missing → `cross_reference_violations.append({"type": "missing_target_workflow", "name": target_workflow, "checked_paths": [PLUGIN_PATH, LOCAL_PATH]})`. **Hard fail** (exit 1) — a trigger pointing at a non-existent workflow is broken by construction; this catches typos (`address` vs `address-pr`) at creation rather than when `/flow:run trigger <id>` dispatches. When `target.workflow` is absent (`target.command` only), this step is a no-op.
 8. **Overall verdict**:
 

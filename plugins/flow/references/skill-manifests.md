@@ -27,12 +27,12 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | `/flow:resolve` | merge-conflict-resolution, capability-discovery, debugging-patterns | 0 | 3 | 300 |
 | `/flow:resume` | run-state-management | 0 | 1 | 109 |
 | `/flow:review` | llm-operator-principles, code-review-methodology, holdout-validation, run-state-management | 1 | 3 | 852 |
-| `/flow:run` | trigger-policy | 0 | 1 | 98 |
+| `/flow:run` | trigger-policy | 0 | 1 | 104 |
 | `/flow:setup` | capability-discovery | 0 | 1 | 105 |
 | `/flow:start` | llm-operator-principles, branch-and-task-management, change-classification, capability-discovery, debugging-patterns, preflight-checks, criterion-verification-map, holdout-validation, issue-crafting, specification-capture, tdd-patterns, goal-contract-capture, goal-lifecycle, run-state-management, runtime-verification, visual-verification | 1 | 15 | 2053 |
 | `/flow:status` | (none) | 0 | 0 | 0 |
-| `/flow:trigger` | trigger-policy | 0 | 1 | 98 |
-| `/flow:watch` | trigger-policy | 0 | 1 | 98 |
+| `/flow:trigger` | trigger-policy | 0 | 1 | 104 |
+| `/flow:watch` | trigger-policy | 0 | 1 | 104 |
 | `/flow:workflow` | workflow-validation | 0 | 1 | 94 |
 <!-- END GENERATED: commands -->
 
@@ -70,7 +70,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | specification-capture | dispatched | 574 | Capture the four specification elements (non-goals, failure modes, interface contracts, risk map) for an... |
 | tdd-patterns | dispatched | 576 | Guide test-driven development through the mandatory Red-Green-Refactor cycle: a test is RED only when it... |
 | team-coordination | dispatched · reference-only | 589 | Coordinate agent teams for adversarial review (paired skeptic/verifier per facet, disposition-only challe... |
-| trigger-policy | dispatched | 579 | Enforce FlowTrigger safety rules — no autonomous merge, no recursive trigger creation, max active trigger... |
+| trigger-policy | dispatched | 595 | Enforce FlowTrigger safety rules — no autonomous merge, no recursive trigger creation, max active trigger... |
 | visual-verification | dispatched | 592 | Verify UI-facing changes by running a screenshot-analyze-verify loop across configured viewports, with a... |
 | workflow-validation | dispatched | 582 | Validate a FlowWorkflow YAML at `plugins/flow/workflows/<id>.workflow.yaml` against `schemas/v1/workflow.... |
 <!-- END GENERATED: skills -->
@@ -80,5 +80,5 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 Skill bodies are capped at 600 words and contracts at 120 (enforced by `tests/flow-load-skills.test.sh`). Agents load skills through their own `skills:` frontmatter (see `agents/*.md`), which is unaffected by this mechanism.
 
 <!-- BEGIN GENERATED: budget (bin/flow-skill-manifests.sh) -->
-The largest command load today is `/flow:start` at 2053 words; the sum across all commands is 9836.
+The largest command load today is `/flow:start` at 2053 words; the sum across all commands is 9854.
 <!-- END GENERATED: budget -->
