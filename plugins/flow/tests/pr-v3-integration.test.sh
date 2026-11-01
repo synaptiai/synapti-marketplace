@@ -6,7 +6,8 @@
 #   - AC4: pr.md blocks PR creation when the linked goal is not `achieved`,
 #     WITH an override path (Option 2) that records an escalation-resolved
 #     artifact.
-#   - PR body links FlowEvidence sidecars under .flow/runs/<id>/evidence/.
+#   - PR body does not claim FlowEvidence sidecars: /flow:start writes none on
+#     the start-issue run, so a list of them would name files that do not exist.
 #   - pr.md appends a `pr_create` FlowActivity to the branch's start-issue run
 #     (it does NOT create its own FlowRun — pr is the tail of start-issue).
 
@@ -24,9 +25,9 @@ _flow_test_begin "pr.md gate has an override path (AC4 override)"
 assert_contains "Option 2" "$CONTENT" "override option present"
 assert_contains "escalation-resolved" "$CONTENT" "override records an escalation-resolved artifact"
 
-_flow_test_begin "pr.md PR body links FlowEvidence sidecars"
-assert_contains ".flow/runs/" "$CONTENT" "references the run directory"
-assert_contains "evidence/" "$CONTENT" "links the evidence sidecars"
+_flow_test_begin "pr.md PR body does not list FlowEvidence sidecars the start-issue run never wrote"
+assert_not_contains ".flow/runs/<run-id>/evidence/" "$CONTENT" "no sidecar directory in the PR body template"
+assert_not_contains "evidence sidecar filenames" "$CONTENT" "no instruction to list sidecar files"
 
 _flow_test_begin "pr.md appends a pr_create FlowActivity to the start-issue run"
 assert_contains "run-state-management" "$CONTENT" "delegates to run-state-management"
