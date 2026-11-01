@@ -564,7 +564,8 @@
         },
         "requireRuntimeVerification": {
           "type": "boolean",
-          "default": true
+          "default": true,
+          "description": "Not read by any command, hook or script; changing this value has no effect. Runtime verification in /flow:start Phase 4 follows the runtime-verification skill and its skip whitelist."
         }
       }
     },
@@ -592,7 +593,7 @@
     },
     "flow": {
       "type": "object",
-      "description": "Flow v3 runtime layer \u2014 goals, workflows, triggers. v3.0 wires goals into hooks + commands. See plugins/flow/references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
+      "description": "Flow runtime layer: goals, workflows, triggers and runs under .flow/. Goals are enforced by the Stop hook and the commands that create them. See references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
       "properties": {
         "runtime": {
           "type": "object",
@@ -600,18 +601,18 @@
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Master switch for the .flow/ runtime layer. Setting to false disables FlowGoal, FlowWorkflow, FlowTrigger, and FlowRun writes; existing files remain readable but no new ones are produced."
+              "description": "Switch for FlowRun records under .flow/runs/. When false, commands skip creating and updating runs (FLOW_RUN_STATE=skip) and the SessionEnd hook writes no resume hint; existing runs stay readable. Goals, workflows and triggers have their own switches (flow.goals.enabled, flow.workflows.enabled, flow.triggers.enabled)."
             },
             "stateDir": {
               "type": "string",
               "default": ".flow",
-              "description": "Project-local directory for runtime state (relative to repo root). Changing this is rare \u2014 most teams should keep the default to maintain compatibility with the gitignore policy."
+              "description": "Not read by any command, hook or script: runtime state is always written under .flow/ at the repository root, and changing this value has no effect."
             },
             "runRetentionDays": {
               "type": "integer",
               "default": 30,
               "minimum": 1,
-              "description": "How many days of FlowRun records to keep under .flow/runs/ before a future cleanup helper prunes them. v3.0 reads this for documentation; a future minor release adds the prune script."
+              "description": "Not read by any command, hook or script: FlowRun records under .flow/runs/ are not pruned, and changing this value has no effect."
             }
           },
           "additionalProperties": false
@@ -718,17 +719,17 @@
                 "hook",
                 "loop_prompt"
               ],
-              "description": "Trigger types allowed in this project. v3.0 supports manual/hook/loop_prompt; github_actions/local_cron/local_daemon are deferred to v3.1+."
+              "description": "Trigger types allowed in this project. The default allows manual, hook and loop_prompt. github_actions, local_cron and local_daemon are valid in the trigger schema but no runner for them ships; the trigger-policy check reports a trigger whose type is not listed here as a violation."
             },
             "allowAutonomousMerge": {
               "type": "boolean",
               "default": false,
-              "description": "Non-negotiable in v3.0 \u2014 Tier 3 actions (merge, release) require explicit AskUserQuestion confirmation; no trigger can grant merge autonomy."
+              "description": "Fixed at false. Merge and release always need confirmation: /flow:merge and /flow:release ask with AskUserQuestion, and the tier-gate hook asks again when the command runs. No trigger can grant merge or release autonomy, and setting this to true changes nothing."
             },
             "allowTriggerCreationFromTriggeredRun": {
               "type": "boolean",
               "default": false,
-              "description": "Recursion policy: by default, runs initiated by a trigger may NOT create new triggers. Prevents trigger-creates-trigger loops."
+              "description": "Not read by any command, hook or script; changing this value has no effect. Each trigger's own recursion_policy decides whether a run it starts may create, modify or enable triggers, and the trigger-policy check reports any of those set to true as a violation."
             },
             "defaultConcurrency": {
               "enum": [
@@ -737,7 +738,7 @@
                 "cancel_previous"
               ],
               "default": "skip_if_running",
-              "description": "Default concurrency policy when a trigger fires while a prior run is in flight."
+              "description": "Not read by any command, hook or script; changing this value has no effect. Each trigger sets its own concurrency.policy."
             },
             "maxActiveTriggers": {
               "type": "integer",
