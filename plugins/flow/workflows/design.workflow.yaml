@@ -15,7 +15,6 @@ inputs:
 required_skills:
   - architecture-patterns
   - specification-capture
-  - run-state-management
 
 required_agents:
   - implementation-planner

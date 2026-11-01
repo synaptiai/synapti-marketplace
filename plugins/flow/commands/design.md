@@ -1,7 +1,7 @@
 ---
 description: "Design or review architecture for a feature or system. Analyzes existing patterns, evaluates coupling, and produces design decisions."
 argument-hint: [feature-description-or-issue-number]
-allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
+allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---
 
 # Design: $ARGUMENTS
@@ -219,7 +219,11 @@ if [ -n "$ISSUE_NUM" ]; then
 ## Design Decision: {title}
 **Date**: {YYYY-MM-DD} | **Category**: architecture
 **Decision**: {what was decided}
+**Options considered**: {each option, one line}
+**Trade-offs**: {what the chosen option gives up}
 **Rationale**: {why this approach}
+**Non-goals**: {what this design does not do}
+**Failure modes**: {how it fails and what happens then}
 **Consequences**: {what changes, new constraints}
 ENTRY
 fi

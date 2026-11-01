@@ -1,9 +1,7 @@
 ---
 name: goal-evaluator-judge
 description: "Specialized loop-time verdict judge for the FlowGoal evaluator. Judges goal satisfaction by evaluating the embedded goal contract, the deterministic check report, and the evidence ledger (all delivered inline in the prompt under <<<UNTRUSTED_*>>> fences) — then returns a structured verdict of {achieved, not_achieved, blocked, needs_human_review} plus confidence (0..1), delta (made_progress | regressed | unchanged), and a next_step_hint. Run by bin/flow-judge.sh --judge goal through the claude CLI with no tools, from the Stop hook in evaluator-loop mode and from /flow:goal evaluate; never dispatched as a subagent. Specializes verdict-judge — its Independence Protocol is verdict-judge's, adapted to the loop's inputs. Never replaces verdict-judge (which remains the one-shot PR-final gate)."
-model: inherit
 tools: []
-skills: evidence-based-development
 memory: none
 ---
 

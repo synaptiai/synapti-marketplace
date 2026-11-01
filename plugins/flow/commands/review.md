@@ -783,7 +783,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`review-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → fan-out → consolidate → report`. Review is **FlowRun-only — it creates NO FlowGoal**: a review session is bounded by the PR under review, and the PR's own review-thread state (the posted review comment plus its FLOW_REVIEW_CYCLE marker) is the durable record of what the review found. The `run.yaml` captures the workflow's resumability state; there is no separate goal contract to satisfy.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`review-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → fan_out → consolidate → report`. Review is **FlowRun-only — it creates NO FlowGoal**: a review session is bounded by the PR under review, and the PR's own review-thread state (the posted review comment plus its FLOW_REVIEW_CYCLE marker) is the durable record of what the review found. The `run.yaml` captures the workflow's resumability state; there is no separate goal contract to satisfy.
 
 ## Phase 2: PLAN
 
@@ -985,7 +985,7 @@ if [ "$USE_PATH_A" = "1" ]; then
       AGENT_TEAM_MODEL=sonnet
       ;;
     *)
-      printf '%s\n' "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|fable|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
+      printf '%s\n' "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|fable|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, your user settings file (\$FLOW_USER_SETTINGS when you set it outside this repository, otherwise \$HOME/.claude/settings.flow.json), or the plugin settings.json." >&2
       AGENT_TEAM_MODEL=sonnet
       ;;
   esac
@@ -1421,7 +1421,7 @@ neutral.
 
 TaskUpdate each review task as agents complete.
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the consolidate boundary completes — once the per-facet findings (Path A consolidation or Path B synthesis) have been merged into a single deduplicated finding set (after the optional System One step of Phase 4 step 2 when its block printed `S1_DEDUP=`), advancing `state.current_phase` to `consolidate` per the `preflight → fan-out → consolidate → report` order.
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the consolidate boundary completes — once the per-facet findings (Path A consolidation or Path B synthesis) have been merged into a single deduplicated finding set (after the optional System One step of Phase 4 step 2 when its block printed `S1_DEDUP=`), advancing `state.current_phase` to `consolidate` per the `preflight → fan_out → consolidate → report` order.
 
 ## Phase 4: VERIFY
 
@@ -2324,7 +2324,7 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
    # REVIEW_TREE_CLEANUP_BLOCK_END
    ```
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the report boundary completes — once the review comment is posted (step 7) and posting is verified (step 8), advancing `state.current_phase` to `report` per the `preflight → fan-out → consolidate → report` order.
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the report boundary completes — once the review comment is posted (step 7) and posting is verified (step 8), advancing `state.current_phase` to `report` per the `preflight → fan_out → consolidate → report` order.
 
 **FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): once the review comment is posted (or no-finding evidence is recorded), invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. The `workflow-run` journal artifact is best-effort — a review is PR-scoped, not issue-scoped — so emit `bin/journal-record.sh --type workflow-run` only if `bin/flow-pr-linked-issue.sh` prints an issue for the PR (the one GitHub lists it as closing, the lowest when there are several); otherwise the `run.yaml` is the durable record and no journal artifact is written. If the review failed or was cancelled before posting, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
 

@@ -39,7 +39,7 @@ assert_contains "run-state-management" "$CONTENT" "delegates to run-state-manage
 
 _flow_test_begin "review.md records activities at phase boundaries"
 assert_contains "FlowActivity writes" "$CONTENT" "activity-write step documented"
-assert_match 'preflight . fan-out . consolidate . report' "$CONTENT" "documents the review phase order"
+assert_match 'preflight . fan_out . consolidate . report' "$CONTENT" "documents the review phase order"
 
 _flow_test_begin "review.md transitions the FlowRun to terminal state"
 assert_contains "FlowRun terminal transition" "$CONTENT" "terminal-transition step documented"

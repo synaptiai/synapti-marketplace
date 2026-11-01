@@ -609,6 +609,7 @@ Agent(implementation-planner):
        Interface contract: {schema/signature this task must honor}
        Risk areas: {risk-map rows whose area this task touches, verbatim | none | (disabled by specFirst.riskMap)}
        Implementation outline: {files + approach}
+       Reuses: {for every new function, class or module in the outline: existing <file>:<symbol> | none — searched: <terms>; candidates examined: N}
        Test plan: {test file + cases + assertions; one discriminating test per Risk areas row: input, expected, source of expected}
        Verification command: {exact command from Spec Validation Gate}
        Expected evidence: {what success output looks like}

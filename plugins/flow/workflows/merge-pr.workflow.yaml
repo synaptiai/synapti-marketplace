@@ -76,6 +76,6 @@ completion_gate:
     - merge_completed
 
 tier_classification:
-  branch_delete: journal
+  branch_delete: confirm
   merge: confirm
   release: confirm

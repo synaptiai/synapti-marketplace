@@ -605,11 +605,9 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 
    - **Goal**: `<GOAL_ID>` (from `.flow/goals/<id>.goal.yaml`)
    - **Lifecycle**: `<status>` (not yet `achieved`)
-   - **Evidence**: per-criterion FlowEvidence sidecars under `.flow/runs/<run-id>/evidence/`
    - **Note**: `/flow:merge` will block until this goal is `achieved` or the user explicitly overrides.
    ```
 
-   The `<run-id>` is the active FlowRun for this branch (the `start-issue` run created by `/flow:start`). List the evidence sidecar filenames so a reviewer can trace each acceptance criterion to its captured output.
    If visual verification ran, include visual evidence section:
    ```markdown
    ## Visual Verification

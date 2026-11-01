@@ -22,7 +22,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | `/flow:issue` | issue-crafting | 0 | 1 | 108 |
 | `/flow:learn` | (none) | 0 | 0 | 0 |
 | `/flow:merge` | llm-operator-principles, merge-and-release, run-state-management | 1 | 2 | 803 |
-| `/flow:pr` | llm-operator-principles, pr-lifecycle, code-review-methodology, capability-discovery, holdout-validation, run-state-management, runtime-verification, visual-verification | 1 | 7 | 1251 |
+| `/flow:pr` | llm-operator-principles, pr-lifecycle, code-review-methodology, capability-discovery, holdout-validation, run-state-management, runtime-verification, visual-verification | 1 | 7 | 1258 |
 | `/flow:release` | merge-and-release, run-state-management | 0 | 2 | 213 |
 | `/flow:resolve` | merge-conflict-resolution, capability-discovery, debugging-patterns | 0 | 3 | 300 |
 | `/flow:resume` | run-state-management | 0 | 1 | 109 |
@@ -80,5 +80,5 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 Skill bodies are capped at 600 words and contracts at 120 (enforced by `tests/flow-load-skills.test.sh`). Agents load skills through their own `skills:` frontmatter (see `agents/*.md`), which is unaffected by this mechanism.
 
 <!-- BEGIN GENERATED: budget (bin/flow-skill-manifests.sh) -->
-The largest command load today is `/flow:start` at 2053 words; the sum across all commands is 9829.
+The largest command load today is `/flow:start` at 2053 words; the sum across all commands is 9836.
 <!-- END GENERATED: budget -->

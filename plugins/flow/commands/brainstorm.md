@@ -1,7 +1,7 @@
 ---
 description: "Explore approaches before committing to implementation. Generates options, analyzes trade-offs, and helps select the best approach collaboratively."
 argument-hint: [topic-or-issue-number]
-allowed-tools: Bash, Read, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
+allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---
 
 # Brainstorm: $ARGUMENTS

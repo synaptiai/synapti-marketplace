@@ -1,7 +1,7 @@
 ---
 description: "Debug an issue with structured root cause analysis. Guides evidence gathering, hypothesis testing, and fix validation."
 argument-hint: [description-or-error-message]
-allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
+allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---
 
 # Debug: $ARGUMENTS

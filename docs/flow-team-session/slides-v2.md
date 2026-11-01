@@ -360,7 +360,7 @@ Tier 1    AUTONOMOUS                       Local + reversible
           edits, commits, branches, tests  → Execute. Don't ask.
 
 Tier 2    JOURNAL                          Team-visible + recoverable
-          push, PR create, issue assign    → Execute, log, move on.
+          push, PR, issue create+assign    → Execute, log, move on.
 
 Tier 3    CONFIRM                          Hard to reverse + high blast
           merge, release, tag push         → Always ask. Non-negotiable.
