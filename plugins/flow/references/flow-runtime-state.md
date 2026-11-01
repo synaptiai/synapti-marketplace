@@ -1,6 +1,6 @@
 # Flow runtime state — the `.flow/` directory
 
-The flow plugin's v3 runtime layer stores project-local execution state under `.flow/`. This document describes what lives there, what's tracked vs gitignored, and how the layer composes with the existing decision journal at `.decisions/`.
+The flow plugin's runtime layer stores project-local execution state under `.flow/`. This document describes what lives there, what's tracked vs gitignored, and how the layer composes with the existing decision journal at `.decisions/`.
 
 ## Directory layout
 
@@ -9,8 +9,8 @@ The flow plugin's v3 runtime layer stores project-local execution state under `.
 ├── goals/<id>.goal.yaml              # FlowGoal contracts (tracked)
 ├── workflows/<id>.workflow.yaml       # FlowWorkflow definitions (tracked; rare overrides)
 ├── triggers/<id>.trigger.yaml         # FlowTrigger configs (tracked)
-├── triggers/<id>.local.yaml           # local-only triggers (gitignored)
-└── runs/<ISO-timestamp-id>/           # FlowRun records (gitignored)
+├── watch/                             # issue-watch snapshots (ignored by a `.gitignore` of `*` that flow writes inside it)
+└── runs/<ISO-timestamp-id>/           # FlowRun records (per-developer; see Gitignore policy)
     ├── run.yaml                       # the run document
     ├── activities/<NNN>-<name>.yaml   # sequence-numbered FlowActivity records
     ├── events.jsonl                   # append-only event ledger
@@ -24,25 +24,32 @@ The flow plugin's v3 runtime layer stores project-local execution state under `.
 
 ## Gitignore policy
 
-The repo `.gitignore` excludes per-developer noise and tracks team contracts:
+`/flow:setup` adds these lines to the project's `.gitignore` when they are missing:
 
 ```
-# Per-developer runtime noise (gitignored)
+.claude/settings.flow.local.json
+.claude/*.lock
+.flow/watch/
+<journal dir>/auto-log/
+```
+
+It does not ignore `.flow/runs/`. Add that line yourself to keep run records out of commits:
+
+```
+# Per-developer runtime records (add this line yourself)
 .flow/runs/
-.flow/evidence/
-.flow/triggers/*.local.yaml
 
 # Team-shared contracts (tracked)
 # .flow/goals/*.goal.yaml
 # .flow/workflows/*.workflow.yaml
-# .flow/triggers/*.trigger.yaml (non-.local)
+# .flow/triggers/*.trigger.yaml
 # .flow/review-exceptions.md
 ```
 
 Rationale:
-- **`runs/`** and **`evidence/`** are session-bound or per-developer execution noise. Committing them would bloat history and surface non-reproducible artifacts.
+- **`runs/`** (activities, events and evidence sidecars) is session-bound, per-developer execution noise. Committing it would bloat history and surface non-reproducible artifacts.
 - **`goals/`** and **`workflows/`** are intentional team contracts — teams may want to share goal contracts across developers (e.g., a project-wide quality goal). The schemas keep these files diff-friendly.
-- **`triggers/`** is split: `<id>.trigger.yaml` is the shared trigger config; `<id>.local.yaml` is a per-developer override.
+- **`triggers/`** holds `<id>.trigger.yaml` files, the shared trigger configs. Flow reads only files with that suffix; it has no per-developer trigger file.
 
 Teams wanting fully-private goals add `.flow/goals/` to their personal `.gitignore`. The helper writes don't depend on git state.
 
@@ -55,7 +62,7 @@ All `.flow/` writes go through `bin/_journal_atomic.py` (or one of its wrappers)
 | `bin/flow-goal-record.sh` | `.flow/goals/<id>.goal.yaml` (create + update-lifecycle modes) |
 | `bin/flow-record-activity.sh` | `.flow/runs/<id>/activities/<NNN>-<name>.yaml` + appends `events.jsonl` |
 | `bin/flow-record-evidence.sh` | `.flow/runs/<id>/evidence/<id>.evidence.yaml` + optional `<id>.txt` |
-| `bin/journal-record.sh` | `.decisions/issue-N.md` manifest entries (not `.flow/`) |
+| `bin/journal-record.sh` | `.decisions/issue-N.md` (or `session-YYYY-MM-DD.md` with `--session`) manifest entries (not `.flow/`) |
 
 Atomicity guarantees:
 - `O_NOFOLLOW` on lockfile + target — symlinks rejected atomically
@@ -78,7 +85,7 @@ The decision journal at `.decisions/issue-{N}.md` remains the primary audit trai
 | What evidence proves AC1? | `.flow/runs/<id>/evidence/<id>.evidence.yaml` |
 | When did the goal transition from active to achieved? | `.decisions/issue-{N}.md` manifest (`goal-evaluation` artifact) |
 
-Every `.flow/` mutation that has long-term significance ALSO writes a journal manifest artifact (`goal-created`, `goal-evaluation`, `workflow-run`, `activity-completed`, etc.). The journal is the cross-PR, multi-session source of truth; `.flow/` is the in-flight working state.
+Every `.flow/` mutation that has long-term significance ALSO writes a journal manifest artifact (`goal-created`, `goal-evaluation`, `workflow-run`, `evidence-captured`, `trigger-fired`). The journal is the cross-PR, multi-session source of truth; `.flow/` is the in-flight working state.
 
 ## What `.flow/` is NOT
 
@@ -101,13 +108,14 @@ When SessionEnd fires (`hooks/scripts/session-end-state.sh`), every active FlowR
 
 ## Settings
 
-All `.flow/` behavior is gated by `flow.runtime.enabled` (cascade-resolved; default `true`). When disabled:
-- No `.flow/` writes happen
+FlowRun records are gated by `flow.runtime.enabled` (cascade-resolved; default `true`). When disabled:
+- `/flow:start`, `/flow:debug`, `/flow:review`, `/flow:address`, `/flow:merge` and `/flow:release` create no FlowRun (`FLOW_RUN_STATE=skip`)
 - Existing `.flow/` files remain readable
 - `/flow:resume` prints a notice and exits 0, and the SessionEnd hook records nothing
 - `/flow:goal` and the Stop hook do not read this switch; `/flow:goal` follows `flow.goals.enabled`
+- `/flow:watch`, `/flow:trigger` and `/flow:run` do not read this switch; they follow `flow.triggers.enabled` and still write `.flow/triggers/` and `.flow/watch/`
 
-This switch is meant for users who want to opt out entirely; the per-feature switches (`flow.goals.enabled`, `flow.workflows.enabled`, `flow.triggers.enabled`) provide finer-grained control.
+This switch turns off run records only; the per-feature switches (`flow.goals.enabled`, `flow.workflows.enabled`, `flow.triggers.enabled`) provide finer-grained control.
 
 ## References
 

@@ -45,7 +45,7 @@ KEY=value                        # only when STATE=ok
 
 7. **Sections are separated by a blank `echo ""`.** Improves visual scanability in the rendered prompt without adding meaningful tokens.
 
-8. **The block always ends with `true`.** Inherited from the `!`-prefix discipline — guarantees exit 0 regardless of trailing pipeline behavior. See `references/finding-ledger-parser.md` for the same convention applied to marker blocks.
+8. **The block always ends with `true`.** Inherited from the `!`-prefix discipline — guarantees exit 0 regardless of trailing pipeline behavior.
 
 ### Sentinels — closed vocabulary
 

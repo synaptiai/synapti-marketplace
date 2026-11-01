@@ -1,6 +1,6 @@
 # FlowTrigger — wake-up intent contracts
 
-FlowTrigger is the flow plugin's project-local replacement for "background execution" — except flow makes NO claim to actually run things in the background. Plugins cannot invoke native `/loop` or scheduled tasks from plugin code. FlowTrigger artifacts declare WHEN flow should resume work and WHAT to do, but actual execution requires a runner: the user manually invoking `/loop`, a Stop hook firing, CI invoking a workflow, or (v3.1+) an external runner like GitHub Actions or local cron.
+FlowTrigger is the flow plugin's project-local replacement for "background execution" — except flow makes NO claim to actually run things in the background. Plugins cannot invoke native `/loop` or scheduled tasks from plugin code. FlowTrigger artifacts declare WHEN flow should resume work and WHAT to do, but actual execution requires a runner: the user manually invoking `/loop`, a Stop hook firing, or CI invoking a workflow. The schema also defines `github_actions`, `local_cron` and `local_daemon` triggers, but flow ships no runner for them.
 
 ## Trigger types (in the default `allowedTypes`)
 
@@ -20,7 +20,7 @@ FlowTrigger is the flow plugin's project-local replacement for "background execu
 
 ## Critical non-features
 
-Per the v3 non-goals — explicit about what FlowTrigger does NOT do:
+What FlowTrigger does NOT do:
 
 1. **No native /loop invocation.** Flow CANNOT invoke `/loop` from plugin code. `/flow:watch` generates a loop-prompt file; the user invokes `/loop` themselves.
 2. **No exactly-once guarantees.** Triggers describe wake-up intent; flow makes no claim that a trigger fires exactly once. Use idempotent target commands.
@@ -56,8 +56,7 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 
 .flow/triggers/                          # Project-local trigger artifacts
 ├── pr-123-watch.trigger.yaml             # Tracked — team-shared trigger
-├── ci-failure-main.trigger.yaml          # Tracked
-└── pr-456-debug.local.yaml               # GITIGNORED — per-developer
+└── ci-failure-main.trigger.yaml          # Tracked
 
 .claude/flow-loop-<id>.md                # Generated loop-prompt (NOT in flow plugin tree)
                                           # /flow:watch creates this; user invokes /loop on it
@@ -67,11 +66,11 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 
 | Key | Default | Description |
 |---|---|---|
-| `flow.triggers.enabled` | `true` | Master switch; `false` turns `/flow:trigger` and `/flow:watch` off |
+| `flow.triggers.enabled` | `true` | Master switch; `false` turns `/flow:trigger`, `/flow:watch` and `/flow:run` off and hides the triggers section of `/flow:status` |
 | `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | `github_actions`, `local_cron` and `local_daemon` are schema-valid but allowed only when added here |
-| `flow.triggers.allowAutonomousMerge` | `false` | Hard-coded non-negotiable |
-| `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Recursion default |
-| `flow.triggers.defaultConcurrency` | `skip_if_running` | When triggers fire on top of in-flight runs |
+| `flow.triggers.allowAutonomousMerge` | `false` | Not read by any command, hook or script; setting it to `true` changes nothing. The `trigger-policy` skill (step 2) refuses every trigger whose `policy.forbidden_actions` does not list both `merge` and `release` |
+| `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Not read by any command, hook or script. Each trigger's own `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` (default `false` in the trigger schema) decide this; `trigger-policy` step 3 reports any set to `true`, and `/flow:run` sets `FLOW_TRIGGERED_RUN=true` for the target command |
+| `flow.triggers.defaultConcurrency` | `skip_if_running` | Not read by any command, hook or script. Each trigger sets its own `concurrency.policy`, which defaults to `skip_if_running` in the trigger schema; `/flow:run trigger` and `/flow:trigger run` read that field |
 | `flow.triggers.maxActiveTriggers` | `5` | Cap on enabled triggers per project |
 
 ## Composition with other v3 primitives

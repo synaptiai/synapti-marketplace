@@ -129,14 +129,14 @@ The verdict-judge's auto-FAIL rules check for these subsections by exact heading
 | `### Type` | yes (informational) | Used to apply type-conditional rules; a missing `### Type` is treated as `behavioral` (the strictest case) |
 | `### Verification command` | yes (informational) | Used to identify what the evidence comes from; not an auto-FAIL trigger |
 | `### Output` | yes (informational) | Used as the actual evidence; not an auto-FAIL trigger |
-| `### Visual analysis` | **YES (auto-FAIL if missing or blank on a `ui` criterion; `none — criterion type {type} has no visual surface` accepted on every other type; on a `ui` criterion describing an action a user performs, auto-FAIL when it carries neither a `Step:` block nor a `Flows: none — {reason}` line)** | Verdict-judge Step 1 rules: "missing-visual-analysis" and "missing interaction steps"; Step 2 rule (d) reads its viewport blocks and rule (e) its `Step:` blocks |
-| `### Does NOT promise` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule: "missing-non-goals" |
+| `### Visual analysis` | **YES (auto-FAIL if missing or blank on a `ui` criterion; `none — criterion type {type} has no visual surface` accepted on every other type; on a `ui` criterion describing an action a user performs, auto-FAIL when it carries neither a `Step:` block nor a `Flows: none — {reason}` line)** | Verdict-judge Step 1 rules, rationales `incomplete evidence — missing visual analysis on a ui criterion` and `incomplete evidence — missing interaction steps on a ui criterion`; Step 2 rule (d) reads its viewport blocks and rule (e) its `Step:` blocks |
+| `### Does NOT promise` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule, rationale `incomplete evidence — missing non-goals field ('Does NOT promise')` |
 | `### What was tested` | yes (informational) | Used during per-criterion evaluation |
-| `### What was NOT tested` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule: "missing-completeness-subsection" |
-| `### Known limitations of this evidence` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule: "missing-completeness-subsection" |
-| `### Negative/adversarial cases covered` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule: "missing-completeness-subsection" |
-| `### Test inputs and expected values` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule: "missing-completeness-subsection"; Step 2 rules "self-referential oracle" and "degenerate input" read its rows |
-| `### Risk map coverage` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule: "missing-completeness-subsection"; Step 2 rule "risk map uncovered" reads its lines |
+| `### What was NOT tested` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule, rationale `incomplete evidence — missing {list}` |
+| `### Known limitations of this evidence` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule, rationale `incomplete evidence — missing {list}` |
+| `### Negative/adversarial cases covered` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule, rationale `incomplete evidence — missing {list}` |
+| `### Test inputs and expected values` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule, rationale `incomplete evidence — missing {list}`; Step 2 rules "self-referential oracle" and "degenerate input" read its rows |
+| `### Risk map coverage` | **YES (auto-FAIL if missing)** | Verdict-judge Step 1 rule, rationale `incomplete evidence — missing {list}`; Step 2 rule "risk map uncovered" reads its lines |
 
 The seven MANDATORY subsections (`Does NOT promise`, `Visual analysis`, plus the five completeness subsections: `What was NOT tested`, `Known limitations of this evidence`, `Negative/adversarial cases covered`, `Test inputs and expected values`, `Risk map coverage`) MUST be present even when their content is "none". The point of the format is to force the producer to make an explicit positive statement about scope and limitations rather than leaving the reader to guess. A blank section is treated identically to a missing one and triggers auto-FAIL.
 
@@ -396,7 +396,7 @@ The producer never silently ships an incomplete bundle. If a mandatory subsectio
 6. Carries the auto-FAIL outcome into Step 2 — locked-in FAILs are not re-evaluated for PASS
 7. FAILs any criterion that needs something not in the bundle, rationale `evidence not in bundle` — never NEEDS-HUMAN-REVIEW, never a request to look at a file
 
-The judge does NOT receive the diff, decision journal, planning rationale, self-review findings, test source, or screenshot files, and its frontmatter declares no file tools. The bundle is the entire universe of evidence the judge sees. This isolation is the independence contract — see `agents/verdict-judge.md` "Independence Protocol". The verdict the judge returns follows `references/verdict-output-format.md`.
+The judge does NOT receive the diff, decision journal, planning rationale, self-review findings, test source, or screenshot files, and it has no tools: `bin/flow-judge.sh` runs it through `claude --print` with every tool disallowed. The bundle is the entire universe of evidence the judge sees. This isolation is the independence contract — see `agents/verdict-judge.md` "Independence Protocol". The verdict the judge returns follows `references/verdict-output-format.md`.
 
 ## Compatibility with `criterion-verification-map` skill
 

@@ -425,10 +425,7 @@ raised above the default 250 (600 leaves headroom for re-runs after
 session-limit errors, which cost eight runs on the first comparison). The
 per-run cap must rise too: `enforce-*` runs already reach $1.8 on Sonnet, so
 Opus `enforce-*` runs on the harder case can pass $4 (`--max-budget-usd 12`
-keeps a runaway run bounded without cutting normal ones short). The unittest
-gate fix shipped in 3.3.0 should lower the enforce arms' turn counts (40 on
-the first run) and with them the plugin-arm costs, so the lower bounds are
-the better guess. `--dry-run` prints every command line without spending
+keeps a runaway run bounded without cutting normal ones short). `--dry-run` prints every command line without spending
 anything, and `summary.md` reports the actual total per model.
 
 ## Results: 2026-09-09, flow 3.3.0, Claude Code 2.1.266, CLI default model
@@ -998,9 +995,9 @@ to that address, so TypeSafe `jev-1.13.0` is the only provider measured. No imaj
   suite that times out, crashes or prints no summary is scored only on what
   it printed (observed passes over the full suite; observed failures only
   for own-test catches). A cell with incomplete runs cannot be compared
-  against the spread as if it were complete; raise `--hidden-timeout` /
-  `--own-timeout` or fix the cause and `rescore-hidden` /
-  `rescore-own-tests` before reading it. Neither recorded run
+  against the spread as if it were complete; fix the cause, or re-score with
+  a longer limit (`rescore-hidden --timeout S` / `rescore-own-tests --timeout
+  S`; the per-run scorer's limit is 120 seconds), before reading it. Neither recorded run
   (`evals/results-2026-09-09*/`) contains an incomplete run: every one of the
   168 hidden suites printed `Ran N tests` for its full N and a verdict line.
 - **The degenerate heuristic only sees literals.** Generated inputs are

@@ -25,10 +25,12 @@ The report `skills/capability-discovery/SKILL.md` returns: six sections, each fi
 ### LSP Capabilities
 | Feature | Status | Use Case |
 |---------|--------|----------|
-| documentSymbol | {Available/Unavailable} | Symbol navigation in files |
-| hover | {Available/Unavailable} | Type info and documentation during CODE phase |
-| goToDefinition | {Available/Unavailable} | Trace code paths during EXPLORE phase |
-| findReferences | {Available/Unavailable} | Impact analysis during EXPLORE, caller verification during REVIEW |
-| goToImplementation | {Available/Unavailable} | Interface resolution |
-| diagnostics | {Available/Unavailable} | Quality signal during VERIFY phase (errors→P1, warnings→P2) |
+| documentSymbol | {Available/Unavailable/Disabled} | Symbol navigation in files |
+| hover | {Available/Unavailable/Disabled} | Type info and documentation during CODE phase |
+| goToDefinition | {Available/Unavailable/Disabled} | Trace code paths during EXPLORE phase |
+| findReferences | {Available/Unavailable/Disabled} | Impact analysis during EXPLORE, caller verification during REVIEW |
+| goToImplementation | {Available/Unavailable/Disabled} | Interface resolution |
+| diagnostics | {Available/Unavailable/Disabled} | Quality signal during VERIFY phase (errors→P1, warnings→P2) |
 ```
+
+`Disabled` is reported for every feature when `lsp.enabled` is `false`.

@@ -36,7 +36,7 @@ The full schema lives at `plugins/flow/schemas/v1/workflow.schema.json`.
 2. **`required_skills` existence** — every referenced skill has a `plugins/flow/skills/<name>/SKILL.md`.
 3. **`required_agents` existence** — every referenced agent has a `plugins/flow/agents/<name>.md`.
 4. **Per-activity references** — activities with `skill:` or `agent:` fields are existence-checked too.
-5. **Tier 3 confirm-gating** — `merge` and `release` MUST be `confirm`. Soft fail for other Tier 3 actions.
+5. **Tier 3 confirm-gating** — `merge`, `release` and, when present, `tag_push` MUST be `confirm`. Any other value is a hard fail.
 6. **No native-slash invocations** — no `/goal`, `/loop`, `/schedule`, `/routine` as invoked commands. Hard fail.
 7. **Completion gate field present** — `completion_gate.documented_requirements` is a non-empty array. The label values are NOT cross-referenced against activity evidence outputs (the field is advisory documentation; commands enforce their own gates).
 
@@ -46,7 +46,7 @@ The full schema lives at `plugins/flow/schemas/v1/workflow.schema.json`.
 
 Teams that need to customize a workflow can drop a `.flow/workflows/<id>.workflow.yaml` file alongside the plugin's default. `/flow:workflow inspect <id>` and `/flow:workflow graph <id>` read the local override when present; the plugin default is the fallback.
 
-Project-local workflows are committed by default (per the gitignore policy). Truly per-developer overrides should use `.local.workflow.yaml` suffix and add to personal gitignore.
+Project-local workflows are committed by default (per the gitignore policy). An override must be named `<id>.workflow.yaml`; a `<id>.local.workflow.yaml` file is a separate workflow (id `<id>.local`) and overrides nothing. To keep an override to yourself, add its file to your personal gitignore.
 
 ## Phase types
 
