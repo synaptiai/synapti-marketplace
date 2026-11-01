@@ -86,7 +86,7 @@ All four layers from `autonomous-workflow/SKILL.md` lines 18–22.
 - 09:30 — **Static**: lint + test + typecheck run in parallel. All green.
 - 10:15 — **Runtime**: `runtime-verification` skill builds the binary, runs `./sync --json` against a stub server, captures output. Show the JSON on screen.
 - 11:00 — **Review**: self-review with fix-forward. The agent finds **one P2** — a missing test for AC4 (regression case). It fixes it inline, doesn't escalate.
-- 11:45 — **Verdict**: `Agent(verdict-judge)` dispatched. Show the prompt construction — the agent sees only the AC list, the evidence bundle and the holdout-validation output. Show that the diff and journal are NOT in the prompt.
+- 11:45 — **Verdict**: the verdict judge runs through `bin/flow-judge.sh --judge verdict`, a separate `claude --print` process with every tool disallowed. Show the prompt construction — its three input files hold only the AC list, the evidence bundle and the holdout-validation output. Show that the diff and journal are NOT in the prompt.
 - 12:30 — Verdict-judge returns: AC1 PASS, AC2 PASS, AC3 PASS, AC4 PASS. Per-criterion evidence summarized.
 - 13:15 — Buffer.
 
@@ -98,7 +98,7 @@ All four layers from `autonomous-workflow/SKILL.md` lines 18–22.
 - 13:50 — Parallel agent fan-out (Phase 3): `code-reviewer`, `convention-checker`, `test-runner`, `security-reviewer`, `error-handler-inspector`, plus a re-run of `holdout-validation`.
 - 14:30 — Agents return. Findings table renders, sorted P1 → P2 → P3.
 - 15:00 — One P3 surfaces: "missing example in README." Agent fixes inline (every finding, P3 included, is fixed in the PR — Excellence Principle #6).
-- 15:15 — Push happens (Tier 2 — journal entry, no prompt).
+- 15:15 — Push happens (Tier 2 — the `tier-gate` hook writes a breadcrumb to the local auto-log trail, no prompt).
 - 15:30 — PR body assembled from `plugins/flow/templates/pr-body.md` + public journal entries. URL visible.
 
 **Cut option**: if slot is tight, replace 13:30–16:00 with a single screenshot of the assembled PR body. Recording drops to 16:30 cumulative.
@@ -123,9 +123,10 @@ A reviewer (a second persona, off-screen) drops two comments:
 - 18:50 — Display: approval ✓, checks ✓, conversations resolved ✓, finding-ledger empty ✓ (no unresolved or ESCALATED items in FLOW_RESOLUTION_CYCLE), FlowGoal achieved ✓.
 - 19:10 — **Tier 3 confirmation prompt** via AskUserQuestion. Show the structured options panel.
 
-**Pause beat 4** (live narration, ~45 sec): freeze on the confirmation prompt. "This is Tier 3. Merge is hard to reverse — once it's on the default branch, getting it off is a revert commit visible to everyone. The plugin will not auto-merge. The hooks will not auto-merge. Even if you somehow wrote a command that tried, `block-force-push` and `block-destructive` would catch the recovery attempt. Confirmation here is structural. The user has to say yes."
+**Pause beat 4** (live narration, ~45 sec): freeze on the confirmation prompt. "This is Tier 3. Merge is hard to reverse — once it's on the default branch, getting it off is a revert commit visible to everyone. The plugin will not auto-merge. When the merge command runs, the `tier-gate` hook asks a second time, and it asks for any merge, inside flow or typed straight into Bash. Confirmation here is structural. The user has to say yes."
 
-- 19:30 — User confirms. Squash merge per `merge.strategy: squash`. Branch deleted per `merge.deleteBranch: true`.
+- 19:20 — User confirms. The merge command runs and Claude Code's permission prompt from `tier-gate` shows the exact command. Show it.
+- 19:30 — User approves. Squash merge per `merge.strategy: squash`. Branch deleted per `merge.deleteBranch: true`.
 - 19:55 — Done. Final shot of the closed PR + closed issue.
 
 ## Pre-recording checklist (run before hitting record)
@@ -154,10 +155,12 @@ asciinema --version >/dev/null 2>&1 || { echo "FAIL: asciinema missing"; exit 1;
 #    setup at recordings/stub-server-README.md before recording day.)
 curl -sf http://localhost:9999/health || { echo "FAIL: stub server not running — see recordings/stub-server-README.md"; exit 1; }
 
-# 6. Dry-run /flow:setup and /flow:status from cold (per hands-on slide)
-/flow:setup
-/flow:status
+# 6. timeout or gtimeout installed — the verdict judge cannot start without one
+#    (on macOS: brew install coreutils)
+command -v timeout >/dev/null 2>&1 || command -v gtimeout >/dev/null 2>&1 || { echo "FAIL: install GNU coreutils for timeout/gtimeout"; exit 1; }
 ```
+
+Then, in a Claude Code session started in `sync-cli`, dry-run `/flow:setup` and `/flow:status` from cold (per the hands-on slide). Both are Claude Code slash commands, not shell commands, so they are not part of the script above.
 
 If any check fails, the slide is wrong, not the engineer. Update the slide before recording.
 

@@ -18,8 +18,8 @@ One page. Pin to the wall. Detail in `HANDBOOK.md`.
 
 | Command | Notes |
 |---------|-------|
-| `/flow:merge <pr>` | Prerequisite check (finding ledger, FlowGoal achieved) + AskUserQuestion. A hook refuses any merge whose checks are unfinished or red. |
-| `/flow:release <type>` | Changelog from merged PRs + AskUserQuestion. |
+| `/flow:merge <pr>` | Prerequisite check (finding ledger, FlowGoal achieved) + AskUserQuestion; `tier-gate` asks again when the merge runs. A hook refuses any merge whose checks are unfinished or red. |
+| `/flow:release <type>` | Two runs. Run 1: release PR with the version bump and changelog from merged PRs. Run 2, after it is merged: AskUserQuestion, then tag + GitHub release (`tier-gate` asks again). |
 
 ## Read-only / learning
 
@@ -42,13 +42,13 @@ One page. Pin to the wall. Detail in `HANDBOOK.md`.
 
 | Command | When |
 |---------|------|
-| `/flow:setup` | Once per repo |
+| `/flow:setup` | Once per repo (also offers GitHub rulesets for the default branch and tags) |
 | `/flow:resolve` | Merge conflicts |
 | `/flow:flow` | Universal dispatcher (`/flow <verb> <target>`) |
 
 ## Runtime / admin (rarely typed)
 
-`/flow:goal` · `/flow:workflow` · `/flow:trigger` · `/flow:run` · `/flow:resume` · `/flow:watch` — inspect goals, workflows, triggers and runs. `/flow:start` creates the goal for you.
+`/flow:goal` · `/flow:workflow` · `/flow:trigger` · `/flow:run` · `/flow:resume` · `/flow:watch` — inspect goals, workflows, triggers and runs. `/flow:start` creates the goal for you. `/flow:watch` modes: `pr <N>`, `ci`, `issue <N>`, `branch` (the branch watch merges the default branch in, fixes failures, commits and pushes).
 
 ---
 
@@ -57,26 +57,31 @@ One page. Pin to the wall. Detail in `HANDBOOK.md`.
 | Tier | Examples | Behavior |
 |------|----------|----------|
 | **1 — Autonomous** | edits, commits, branches, tests, agent dispatch | Execute without asking |
-| **2 — Journal** | push, PR create, issue assign/create, PR comment, `--force-with-lease` | Execute + log to `.decisions/` |
-| **3 — Confirm** | merge, release, force-push, force branch-delete | Always ask. Non-negotiable. |
+| **2 — Journal** | push, PR create, issue assign/create, PR comment, `--force-with-lease` | Execute + one breadcrumb in the local, gitignored `.decisions/auto-log/` trail |
+| **3 — Confirm** | merge, release, tag push or tag delete | Always ask. Non-negotiable. |
 
-Promote tiers (autonomous → journal → confirm). Never demote. Merge and release always ask, whatever the `tiers` setting says.
+Force-push and force-deleting an unmerged branch are not asked about: hooks block them (exit 2).
 
-## Hook layer (14 wired scripts)
+The `tier-gate` hook applies `tiers.*` to every Bash command. `push`, `prCreate`, `issueAssign`, `issueCreate`: `autonomous`, `journal` or `confirm`. `merge` and `release`: always `confirm` (a lower value is ignored with a warning).
+
+## Hook layer (17 wired scripts)
 
 ```
 PreToolUse   Bash   block-force-push   block-destructive   block-unchecked-merge
                     block-secrets      ask-issue-create    (asks during an active goal)
+                    tier-gate          (applies tiers.*: confirm asks, journal logs)
 PostToolUse  Edit   log-file-changes   (local auto-log trail + quality ledger)
 PostToolUse  Bash   log-commits        (bounded by two commit guards, not a line check)
                     record-quality-run (also on PostToolUseFailure)
+                    s1-screen-text     (off unless guard.planted-instructions is set)
+SessionStart        tier-session-start (puts flow's git/gh wrappers on PATH)
 TaskCompleted       verify-task-completion   (blocks while edits postdate the last passing check)
 TeammateIdle        nudge-idle-teammate      (agent teams)
 SessionEnd          session-end-learn   session-end-state
 Stop                flow-goal-stop (warn by default)   reply-style-check (opt-in)
 ```
 
-`gate-merge` / `gate-release` are NOT hook scripts — confirmation is in the command files via `AskUserQuestion`. `block-unchecked-merge` refuses a merge typed into Bash while its checks are queued, running or failed.
+`gate-merge` / `gate-release` are NOT hook scripts — `/flow:merge` and `/flow:release` confirm via `AskUserQuestion`, and `tier-gate` asks again when the merge, tag push or release command runs (two prompts; the only prompt for one typed outside flow). `block-unchecked-merge` refuses a merge typed into Bash while its checks are queued, running or failed.
 
 ---
 
@@ -92,7 +97,7 @@ trace       Stranger   journal
             Test
 ```
 
-**Iron law**: NO SKIPPING PHASES. (`autonomous-workflow/SKILL.md` line 11)
+**Iron law**: "Explore, then Plan, then Code, then Verify, and every phase produces an artifact: a skipped phase comes back as rework." (`autonomous-workflow/SKILL.md` line 11)
 
 **Fix-forward** (REVIEW layer): the agent fixes findings inline during self-review rather than reporting them as work-for-the-reviewer. Bounded by `fixForwardMaxIterations` to prevent loops.
 
