@@ -210,11 +210,16 @@ def finding_ref(prefix, fid):
 
 
 def run_dir_of(run_id):
-    """(.flow/runs/<run id> of the repository the process runs in, whether
-    the state is kept there): kept only when that run directory exists and is
-    not a symlink."""
+    """(<runtime dir>/runs/<run id> of the repository the process runs in,
+    whether the state is kept there): kept only when that run directory
+    exists and is not a symlink. The runtime directory is
+    flow.runtime.stateDir (runtime_dir() in bin/_repo_dir.py, default .flow),
+    relative to the top."""
     top = (git(".", "rev-parse", "--show-toplevel") or b"").decode("utf-8", "replace").strip()
-    run_dir = os.path.join(top, ".flow", "runs", run_id) if (run_id and top) else ""
+    if not (run_id and top):
+        return "", False
+    from _repo_dir import runtime_dir
+    run_dir = os.path.join(top, runtime_dir(), "runs", run_id)
     return run_dir, bool(run_dir) and os.path.isdir(run_dir) and not os.path.islink(run_dir)
 
 

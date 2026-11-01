@@ -110,10 +110,10 @@ Source: `plugins/flow/references/three-tier-safety.md`.
 | Tier | What | Behavior | Examples |
 |------|------|----------|----------|
 | **1 — Autonomous** | Local, reversible | Execute without asking | File edits, commits, branch creation, staging, running tests, agent dispatch |
-| **2 — Journal** | Team-visible, recoverable | Execute and log to decision journal | Push, PR creation, issue assignment, issue creation, PR comment, `--force-with-lease` push |
-| **3 — Confirm** | Hard to reverse, high-impact | Always require human confirmation | PR merge, release creation, force push, branch force-deletion |
+| **2 — Journal** | Team-visible, recoverable | Execute and write one breadcrumb to the local, gitignored auto-log trail (`.decisions/auto-log/`); the tracked journal is not touched | Push, PR creation, issue assignment, issue creation, PR comment, `--force-with-lease` push |
+| **3 — Confirm** | Hard to reverse, high-impact | Always require human confirmation | PR merge, release creation, pushing or deleting a tag. Force push and force-deleting an unmerged branch are not asked about: hooks block them outright (exit 2) |
 
-**Promotion rule**: actions can be promoted (autonomous → journal → confirm) but never demoted. This is the documented policy for the `tiers` setting. No command or hook reads the `tiers` keys at present: `/flow:merge` and `/flow:release` ask for confirmation whatever the setting says, and every other command applies the tier listed in its own `## Tier Classification` section.
+**The `tiers` setting**: the `tier-gate.sh` PreToolUse hook applies `tiers.*` to every Bash command, whether a flow command or the agent wrote it. `confirm` asks through Claude Code's permission prompt, `journal` runs the command and writes a breadcrumb to the auto-log trail, and `autonomous` runs it. `push`, `prCreate`, `issueAssign` and `issueCreate` take any of the three values. `merge` and `release` are always `confirm`: a lower value is ignored with a warning. Pushing or deleting a tag counts as `release`. When a session starts, `tier-session-start.sh` puts flow's `git` and `gh` wrappers (`hooks/shims/`) first on PATH, and they check the same actions again when git or gh starts, so a script file, an alias or `eval` cannot hide them. In `claude -p` there is no one to answer an ask, so a `confirm` action is refused.
 
 **Hook enforcement at the Bash layer**:
 
@@ -124,14 +124,16 @@ Source: `plugins/flow/references/three-tier-safety.md`.
 | `block-unchecked-merge.sh` | `gh pr merge` while a check is queued, running or failed; `--auto` where the base branch requires no checks | Exit 2 (block) |
 | `block-secrets.sh` | Inline credentials | Exit 2 (block) |
 | `ask-issue-create.sh` | `gh issue create` while a FlowGoal is active | Asks for permission |
+| `tier-gate.sh` | `git push` (a tag push counts as release), `gh pr create`, assigning an issue, `gh issue create`, `gh pr merge`, `gh release create`/`edit`/`delete`/`upload`/`delete-asset`, and `gh api` calls that do the same | Applies `tiers.*`: `confirm` asks (merge and release always do), `journal` writes a breadcrumb, `autonomous` allows |
+| `tier-session-start.sh` (SessionStart) and the `git`/`gh` wrappers | The same actions, when git or gh starts | Refuses a `confirm` action that `tier-gate.sh` did not ask about in the same Bash call; writes the breadcrumb for a `journal` action the hook did not see |
 
-**Important**: merge and release confirmation is handled at the **command level** via AskUserQuestion (see `/flow:merge` and `/flow:release`), not by a `gate-merge` or `gate-release` hook script (`three-tier-safety.md`, section "Hook Enforcement"). `block-unchecked-merge.sh` does not confirm anything; it refuses a merge whose checks have not finished green, including one typed straight into Bash. The fourteen wired hook scripts are listed in §7.
+**Important**: there is no `gate-merge` or `gate-release` hook script. `/flow:merge` and `/flow:release` ask with AskUserQuestion before they run the merge, tag push or release; `tier-gate.sh` then asks again when that command runs, and it is the only check for a merge, tag push or release typed outside flow. Inside flow you may see two prompts for one action (`three-tier-safety.md`, section "Hook Enforcement"). `block-unchecked-merge.sh` does not confirm anything; it refuses a merge whose checks have not finished green, including one typed straight into Bash. The seventeen wired hook scripts are listed in §7.
 
 ### 2b. Explore-Plan-Code-Verify (EPCV)
 
 Source: `plugins/flow/skills/autonomous-workflow/SKILL.md`.
 
-> **Iron Law** (line 11): "NO SKIPPING PHASES. Explore, then Plan, then Code, then Verify. Every phase produces an artifact."
+> **Iron Law** (line 11): "Explore, then Plan, then Code, then Verify, and every phase produces an artifact: a skipped phase comes back as rework."
 
 | Phase | What | Output |
 |-------|------|--------|
@@ -142,10 +144,10 @@ Source: `plugins/flow/skills/autonomous-workflow/SKILL.md`.
 
 **What each phase leaves behind** (concrete artifacts a reader can open):
 
-- **EXPLORE → Artifact**: a populated `.decisions/issue-N.md` with a `## Specification` heading (non-goals, failure modes, interface contracts, risk map) and the Spec Validation Gate result mapping each AC to its runnable verification command. When at least one AC carries a verification command, a FlowGoal at `.flow/goals/issue-N.goal.yaml` (§12). Source: `commands/start.md`, Phase 1.
+- **EXPLORE → Artifact**: a populated `.decisions/issue-N.md` with a `## Specification` heading (non-goals, failure modes, interface contracts, risk map) and the Spec Validation Gate result (on a branch with no issue number the journal is `.decisions/session-YYYY-MM-DD.md`) mapping each AC to its runnable verification command. When at least one AC carries a verification command, a FlowGoal at `.flow/goals/issue-N.goal.yaml` (§12). Source: `commands/start.md`, Phase 1.
 - **PLAN → Artifact**: an atomic TaskList where each task bundles implementation + test + verification command + expected evidence shape, plus a `Reuses:` line naming the existing code to call or what was searched before writing a new helper; a feature branch off the default branch; the Stranger Test result recorded in the journal under `## Stranger Test` as PASS or BLOCK. Source: `commands/start.md`, Phase 2; `agents/implementation-planner.md`.
 - **CODE → Artifact**: per-task commits, each containing implementation + test + the verification evidence captured at task-completion time (not deferred); `<!-- auto-log: ... -->` entries in the local gitignored trail for every Edit/Write and commit; the Per-Task Verification Gate satisfied for each task. Source: `autonomous-workflow/SKILL.md`, "Per-Task Verification Gate"; `commands/start.md`, Phase 3.
-- **VERIFY → Artifact**: an evidence bundle (one section per AC with `Does NOT promise`, `Visual analysis` and the five completeness subsections), the holdout-validation output, and the verdict-judge agent's PASS/FAIL/NEEDS-HUMAN-REVIEW per criterion — fed only the ACs + evidence bundle + holdout output. Source: `criterion-verification-map/SKILL.md`, "Evidence collection protocol" and "Judge isolation"; `commands/start.md`, Phase 4.
+- **VERIFY → Artifact**: an evidence bundle (one section per AC with `Does NOT promise`, `Visual analysis` and the five completeness subsections), the holdout-validation output, and the verdict judge's PASS/FAIL/NEEDS-HUMAN-REVIEW per criterion — fed only the ACs + evidence bundle + holdout output. Source: `criterion-verification-map/SKILL.md`, "Evidence collection protocol" and "Judge isolation"; `commands/start.md`, Phase 4.
 
 **The four VERIFY layers** (`autonomous-workflow/SKILL.md` lines 18–22):
 
@@ -154,7 +156,7 @@ Source: `plugins/flow/skills/autonomous-workflow/SKILL.md`.
 | **a. Static** | Lint, test, typecheck in parallel + LSP diagnostics if available | Parallel quality commands + LSP |
 | **b. Runtime** | Build the project, start it, verify at runtime; for UI changes, screenshot each viewport and drive the changed user flow. Debug-fix-retest loop bounded by `closedLoop.maxDebugIterations`. | `runtime-verification` and `visual-verification` skills |
 | **c. Review** | Self-review with **fix-forward** — fix findings immediately, don't just report them | `code-review-methodology` skill |
-| **d. Verdict** | Independent judgment. Acceptance criteria + evidence bundle → verdict-judge agent → PASS/FAIL/NEEDS-HUMAN-REVIEW. Judge has no access to diff or journal. | `verdict-judge` agent |
+| **d. Verdict** | Independent judgment. Acceptance criteria + evidence bundle + holdout output → verdict judge → PASS/FAIL/NEEDS-HUMAN-REVIEW. The judge runs as a separate `claude --print` process with every tool disallowed (`bin/flow-judge.sh`), so it has no access to the diff or journal. | `agents/verdict-judge.md` instructions, run by `bin/flow-judge.sh` |
 
 **Per-Task Verification Gate** (`autonomous-workflow/SKILL.md` lines 28–35): a task may NOT be marked completed until ALL of: tests pass, verification evidence captured, no out-of-context files, TDD cycle observed when `tddMode: enforce`. `/flow:start` also runs a duplication scan per task: a block this change copied is treated like a failing test. The `TaskCompleted` hook backs this up: it refuses completion while files have changed since the last passing test, lint, typecheck or build run (§7). This is the primary quality enforcement point — VERIFY is independent confirmation, not first-pass verification.
 
@@ -167,13 +169,13 @@ If you only remember three definitions, remember these.
 | Concept | What it is | Plural noun for | Example |
 |---------|-----------|-----------------|---------|
 | **Command** | An entry point — a `/flow:*` invocation that drives a workflow phase. Carries the executable bash. | "things you type" | `/flow:start 42` |
-| **Agent** | A subagent dispatched by a command, with its own context and a narrow tool budget | "specialists you hire" | `verdict-judge` |
+| **Agent** | A specialist with its own context: a subagent dispatched by a command with a narrow tool budget, or (for the two judges) a separate `claude --print` process with no tools | "specialists you hire" | `security-reviewer`, `verdict-judge` |
 | **Skill** | A reference document — policy, philosophy, rationale — loaded into the active context | "reference docs Claude reads" | `criterion-verification-map` |
 
 The same knowledge lives in different containers depending on how it's reused:
 
 - A **command** runs once per workflow step and re-reads itself each session. It owns the bash blocks and the phase ordering.
-- An **agent** runs in a forked context with isolated tools — useful for independent judgment (verdict-judge sees no diff) or parallel review.
+- An **agent** runs in its own context with isolated tools — useful for parallel review. The two judges (`verdict-judge`, `goal-evaluator-judge`) run through `bin/flow-judge.sh` as separate `claude --print` processes with every tool disallowed, so they see only the input they are given (the verdict judge sees no diff).
 - A **skill** is invoked from anywhere — commands, other skills, agents — and contributes its iron laws + protocols to whatever workflow needs them.
 
 **Why skills carry no executable bash**: skills are policy and rationale that compounds across sessions. Bash that runs at workflow time belongs in commands, where it can be audited and version-controlled per phase. Splitting the responsibility this way means a skill can be re-read by a new command without forking logic, and a command can change its bash without rewriting team knowledge.
@@ -215,7 +217,7 @@ Tier 3 (confirmation required):
 | Command | Purpose |
 |---------|---------|
 | `/flow:merge <pr>` | Merge with prerequisite verification — never autonomous |
-| `/flow:release <type>` | Changelog + semantic version release — never autonomous |
+| `/flow:release <type>` | Release in two runs — never autonomous. Run 1 opens a release pull request that bumps the version files and the changelog. Run 2, after that pull request is merged, asks for confirmation, then tags the merge commit, pushes the tag and creates the GitHub release |
 
 Supporting three (read-only or learning):
 
@@ -238,11 +240,11 @@ Rare / bootstrap:
 
 | Command | Purpose |
 |---------|---------|
-| `/flow:setup` | Initialize flow for a repository — detect tech stack, generate settings, configure LSP |
+| `/flow:setup` | Initialize flow for a repository — detect tech stack, generate settings, configure LSP, offer GitHub rulesets that protect the default branch and tags |
 | `/flow:resolve` | Resolve merge conflicts on a branch or PR |
-| `/flow:flow` | Universal dispatcher — `/flow <verb> <target>` for the sixteen commands above |
+| `/flow:flow` | Universal dispatcher — `/flow <verb> <target>` for every other flow command (22 verbs) |
 
-Runtime / admin (inspect the layer flow manages for you; see §12):
+Runtime / admin (the layer flow manages for you; see §12):
 
 | Command | Purpose |
 |---------|---------|
@@ -251,9 +253,9 @@ Runtime / admin (inspect the layer flow manages for you; see §12):
 | `/flow:trigger` | Manage FlowTriggers — wake-up intent; they do not run anything in the background |
 | `/flow:run` | Run a trigger's target once |
 | `/flow:resume` | Read an interrupted run and propose the next safe action. It never runs the action itself |
-| `/flow:watch` | Write a trigger and a `/loop` prompt file that you start yourself |
+| `/flow:watch` | Write a trigger and a `/loop` prompt file that you start yourself. Modes: `pr <N>`, `ci`, `issue <N>` (reports changes to an issue's comments, labels, assignees and state; read-only on GitHub) and `branch` (each iteration merges the default branch in, runs the quality checks, fixes failures the merge introduced, commits and pushes) |
 
-**Command-level tier-3 prompts**: `/flow:merge` and `/flow:release` invoke `AskUserQuestion` for confirmation. There is no `gate-merge` or `gate-release` hook — the structural gate is in the command file itself plus the Bash hooks for the underlying dangerous operations, including `block-unchecked-merge.sh`.
+**Tier-3 prompts**: `/flow:merge` and `/flow:release` invoke `AskUserQuestion` for confirmation. There is no `gate-merge` or `gate-release` hook script; the `tier-gate.sh` hook asks again when the merge, tag push or release command runs, so you may see two prompts. The Bash hooks for the underlying dangerous operations, including `block-unchecked-merge.sh`, apply as well.
 
 **What `/flow:merge` checks before it asks**: approval, CI checks (finished, and which are required on the base branch), mergeability, unresolved conversations and stale approval are shown in a Merge Assessment table. It stops on the finding-ledger gate (§1, Principle 6), on the FlowGoal gate (an active goal for the branch must be `achieved`; a branch with no goal is not blocked), and when a FlowRun linked to the branch is still active. It then asks for confirmation and runs the merge with `merge.strategy` (default `squash`) and `merge.deleteBranch` (default `true`).
 
@@ -290,7 +292,7 @@ The fan-out runs all agents in a single dispatch — they do not see each other'
 
 ## 5. Agents (10)
 
-Each agent is a forked context with its own tool budget. Source: `plugins/flow/agents/*.md`.
+Eight agents are dispatched as subagents, each in its own context with its own tool budget. The two judges, `verdict-judge` and `goal-evaluator-judge`, run through `bin/flow-judge.sh` as separate `claude --print` processes with every tool disallowed and the agent file's body as the system prompt. The judges need `timeout` or `gtimeout` installed (on macOS: `brew install coreutils`). Source: `plugins/flow/agents/*.md`, `plugins/flow/bin/flow-judge.sh`.
 
 | Agent | What it does |
 |-------|-------------|
@@ -369,17 +371,20 @@ Source of truth: `plugins/flow/hooks/hooks.json`.
 | PreToolUse | Bash | `block-unchecked-merge.sh` | Exit 2 on `gh pr merge` while any check is queued, running or failed, on `--auto` where the base branch requires no checks, and on any merge not written as `gh pr merge <N> --repo owner/name` with `--squash`, `--merge` or `--rebase` |
 | PreToolUse | Bash | `block-secrets.sh` | Exit 2 on inline credentials |
 | PreToolUse | Bash | `ask-issue-create.sh` | Turns `gh issue create` into a permission prompt while a FlowGoal is active (the fix-it-here rule). Off when `minimalScope: true` |
+| PreToolUse | Bash | `tier-gate.sh` | Applies `tiers.*` to `git push` (a tag push or tag delete counts as `release`), `gh pr create`, issue assignment, `gh issue create`, `gh pr merge`, `gh release create`/`edit`/`delete`/`upload`/`delete-asset`, and `gh api` calls that do the same: `confirm` asks through the permission prompt (merge and release always do), `journal` writes a breadcrumb to the local auto-log trail, `autonomous` allows |
 | PostToolUse | Edit\|Write\|NotebookEdit | `log-file-changes.sh` | Append `<!-- auto-log: ... -->` entry to the local, gitignored trail (`{journal.dir}/auto-log/`) — not to the tracked journal — and record the edit in the session quality ledger |
 | PostToolUse | Bash | `log-commits.sh` | Append a commit breadcrumb to the same local trail. Two guards bound the append loop: the commit subject starting with `chore(decisions):`, and a commit that touched only the tracked journal. |
 | PostToolUse and PostToolUseFailure | Bash | `record-quality-run.sh` | Record each test, lint, typecheck or build run, its exit code and a digest of the working tree, in the session quality ledger. Never blocks |
+| PostToolUse | Bash | `s1-screen-text.sh` | Off unless your settings put System One site `guard.planted-instructions` in `shadow` or `on`. Then it asks whether issue or pull request text read with `gh` holds instructions addressed to the agent, and in `on` adds a note beside the output that it is data |
 | TaskCompleted | (any) | `verify-task-completion.sh` | Per-Task Verification Gate enforcement: exit 2 while files have changed since the last passing quality run. `testing.taskCompletionGate` = `block` (default), `warn` or `off` |
 | TeammateIdle | (any) | `nudge-idle-teammate.sh` | Used with agent teams — nudges a teammate idle for 60 seconds or more |
 | SessionEnd | (any) | `session-end-learn.sh` | Marks `/flow:learn` as pending when learning is enabled; it does not run the analysis |
 | SessionEnd | (any) | `session-end-state.sh` | Notes the session end on any active FlowRun, so `/flow:resume` can pick it up; prunes old quality ledgers |
 | Stop | (any) | `flow-goal-stop.sh` | Checks the active FlowGoal's evidence before the agent stops. Default `warn` never blocks (§12) |
 | Stop | (any) | `reply-style-check.sh` | Checks the reply against a project's reply-style list and reports what it finds. Off unless the project sets `replyStyle.enabled: true`; never blocks |
+| SessionStart | (any) | `tier-session-start.sh` | Puts flow's `git` and `gh` wrappers (`hooks/shims/`) first on PATH for the session's Bash commands. When git or gh starts, a wrapper refuses a `confirm` action that `tier-gate.sh` did not ask about in the same Bash call, and writes the breadcrumb for a `journal` action the hook did not see |
 
-That's fourteen scripts. There is no `gate-merge` or `gate-release` hook script; merge/release confirmation is in the **command** files via AskUserQuestion. Hooks cannot be switched off in settings (`references/gate-configuration.md`, "Hook Override"); the only way is to edit the scripts.
+That's seventeen scripts. There is no `gate-merge` or `gate-release` hook script: `/flow:merge` and `/flow:release` confirm with AskUserQuestion, and `tier-gate.sh` asks again when the merge, tag push or release command runs. Hooks always run and have no on/off switch (`references/gate-configuration.md`, "Hook Override"). Some settings change what a hook does: `tiers.*` (`tier-gate.sh` and the wrappers), `testing.taskCompletionGate`, `minimalScope` (`ask-issue-create.sh`), `flow.goals.stopHookEnforcement`, `replyStyle.enabled` and `systemOne.uses["guard.planted-instructions"]`. To change anything else, edit the scripts.
 
 ---
 
@@ -387,7 +392,7 @@ That's fourteen scripts. There is no `gate-merge` or `gate-release` hook script;
 
 Source: `plugins/flow/references/decision-journal-schema.md`.
 
-**Default location**: `.decisions/` (configurable via `journal.dir`).
+**Default location**: `.decisions/` (configurable via `journal.dir`). One file per issue, `issue-N.md`; on a branch with no issue number (or for a goal with no linked issue), one file per day, `session-YYYY-MM-DD.md`.
 
 **Two entry kinds**:
 
@@ -468,14 +473,14 @@ The full schema is in `plugins/flow/schema.json`. Defaults are in `plugins/flow/
 
 | Symptom | Look here |
 |---------|-----------|
-| "Why did the plan get blocked?" | `.decisions/issue-N.md` for the most recent entry. Search for "Stranger Test" or "Spec Validation Gate." |
+| "Why did the plan get blocked?" | `.decisions/issue-N.md` (or `.decisions/session-YYYY-MM-DD.md` on a branch with no issue number) for the most recent entry. Search for "Stranger Test" or "Spec Validation Gate." |
 | "The verdict is FAIL but the code works" | The evidence bundle — a missing or blank required subsection, an expected value copied from the implementation, or evidence that is not in the bundle is an automatic FAIL. `references/evidence-bundle-format.md` lists the subsections. |
 | "Hooks aren't firing" | `plugins/flow/hooks/hooks.json` — confirm matcher and trigger. Check `~/.claude/logs/` for hook stderr. |
 | "Auto-log is duplicating commits" | Run `claude plugins update flow` to refresh the script. The two guards test the commit subject and the commit's file list; nothing depends on the journal's existing contents. |
 | "/flow:learn isn't proposing skills" | `~/.claude/flow-proposals/` for proposals; ensure `learning.enabled: true`, and that `learning.sources` includes `journal` (with a populated `journal.dir`) or `transcripts`. |
 | "Agent teams not spawning" | Both `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var must be set, and only `/flow:review` uses them. |
-| "Tier 3 prompt isn't appearing" | `/flow:merge` and `/flow:release` always ask, whatever the `tiers` setting says. If no prompt appeared, the merge or release did not go through the command. |
-| "Force push got blocked but I needed it" | Use `--force-with-lease` instead — explicitly allowed (`three-tier-safety.md`, Tier 3 table). |
+| "Tier 3 prompt isn't appearing" | A merge, release or tag push always asks, inside or outside flow: `/flow:merge` and `/flow:release` ask with AskUserQuestion, and `tier-gate.sh` asks when the command runs. If no prompt appeared, the command was typed with `!` (which runs without PreToolUse hooks or the wrappers), or the session started before flow was installed or updated. In `claude -p` the ask is a refusal. |
+| "Force push got blocked but I needed it" | Use `--force-with-lease` instead — explicitly allowed (`three-tier-safety.md`, Tier 2 table). |
 | "`gh pr merge` got blocked" | A check is still queued, running or failed, or the command is not in the one shape the hook reads: `gh pr merge <N> --repo owner/name --squash`. Wait with `gh pr checks <N> --watch`, or use `/flow:merge`. |
 | "Task won't complete" | The `TaskCompleted` gate: files changed after the last passing test, lint, typecheck or build run. Re-run the checks. |
 | "`/flow:merge` blocks on the FlowGoal" | Run `/flow:goal evaluate <id>`; the goal must reach `achieved`. |
@@ -500,7 +505,7 @@ The **Stop hook** (`flow-goal-stop.sh`) looks at the active goal whenever the ag
 |------|--------------|
 | `warn` (default) | The stop is always allowed. If evidence is missing, the message says `FLOW_GOAL_INCOMPLETE — stop ALLOWED`. |
 | `block` | The stop is blocked while a criterion fails or has no verification command, up to `failAfterStuckTurns` (default 3) consecutive blocks. Verification commands run only for goals flow created on your machine (the trust ledger), unless `executeVerificationCommands: true`. |
-| `evaluator-loop` | Deterministic checks first; if fuzzy criteria remain, the `goal-evaluator-judge` agent (model `flow.goals.judge.model`, default `haiku`) decides whether the agent keeps working. |
+| `evaluator-loop` | Deterministic checks first; if fuzzy criteria remain, the goal judge (`agents/goal-evaluator-judge.md`, run by `bin/flow-judge.sh` as a `claude --print` process with no tools; model `flow.goals.judge.model`, default `haiku`) decides whether the agent keeps working. |
 
 In `evaluator-loop` mode two limits end a loop:
 
@@ -523,7 +528,7 @@ If you've used the `gh-workflow` plugin, the verbs carry over; the autonomy does
 | `/gh-review` | `/flow:review` | Adversarial team option (`agentTeams: true`) |
 | `/gh-address` | `/flow:address` | Re-review of the fix commits by the same five agents + `FLOW_RESOLUTION_CYCLE` ledger |
 | `/gh-merge` | `/flow:merge` | Both Tier 3; flow's prereq check is structural |
-| `/gh-release` | `/flow:release` | Both Tier 3; flow generates changelog from merged PRs |
+| `/gh-release` | `/flow:release` | Both Tier 3; flow releases in two runs: a release pull request with the version bump and the changelog from merged PRs, then, after it is merged, the tag and the GitHub release |
 
 Migration is a config decision, not a code change: commit-message vocabulary, branch patterns, and reviewer routing carry over. If your team prefers a more interactive style, set `tddMode: suggest` and `verdict.requireAllPass: false` — strict defaults are opt-out (`plugins/flow/README.md`, section "Opting Out").
 
@@ -567,7 +572,8 @@ plugins/flow/
 │   └── holdout-scenarios/
 └── hooks/
     ├── hooks.json
-    └── scripts/*.sh                            ← 14 wired scripts + 2 the Stop hook calls
+    ├── scripts/*.sh                            ← 17 wired scripts + 2 the Stop hook calls
+    └── shims/git, shims/gh                     ← wrappers tier-session-start.sh puts first on PATH
 
 .decisions/                                     ← decision journal (tracked); auto-log/ inside it is local
 .flow/                                          ← goals, triggers, review exceptions (tracked); runs/ (local)

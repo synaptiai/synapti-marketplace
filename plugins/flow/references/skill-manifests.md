@@ -11,29 +11,29 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 <!-- BEGIN GENERATED: commands (bin/flow-skill-manifests.sh) -->
 | Command | Required skills | Ambient | Contracts | Words inlined |
 |---------|-----------------|---------|-----------|---------------|
-| `/flow:address` | llm-operator-principles, feedback-resolution, change-classification, capability-discovery, tdd-patterns, holdout-validation, goal-evidence-ledger, run-state-management | 1 | 7 | 1284 |
+| `/flow:address` | llm-operator-principles, feedback-resolution, change-classification, capability-discovery, tdd-patterns, holdout-validation, goal-evidence-ledger, run-state-management | 1 | 7 | 1278 |
 | `/flow:brainstorm` | brainstorming, capability-discovery, specification-capture | 0 | 3 | 281 |
-| `/flow:commit` | llm-operator-principles, change-classification, convention-enforcement | 1 | 2 | 778 |
-| `/flow:debug` | debugging-patterns, change-classification, goal-contract-capture, goal-evaluator, goal-lifecycle, run-state-management | 0 | 6 | 625 |
-| `/flow:design` | architecture-patterns, capability-discovery, specification-capture | 0 | 3 | 295 |
+| `/flow:commit` | llm-operator-principles, change-classification, convention-enforcement | 1 | 2 | 777 |
+| `/flow:debug` | debugging-patterns, change-classification, goal-contract-capture, goal-evaluator, goal-lifecycle, run-state-management | 0 | 6 | 609 |
+| `/flow:design` | architecture-patterns, capability-discovery, specification-capture | 0 | 3 | 297 |
 | `/flow:explain` | (none) | 0 | 0 | 0 |
 | `/flow:flow` | (none) | 0 | 0 | 0 |
-| `/flow:goal` | goal-contract-capture, goal-evaluator, goal-lifecycle, goal-evidence-ledger | 0 | 4 | 416 |
+| `/flow:goal` | goal-contract-capture, goal-evaluator, goal-lifecycle, goal-evidence-ledger | 0 | 4 | 401 |
 | `/flow:issue` | issue-crafting | 0 | 1 | 108 |
 | `/flow:learn` | (none) | 0 | 0 | 0 |
-| `/flow:merge` | llm-operator-principles, merge-and-release, run-state-management | 1 | 2 | 803 |
-| `/flow:pr` | llm-operator-principles, pr-lifecycle, code-review-methodology, capability-discovery, holdout-validation, run-state-management, runtime-verification, visual-verification | 1 | 7 | 1248 |
-| `/flow:release` | merge-and-release, run-state-management | 0 | 2 | 213 |
+| `/flow:merge` | llm-operator-principles, merge-and-release, run-state-management | 1 | 2 | 800 |
+| `/flow:pr` | llm-operator-principles, pr-lifecycle, code-review-methodology, capability-discovery, holdout-validation, run-state-management, runtime-verification, visual-verification | 1 | 7 | 1255 |
+| `/flow:release` | merge-and-release, run-state-management | 0 | 2 | 210 |
 | `/flow:resolve` | merge-conflict-resolution, capability-discovery, debugging-patterns | 0 | 3 | 300 |
-| `/flow:resume` | run-state-management | 0 | 1 | 109 |
+| `/flow:resume` | run-state-management | 0 | 1 | 106 |
 | `/flow:review` | llm-operator-principles, code-review-methodology, holdout-validation, run-state-management | 1 | 3 | 849 |
-| `/flow:run` | trigger-policy | 0 | 1 | 98 |
+| `/flow:run` | trigger-policy | 0 | 1 | 104 |
 | `/flow:setup` | capability-discovery | 0 | 1 | 105 |
-| `/flow:start` | llm-operator-principles, branch-and-task-management, change-classification, capability-discovery, debugging-patterns, preflight-checks, criterion-verification-map, holdout-validation, issue-crafting, specification-capture, tdd-patterns, goal-contract-capture, goal-lifecycle, run-state-management, runtime-verification, visual-verification | 1 | 15 | 2064 |
+| `/flow:start` | llm-operator-principles, branch-and-task-management, change-classification, capability-discovery, debugging-patterns, preflight-checks, criterion-verification-map, holdout-validation, issue-crafting, specification-capture, tdd-patterns, goal-contract-capture, goal-lifecycle, run-state-management, runtime-verification, visual-verification | 1 | 15 | 2051 |
 | `/flow:status` | (none) | 0 | 0 | 0 |
-| `/flow:trigger` | trigger-policy | 0 | 1 | 98 |
-| `/flow:watch` | trigger-policy | 0 | 1 | 98 |
-| `/flow:workflow` | workflow-validation | 0 | 1 | 94 |
+| `/flow:trigger` | trigger-policy | 0 | 1 | 104 |
+| `/flow:watch` | trigger-policy | 0 | 1 | 104 |
+| `/flow:workflow` | workflow-validation | 0 | 1 | 99 |
 <!-- END GENERATED: commands -->
 
 ## Skills inventory
@@ -41,38 +41,38 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 <!-- BEGIN GENERATED: skills (bin/flow-skill-manifests.sh) -->
 | Skill | Loading | Body words | Purpose |
 |-------|---------|------------|---------|
-| architecture-patterns | dispatched | 594 | Document system design decisions with mapped user flows, coupling analysis, failure modes, and explicit n... |
-| autonomous-workflow | ambient | 599 | Execute development workflows through Explore-Plan-Code-Verify phases with task-driven tracking, Tier 1/2... |
+| architecture-patterns | dispatched | 591 | Document system design decisions with mapped user flows, coupling analysis, failure modes, and explicit n... |
+| autonomous-workflow | ambient | 600 | Execute development workflows through Explore-Plan-Code-Verify phases with task-driven tracking, Tier 1/2... |
 | brainstorming | dispatched | 440 | Generate 2-4 distinct approaches with trade-off analysis across simplicity, flexibility, performance, eff... |
-| branch-and-task-management | dispatched | 401 | Create feature branches with naming conventions, load full issue context and impact analysis, and decompo... |
+| branch-and-task-management | dispatched | 429 | Create feature branches with naming conventions, load full issue context and impact analysis, and decompo... |
 | capability-discovery | dispatched | 552 | Discover available agents, skills, quality commands (lint, test, typecheck), tech stack, verification cap... |
-| change-classification | dispatched | 527 | Classify code changes as in-context, uncertain, or out-of-context using primary signals (branch diff, iss... |
+| change-classification | dispatched | 525 | Classify code changes as in-context, uncertain, or out-of-context using primary signals (branch diff, iss... |
 | code-quality-principles | ambient | 585 | Enforce code quality through the Boy Scout Rule (leave code better than found), secret-free commits, prod... |
 | code-review-methodology | dispatched | 564 | Conduct two-stage code review: Stage 1 verifies spec compliance (criterion-to-code mapping), Stage 2 eval... |
-| convention-enforcement | dispatched | 434 | Validate git conventions (commit messages, branch naming, PR format, issue linkage) by detecting project-... |
+| convention-enforcement | dispatched | 435 | Validate git conventions (commit messages, branch naming, PR format, issue linkage) by detecting project-... |
 | criterion-verification-map | dispatched | 600 | Transform acceptance criteria into plan-time runnable verification commands (behavioral, API, UI, error... |
 | debugging-patterns | dispatched | 578 | Isolate root causes through structured evidence gathering, pattern analysis, hypothesis testing (max 3 at... |
 | evidence-based-development | ambient | 439 | Enforce evidence-based claims through file:line citations, P1/P2/P3 prioritization proportional to eviden... |
 | feedback-resolution | dispatched | 595 | Address PR review feedback through surgical fixes traceable to specific comments, apply the Boy Scout Rul... |
-| goal-contract-capture | dispatched | 596 | Capture a FlowGoal contract as `.flow/goals/<id>.goal.yaml` — outcome, acceptance criteria with verificat... |
+| goal-contract-capture | dispatched | 581 | Capture a FlowGoal contract as `<runtime dir>/goals/<id>.goal.yaml` — outcome, acceptance criteria with v... |
 | goal-evaluator | dispatched | 600 | Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, disp... |
-| goal-evidence-ledger | dispatched | 537 | Maintain the append-only evidence ledger: `.flow/runs/<run-id>/evidence/*.evidence.yaml` sidecars plus ma... |
-| goal-lifecycle | dispatched | 536 | Enforce the FlowGoal state machine: every `lifecycle.status` transition (draft → active → {waiting_for_us... |
-| holdout-validation | dispatched | 597 | Cross-reference agent self-review claims and evidence-bundle entries against actual file state using hidd... |
+| goal-evidence-ledger | dispatched | 554 | Maintain the append-only evidence ledger: `<runtime dir>/runs/<run-id>/evidence/*.evidence.yaml` sidecars... |
+| goal-lifecycle | dispatched | 544 | Enforce the FlowGoal state machine: every `lifecycle.status` transition (draft → active → {waiting_for_us... |
+| holdout-validation | dispatched | 600 | Cross-reference agent self-review claims and evidence-bundle entries against actual file state using hidd... |
 | issue-crafting | dispatched | 425 | Craft well-structured GitHub issues with solution-agnostic outcomes, duplicate detection (open and closed... |
 | llm-operator-principles | ambient | 590 | Frame Claude's identity as an LLM operator that does not tire, treats convergence as zero findings (not e... |
-| merge-and-release | dispatched · reference-only | 594 | Reference document describing merge prerequisites (approval, CI checks, mergeable, conversations resolved... |
-| merge-conflict-resolution | dispatched | 551 | Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolv... |
-| pr-lifecycle | dispatched · reference-only | 581 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
+| merge-and-release | dispatched · reference-only | 600 | Reference document describing merge prerequisites (approval, CI checks, mergeable, conversations resolved... |
+| merge-conflict-resolution | dispatched | 552 | Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolv... |
+| pr-lifecycle | dispatched · reference-only | 599 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
 | preflight-checks | dispatched · reference-only | 543 | Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue e... |
-| run-state-management | dispatched | 580 | Manage FlowRun state at `.flow/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry, write ac... |
+| run-state-management | dispatched | 588 | Manage FlowRun state at `<runtime dir>/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry... |
 | runtime-verification | dispatched | 597 | Verify code works at runtime through build verification (mandatory), LSP diagnostics, ad-hoc verification... |
-| specification-capture | dispatched | 567 | Capture the four specification elements (non-goals, failure modes, interface contracts, risk map) for an... |
+| specification-capture | dispatched | 574 | Capture the four specification elements (non-goals, failure modes, interface contracts, risk map) for an... |
 | tdd-patterns | dispatched | 576 | Guide test-driven development through the mandatory Red-Green-Refactor cycle: a test is RED only when it... |
 | team-coordination | dispatched · reference-only | 589 | Coordinate agent teams for adversarial review (paired skeptic/verifier per facet, disposition-only challe... |
-| trigger-policy | dispatched | 550 | Enforce FlowTrigger safety rules — no autonomous merge, no recursive trigger creation, max active trigger... |
+| trigger-policy | dispatched | 596 | Enforce FlowTrigger safety rules — no autonomous merge, no recursive trigger creation, max active trigger... |
 | visual-verification | dispatched | 592 | Verify UI-facing changes by running a screenshot-analyze-verify loop across configured viewports, with a... |
-| workflow-validation | dispatched | 582 | Validate a FlowWorkflow YAML at `plugins/flow/workflows/<id>.workflow.yaml` against `schemas/v1/workflow.... |
+| workflow-validation | dispatched | 587 | Validate a FlowWorkflow YAML at `plugins/flow/workflows/<id>.workflow.yaml` against `schemas/v1/workflow.... |
 <!-- END GENERATED: skills -->
 
 ## Budget
@@ -80,5 +80,5 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 Skill bodies are capped at 600 words and contracts at 120 (enforced by `tests/flow-load-skills.test.sh`). Agents load skills through their own `skills:` frontmatter (see `agents/*.md`), which is unaffected by this mechanism.
 
 <!-- BEGIN GENERATED: budget (bin/flow-skill-manifests.sh) -->
-The largest command load today is `/flow:start` at 2064 words; the sum across all commands is 9866.
+The largest command load today is `/flow:start` at 2051 words; the sum across all commands is 9838.
 <!-- END GENERATED: budget -->

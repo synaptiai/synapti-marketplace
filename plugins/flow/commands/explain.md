@@ -33,16 +33,30 @@ JOURNAL_DIR=".decisions"
 [ -x "$HELPER" ] && JOURNAL_DIR=$("${HELPER%/cascade-resolve.sh}/journal-dir.sh")
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
-if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
-  printf '%s\n' "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
-  printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
+# On a branch whose name contains issue-N the journal is issue-N.md, with its
+# monthly auto-log trail. On any other branch it is the session journal of today,
+# session-YYYY-MM-DD.md, named by the local calendar day as journal-append.sh
+# and journal-record.sh name it, with the session trail of today: a session
+# journal holds one day of work with no issue number, not of one branch, and
+# files of earlier days are not loaded here.
+if [ -n "$ISSUE_NUM" ]; then
+  JOURNAL_FILE="$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  AUTOLOG_NAME="issue-$ISSUE_NUM.*.md"
+else
+  SESSION_DAY=$(date +%Y-%m-%d)
+  JOURNAL_FILE="$JOURNAL_DIR/session-$SESSION_DAY.md"
+  AUTOLOG_NAME="session-$SESSION_DAY.md"
+fi
+if [ -f "$JOURNAL_FILE" ]; then
+  printf '%s\n' "JOURNAL_FILE=$JOURNAL_FILE"
+  printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_FILE" | tr -d ' ')"
   printf '%s\n' ""
   printf '%s\n' "#### Journal contents"
-  cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
-  # The auto-log breadcrumbs live in a local trail, one file per month. They are
-  # context for "what was touched", not decisions, so they are labelled and kept
-  # separate from the journal body above rather than inlined into it. A set of
-  # files, not one: the issue-scoped trail rotates monthly.
+  cat "$JOURNAL_FILE"
+  # The auto-log breadcrumbs live in a local trail. They are context for "what
+  # was touched", not decisions, so they are labelled and kept separate from
+  # the journal body above rather than inlined into it. A set of files, not
+  # one: the issue-scoped trail rotates monthly (a session trail is one file).
   #
   # The heading names where the trail came from rather than asserting it is
   # untracked. The journal dir is read from a TRACKED settings file, so a fork
@@ -60,7 +74,7 @@ if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
     printf '%s\n' "##### $(basename "$AUTOLOG")"
     cat "$AUTOLOG"
   done <<AUTOLOG_LIST
-$(find "$JOURNAL_DIR/auto-log" -maxdepth 1 -type f -name "issue-$ISSUE_NUM.*.md" 2>/dev/null | LC_ALL=C sort)
+$(find "$JOURNAL_DIR/auto-log" -maxdepth 1 -type f -name "$AUTOLOG_NAME" 2>/dev/null | LC_ALL=C sort)
 AUTOLOG_LIST
   printf '%s\n' "AUTOLOG_FILES=$AUTOLOG_FILES"
 else
@@ -118,6 +132,8 @@ For each question:
 
 ## No Context Case
 
+Phase 1 loads the issue journal (`issue-N.md`, with its auto-log trail) when the branch name contains `issue-N`. On any other branch it loads today's session journal (`session-YYYY-MM-DD.md`, dated by the local calendar day, with today's `auto-log/session-YYYY-MM-DD.md` trail). A session journal holds one day of work with no issue number, from every such branch that day, so it can hold entries from other branches, and earlier days are not loaded: if the work on this branch began on an earlier day, read that day's session journal with `Read`.
+
 If no decision journal or no branch context:
 - "No decision context available for the current branch."
 - Offer to explain based on diff analysis alone
@@ -127,7 +143,7 @@ If no decision journal or no branch context:
 
 | Action | Tier | Behavior |
 |---|---|---|
-| Read decision journal / commits / PR history | 1 | Autonomous, read-only |
+| Read decision journal / issue / branch diff | 1 | Autonomous, read-only |
 | `AskUserQuestion` (clarify scope) | n/a | User-driven |
 
 `/flow:explain` is read-only. It never modifies files, never pushes, never creates issues or PRs. The only user-facing surface is the Q&A response.

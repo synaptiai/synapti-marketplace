@@ -157,7 +157,7 @@ is not the only time. A session that has already run one of them, or a user who 
 execute helpers out of it: `flow-load-skills.sh`, which loads the skills that govern the
 review, `flow-pr-linked-issue.sh`, `flow-review-exceptions.sh`, `cascade-resolve.sh`.
 
-Those eight fences use the form below. The ninth `!` fence in `/flow:review`, the `review.groundingCritic` lookup, uses the post-checkout form instead: the setting decides whether the pull request's own findings can be dropped, so no copy of flow inside the repository may answer it, and when nothing else resolves the pass stays off, which is the safe outcome. It is the author-context form with the
+The `!` fences in these two commands that find a helper use the form below, except two kinds of lookup. The lookups between `# USER_FILES_BEGIN` and `# USER_FILES_END` use the post-checkout form (the second exception below). The `review.groundingCritic` lookup in `/flow:review` uses the post-checkout form too: the setting decides whether the pull request's own findings can be dropped, so no copy of flow inside the repository may answer it, and when nothing else resolves the pass stays off, which is the safe outcome. The form below is the author-context form with the
 working-directory-relative `plugins/flow` moved to LAST, so an installed copy is preferred
 and the bare checkout of flow still works when nothing else exists:
 

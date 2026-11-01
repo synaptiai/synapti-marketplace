@@ -38,7 +38,7 @@ Display the Merge Assessment table as text, confirm via `AskUserQuestion`, and m
 
 - `merge.strategy`: `squash` | `merge` | `rebase` (default `squash`)
 - `merge.deleteBranch`: default `true`; named in the merge question
-- `merge.markerTrust.allowedAssociations`: whose ledger markers are honored; read from the plugin tier only, never the settings cascade (`references/finding-ledger-parser.md`)
+- `merge.markerTrust.allowedAssociations`: whose ledger markers are honored; read through the settings cascade, user and plugin tiers only from an install outside the repository (`references/finding-ledger-parser.md`)
 
 Post-merge: `gh pr view $PR_NUM --json state` must return `MERGED`; then suggest switching to the default branch and pulling.
 

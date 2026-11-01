@@ -17,7 +17,12 @@
 # hook, and it runs before the python3/PyYAML checks below so it happens even
 # where the FlowRun bookkeeping cannot.
 #
-# Nothing is written through a symlink: when .flow, .flow/runs or a run's
+# It also removes runs that ended (completed or cancelled) more than
+# flow.runtime.runRetentionDays days ago (default 30), judged by run.yaml's
+# modification time; active and blocked runs are kept.
+#
+# Nothing is written through a symlink: when a directory on the way to
+# <runtime dir>/runs, or a run's
 # directory is one (a repository can commit such a link to a directory
 # outside the checkout), no event is appended there and the refusal is
 # printed on stderr instead.
@@ -77,12 +82,23 @@ python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.
 ENABLED=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 [ "$ENABLED" != "true" ] && exit 0
 
-# Find active FlowRuns. If none, exit silently.
-[ -d .flow/runs ] || exit 0
+# Find active FlowRuns under the runtime directory (flow.runtime.stateDir,
+# bin/flow-runtime-dir.sh, default .flow). If none, exit silently.
+RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+[ -d "$RT/runs" ] || exit 0
+
+# How many days an ended run is kept (flow.runtime.runRetentionDays). Anything
+# but a whole number of at least 1 is the default, 30, so a 0 cannot remove
+# every ended run.
+RETENTION_DAYS=$("${PLUGIN_ROOT}/bin/cascade-resolve.sh" --default "30" '.flow.runtime.runRetentionDays' 2>/dev/null) || RETENTION_DAYS=30
+case "$RETENTION_DAYS" in
+  ''|*[!0-9]*|0*) RETENTION_DAYS=30 ;;
+esac
 
 # What the block prints on stdout is for the user and goes to stderr; its own
 # stderr, where an unexpected traceback would land, is discarded.
-python3 - "$PLUGIN_ROOT" <<'PYEOF' >&2 2>/dev/null
+python3 - "$PLUGIN_ROOT" "$RETENTION_DAYS" "$RT" <<'PYEOF' >&2 2>/dev/null
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -104,14 +120,62 @@ sys.path.insert(0, os.path.join(plugin_root, "bin"))
 try:
     from _journal_atomic import JournalAtomicError, append_jsonl
     from _flow_cli import open_regular
+    from _repo_dir import ensure_repo_dir
 except ImportError:
     # _journal_atomic.py may be missing on a stripped install; degrade gracefully.
     sys.exit(0)
 
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 active_runs = []
+RUN_YAMLS = os.path.join(glob.escape(os.path.join(sys.argv[3], "runs")), "*", "run.yaml")
 
-for run_yaml_path in glob.glob(".flow/runs/*/run.yaml"):
+# Remove runs that ended (completed or cancelled) and whose run.yaml was last
+# written more than flow.runtime.runRetentionDays days ago. An active or
+# blocked run, a run.yaml that cannot be read or parsed, a run directory that
+# holds a file git tracks (a team that commits its runs would otherwise see
+# them deleted), and anything reached through a symlink are left alone. When
+# git cannot say whether the directory is tracked, it is kept. The run directory is checked with
+# ensure_repo_dir (no name below the repository top may be a symlink), then
+# removed with shutil.rmtree, which does not follow symlinks inside it on a
+# platform where it can avoid them, and is skipped where it cannot. A run
+# that cannot be removed is named on one line, with the reason.
+import shutil
+import subprocess
+import time
+try:
+    retention_days = int(sys.argv[2])
+except (IndexError, ValueError):
+    retention_days = 30
+if retention_days < 1:
+    retention_days = 30
+cutoff = time.time() - retention_days * 86400
+if shutil.rmtree.avoids_symlink_attacks:
+    for run_yaml_path in glob.glob(RUN_YAMLS):
+        run_dir = os.path.dirname(run_yaml_path)
+        try:
+            ensure_repo_dir(run_dir)
+            if os.path.islink(run_yaml_path) or os.lstat(run_yaml_path).st_mtime >= cutoff:
+                continue
+            with open_regular(run_yaml_path) as f:
+                data = yaml.safe_load(f) or {}
+            status = (data.get("state") or {}).get("status")
+            if status not in ("completed", "cancelled"):
+                continue
+            tracked = subprocess.run(["git", "ls-files", "--", run_dir],
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
+            if tracked.returncode != 0 or tracked.stdout.strip():
+                continue
+        except Exception:
+            continue
+        # A removal that fails part way can leave the run directory without
+        # its run.yaml, and nothing prunes it again: say so.
+        try:
+            shutil.rmtree(run_dir)
+        except OSError as e:
+            reason = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in str(e.strerror or e))
+            print("flow: could not remove ended run %s: %s" % (os.path.basename(run_dir), reason))
+
+for run_yaml_path in glob.glob(RUN_YAMLS):
     try:
         # A FIFO named run.yaml is opened at once and refused, and skipped.
         with open_regular(run_yaml_path) as f:
@@ -142,7 +206,7 @@ for run_id, run_yaml_path in active_runs:
     try:
         append_jsonl(events_path, event)
     except JournalAtomicError as e:
-        # A run found through a symlinked .flow, .flow/runs or run directory
+        # A run found through a symlinked runtime directory, runs or run directory
         # is outside the repository; the module refuses it before writing.
         print(f"flow: {e} (no session_end event for {run_id})")
         continue

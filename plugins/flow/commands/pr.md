@@ -39,8 +39,9 @@ true
 
 ```!
 # Output: `###`-headed sections + KEY=value per
-# `references/command-output-format.md`. STATE=blocked when on default branch
-# (cannot create a PR from main); STATE=ok otherwise.
+# `references/command-output-format.md`. Branch Context reports STATE=blocked
+# on the default branch (cannot create a PR from main); Branch Delta reports
+# STATE=blocked when the branch has no commits ahead of the default branch.
 
 printf '%s\n' "### Branch Context"
 BRANCH=$(git branch --show-current 2>/dev/null)
@@ -57,19 +58,38 @@ else
   # Section: Branch Delta vs Default
   printf '%s\n' ""
   printf '%s\n' "### Branch Delta"
-  printf '%s\n' "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || printf '%s\n' "0")"
-  # Cache the porcelain count once — previously invoked twice in adjacent
-  # lines (count + gate on the UNCOMMITTED_LINE listing).
+  # A branch with no commits ahead of the default branch has nothing to open a
+  # pull request for: STATE=blocked, and /flow:pr stops. A count git could not
+  # read (the default branch has no local ref) is not a zero: it is reported
+  # as unavailable rather than stopping a branch that may have commits.
+  # The diff stat below is printed only when there are commits to show, so the
+  # section carries one STATE line.
+  DELTA_OK=0
+  if COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null) && [ -n "$COMMITS_AHEAD" ]; then
+    printf '%s\n' "COMMITS_AHEAD=$COMMITS_AHEAD"
+    [ "$COMMITS_AHEAD" = "0" ] || DELTA_OK=1
+    if [ "$COMMITS_AHEAD" = "0" ]; then
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "ERROR=\"No commits ahead of $DEFAULT_BRANCH: there is nothing to open a pull request for\""
+    fi
+  else
+    printf '%s\n' "STATE=unavailable"
+    printf '%s\n' "ERROR=\"Cannot count the commits ahead of $DEFAULT_BRANCH: git rev-list $DEFAULT_BRANCH..HEAD failed (is $DEFAULT_BRANCH fetched?)\""
+  fi
+  # The porcelain count is read once and used for both the count and the
+  # gate on the UNCOMMITTED_LINE listing.
   UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
   printf '%s\n' "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
   [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
-  printf '%s\n' ""
-  printf '%s\n' "#### Diff stat"
-  DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
-  if [ -z "$DIFF_STAT" ]; then
-    printf '%s\n' "STATE=empty"
-  else
-    printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
+  if [ "$DELTA_OK" = 1 ]; then
+    printf '%s\n' ""
+    printf '%s\n' "#### Diff stat"
+    DIFF_STAT=$(git diff --stat "$DEFAULT_BRANCH"...HEAD 2>/dev/null)
+    if [ -z "$DIFF_STAT" ]; then
+      printf '%s\n' "STATE=empty"
+    else
+      printf '%s\n' "$DIFF_STAT" | sed 's/^/DIFF_STAT=/'
+    fi
   fi
 
   # Section: Issue Context (extracted from branch name `feature/issue-N-...`)
@@ -113,17 +133,27 @@ else
   printf '%s\n' "### Decision Journal"
   # The journal directory every flow reader and writer uses (bin/journal-dir.sh):
   # journal.dir, where a value from the repository settings that leaves the
-  # repository is refused on stderr.
+  # repository is refused on stderr. On a branch whose name contains issue-N
+  # the journal is issue-N.md. On any other branch it is the session
+  # journal, session-YYYY-MM-DD.md, named by the local calendar day as
+  # journal-append.sh and journal-record.sh name it: a session journal holds
+  # one day of work with no issue number, not one branch's, and earlier days'
+  # files are not loaded here.
   FLOW_JD_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-dir.sh"
   JOURNAL_DIR=".decisions"
   [ -x "$FLOW_JD_HELPER" ] && JOURNAL_DIR=$("$FLOW_JD_HELPER")
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-  if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
-    printf '%s\n' "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
-    printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
+  if [ -n "$ISSUE_NUM" ]; then
+    JOURNAL_FILE="$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  else
+    JOURNAL_FILE="$JOURNAL_DIR/session-$(date +%Y-%m-%d).md"
+  fi
+  if [ -f "$JOURNAL_FILE" ]; then
+    printf '%s\n' "JOURNAL_FILE=$JOURNAL_FILE"
+    printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_FILE" | tr -d ' ')"
     printf '%s\n' ""
     printf '%s\n' "#### Journal contents"
-    cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+    cat "$JOURNAL_FILE"
   else
     printf '%s\n' "STATE=empty"
   fi
@@ -164,11 +194,11 @@ else
   fi
   # REVIEW_EXCEPTIONS_BLOCK_END
 
-  # Section: FlowGoal State (v3) — gate on goal existence.
+  # Section: FlowGoal State — gate on goal existence.
   # Surface the active goal lifecycle so Phase 4 can gate PR creation on goal
   # achievement WHEN a goal exists; a branch with no goal is not blocked. The
-  # gate is disabled when flow.goals.enabled is false or goalCreation is off,
-  # preserving the v2 (requireGoalForStart:false) UX.
+  # gate is disabled when flow.goals.enabled is false or goalCreation is off
+  # (or the legacy requireGoalForStart is false), and then no PR is gated.
   printf '%s\n' ""
   printf '%s\n' "### FlowGoal State"
   HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -221,7 +251,7 @@ else
         *)
           # The helper says why on stderr, which the call above discards. Its first
           # line is asked for again here, so the reason names what was refused (a
-          # symlinked .flow, say) and not only the exit status.
+          # symlinked runtime directory, say) and not only the exit status.
           GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
           GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
           printf '%s\n' "STATE=unavailable"
@@ -238,8 +268,10 @@ true
 
 **Skill invocation:** `Skill(capability-discovery)` — detect quality commands.
 
+If either `### Branch Context` or `### Branch Delta` reports `STATE=blocked`, stop: show the `ERROR=` line and do not continue to Phase 2. A `### Branch Delta` that reports `STATE=unavailable` could not count the commits ahead; fetch the default branch (`git fetch origin <default>:<default>`) and run `/flow:pr` again, or confirm with `git log` that the branch has commits of its own before going on.
 If uncommitted changes exist, offer to run `/flow:commit` first.
 If PR already exists, offer to update instead.
+On a branch with no issue number, `### Decision Journal` holds today's session journal (`session-YYYY-MM-DD.md`, dated by the local calendar day). A session journal holds a day of work with no issue number from every such branch, so take only this branch's entries into the PR body; earlier days are not loaded, so if the branch's commits began on an earlier day, read that day's session journal with `Read` too.
 
 ## Phase 2: PLAN
 
@@ -275,8 +307,6 @@ git diff "$DEFAULT_BRANCH"...HEAD
 
 **Parallel Agent dispatch** — 5 agents and skill in a single message (parity with `/flow:review` Path B):
 
-```
-
 **Review exceptions apply to every dispatch below.** Hand each reviewer the `EXCEPTION=` rows from the Phase 1 `### Review Exceptions` section verbatim, with this rule:
 
 > Do not raise a finding that matches a listed exception. An exception matches only when the file you are reporting on matches its `Scope (path glob)` — the glob is what bounds a rule to the paths the team named, so a rule never applies outside them. Within that scope, judge the `Rule` text against your finding. If you raise the finding anyway, label it `exception-override` and say in one line why this case is not what the team meant.
@@ -289,6 +319,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
 
 **Duplication is `code-reviewer`'s Step 4**, gated by `duplication.enabled`: `bin/flow-clone-scan.sh` against `origin/$DEFAULT_BRANCH`, one `DUP-` finding per pair this branch introduced, located on the added side and naming the block it duplicates. A scan that reported `STATE=unavailable` goes into the PR body with its reason and its install command rather than being passed over.
 
+```
 Agent(code-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for code quality,
    logic correctness, edge cases, and security. Return P1/P2/P3 findings
@@ -528,7 +559,21 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 - `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed.
 - Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the PR body that the System One step was refused, with its `ERROR`.
 
-2. **Integration verification** — dispatch Agent(integration-verifier):
+2. **Integration verification** — first read the verification settings; each line the block prints decides one check:
+   ```bash
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+   # Only the boolean false turns a check off; any other value keeps it on.
+   _off() { [ "$("$FLOW_ROOT/bin/cascade-resolve.sh" --default true "${1}" 2>/dev/null)" = "false" ]; }
+   if _off '.closedLoop.enabled'; then printf '%s\n' "CLOSED_LOOP=off"; else printf '%s\n' "CLOSED_LOOP=on"; fi
+   if _off '.closedLoop.requireRuntimeVerification'; then printf '%s\n' "RUNTIME_VERIFICATION=optional"; else printf '%s\n' "RUNTIME_VERIFICATION=required"; fi
+   if _off '.visualVerification.enabled'; then printf '%s\n' "VISUAL_VERIFICATION=off"; else printf '%s\n' "VISUAL_VERIFICATION=on"; fi
+   ```
+
+   - `CLOSED_LOOP=off` (`closedLoop.enabled` is false): tell the agent to run each check once and report a failure without fixing and retrying; then ask the user with `AskUserQuestion` whether to fix it now or open the PR with the failure noted.
+   - `RUNTIME_VERIFICATION=optional` (`closedLoop.requireRuntimeVerification` is false): runtime verification may be skipped; record `skipped: closedLoop.requireRuntimeVerification is false` in the PR body.
+   - `VISUAL_VERIFICATION=off` (`visualVerification.enabled` is false): leave the visual-verification sentence out of the prompt below, and record visual verification as `SKIP` with that reason.
+
+   Then dispatch Agent(integration-verifier):
    ```
    Agent(integration-verifier):
      "Verify runtime behavior for this branch. Invoke Skill(runtime-verification)
@@ -544,7 +589,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    - If visual verification task was created in Phase 2: `TaskUpdate(visualVerificationTaskId, status: "completed", result: "{agent's visual verification findings}")`
    - Record screenshot paths and the per-viewport `Observed:` blocks from agent results as evidence — they become the bundle's `### Visual analysis` subsection (`references/evidence-bundle-format.md`)
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
-4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation.
+4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation, unless the block printed `RUNTIME_VERIFICATION=optional`.
 5. **Visual verification enforcement**: If `visualVerification.requireVisualVerification` is `true` and integration-verifier returned visual verification as BLOCKED:
    - Use `AskUserQuestion` with a Proactive-Autonomy escalation:
      > **Situation** — Visual verification is required (`requireVisualVerification: true`) but no browser tools are available. UI files changed: {list}.
@@ -570,24 +615,29 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    - P3 findings → fix in-PR, including cosmetic P3 in untouched files (an `improve:` commit). Do NOT add a section to the PR body that lists findings instead of fixing them.
 7. **If P1 or P2 findings that are not escalated**: Fix them, re-run review. An escalated finding keeps its priority but stays listed in the PR body and does not send the flow back here.
 
-7a. **FlowGoal gate (v3, opt-in)** — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
+7a. **FlowGoal gate** (on by default; off when `flow.goals.enabled` is false or `flow.goals.goalCreation` is `off`) — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
 
    - **Option 1 (Recommended): Run `/flow:goal evaluate <id>` first** — produces a verdict that may transition the goal to `achieved`. If the verdict is `achieved`, return here and proceed with PR creation.
-   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal:
+   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal with the block below: an `escalation-resolved` artifact whose `escalation_field` is `blocking`, because the user answered the escalation's Blocking? field (the gate said the incomplete goal blocks the PR, and the user chose to go on). On a branch whose name contains `issue-N` it goes to `issue-N.md`; on any other branch it goes to today's session journal, `<journal dir>/session-YYYY-MM-DD.md`:
 
      ```bash
+     # PR_GOAL_OVERRIDE_BLOCK_BEGIN
      # Self-contained: the Phase 1 !-block's vars do not persist into this
      # block's shell, so re-derive the issue from the branch and read the
      # lifecycle from the helper (same pattern as the manifest-emit block).
+     FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
      ISSUE_NUM=$(git branch --show-current 2>/dev/null | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
-     GOAL_LIFECYCLE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh" --status 2>/dev/null || printf '%s\n' "unknown")
-     if [ -n "$ISSUE_NUM" ]; then
-       "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
-         --issue "$ISSUE_NUM" --type escalation-resolved \
-         --metadata gate=flowgoal-pr \
-         --metadata goal_status="$GOAL_LIFECYCLE" \
-         --metadata outcome="user-overrode: created PR with goal not yet achieved"
-     fi
+     GOAL_LIFECYCLE=$("$FLOW_ROOT/bin/flow-active-goal.sh" --status 2>/dev/null || printf '%s\n' "unknown")
+     # The issue journal on an issue branch, the session journal otherwise.
+     JOURNAL_SCOPE=--session
+     [ -n "$ISSUE_NUM" ] && JOURNAL_SCOPE=--issue
+     "$FLOW_ROOT/bin/journal-record.sh" \
+       "$JOURNAL_SCOPE" ${ISSUE_NUM:+"$ISSUE_NUM"} --type escalation-resolved \
+       --metadata escalation_field=blocking \
+       --metadata outcome="user-overrode: created PR with goal not yet achieved" \
+       --metadata gate=flowgoal-pr \
+       --metadata goal_status="$GOAL_LIFECYCLE"
+     # PR_GOAL_OVERRIDE_BLOCK_END
      ```
    - **Option 3: Cancel** — exit `/flow:pr` and finish the implementation work first.
 
@@ -602,13 +652,11 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    ```markdown
    ## FlowGoal Status
 
-   - **Goal**: `<GOAL_ID>` (from `.flow/goals/<id>.goal.yaml`)
+   - **Goal**: `<GOAL_ID>` (from `<runtime dir>/goals/<id>.goal.yaml`; `<runtime dir>` is `flow.runtime.stateDir`, default `.flow`)
    - **Lifecycle**: `<status>` (not yet `achieved`)
-   - **Evidence**: per-criterion FlowEvidence sidecars under `.flow/runs/<run-id>/evidence/`
    - **Note**: `/flow:merge` will block until this goal is `achieved` or the user explicitly overrides.
    ```
 
-   The `<run-id>` is the active FlowRun for this branch (the `start-issue` run created by `/flow:start`). List the evidence sidecar filenames so a reviewer can trace each acceptance criterion to its captured output.
    If visual verification ran, include visual evidence section:
    ```markdown
    ## Visual Verification
@@ -616,7 +664,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    |------|----------|--------|------------|
    ```
    Note: screenshots are local files; for remote visibility, mention "verified locally"
-9. **Push** (Tier 2: journal-and-proceed). First sweep any trailing decision-journal
+9. **Push** (Tier 2: follows `tiers.push`; with the default `journal` it runs and writes one breadcrumb to the git-ignored auto-log trail, `autonomous` runs, `confirm` asks first). First sweep any trailing decision-journal
    churn into a `chore(decisions):` commit so the working tree is clean for the PR — the
    deliberate writers (the decision sections `design.md` and `brainstorm.md` emit, the
    specification section `specification-capture` writes) append to the tracked journal as
@@ -626,9 +674,13 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    its `chore(decisions):` subject is skipped by `log-commits.sh` Guard 1 (no re-append):
    ```bash
    "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
+   ```
+   Then push, as its own command. flow's force-push guard refuses a push in the same
+   command as a substitution, because it cannot read what the substitution runs:
+   ```bash
    git push -u origin HEAD
    ```
-10. **Create PR** (Tier 2):
+10. **Create PR** (Tier 2: follows `tiers.prCreate`, with the same three values as `tiers.push`):
     ```bash
     gh pr create --title "$TITLE" --body "$BODY"
     ```
@@ -807,12 +859,12 @@ Display PR URL and next steps.
 | Action | Tier | Behavior |
 |---|---|---|
 | Pre-flight checks (branch, commits, PR existence) | 1 | Autonomous; blocks on failure |
-| Phase 1 FlowGoal State section (v3 opt-in) | 1 | Autonomous read; sets GATE=pass\|block sentinel |
+| Phase 1 FlowGoal State section (on by default) | 1 | Autonomous read; sets GATE=pass\|block sentinel |
 | Multi-agent review fan-out (5 reviewers + holdout-validation) | 1 | Autonomous; Tasks tracked |
 | `Agent(integration-verifier)` runtime + visual verification | 1 | Autonomous |
 | File edits (fix-forward for P1/P2 findings) | 1 | Autonomous |
 | Commits (`fix:` from fix-forward) | 1 | Autonomous, logged by hook |
-| FlowGoal gate AskUserQuestion (Phase 4 step 7a, fires only when GATE=block) | 2 | Asks via `AskUserQuestion`; outcome (proceed/cancel) journaled |
-| `git push -u origin <branch>` | 2 | Journal-and-proceed |
-| `gh pr create` | 2 | Journal-and-proceed |
-| Visual-verification BLOCKED escalation (when `requireVisualVerification: true`) | 2 | Asks via `AskUserQuestion`; outcome journaled |
+| FlowGoal gate AskUserQuestion (Phase 4 step 7a, fires only when GATE=block) | n/a | Asks via `AskUserQuestion`; an override is journaled as `escalation-resolved`, in the issue journal or, on a branch with no issue number, today's session journal |
+| `git push -u origin HEAD` | 2 | Follows `tiers.push` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks) |
+| `gh pr create` | 2 | Follows `tiers.prCreate` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks) |
+| Visual-verification BLOCKED escalation (when `requireVisualVerification: true`) | n/a | Asks via `AskUserQuestion`; the outcome goes in the PR body |

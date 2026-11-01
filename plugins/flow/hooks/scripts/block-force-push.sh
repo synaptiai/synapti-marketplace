@@ -266,7 +266,23 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       # carries its own force flag and forces no push, so it is accounted for.
       # If the subcommand is not a literal at all the guard cannot see what it
       # is, and a force flag beside it is not something it can account for.
-      for (i = 2; i <= n; i++) if (W[i] ~ /\$/) { push_word = 1; risky = 1; return }
+      # A variable is read as an argument only right after one of the
+      # subcommands that never run their arguments as a command: worktree,
+      # branch and tag, as the word straight after git. Any global option
+      # before the subcommand may take the next word as its value, so the
+      # subcommand cannot be read from the words; and other subcommands run
+      # their arguments (rebase -x, bisect run, submodule foreach). Both keep
+      # the rule that any expansion is unaccounted for. A command
+      # substitution in any word stays unaccounted for: it runs a command.
+      if (n >= 2 && (W[2] == "worktree" || W[2] == "branch" || W[2] == "tag")) {
+        for (i = 3; i <= n; i++) {
+          if (W[i] ~ /\$\(/ || index(W[i], BT)) { push_word = 1; risky = 1; return }
+        }
+      } else {
+        for (i = 2; i <= n; i++) {
+          if (W[i] ~ /\$/ || index(W[i], BT)) { push_word = 1; risky = 1; return }
+        }
+      }
       # git runs an alias as the subcommand it names, and `-c alias.p=push`
       # defines one for this invocation only.
       if (seg ~ /alias\.[^ ]*=/) { push_word = 1; risky = 1; return }

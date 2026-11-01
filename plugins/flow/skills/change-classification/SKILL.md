@@ -10,7 +10,7 @@ agent: Explore
 
 ## Contract
 
-Iron law: classify before committing — every changed file gets a classification; unclassified files are not staged. Invoked by `/flow:commit` (Phase 2 CLASSIFY, cross-check), `/flow:start` (CODE phase per-task gate, step 8), `/flow:address` (after fixes), `/flow:debug`, and `/flow:pr` (pre-flight). Returns a finding-first table — File | Classification | Signal | Notes — with each file marked in-context, uncertain, out-of-context, or RED FLAG, plus first-touch notes and proposed atomic commit groups. Permitted skips: none. Red-flag files are blocked regardless of context; uncertain or out-of-context files go to the user via a six-field AskUserQuestion escalation before any commit.
+Iron law: classify before committing — every changed file gets a classification; unclassified files are not staged. Invoked by `/flow:commit` (Phase 2 CLASSIFY, cross-check), `/flow:start` (CODE phase per-task gate, step 8), `/flow:address` (after fixes), and `/flow:debug`. Returns a finding-first table — File | Classification | Signal | Notes — with each file marked in-context, uncertain, out-of-context, or RED FLAG, plus first-touch notes and proposed atomic commit groups. Permitted skips: none. Red-flag files are blocked regardless of context; uncertain or out-of-context files go to the user via a six-field AskUserQuestion escalation before any commit.
 
 ## Signals
 

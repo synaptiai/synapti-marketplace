@@ -28,7 +28,7 @@ See [Settings Cascade](#settings-cascade) below for the full precedence rules an
 }
 ```
 
-The schema accepts `autonomous`, `journal` or `confirm` for each key. No flow command or hook reads these values: what flow does for each action is set by the command that runs it, as below, and changing a value does not change it. Nothing applies them to a Bash command run outside flow's commands.
+The schema accepts `autonomous`, `journal` or `confirm` for each key. Tier 2 actions push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate`, `tiers.issueAssign` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks). Merge, release and pushing or deleting a tag are always confirm.
 
 | Value | Behavior |
 |-------|----------|
@@ -75,7 +75,7 @@ Pushing a tag is the `release` tier, not `push`: `git push` with `--tags`, `--fo
 | `devServerStartup` | 30 | seconds | Max wait for dev server |
 | `e2eTest` | 120 | seconds | Max E2E test suite time |
 | `qualityCheckMaxIterations` | 3 | count | Max fix-and-retry loops |
-| `teammateTimeout` | 300 | seconds | Max teammate idle time |
+| `teammateTimeout` | 300 | seconds | How long a Path A review variant may take before its facet falls back to the other variant (guidance the agent applies; no script reads it) |
 
 ## Convention Settings
 
@@ -85,11 +85,14 @@ Pushing a tag is the `release` tier, not `push`: `git push` with `--tags`, `--fo
     "commitTypes": ["feat", "fix", "docs", "..."],
     "branchPatterns": {
       "feature": "feature/issue-{N}-{desc}",
-      "fix": "fix/issue-{N}-{desc}"
+      "fix": "fix/issue-{N}-{desc}",
+      "docs": "docs/issue-{N}-{desc}"
     }
   }
 }
 ```
+
+`/flow:release` names its release branch with `conventions.branchPatterns.release`, `{version}` replaced by the version; when the key is not set it uses `chore/release-{version}`.
 
 ## Journal Settings
 
@@ -114,16 +117,100 @@ Pushing a tag is the `release` tier, not `push`: `git push` with `--tags`, `--fo
 
 `learning.proposalDir` and `learning.transcriptDir` are read from your user settings file (`~/.claude/settings.flow.json`, or `FLOW_USER_SETTINGS`) and the plugin default only. A value in the project files is not used, and neither is a value that is not an absolute path (or one starting with `~`).
 
+## Settings Reference
+
+One row per setting. The default is the value in the plugin's `settings.json` (or the schema default where `settings.json` does not set the key). "What reads it" names the script that resolves the value, or the command, skill or agent whose instructions tell the agent to apply it.
+
+| Key | Default | What reads it |
+|-----|---------|---------------|
+| `agentTeams` | `false` | `/flow:review` Phase 3 Path A gate |
+| `agentTeamModel` | `sonnet` | `/flow:review` Path A dispatch |
+| `tiers.push`, `tiers.prCreate`, `tiers.issueAssign`, `tiers.issueCreate` | `journal` | `hooks/scripts/tier-gate.sh` and the `git`/`gh` wrappers (`hooks/scripts/lib/tier-runtime.sh`) |
+| `tiers.merge`, `tiers.release` | `confirm` (floor) | same; a lower value is ignored with a warning |
+| `timeouts.devServerStartup` | `30` | `integration-verifier` agent, `runtime-verification` skill |
+| `timeouts.e2eTest` | `120` | `integration-verifier` agent, `runtime-verification` skill |
+| `timeouts.qualityCheckMaxIterations` | `3` | `/flow:start` Phase 3 quality loop (agent instruction) |
+| `timeouts.teammateTimeout` | `300` | `team-coordination` skill (agent instruction; no script reads it) |
+| `conventions.commitTypes` | `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`, `revert`, `improve` | `convention-checker` agent, `convention-enforcement` skill, `/flow:setup` |
+| `conventions.branchPatterns` | `feature`, `fix`, `docs` patterns (`{type}/issue-{N}-{desc}`) | `convention-enforcement` and `branch-and-task-management` skills, `/flow:setup` |
+| `conventions.branchPatterns.release` | not set; `/flow:release` uses `chore/release-{version}` | `/flow:release` Phase 2 |
+| `merge.strategy` | `squash` | `/flow:merge` |
+| `merge.deleteBranch` | `true` | `/flow:merge` |
+| `merge.markerTrust.allowedAssociations` | `["OWNER","MEMBER","COLLABORATOR"]` | `/flow:merge`, `/flow:status` (finding-ledger marker filter) |
+| `conflictResolution.autoResolveTrivial` | `true` | `/flow:resolve`, `merge-conflict-resolution` skill |
+| `conflictResolution.maxConflictFiles` | `20` | `/flow:resolve`, `merge-conflict-resolution` skill |
+| `release.tagPrefix` | `v` | `/flow:release` Phase 2 |
+| `learning.enabled` | `true` | `hooks/scripts/session-end-learn.sh` |
+| `learning.proposalDir` | `~/.claude/flow-proposals` | `/flow:learn` (user settings and plugin default only) |
+| `learning.sources` | `["journal","transcripts"]` | `/flow:learn`, `session-end-learn.sh` |
+| `learning.transcriptDir` | `""` (Claude Code's transcript directory) | `/flow:learn`, `session-end-learn.sh` (user settings and plugin default only) |
+| `journal.dir` | `.decisions` | `bin/journal-dir.sh`, and every command and hook that writes the journal through it |
+| `specFirst.requireAcceptanceCriteria` | `true` | `/flow:start` Phase 1 |
+| `specFirst.allowSpecFreeLabels` | `["documentation","chore"]` | `/flow:start` Phase 1 |
+| `specFirst.riskMap` | `true` | `/flow:start`, `specification-capture` skill |
+| `verdict.enabled` | `true` | `/flow:start` Phase 4 step 6 |
+| `verdict.requireAllPass` | `true` | `/flow:start` Phase 4 (NEEDS-HUMAN-REVIEW handling) |
+| `verdict.model` | `""` (no `--model`; the claude CLI's default) | `bin/flow-judge.sh --judge verdict`; allowed `haiku`, `sonnet`, `opus` |
+| `verdict.timeoutSeconds` | `300` | `bin/flow-judge.sh --judge verdict`; a whole number from 5 to 600, otherwise the default |
+| `review.groundingCritic` | `off` | `/flow:review` (Path B), `/flow:pr` (user settings and plugin default only) |
+| `systemOne.provider`, `baseUrl`, `model`, `apiKeyEnv`, `timeoutMs`, `stateTokenCap` | `none`, `""`, `""`, `""`, `3000`, `0` | `bin/_flow_s1.py`, `bin/flow-s1-mode.sh` (user settings and plugin default only); see [System One](system-one.md#configure-it) |
+| `systemOne.batch` | `off` | `bin/flow-s1.sh` (user settings and plugin default only) |
+| `systemOne.uses.<site>` | `off` for every site | `bin/flow-s1-mode.sh`, `hooks/scripts/lib/s1-guard.sh`; a repository can only lower your mode |
+| `testing.tddMode` | `enforce` | `/flow:start` Phase 3, `/flow:address`, `tdd-patterns` skill |
+| `testing.tddModeOptOut` | `false` | `/flow:start` Phase 3, `tdd-patterns` skill (`suggest` only with this set to `true`) |
+| `testing.taskCompletionGate` | `block` | `hooks/scripts/verify-task-completion.sh` |
+| `testing.qualityCommandPatterns` | `[]` | `hooks/scripts/record-quality-run.sh` |
+| `debugging.maxHypotheses` | `3` | `debugging-patterns` skill |
+| `reviewCycleLimit` | `10` | `/flow:address`, `llm-operator-principles` skill |
+| `fixForwardMaxIterations` | `10` | `/flow:start`, `/flow:pr`, `/flow:review`, `/flow:address` fix loops |
+| `autonomous` | `false` | `llm-operator-principles` skill, `/flow:setup`; merge and release still ask |
+| `minimalScope` | `false` | `hooks/scripts/ask-issue-create.sh`, `/flow:review`, `/flow:address` |
+| `closedLoop.enabled` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`CLOSED_LOOP=`): false runs each build-and-run and runtime check once and asks on a failure |
+| `closedLoop.requireRuntimeVerification` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`RUNTIME_VERIFICATION=`): false lets Phase 4 skip runtime verification without an escalation |
+| `closedLoop.maxBuildIterations` | `5` | `/flow:start` Phase 3, `/flow:resolve`, `runtime-verification` skill |
+| `closedLoop.maxServerRetries` | `3` | `/flow:start`, `runtime-verification` skill |
+| `closedLoop.maxDebugIterations` | `5` | `/flow:start` Phase 3, `debugging-patterns` skill |
+| `lsp.enabled` | `true` | `capability-discovery` and `runtime-verification` skills |
+| `lsp.timeout` | `5000` (ms) | `capability-discovery` and `runtime-verification` skills |
+| `lsp.diagnosticsAsQuality` | `true` | `runtime-verification` and `autonomous-workflow` skills |
+| `visualVerification.enabled` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`VISUAL_VERIFICATION=`): false skips visual verification, recorded as SKIP |
+| `visualVerification.viewports` | desktop 1280×720, tablet 768×1024, mobile 375×812 | `visual-verification` skill |
+| `visualVerification.maxIterations` | `3` | `integration-verifier` agent |
+| `visualVerification.requireVisualVerification` | `false` | `/flow:pr` Phase 4 |
+| `visualVerification.flows` | `on` | `visual-verification` skill |
+| `visualVerification.maxFlowSteps` | `8` | `visual-verification` skill |
+| `visualVerification.screenshotDir` | `.screenshots` | [`visual-verification-output.md`](visual-verification-output.md) (agent instruction) |
+| `duplication.enabled`, `minLines`, `minTokens`, `excludePaths` | `true`, `5`, `20`, test, vendor, build, journal and `.flow` paths | `bin/flow-clone-scan.sh`, run by `/flow:pr` and `/flow:review` With `flow.runtime.stateDir` set, add that directory to `excludePaths`; the default lists `.flow` only. |
+| `flow.runtime.enabled` | `true` | every command that creates a FlowRun, `hooks/scripts/session-end-state.sh` |
+| `flow.runtime.stateDir` | `.flow` | `bin/flow-runtime-dir.sh` and `runtime_dir()` in `bin/_repo_dir.py`, which every reader and writer of runtime state (goals, runs, triggers, watch state, workflow overrides, review exceptions) uses: a relative path with no `..` component that ends inside the repository with no symlink on the way, any other value warns once and `.flow` is used. Not `FLOW_STATE_DIR`, the per-user state directory |
+| `flow.runtime.runRetentionDays` | `30` | `hooks/scripts/session-end-state.sh`: removes runs that ended (completed or cancelled), whose `run.yaml` was last written more than this many days ago, and that git does not track |
+| `flow.goals.enabled` | `true` | `/flow:goal`, `/flow:start`, `/flow:pr`, `/flow:merge`, `/flow:status`, `/flow:learn` |
+| `flow.goals.goalCreation` | `auto` | `/flow:start`, `/flow:pr`, `/flow:merge`, `/flow:setup` |
+| `flow.goals.requireGoalForStart` | not set (deprecated) | read only to map onto `goalCreation` (`bin/flow-migrate-settings.sh`, `/flow:start`) |
+| `flow.goals.stopHookEnforcement` | `warn` | `hooks/scripts/flow-goal-stop.sh` |
+| `flow.goals.failAfterStuckTurns` | `3` | `flow-goal-stop.sh`, `flow-goal-evaluator.sh` |
+| `flow.goals.executeVerificationCommands` | `false` | `hooks/scripts/flow-run-deterministic-checks.sh` |
+| `flow.goals.judge.model` | `haiku` | `bin/flow-judge.sh --judge goal`; allowed `haiku`, `sonnet`, `opus` |
+| `flow.goals.judge.timeoutSeconds` | `60` | `bin/flow-judge.sh --judge goal`; a whole number from 5 to 600, otherwise the default |
+| `flow.workflows.enabled` | `true` | `/flow:workflow` |
+| `flow.triggers.enabled` | `true` | `/flow:trigger`, `/flow:watch`, `/flow:run`, `/flow:status` |
+| `flow.triggers.allowedTypes` | `["manual","hook","loop_prompt"]` | `/flow:trigger`, `trigger-policy` skill |
+| `flow.triggers.maxActiveTriggers` | `5` | `trigger-policy` skill |
+| `flow.triggers.allowAutonomousMerge` | `false` | `trigger-policy` skill step 2 (`bin/flow-trigger-tier3-check.sh`), from the user settings only: `true` accepts a trigger that does not forbid merge or release; the tier hook still asks |
+| `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | `trigger-policy` skill (step 3, `bin/flow-trigger-recursion-check.sh`) |
+| `flow.triggers.defaultConcurrency` | `skip_if_running` | `/flow:run trigger`, `/flow:trigger run` (`bin/flow-trigger-concurrency.sh`), `trigger-policy` skill (step 6) |
+| `replyStyle.enabled`, `constructions`, `extraPatterns` | `false`, not set, not set | `hooks/scripts/reply-style-check.sh` |
+
 ## Quality Gates
 
-Flow enforces eleven quality gates across the workflow lifecycle. Gates are structural -- they block progression until satisfied.
+Flow enforces twelve quality gates across the workflow lifecycle. Gates are structural -- they block progression until satisfied.
 
 ### 1. Spec Validation Gate (EXPLORE phase)
 
 Validates that every acceptance criterion has a concrete, automated verification command before the workflow transitions to PLAN. Rejects vague criteria (e.g., "works correctly") and requires specification of non-goals, failure modes, and interface contracts.
 
 **Blocks:** EXPLORE -> PLAN transition
-**Override:** None. Fix the spec.
+**Override:** None for an issue with acceptance criteria: fix the spec. An issue with no acceptance criteria may proceed without a spec when `specFirst.requireAcceptanceCriteria` is `false`, or when the issue carries a label listed in `specFirst.allowSpecFreeLabels` (default `documentation`, `chore`) and the user chooses the spec-free option, which is logged to the decision journal.
 
 ### 2. Stranger Test Gate (end of PLAN)
 
@@ -148,17 +235,17 @@ Runtime verification (dev server startup, API smoke tests, E2E tests, browser ch
 
 ### 5. Evidence Completeness (VERIFY phase)
 
-Every criterion's evidence bundle must include five completeness subsections: "What was NOT tested," "Known limitations," "Negative/adversarial cases," "Test inputs and expected values" (with the source of each expected value), and "Risk map coverage." The verdict-judge FAILs any criterion whose evidence is missing these subsections, whose expected values are self-referential (copied from the implementation), or whose risk-map rows have no discriminating test. A `ui` criterion must additionally carry `### Visual analysis` (one `Viewport:` / `Screenshot:` / `Result:` / `Observed:` block per configured viewport copied from the visual-verification result). When the criterion describes an action a user performs, it must also carry the `Step:` blocks of the driven flow, or a `Flows: none — {reason}` line saying why no flow ran. The verdict-judge has no file tools and judges the `Observed:` sentences, never the image.
+Every criterion's evidence bundle must include a non-blank `### Does NOT promise` subsection (the criterion's non-goals; `none` counts as present) and five completeness subsections: "What was NOT tested," "Known limitations," "Negative/adversarial cases," "Test inputs and expected values" (with the source of each expected value), and "Risk map coverage." The verdict-judge FAILs any criterion whose evidence is missing these subsections, whose expected values are self-referential (copied from the implementation), or whose risk-map rows have no discriminating test. A `ui` criterion must additionally carry `### Visual analysis` (one `Viewport:` / `Screenshot:` / `Result:` / `Observed:` block per configured viewport copied from the visual-verification result). When the criterion describes an action a user performs, it must also carry the `Step:` blocks of the driven flow, or a `Flows: none — {reason}` line saying why no flow ran. The verdict-judge has no file tools and judges the `Observed:` sentences, never the image.
 
 **Blocks:** PASS verdict on the affected criterion (judge-side, not pre-submission)
 **Override:** None. Add the missing subsections.
 
 ### 6. Missing-Criterion Scan (verdict-judge)
 
-Step 1 of verdict evaluation checks that every acceptance criterion from the issue has a corresponding evidence entry. Criteria without evidence are flagged as `FAIL` before any evaluation begins. `verdict.requireAllPass: true` means a single missing criterion blocks the verdict.
+Step 1 of verdict evaluation checks that every acceptance criterion from the issue has a corresponding evidence entry. Criteria without evidence are flagged as `FAIL` before any evaluation begins, and any `FAIL` sends `/flow:start` into its fix loop.
 
 **Blocks:** Verdict evaluation
-**Override:** Set `verdict.requireAllPass: false` (all criteria still evaluated, but missing ones do not block)
+**Override:** None for a missing criterion. `verdict.requireAllPass` decides how a `NEEDS-HUMAN-REVIEW` verdict is handled: `true` (default) treats it as `FAIL`; `false` shows the verdict table and asks the user to approve or reject.
 
 ### 7. Holdout Validation (VERIFY + review + address phases)
 
@@ -169,7 +256,7 @@ Cross-references agent self-review claims against actual file state. Runs inline
 
 ### 8. Finding-Ledger Merge Gate (merge)
 
-Scans for `FLOW_RESOLUTION_CYCLE` markers in the codebase. Blocks merge when the markers contain unresolved or escalated items. An item that is not fixed carries the status "ESCALATED": deferral without a structured escalation is not permitted.
+Reads the `FLOW_REVIEW_CYCLE` and `FLOW_RESOLUTION_CYCLE` markers from the pull request's review bodies and comments. Blocks merge when the markers contain unresolved or escalated items. An item that is not fixed carries the status "ESCALATED": deferral without a structured escalation is not permitted.
 
 **Blocks:** `gh pr merge` / `/flow:merge`
 **Override:** Resolve all findings or complete Proactive Autonomy escalation for each.
@@ -206,6 +293,13 @@ It is not a defence against deliberate evasion (an alias, a command held in a va
 
 **Blocks:** `gh pr merge` in Bash, `gh api` merge calls
 **Override:** None in settings. Merge a pull request whose checks have finished, in the shape above.
+
+### 12. Tier Gate (every session)
+
+`hooks/scripts/tier-gate.sh` (PreToolUse, Bash) applies the tier settings to every Bash command, whether a flow command or the agent wrote it. Tier 2 actions push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate`, `tiers.issueAssign` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks). Merge, release and pushing or deleting a tag are always confirm. `hooks/scripts/tier-session-start.sh` (SessionStart) puts flow's `git` and `gh` wrappers (`hooks/shims/`) first on PATH, and each wrapper refuses a `confirm` action that `tier-gate.sh` did not ask about in the same Bash call. The actions each tier covers are in [Actions](#actions) above; how the hook and the wrappers read a command, and what neither covers, is in [`three-tier-safety.md`](three-tier-safety.md).
+
+**Blocks:** nothing on its own; it asks (a refusal in `claude -p`) before a merge, a release, a tag push and any action set to `confirm`.
+**Override:** `tiers.push`, `tiers.prCreate`, `tiers.issueCreate`, `tiers.issueAssign`. `tiers.merge` and `tiers.release` cannot go below `confirm`.
 
 ### Stop hook posture (FlowGoal evidence)
 
@@ -285,7 +379,8 @@ Reviewers will see the change in the PR diff. Anyone can override with their own
 | 9 | Task-Completion Quality Ledger | Every session | Task completion |
 | 10 | Issue-Create Ask Gate | Active goal | Asks before `gh issue create` |
 | 11 | Unchecked-Merge Gate | Every session | `gh pr merge` with unfinished checks, or in another shape |
+| 12 | Tier Gate | Every session | Asks before merge, release, tag push and any action set to `confirm` |
 
 ## Hook Override
 
-Hook scripts always run. A setting changes what a hook does only where this page names it (`testing.taskCompletionGate`, `minimalScope`, `flow.goals.stopHookEnforcement`); to change anything else, edit the script in `plugins/flow/hooks/scripts/`.
+Hook scripts always run. These settings change what a hook does: `tiers.*` (`tier-gate.sh` and the `git`/`gh` wrappers), `testing.taskCompletionGate` (`verify-task-completion.sh`), `testing.qualityCommandPatterns` (`record-quality-run.sh`), `minimalScope` (`ask-issue-create.sh`), `flow.goals.stopHookEnforcement`, `flow.goals.failAfterStuckTurns` and `flow.goals.executeVerificationCommands` (the Stop hook scripts), `flow.runtime.enabled` and `flow.runtime.runRetentionDays` (`session-end-state.sh`), `learning.enabled`, `learning.sources` and `learning.transcriptDir` (`session-end-learn.sh`), `replyStyle.*` (`reply-style-check.sh`), and `systemOne.uses` for the `quality.tests-ran`, `guard.planted-instructions`, `goal.judge` and `goal.warn-evidence` sites (`record-quality-run.sh`, `s1-screen-text.sh`, the Stop hook scripts). To change anything else, edit the script in `plugins/flow/hooks/scripts/`.

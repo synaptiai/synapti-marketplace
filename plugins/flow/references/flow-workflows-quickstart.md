@@ -4,14 +4,14 @@ A 5-minute walkthrough of the `/flow:workflow` inspection commands. By the end y
 
 ## Prerequisites
 
-- flow v3.0.0 installed (`claude plugins list | grep flow`)
+- flow installed (`claude plugins list | grep flow`)
 - A git repository (any one — workflows are read-only inspections, no working tree changes)
 - `python3` with `PyYAML` available (`python3 -c 'import yaml'` exits 0)
-- `python3 -m jsonschema` available — `pip install jsonschema` if absent (the validation skill degrades to schema-skipped with a stderr warn when missing)
+- The `jsonschema` Python module (`python3 -c 'import jsonschema'` exits 0; `pip install jsonschema` if absent) — `validate` needs it for the schema step
 
-## Step 1 — Enable workflows
+## Step 1 — Check that workflows are on
 
-Workflows are opt-in. When you ran `/flow:start` for the first time after upgrading to v3.0.0, the **Enable v3** answer turned on both `flow.goals` and `flow.workflows`. If you skipped onboarding or want to enable workflows explicitly:
+Workflows are on by default (`flow.workflows.enabled: true`). If your settings turned them off, turn them back on:
 
 ```bash
 jq '.flow.workflows.enabled = true' .claude/settings.flow.json > /tmp/s && mv /tmp/s .claude/settings.flow.json
@@ -20,7 +20,7 @@ jq '.flow.workflows.enabled = true' .claude/settings.flow.json > /tmp/s && mv /t
 Verify:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default "false" '.flow.workflows.enabled'
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --default "true" '.flow.workflows.enabled'
 # expect: true
 ```
 
@@ -30,19 +30,20 @@ Verify:
 /flow:workflow list
 ```
 
-You'll see the 7 plugin-shipped workflows:
+You'll see the 7 plugin-shipped workflows, each with its command and its `metadata.description` (shortened here):
 
 ```
-start-issue   /flow:start    Issue → branch → spec → code → verify
-review-pr     /flow:review   PR → parallel review → consolidate
-address-pr    /flow:address  PR → resolve findings → verify
-merge-pr      /flow:merge    PR → verify gates → confirm → merge
-release       /flow:release  Release PR (version bump) → merge → tag → push
-debug         /flow:debug    Reproduce → diagnose → fix → verify
-design        /flow:design   Explore → propose → record decision
+Plugin-shipped workflows:
+  address-pr      /flow:address        Address PR review feedback — categorize findings, resolve surgically, verify.
+  debug           /flow:debug          Debug a specific failure — reproduce, root-cause, fix, verify.
+  design          /flow:design         Design or review architecture for a feature or system. ...
+  merge-pr        /flow:merge          Merge an approved PR — verify approval, CI green, goal achieved; ...
+  release         /flow:release        Create a release in two runs — open a release pull request ...
+  review-pr       /flow:review         Review a pull request — fan-out reviewers, consolidate findings, post comments.
+  start-issue     /flow:start          Start work on a GitHub issue — preflight, spec capture, plan, code, verify.
 ```
 
-The `list` subcommand also surfaces project-local overrides at `.flow/workflows/*.workflow.yaml` (none yet — we'll add one in Step 5).
+The `list` subcommand also surfaces project-local overrides at `.flow/workflows/*.workflow.yaml` (none yet — we'll add one in Step 6).
 
 ## Step 3 — Inspect a workflow
 
@@ -100,10 +101,11 @@ PHASES
      ...
   2. explore (mixed)
      2.1 fetch_issue_context (bash)
-     2.2 specification_capture (skill skill=specification-capture)
-     2.3 spec_validation_gate (gate)
-     2.4 goal_contract_capture (skill skill=goal-contract-capture)
-  3. plan (agent) [completion]
+     2.2 fetch_repo_context (bash)
+     2.3 specification_capture (skill skill=specification-capture)
+     2.4 spec_validation_gate (gate)
+  3. plan (agent)
+     3.1 goal_creation (skill skill=goal-contract-capture)
      ...
 
 COMPLETION GATE (advisory documentation, not enforced)
@@ -115,7 +117,11 @@ COMPLETION GATE (advisory documentation, not enforced)
 TIER CLASSIFICATION
 -------------------
   branch_creation           autonomous
+  file_edits                autonomous
   commits                   autonomous
+  issue_assignment          journal
+  push                      journal
+  pr_create                 journal
   merge                     confirm
   release                   confirm
 ```
@@ -124,22 +130,23 @@ Use `graph` when you want to understand the high-level shape of a command withou
 
 ## Step 6 — Project-local overrides
 
-To customize a workflow for your project (e.g., adding a security-scan phase to `address-pr`), copy the plugin default and edit:
+To customize a workflow for your project (e.g., adding a security-scan phase to `address-pr`), copy the plugin default from the installed plugin root (resolved as `references/plugin-root-resolution.md` describes) and edit:
 
 ```bash
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 mkdir -p .flow/workflows
-cp plugins/flow/workflows/address-pr.workflow.yaml .flow/workflows/address-pr.workflow.yaml
+cp "$FLOW_ROOT/workflows/address-pr.workflow.yaml" .flow/workflows/address-pr.workflow.yaml
 $EDITOR .flow/workflows/address-pr.workflow.yaml
 ```
 
 `/flow:workflow inspect address-pr` and `/flow:workflow graph address-pr` now read your local override (shadows the plugin default). Run `validate` after editing to catch shape mistakes.
 
-Project-local overrides are committed by default (matches gitignore policy in `references/flow-runtime-state.md`). Truly per-developer experimentation should use a `.local.workflow.yaml` suffix and add to personal `.gitignore`.
+Project-local overrides are committed by default (matches gitignore policy in `references/flow-runtime-state.md`). An override must be named `<id>.workflow.yaml`; a file such as `address-pr.local.workflow.yaml` is a separate workflow with the id `address-pr.local` and overrides nothing. To keep an override to yourself, add its file to your personal gitignore.
 
 ## Common gotchas
 
 - **`completion_gate.documented_requirements` is advisory**: the labels are documentation, not a check vocabulary. Commands enforce their own gates. If you need actual enforcement, change the command's markdown — the workflow YAML can't gate execution.
-- **`completion_gate.requires` (legacy name)**: workflows authored against v3.0.0-rc shapes may still use `requires` instead of `documented_requirements`. The validation skill accepts both during v3.0.x with a deprecation warning. Rename before v3.1.
+- **`completion_gate.requires` (legacy name)**: some workflows use `requires` instead of `documented_requirements`. The validation skill accepts it with a deprecation warning on stderr; rename it to `documented_requirements`.
 - **Tier 3 downgrade is a hard fail**: don't set `merge: autonomous` to "test something" — the validation skill rejects it and refuses to ship. If you need autonomous merge for a specific use case, that's a different conversation about your tier policy, not a workflow change.
 
 ## Next steps

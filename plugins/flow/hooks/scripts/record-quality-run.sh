@@ -51,7 +51,8 @@
 #                   (a 0 is recorded as null by the rule above).
 #   worktree_digest sha256 of the working tree state right after the run
 #                   (`flow-quality-ledger.sh digest --cwd <payload cwd>`
-#                   with the journal dir, .flow/ and .screenshots/ excluded —
+#                   with the journal dir, the runtime directory (default
+#                   .flow/) and .screenshots/ excluded —
 #                   the same ignore set the gate uses), null outside a git
 #                   repo. The gate recomputes it at TaskCompleted time to see
 #                   edits made outside Edit/Write.
@@ -345,6 +346,14 @@ if [ -x "${CASCADE%/cascade-resolve.sh}/journal-dir.sh" ]; then
   JOURNAL_DIR=$("${CASCADE%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 fi
+# The runtime directory (flow.runtime.stateDir), as every runtime writer
+# resolves it: bookkeeping written there never dirties the gate.
+RT=".flow"
+if [ -x "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh" ]; then
+  RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh" 2>/dev/null) || RT=""
+  RT=${RT#./}
+  [ -n "$RT" ] || RT=".flow"
+fi
 _abs() {
   case "$1" in
     /*) printf '%s' "$1" ;;
@@ -353,7 +362,7 @@ _abs() {
 }
 DIGEST=$("$LEDGER_HELPER" digest --cwd "$CWD" \
   --ignore-prefix "$(_abs "$JOURNAL_DIR")" \
-  --ignore-prefix "$(_abs ".flow")" \
+  --ignore-prefix "$(_abs "$RT")" \
   --ignore-prefix "$(_abs ".screenshots")" 2>/dev/null) || DIGEST=""
 
 # System One, site quality.tests-ran (references/system-one.md). Asked only

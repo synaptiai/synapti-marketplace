@@ -6,24 +6,37 @@ This project uses the [flow](https://github.com/synaptiai/synapti-marketplace/tr
 
 | Command | Purpose |
 |---------|---------|
-| `/flow:start <issue>` | Start work on a GitHub issue |
-| `/flow:commit` | Classify changes and create atomic commits |
-| `/flow:pr` | Create PR with full review pipeline |
-| `/flow:review <pr>` | Multi-faceted PR review |
-| `/flow:address <pr>` | Address review feedback surgically |
+| `/flow <verb> <target>` | Entry point that routes a verb to the command below |
+| `/flow:start <issue>` | Start work on an issue |
+| `/flow:commit` | Classify and commit changes |
+| `/flow:pr` | Create pull request |
+| `/flow:review <pr>` | Review a pull request |
+| `/flow:address <pr>` | Address review feedback |
 | `/flow:merge <pr>` | Merge approved PR (requires confirmation) |
 | `/flow:release <type>` | Create release (requires confirmation) |
-| `/flow:issue [topic]` | Create well-crafted GitHub issues |
+| `/flow:resolve [pr-or-branch]` | Resolve merge conflicts |
 | `/flow:status` | Workflow overview |
-| `/flow:learn` | Analyze decision patterns |
-| `/flow:setup` | Initialize flow for this repo |
-| `/flow:explain` | Q&A about decisions |
+| `/flow:learn` | Analyze patterns |
+| `/flow:setup` | Initialize flow for a repository |
+| `/flow:explain` | Questions about decisions on this branch |
+| `/flow:issue [topic]` | Create a GitHub issue |
+| `/flow:brainstorm [topic]` | Explore approaches before implementation |
+| `/flow:debug [error]` | Structured debugging |
+| `/flow:design [feature]` | Architecture and design review |
+| `/flow:goal` | Create, inspect and evaluate FlowGoals |
+| `/flow:resume` | Propose the next safe action for an interrupted run |
+| `/flow:workflow` | Inspect workflow definitions |
+| `/flow:trigger` | Manage FlowTriggers |
+| `/flow:run trigger <id>` | Run one FlowTrigger's target once |
+| `/flow:watch` | Generate a `/loop` prompt for hands-off iteration |
 
 ### Safety Model
 
 - **Tier 1** (Autonomous): commits, branches, file edits
-- **Tier 2** (Journal): push, PR creation, issue assignment
-- **Tier 3** (Confirm): merge, release
+- **Tier 2** (Journal): push, PR creation, issue creation, issue assignment. By default each runs and writes a breadcrumb to the git-ignored auto-log trail; each is a `tiers.*` setting (`push`, `prCreate`, `issueCreate`, `issueAssign`) that also takes `autonomous` or `confirm`
+- **Tier 3** (Confirm): merge, release, pushing or deleting a tag. Always asks; `tiers.merge` and `tiers.release` cannot go below `confirm`
+
+The `tier-gate.sh` hook applies these settings to every Bash command, and flow's `git` and `gh` wrappers check again when the program starts.
 
 ### LSP Code Intelligence
 

@@ -23,8 +23,10 @@
 #                           or timeout(1)/gtimeout missing, or no working
 #                           directory)
 #
-# Never reads through a symlink: a goal or run reached through a link belongs
-# to its target, not to this repository.
+# Goals and runs are read from the runtime directory, flow.runtime.stateDir
+# (bin/flow-runtime-dir.sh, default .flow). Never reads through a symlink: a
+# goal or run reached through a link belongs to its target, not to this
+# repository.
 #
 # Exits: 0 with JUDGE_STATE=done; 1 otherwise.
 
@@ -58,16 +60,18 @@ esac
 # The plugin this script ships in; the skill's block found it before calling.
 FLOW_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-GOAL_FILE=".flow/goals/$GOAL_ID.goal.yaml"
-if ! "$FLOW_ROOT/bin/flow-mkdir.sh" --check -- .flow/goals >/dev/null 2>&1 || [ -L "$GOAL_FILE" ] || [ ! -f "$GOAL_FILE" ]; then
-  _blocked "no goal file to read at .flow/goals/<GOAL_ID>.goal.yaml (missing, or reached through a symlink)"
+RT=$("${BASH:-bash}" "$FLOW_ROOT/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || _blocked "the runtime directory could not be resolved"
+GOAL_FILE="$RT/goals/$GOAL_ID.goal.yaml"
+if ! "$FLOW_ROOT/bin/flow-mkdir.sh" --check -- "$RT/goals" >/dev/null 2>&1 || [ -L "$GOAL_FILE" ] || [ ! -f "$GOAL_FILE" ]; then
+  _blocked "no goal file to read at $RT/goals/<GOAL_ID>.goal.yaml (missing, or reached through a symlink)"
 fi
 RUN_DIR=""
 if [ -n "$RUN_ID" ]; then
-  if ! "$FLOW_ROOT/bin/flow-mkdir.sh" --check -- ".flow/runs/$RUN_ID" >/dev/null 2>&1; then
+  if ! "$FLOW_ROOT/bin/flow-mkdir.sh" --check -- "$RT/runs/$RUN_ID" >/dev/null 2>&1; then
     _blocked "the run directory is reached through a symlink or cannot be checked"
   fi
-  RUN_DIR=".flow/runs/$RUN_ID"
+  RUN_DIR="$RT/runs/$RUN_ID"
 fi
 
 # The report, from the producer the Stop hook runs. No "checked" key, or a

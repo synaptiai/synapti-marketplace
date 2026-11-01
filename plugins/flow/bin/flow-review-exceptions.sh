@@ -13,6 +13,9 @@
 # Usage:
 #   flow-review-exceptions.sh --repo <owner/name> --pr <number>
 #   flow-review-exceptions.sh --repo <owner/name> --ref <branch-or-sha>
+#   [--path <file>]   the file to read; default <runtime dir>/review-exceptions.md,
+#                     the runtime directory being flow.runtime.stateDir
+#                     (bin/flow-runtime-dir.sh, default .flow), resolved here
 #
 # --pr resolves the pull request base commit. --ref is for callers with no pull
 # request yet: /flow:pr runs before the pull request exists, so its base is the
@@ -21,7 +24,7 @@
 #
 # Output (per references/command-output-format.md):
 #   ENCODING=a literal | inside a value is written %7C
-#   EXCEPTIONS_PATH=.flow/review-exceptions.md
+#   EXCEPTIONS_PATH=<runtime dir>/review-exceptions.md (or --path)
 #   EXCEPTIONS_REF=<base commit sha>
 #   STATE=ok|none|unavailable
 #   REASON=<why>                       (unavailable and none)
@@ -64,7 +67,7 @@ one_line() {
 REPO=""
 PR_NUM=""
 REF=""
-EXC_PATH=".flow/review-exceptions.md"
+EXC_PATH=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -78,6 +81,12 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$REPO" ] || { echo "flow-review-exceptions.sh: --repo is required" >&2; exit 2; }
+if [ -z "$EXC_PATH" ]; then
+  RT=$("${BASH:-bash}" "$(cd "$(dirname "$0")" && pwd)/flow-runtime-dir.sh") || RT=""
+  # A path in the repository as the contents API names it: no leading ./
+  RT=${RT#./}
+  EXC_PATH="${RT:-.flow}/review-exceptions.md"
+fi
 if [ -n "$PR_NUM" ] && [ -n "$REF" ]; then
   echo "flow-review-exceptions.sh: pass --pr or --ref, not both" >&2; exit 2
 fi

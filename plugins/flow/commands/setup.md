@@ -1,5 +1,5 @@
 ---
-description: "Initialize flow for a repository. Detects tech stack, generates settings, configures LSP servers, optionally adds CLAUDE.md sections, and warns about plugin coexistence."
+description: "Initialize flow for a repository. Detects tech stack, generates settings, configures LSP servers, warns about plugin coexistence, offers GitHub rulesets for the default branch and tags, and optionally adds CLAUDE.md sections."
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Glob, Grep, LSP
 ---
 
@@ -30,7 +30,10 @@ true
 # 1. Check for existing flow settings
 [ -f ".claude/settings.flow.json" ] && printf '%s\n' "EXISTING_SETTINGS=true" || printf '%s\n' "EXISTING_SETTINGS=false"
 
-# 2. Check for gh-workflow installation
+# 2. Check for gh-workflow: prints the line only when this repository holds
+# both plugins/gh-workflow/.claude-plugin/plugin.json and
+# .claude/settings.gh-workflow.json (an in-repo copy of the plugin with its
+# settings file); an installed gh-workflow plugin is not detected
 ls plugins/gh-workflow/.claude-plugin/plugin.json .claude/settings.gh-workflow.json 2>/dev/null && printf '%s\n' "GH_WORKFLOW_DETECTED=true"
 
 # 3. Check CLAUDE.md
@@ -68,12 +71,18 @@ Also ignore `.claude/*.lock` — `flow-migrate-settings.sh` (and other writers) 
 
 Also ignore the auto-log trail, `<journal.dir>/auto-log/`. The PostToolUse hooks write a breadcrumb there after every edit and commit; it is local scratch, not journal content, and an unignored directory would leave the working tree permanently dirty. The hooks also drop a self-ignoring `.gitignore` inside that directory, so this line is belt-and-braces rather than the only defense — but a project should not depend on a hook having run to keep its own tree clean.
 
+Also ignore `<runtime dir>/watch/` (the runtime directory, `flow.runtime.stateDir`, default `.flow`, as `bin/flow-runtime-dir.sh` resolves it), where `/flow:watch issue <N>` keeps the issue snapshot of each loop iteration. It is local state; `/flow:watch` also writes a `.gitignore` of `*` inside it.
+
 ```bash
 JOURNAL_DIR=".decisions"
 RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 [ -x "$RESOLVER" ] && JOURNAL_DIR=$("${RESOLVER%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' '.flow/watch/' "$JOURNAL_DIR/auto-log/"; do
+RUNTIME_DIR=".flow"
+[ -x "$RESOLVER" ] && RUNTIME_DIR=$("${RESOLVER%/cascade-resolve.sh}/flow-runtime-dir.sh")
+RUNTIME_DIR=${RUNTIME_DIR#./}
+[ -n "$RUNTIME_DIR" ] || RUNTIME_DIR=".flow"
+for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$RUNTIME_DIR/watch/" "$JOURNAL_DIR/auto-log/"; do
   if [ -f .gitignore ]; then
     grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
   else
@@ -95,7 +104,7 @@ Flow settings follow the standard Claude Code cascade — `local > project > use
 
 Write `.claude/settings.flow.json` with:
 
-- Quality commands discovered from tech stack (`qualityCheckMaxIterations`, `closedLoop.*`, etc.)
+- Quality commands discovered from tech stack (`timeouts.qualityCheckMaxIterations`, `closedLoop.*`, etc.)
 - `conventions.branchPatterns` and `conventions.commitTypes` matching existing repository conventions
 - `agentTeams: false` (paired-reviewer mode opt-in; users enable per their preference, also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var)
 - `merge.markerTrust.allowedAssociations` at the secure default `["OWNER","MEMBER","COLLABORATOR"]`
@@ -106,7 +115,7 @@ Write `.claude/settings.flow.json` with:
 
 **On re-run** (existing settings detected): Read current settings and merge — preserve user customizations, only add new keys that don't exist yet.
 
-The v3 runtime settings (`flow.goals`, `flow.runtime`, `flow.workflows`, `flow.triggers`) are intentionally **not** written into the team file — they are governed by the plugin defaults via the cascade, so the committed file stays lean. The one thing setup actively does for them is upgrade **deprecated** keys (next step).
+The runtime settings (`flow.goals`, `flow.runtime`, `flow.workflows`, `flow.triggers`) are intentionally **not** written into the team file — they are governed by the plugin defaults via the cascade, so the committed file stays lean. The one thing setup actively does for them is upgrade **deprecated** keys (next step).
 
 ### Upgrade deprecated settings (re-run only)
 
@@ -355,8 +364,11 @@ If gh-workflow is detected:
 ```markdown
 **Note**: gh-workflow plugin detected in this repository.
 
-The flow plugin can coexist alongside gh-workflow, but you should only
-enable one at a time to avoid hook conflicts.
+The flow plugin can be installed alongside gh-workflow. The two provide
+similar commands for the same steps (start, commit, PR, review, address,
+merge, release), and both keep the decision journal for an issue in
+`.decisions/issue-{N}.md` by default, so use one plugin's commands for a
+given issue.
 
 Commands use different prefixes:
 - gh-workflow: `/gh-start`, `/gh-commit`, `/gh-pr`
@@ -477,12 +489,21 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 |----------|--------|--------|-------------|
 | {language} | {server} | {Installed/Missing/Skipped} | {available features} |
 
-{If any servers need manual steps, or Phase 1 printed TIMEOUT_BIN=missing:}
+### GitHub Rulesets
+{One of: each CREATED= and FAILED= line from Phase 5; "flow's rulesets are already in place"; "skipped by the user"; "no git remote"; or "could not be read or created ({RULESETS value})"}
+
+{If Phase 2 upgraded deprecated settings keys or stripped auto-log lines:}
+### Files to Review Before Committing
+- `.claude/settings.flow.json` — deprecated keys upgraded
+- {each journal STRIP_AUTO_LOG_FILE named} — auto-log lines removed
+
+{If any servers need manual steps, Phase 1 printed TIMEOUT_BIN=missing, or Phase 5 printed RULESETS=unavailable, RULESETS=unreadable or a FAILED= line:}
 ### Manual Steps Required
 - [ ] {TIMEOUT_BIN=missing only} Install GNU coreutils (`brew install coreutils` on macOS) so the verdict judge and the goal judge can run
 - [ ] Add `export ENABLE_LSP_TOOL=1` to shell profile and restart Claude Code
 - [ ] Run `{install command}` to install {server}
 - [ ] Restart Claude Code after plugin installation
+- [ ] {Phase 5 unavailable, unreadable or FAILED only} Ask an owner of the repository to add the rulesets under Settings → Rules{: GitHub's message for each FAILED= line}
 
 ### Commands Available
 | Command | Purpose |
@@ -522,10 +543,12 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 |---|---|---|
 | Detect environment, tech stack, build commands | 1 | Autonomous, read-only |
 | Probe LSP capabilities | 1 | Autonomous, read-only |
+| `mkdir -p .claude` | 1 | Autonomous |
+| Add flow's entries to `.gitignore` | 1 | Autonomous, project file; adds only missing lines |
 | Write `.claude/settings.flow.json` (project-shared settings) | 1 | Autonomous, project file |
-| Upgrade deprecated keys in an existing `.claude/settings.flow.json` (`flow-migrate-settings.sh --apply`) | 2 | AskUserQuestion before rewriting the committed file; atomic, preserves other keys |
-| Write `.claude/CLAUDE.md` flow integration block | 1 | Autonomous, project file |
-| Install LSP servers (when user opts in) | 2 | Journal-and-proceed (touches user environment outside repo) |
+| Upgrade deprecated keys in an existing `.claude/settings.flow.json` (`flow-migrate-settings.sh --apply`) | 1 | Local file rewrite, run only after AskUserQuestion (optional cleanup); atomic, preserves other keys |
+| Strip auto-log lines from tracked journals (`flow-strip-auto-log.sh --apply`) | 1 | Local file rewrite, run only after AskUserQuestion (optional cleanup); atomic |
+| Append the flow section to CLAUDE.md (`.claude/CLAUDE.md` or `CLAUDE.md`) | 1 | Local file, run only after AskUserQuestion |
+| Install LSP server binaries; `claude plugin marketplace add` and `claude plugin install` | 2 | Changes the user's environment outside the repository; run only after the user picks an install option in Step 3.4. No tier setting applies and no breadcrumb is written |
 | Read the repository's GitHub rulesets | 1 | Autonomous, read-only |
-| Create flow's GitHub rulesets (default branch, tags) | 3 | **Confirm**: AskUserQuestion first, naming what each choice does and does not stop; nothing is created on Skip |
-| `mkdir -p .decisions/` | 1 | Autonomous |
+| Create flow's GitHub rulesets (default branch, tags) | 3 | **Confirm**: this command asks with AskUserQuestion first, naming what each choice does and does not stop; nothing is created on Skip. The `tier-gate.sh` hook does not cover ruleset changes, so this question is the only one |

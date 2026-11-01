@@ -43,28 +43,39 @@ fi
 
 ## Subcommand: `/flow:run trigger <id>`
 
-1. Read `.flow/triggers/<id>.trigger.yaml`. Error if not found.
+`<runtime dir>` is the runtime directory `bin/flow-runtime-dir.sh` prints (`flow.runtime.stateDir`, default `.flow`).
+
+1. Read `<runtime dir>/triggers/<id>.trigger.yaml`. Error if not found.
 2. Check `metadata.enabled: true`. Error if disabled.
 3. Invoke `Skill(trigger-policy)` in `enforce` mode. Abort on violation (Tier 3 deny, recursion deny, etc.).
-4. Check `concurrency.policy`:
-   - `skip_if_running` (default) — if a previous run for this trigger is in flight (check `.flow/runs/` for runs with metadata.trigger=<id> and state.status=active; a run under a symlinked `.flow`, `.flow/runs` or run directory, or whose `run.yaml` is itself a symlink, is not read and counts as absent — `bin/flow-mkdir.sh --check` refuses the directories), exit 0 with a notice.
+4. Run the concurrency check below. It prints the policy (`CONCURRENCY_POLICY=`: the trigger's `concurrency.policy`, or the setting `flow.triggers.defaultConcurrency`, shipped as `skip_if_running`, when the trigger sets none) and one `IN_FLIGHT=<run id>` line per run of this trigger in flight: a FlowRun whose `metadata.trigger` is this trigger's id and whose `state.status` is `active`. A run that records no trigger, or another trigger, is never in flight for this one, whatever its workflow. A run under a symlinked `<runtime dir>`, `<runtime dir>/runs` or run directory, or whose `run.yaml` is a symlink, is not read and counts as absent: flow never creates a run there. A `run.yaml` that cannot be read, is not valid YAML or is not a mapping may be this trigger's run, so the check stops on it. A non-zero exit means the check could not run (its message is on stderr): stop. Then apply the policy:
+   - `skip_if_running` — when any run is in flight, exit 0 with a notice naming it.
    - `queue` — queue the run (logs a journal artifact only; nothing holds the run for later execution).
-   - `cancel_previous` — find any in-flight runs and transition them to `cancelled` before starting.
-5. Set env var `FLOW_TRIGGERED_RUN=true` (target commands consult this for recursion policy enforcement).
-6. Invoke `target.command` from the trigger YAML.
-7. After target completes, append a `trigger-fired` artifact to the linked decision journal.
+   - `cancel_previous` — transition each in-flight run to `cancelled` (`run-state-management` step 4) before starting.
+
+```bash
+# RUN_CONCURRENCY_BLOCK_BEGIN
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+RUN_ARGS=$(printf '%s' "$_RAW" | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')
+TRIGGER_ID=""
+case "$RUN_ARGS" in *" "*) TRIGGER_ID=${RUN_ARGS#* } ;; esac
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-trigger-concurrency.sh" "$TRIGGER_ID"
+# RUN_CONCURRENCY_BLOCK_END
+```
+
+5. Invoke `target.command` from the trigger YAML, telling it that it runs for this trigger: the FlowRun it creates records the trigger id as `metadata.trigger` (`run-state-management`, input 3), which is what step 4 finds on the next firing. A target that creates no FlowRun (`flow.runtime.enabled` is `false`, or a command that does not use `run-state-management`) leaves nothing for step 4 to find, so its runs never count as in flight.
+6. After target completes, append a `trigger-fired` artifact to the linked decision journal.
 
 ## Recursion enforcement
 
-When `FLOW_TRIGGERED_RUN=true`:
-- The target command's pre-flight check refuses to create / enable / modify triggers (unless `recursion_policy.triggered_runs_may_*` is true, which requires explicit AskUserQuestion at trigger-creation time).
-- The target command's tier classification has `merge` and `release` hard-overridden to `confirm` regardless of trigger settings.
+Recursion is checked when the trigger is validated, not while the target runs. `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` default to `false`. `trigger-policy` (step 3 above) rejects a trigger that sets `_modify_triggers` or `_enable_triggers` to `true`, and one that sets `_create_triggers` to `true` unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is `true`. No command, hook or script detects at run time that a command was started by a trigger, so nothing stops the target command from creating, enabling or modifying a trigger; do not do so while running a trigger's target.
+
+The target command's actions keep their tiers: the `tier-gate.sh` hook applies to every Bash command, so push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate` and `tiers.issueAssign`, and merge, release and pushing or deleting a tag always ask. In `claude -p` an ask is a refusal.
 
 ## Anti-patterns
 
 - ❌ Bypassing trigger-policy validation. Triggers fire without supervision; policy is the only gate.
 - ❌ Treating concurrency.skip_if_running as a no-op when a stuck active run exists. A stuck active run is surfaced as a warning; nothing detects stale runs automatically.
-- ❌ Allowing FLOW_TRIGGERED_RUN to be set when not actually triggered. Manual invocation must NOT set the env var.
 
 ## Critical references
 
@@ -77,10 +88,9 @@ When `FLOW_TRIGGERED_RUN=true`:
 
 | Action | Tier | Behavior |
 |---|---|---|
-| Read `.flow/triggers/<id>.trigger.yaml` and validate via `Skill(trigger-policy)` | 1 | Autonomous, read-only |
-| Concurrency check against `.flow/runs/` for in-flight runs of this trigger | 1 | Autonomous, read-only |
-| Set `FLOW_TRIGGERED_RUN=true` env var | 1 | Autonomous |
-| Invoke `target.command` (the trigger's nominated next-action) | 2 | Journal-and-proceed — writes a FlowRun, a `trigger-fired` decision-journal artifact, and may invoke a Tier 2 workflow (push, PR creation) *within the target's own tier policy*. Tier 3 actions (`merge`, `release`) are blocked by `trigger-policy` regardless of trigger settings. |
-| Cancel previous in-flight runs (when `concurrency.policy: cancel_previous`) | 2 | Journal-and-proceed — transitions other runs to `cancelled` |
+| Read `<runtime dir>/triggers/<id>.trigger.yaml` and validate via `Skill(trigger-policy)` | 1 | Autonomous, read-only |
+| Concurrency check against `<runtime dir>/runs/` for in-flight runs of this trigger | 1 | Autonomous, read-only |
+| Invoke `target.command` (the trigger's nominated next-action) and append the `trigger-fired` journal artifact | 1 | Autonomous, local file write. The target's own actions keep their tiers: push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate` and `tiers.issueAssign` (default `journal`: run and write one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks); merge, release and pushing or deleting a tag always ask. `trigger-policy` also refuses a trigger whose `forbidden_actions` does not list `merge` and `release`. |
+| Cancel previous in-flight runs (when `concurrency.policy: cancel_previous`) | 1 | Autonomous, local file write — transitions other runs to `cancelled` |
 
 `/flow:run` itself never enforces a Tier 3 action; the trigger-policy hard-deny on merge/release is non-negotiable.

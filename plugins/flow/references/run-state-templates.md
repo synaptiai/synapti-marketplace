@@ -21,6 +21,7 @@ metadata:
   workflow: ${WORKFLOW_ID}      # start-issue | debug | address-pr | review-pr | merge-pr | release
   workflow_version: 1
   goal: ${GOAL_ID:-null}        # linked FlowGoal id, or null
+  trigger: ${TRIGGER_ID}        # only when /flow:run trigger <id> or /flow:trigger run <id> started the command; omit otherwise
   created_at: '${NOW}'
 context:
   repo: ${REPO}
@@ -109,7 +110,7 @@ state:
 | `address-pr` | preflight → categorize → resolve → verify |
 | `review-pr` | preflight → fan-out → consolidate → report |
 | `merge-pr` | preflight → verify → confirm → merge |
-| `release` | preflight → bump → confirm → tag |
+| `release` | first run: preflight → bump → release_pr; second run, after the release pull request is merged: preflight → tag |
 
 Machine-readable equivalents: `plugins/flow/workflows/<id>.workflow.yaml`.
 
@@ -124,5 +125,5 @@ Machine-readable equivalents: `plugins/flow/workflows/<id>.workflow.yaml`.
 - `plugins/flow/bin/flow-mkdir.sh` — creates the run directory, never through a symlink.
 - `plugins/flow/bin/_journal_atomic.py` — `acquire_lock`, `_atomic_write` for run.yaml updates.
 - `plugins/flow/schemas/v1/run.schema.json`, `activity.schema.json` — document schemas.
-- `plugins/flow/references/decision-journal-schema.md` — `workflow-run` and `run-state-transition` artifact rows.
+- `plugins/flow/references/decision-journal-schema.md` — the `workflow-run` artifact row.
 - `plugins/flow/references/flow-runtime-state.md` — `.flow/` layout, gitignore policy, resumability.

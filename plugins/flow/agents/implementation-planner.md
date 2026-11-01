@@ -2,7 +2,7 @@
 name: implementation-planner
 description: "Parse acceptance criteria from issues and create atomic task breakdowns (implementation + test + evidence) with dependencies, parallel execution opportunities, and one discriminating test per risk-map row. Use when decomposing an issue into trackable implementation tasks."
 model: inherit
-tools: Read, Bash, TaskCreate, TaskList, TaskUpdate, Grep, Glob
+tools: Read, Bash, TaskCreate, TaskList, TaskUpdate, Grep, Glob, LSP
 skills: branch-and-task-management
 memory: project
 ---

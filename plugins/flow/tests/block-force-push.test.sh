@@ -299,6 +299,41 @@ _fp_blocks 'P=push; git "$P" -f origin main'
 _fp_blocks 'P=push; git `echo $P` --force origin main'
 # git runs an alias as the subcommand it names, defined for one invocation by -c.
 _fp_blocks 'git -c alias.p=push p --force'
+# An expansion before the subcommand, in a global option's value, may still
+# name the subcommand or define an alias for it.
+_fp_blocks 'git -c "$CFG" branch -f other main'
+_fp_blocks 'git -C "$DIR" "$SUB" --force'
+_fp_blocks 'git --git-dir "$GD" $SUB -f origin main'
+
+_flow_test_begin "block-force-push — an expansion after a literal subcommand is an argument"
+# /flow:review removes its review worktree with the path in a variable. The
+# subcommand is the literal word worktree, so the variable is a path and the
+# force flag is worktree's own.
+_fp_allows 'git worktree remove --force "$REVIEW_TREE" 2>/dev/null'
+_fp_allows 'git worktree remove --force ${TREE}'
+# A global option first: the subcommand is not read from the words.
+_fp_blocks 'git -C /tmp/repo worktree remove --force "$TREE"'
+_fp_allows 'git branch -f "$BRANCH" main'
+_fp_allows 'git tag -f "$TAG" HEAD'
+# A command substitution in an argument runs a command, so it stays refused.
+_fp_blocks 'git worktree remove --force "$(git push --force origin main)"'
+_fp_blocks 'git worktree remove --force "$(echo x)"'
+_fp_blocks 'git branch -f `echo x` main'
+# A literal non-push subcommand does not vouch for a push elsewhere on the line.
+_fp_blocks 'git worktree remove --force "$TREE"; git push --force origin main'
+
+_flow_test_begin "block-force-push — only worktree, branch and tag, right after git, read a variable as an argument"
+# Subcommands that run their arguments as a command: a variable there may be
+# a push (bisect run, submodule foreach, rebase -x).
+_fp_blocks 'P=push; git bisect run git $P --force origin main'
+_fp_blocks 'P=push; git submodule foreach git $P -f'
+_fp_blocks "C='pu''sh'; git -C . rebase -f -x \"git \$C --force\" HEAD~1"
+_fp_blocks "E='git pu''sh --for''ce origin HEAD:main'; git rebase -f -x \"\$E\" HEAD~1"
+# A global option before the subcommand: its value may be the next word, so
+# the subcommand cannot be read from the words (--attr-source takes a value).
+_fp_blocks 'SUB=push; git --attr-source HEAD "$SUB" --force origin main'
+_fp_blocks 'SUB=push; git --attr-source HEAD $SUB -f origin main'
+_fp_blocks 'git --no-pager worktree remove --force "$TREE"'
 
 _flow_test_begin "block-force-push — the +refspec spelling, inside a payload"
 # The word-based check treats a +refspec as force; the raw-text fallback has to

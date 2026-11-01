@@ -56,4 +56,4 @@ All findings use P1/P2/P3 with file:line citations:
 |----------|---------|--------|
 | P1 | Blocks merge | Must fix |
 | P2 | Should fix | Fix before merge |
-| P3 | Consider | Optional improvement |
+| P3 | Consider | Fix in this PR (an `improve:` commit in a file the PR did not otherwise touch); a follow-up issue only under `minimalScope` for a cosmetic P3 in an untouched file |

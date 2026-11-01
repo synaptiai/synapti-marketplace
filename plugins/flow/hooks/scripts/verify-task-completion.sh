@@ -36,7 +36,8 @@
 # nested the task as .task.subject / .task.description; both shapes are read.
 #
 # Ignored paths (never dirty the gate): the decision journal directory
-# (cascade key journal.dir, default .decisions), .flow/, .screenshots/ —
+# (cascade key journal.dir, default .decisions), the runtime directory
+# (flow.runtime.stateDir, default .flow/), .screenshots/ —
 # each resolved against the payload cwd.
 
 set -uo pipefail
@@ -78,6 +79,14 @@ TASK_SUBJECT=$(printf '%s' "$INPUT" | jq -r '.task_subject // .task.subject // e
 
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$CWD" ] || CWD="$PWD"
+# The runtime directory (flow.runtime.stateDir), as every runtime writer
+# resolves it: bookkeeping written there never dirties the gate.
+RT=".flow"
+if [ -x "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh" ]; then
+  RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh" 2>/dev/null) || RT=""
+  RT=${RT#./}
+  [ -n "$RT" ] || RT=".flow"
+fi
 _abs() {
   case "$1" in
     /*) printf '%s' "$1" ;;
@@ -87,7 +96,7 @@ _abs() {
 
 STATUS=$("$LEDGER_HELPER" status --session "$SESSION_ID" --cwd "$CWD" \
   --ignore-prefix "$(_abs "$JOURNAL_DIR")" \
-  --ignore-prefix "$(_abs ".flow")" \
+  --ignore-prefix "$(_abs "$RT")" \
   --ignore-prefix "$(_abs ".screenshots")" 2>/dev/null) || exit 0
 
 STATE=""

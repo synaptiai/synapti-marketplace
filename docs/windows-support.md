@@ -67,8 +67,13 @@ The plugin ships a `.ps1` alongside each script and declares
 
 - **Cost to the user:** none.
 - **Cost to the maintainer:** two implementations of every guard, kept in step
-  forever. For flow that would be 14 hook scripts and 27 `bin/` scripts, and
-  the `` ```! `` blocks inside 23 files would still assume a POSIX shell.
+  forever. For flow that would be 19 hook scripts, the 5 files of their shared
+  library, the `git` and `gh` wrappers, and 53 `bin/` scripts, and the
+  `` ```! `` blocks inside 23 files would still assume a POSIX shell.
+- **What it loses:** anything a SessionStart hook sets up through
+  `CLAUDE_ENV_FILE` other than a variable assignment, since PowerShell reads
+  only assignments from that file. flow's run-time tier check depends on a
+  PATH line there (see below).
 - **When it is right:** a plugin with one or two small hooks.
 
 ### 3. Declared opt-out
@@ -96,7 +101,7 @@ installs it.
 
 | Plugin | Ships | Strategy | Evidence |
 |---|---|---|---|
-| `flow` | 14 hook scripts, 27 `bin/` shell scripts, `` ```! `` blocks in 23 files | Git Bash required | `.github/workflows/windows-hooks.yml` runs `plugins/flow/tests/windows-hooks-smoke.sh` on `windows-latest` every time the hooks or `bin/` change. Known gap: several `bin/` helpers pass Git Bash paths (`/c/...`) to a native Windows `python3`, which cannot resolve them, so on Windows they do nothing and say nothing. Only the auto-log write and the dependency diff convert their paths today (issue #246). Known gap: a native Windows `python3` ends the lines it writes to a pipe in `\r\n`, and `$(...)` in Git Bash keeps the `\r`; the refusal readers of the symlink check drop it, but the goal evaluator reads its turn budget from a `python3` line as `N\r`, which is not a number, so under the evaluator loop every stop is allowed with "the goal turn budget could not be read" before the goal is evaluated |
+| `flow` | 19 hook scripts, 2 `git`/`gh` wrappers, 53 `bin/` shell scripts, `` ```! `` blocks in 23 files | Git Bash required | `.github/workflows/windows-hooks.yml` runs `plugins/flow/tests/windows-hooks-smoke.sh` on `windows-latest` every time the hooks or `bin/` change. Known gap: several `bin/` helpers pass Git Bash paths (`/c/...`) to a native Windows `python3`, which cannot resolve them, so on Windows they do nothing and say nothing. Only the auto-log write and the dependency diff convert their paths today (issue #246). Known gap: a native Windows `python3` ends the lines it writes to a pipe in `\r\n`, and `$(...)` in Git Bash keeps the `\r`; the refusal readers of the symlink check drop it, but the goal evaluator reads its turn budget from a `python3` line as `N\r`, which is not a number, so under the evaluator loop every stop is allowed with "the goal turn budget could not be read" before the goal is evaluated |
 | `dossier` | 5 hooks, 20 `bin/` scripts, `` ```! `` blocks in 9 files | Git Bash required | None yet: the Windows workflow runs flow's hooks only |
 | `thanos` | 1 `bin/` script, a `` ```! `` block in 1 file | Git Bash required | None yet: its tests run on Linux and macOS only, and the Windows workflow runs flow's hooks only |
 | `agent-capability-standard` | 2 hooks | Undeclared | Sourced from its own repository (`synaptiai/agent-capability-standard`), not from this tree, so the change belongs there |
@@ -116,15 +121,27 @@ should copy:
   prerequisites are present, parses every script in `hooks/scripts/` and
   `bin/*.sh` with `bash -n`, and then runs the hooks: the PreToolUse guards are
   fed the payload the hook runner sends and must allow or block as expected,
-  the two logging hooks must write their trail into a scratch repository, the
-  Stop and SessionEnd hooks must answer an empty session, and the settings
-  resolver must return its default. It runs on `windows-latest` under Git Bash,
+  the two logging hooks and the tier hook must write their trail into a scratch
+  repository (the tier hook's entry is the breadcrumb for a push), the
+  SessionStart hook must write the line that puts flow's `git` and `gh`
+  wrappers first on PATH to `CLAUDE_ENV_FILE`, `git` must then run through the
+  wrapper, the Stop and SessionEnd hooks must answer an empty session, and the
+  settings resolver must return its default. It runs on `windows-latest` under Git Bash,
   and on Ubuntu and macOS in the same job matrix so a regression is attributed
   to the platform rather than to the change.
 - **Checks the inline blocks separately.** Validity is not portability;
   `review-gate-portability.test.sh` scans every `` ```! `` block in every
   command for the comment-apostrophe defect, and the root
   `command-fence-arguments` check covers argument substitution.
+- **Sets up the session's shell only where it can.** The SessionStart hook
+  `tier-session-start.sh` writes lines to `CLAUDE_ENV_FILE` that put flow's
+  `git` and `gh` wrappers (`hooks/shims`) first on PATH, so each git or gh
+  started by a Bash command checks the tier settings again. This works under
+  Git Bash. Without `CLAUDE_ENV_FILE`, or under PowerShell, the hook sets
+  nothing up and the PreToolUse hook `tier-gate.sh`, which reads the command
+  text, is the only tier check. The hook also sets nothing up, and says so on
+  stderr, when the wrapper or state directory path holds a quote, a line end
+  or a colon.
 - **Degrades loudly.** Each hook checks for the tools it needs, such as `jq`
   and `python3`, and says what it cannot do without them. The `bin/` helpers
   named in the table above do not yet meet this on Windows.

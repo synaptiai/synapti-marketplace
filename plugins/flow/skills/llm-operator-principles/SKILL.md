@@ -10,7 +10,7 @@ allowed-tools: Read
 
 **CONVERGENCE = ZERO FINDINGS. NOT EXHAUSTED BUDGET.**
 
-Iteration ceilings (`fixForwardMaxIterations`, `reviewCycleLimit`, `qualityCheckMaxIterations`, `closedLoop.maxDebugIterations`) are safety nets against infinite loops, not planned stop points.
+Iteration ceilings (`fixForwardMaxIterations`, `reviewCycleLimit`, `timeouts.qualityCheckMaxIterations`, `closedLoop.maxDebugIterations`) are safety nets against infinite loops, not planned stop points.
 
 ## You Are An LLM Agent
 
@@ -37,7 +37,7 @@ Default to ONE PR. Split only when the user asks, the work crosses a deployment 
 
 ## Iteration Ceiling Semantics
 
-Defaults: `fixForwardMaxIterations: 10`, `reviewCycleLimit: 10`, `closedLoop.maxDebugIterations: 5`, `qualityCheckMaxIterations: 3`. Approaching a ceiling: re-read findings against the actual diff, check whether you misunderstood one or two are in tension, then continue. Escalate only when you cannot progress at all.
+Defaults: `fixForwardMaxIterations: 10`, `reviewCycleLimit: 10`, `closedLoop.maxDebugIterations: 5`, `timeouts.qualityCheckMaxIterations: 3`. Approaching a ceiling: re-read findings against the actual diff, check whether you misunderstood one or two are in tension, then continue. Escalate only when you cannot progress at all.
 
 ### Genuine non-convergence
 

@@ -1,7 +1,7 @@
 ---
 description: "Debug an issue with structured root cause analysis. Guides evidence gathering, hypothesis testing, and fix validation."
 argument-hint: [description-or-error-message]
-allowed-tools: Bash, Read, Write, Edit, Agent, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
+allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, Grep, Glob
 ---
 
 # Debug: $ARGUMENTS
@@ -69,7 +69,7 @@ true
 
 ### FlowRun (v3 runtime)
 
-`/flow:debug` is a long-running workflow, so it gets a durable FlowRun. The companion FlowGoal is created later (after hypothesis confirmation), so the run forward-references its id. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+`/flow:debug` is a long-running workflow, so it gets a durable FlowRun. The companion FlowGoal is created later (after hypothesis confirmation), so the run forward-references its id. Runs are gated by `flow.runtime.enabled` (default `true`); a project that sets it to false sees `FLOW_RUN_STATE=skip` and the wiring is a no-op.
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
@@ -82,7 +82,7 @@ fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 if [ "$RUNTIME_ENABLED" != "true" ]; then
   printf '%s\n' "FLOW_RUN_STATE=skip"
-  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true"
 else
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-debug"
   # The goal id must match the FlowGoal metadata.id pattern
@@ -99,7 +99,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`debug`, goal=`$GOAL_LINK` — the debug FlowGoal created in Phase 3 below), initial phase `preflight`. Phase order: `preflight → reproduce → diagnose → fix → verify`. Write a FlowActivity at each boundary.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`debug`, goal=`$GOAL_LINK` — the debug FlowGoal created in Phase 3 below), initial phase `preflight`. Phase order: `preflight → reproduce → diagnose → fix → verify`. Write a FlowActivity at each boundary.
 
 **Parallel searches:**
 
@@ -133,7 +133,7 @@ TaskCreate("Fix validation", "Write reproducing test, implement fix, verify")
 ```
 
 **Rules from debugging-patterns:**
-- Maximum 3 hypotheses (more means insufficient evidence — go back to EXPLORE)
+- At most `debugging.maxHypotheses` hypotheses at a time (default 3; more means insufficient evidence — go back to EXPLORE)
 - Test highest confidence first
 - Test ONE at a time
 
@@ -188,7 +188,7 @@ For each hypothesis (highest confidence first):
    ```
    If not applicable (non-UI bug): skip TaskCreate entirely.
 5. **TaskList** — confirm all tasks show status: completed
-6. **FlowGoal evaluation + FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): invoke `Skill(goal-evaluator)` with `trigger=command` to evaluate the debug FlowGoal against the reproducing test evidence; persist the proposed lifecycle transition (the skill does not write terminal status itself). When the goal reaches `achieved`, transition the FlowRun to `state.status: completed`; if the bug could not be root-caused, transition to `state.status: blocked` (with `blocked_reason`) so `/flow:resume` can pick it up.
+6. **FlowGoal evaluation + FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): invoke `Skill(goal-evaluator)` with `trigger=command` to evaluate the debug FlowGoal against the reproducing test evidence. Then do what `/flow:goal evaluate` does after the skill returns: write the verdict with `bin/flow-record-verdict.sh`, and for a proposed terminal transition (`achieved` or `failed`) ask with AskUserQuestion before writing it (`commands/goal.md`, "Terminal-transition Tier 3 confirmation"); the skill does not write a terminal status itself. When the goal reaches `achieved`, transition the FlowRun to `state.status: completed`; if the bug could not be root-caused, transition to `state.status: blocked` (with `blocked_reason`) so `/flow:resume` can pick it up.
 7. **Display summary**:
    - Root cause: {description}
    - Hypothesis confirmed: #{N}
@@ -209,7 +209,7 @@ Present next steps:
 | Action | Tier | Behavior |
 |---|---|---|
 | Read logs / stack traces / recent changes | 1 | Autonomous, read-only |
-| Hypothesis tracking (max 3 at a time) | 1 | Autonomous |
+| Hypothesis tracking (at most `debugging.maxHypotheses`, default 3, at a time) | 1 | Autonomous |
 | Write reproducing test (RED phase) | 1 | Autonomous |
 | File edits (fix root cause) | 1 | Autonomous |
 | Commits (`fix:`) | 1 | Autonomous, logged by hook |

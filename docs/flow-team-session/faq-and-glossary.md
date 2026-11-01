@@ -20,7 +20,7 @@ If that's too strict for your workflow, the team can vote `tddMode: suggest` (or
 
 Because it has the only complete view of "what was asked." The code-writing agent has goals, rationale, journaling, and ego in the loop. The judge is given **only** the acceptance criteria and the evidence bundle. If you can prove the AC against the evidence, it's right. If you can't, it isn't — even if the code looks fine.
 
-This is the answer to the most common PM/design question. It's worth landing twice (slide 22, pause beat 2).
+This is the answer to the most common PM/design question. It's worth landing twice (slide 23, "Verdict-judge — information isolation", and pause beat 2 on slide 30).
 
 ### What if the verdict-judge is wrong?
 
@@ -46,7 +46,7 @@ Note: `debugging-patterns` skill activates **automatically** when any verificati
 
 ### Can I disable individual hooks?
 
-Not through settings — hooks are structural and have no settings switch (`plugins/flow/references/gate-configuration.md`, "Hook Override"). The only way is to edit `plugins/flow/hooks/hooks.json` or the scripts themselves. A few hooks have their own setting for how strict they are: `testing.taskCompletionGate` (`block` / `warn` / `off`) for the task-completion gate, `flow.goals.stopHookEnforcement` for the Stop hook, and `minimalScope: true` turns off the issue-create prompt. But seriously consider: the hooks exist as a structural backstop for command bugs. `block-force-push` is what catches the recovery attempt when a command-level guard fails. Don't disable them lightly.
+Not through settings — hooks are structural and have no settings switch (`plugins/flow/references/gate-configuration.md`, "Hook Override"). The only way is to edit `plugins/flow/hooks/hooks.json` or the scripts themselves. Some hooks have their own setting for what they do: `tiers.*` for the `tier-gate` hook and flow's git/gh wrappers (`push`, `prCreate`, `issueAssign`, `issueCreate` take `autonomous`, `journal` or `confirm`; merge and release always ask), `testing.taskCompletionGate` (`block` / `warn` / `off`) for the task-completion gate, `flow.goals.stopHookEnforcement` for the Stop hook, `minimalScope: true` turns off the issue-create prompt, `replyStyle.enabled` turns on the reply-style check, and `systemOne.uses["guard.planted-instructions"]` turns on the screen for instructions planted in issue and pull request text. But seriously consider: the hooks exist as a structural backstop for command bugs. `block-force-push` is what catches the recovery attempt when a command-level guard fails. Don't disable them lightly.
 
 ### Why is the recording synthetic instead of using our real codebase?
 
@@ -56,7 +56,7 @@ If you want a session against the real codebase, run one — but plan more time 
 
 ### Are `gate-merge.sh` and `gate-release.sh` hook scripts?
 
-No — and they aren't supposed to be. Fourteen scripts are wired (see `plugins/flow/hooks/hooks.json`). Merge and release confirmation lives at the **command** level via `AskUserQuestion` (see `plugins/flow/references/three-tier-safety.md`, "Hook Enforcement"). One hook does concern merges: `block-unchecked-merge.sh` refuses a `gh pr merge` while any check is queued, running or failed. It does not confirm anything; it refuses unfinished or red merges, including ones typed straight into Bash. This is mentioned on the hooks slide and again in HANDBOOK §7.
+No — and they aren't supposed to be. Seventeen scripts are wired (see `plugins/flow/hooks/hooks.json`). `/flow:merge` and `/flow:release` confirm with `AskUserQuestion`, and the `tier-gate.sh` hook asks again when the merge, tag push or release command runs, inside or outside flow, so you may see two prompts (see `plugins/flow/references/three-tier-safety.md`, "Hook Enforcement"). Another hook also concerns merges: `block-unchecked-merge.sh` refuses a `gh pr merge` while any check is queued, running or failed. It does not confirm anything; it refuses unfinished or red merges, including ones typed straight into Bash. This is mentioned on the hooks slide and again in HANDBOOK §7.
 
 ### Is the marketplace `gh-workflow` plugin going away?
 
@@ -82,6 +82,10 @@ No. **Independence is the feature**, not a constraint. Customizing what the judg
 
 - `verdict.enabled` — turn it off entirely (not recommended)
 - `verdict.requireAllPass` — decision 2 in the worksheet
+- `verdict.model` — the model the judge runs on (empty, the default, means the claude CLI's default)
+- `verdict.timeoutSeconds` — the judge's time limit (default 300)
+
+None of these changes what the judge sees.
 
 If you want stricter judgment, write better completeness subsections in the evidence bundle (Principle 5).
 
@@ -106,8 +110,8 @@ The plugin gets better when the team tells it where it failed.
 
 ### Tiers and safety
 
-- **Tier 1 / 2 / 3** — autonomous / journal / confirm. See `plugins/flow/references/three-tier-safety.md`.
-- **Block-force-push / block-destructive / block-unchecked-merge / block-secrets** — the four blocking PreToolUse Bash hooks. Exit 2 = block. A fifth, `ask-issue-create`, asks before `gh issue create` while a FlowGoal is active.
+- **Tier 1 / 2 / 3** — autonomous / journal / confirm. Applied to Bash commands by the `tier-gate` hook from the `tiers.*` setting. See `plugins/flow/references/three-tier-safety.md`.
+- **Block-force-push / block-destructive / block-unchecked-merge / block-secrets** — the four blocking PreToolUse Bash hooks. Exit 2 = block. A fifth, `ask-issue-create`, asks before `gh issue create` while a FlowGoal is active. A sixth, `tier-gate`, applies the `tiers.*` setting to push, PR creation, issue assignment and creation, merge, release and tag push: `confirm` asks, `journal` writes a local breadcrumb, `autonomous` allows.
 - **`--force-with-lease`** — explicitly allowed; treated as Tier 2 (journal).
 
 ### Findings and review
@@ -159,11 +163,11 @@ The plugin gets better when the team tells it where it failed.
 
 ### Roles
 
-- **Verdict-judge** — independent agent. Sees only ACs + evidence bundle + holdout. No diff, no journal, no file tools.
+- **Verdict-judge** — independent agent, run as a separate `claude --print` process with every tool disallowed. Sees only ACs + evidence bundle + holdout. No diff, no journal, no file tools.
 - **Implementation-planner** — agent that parses ACs into tasks with dependencies.
 - **Code-reviewer / security-reviewer / convention-checker / error-handler-inspector / integration-verifier / test-runner** — the review and verification agents.
 - **Finding-critic** — agent that tries to refute a review finding when the grounding critic is on.
-- **Goal-evaluator-judge** — agent that judges whether a FlowGoal is achieved, for `/flow:goal evaluate` and the Stop hook's `evaluator-loop` mode.
+- **Goal-evaluator-judge** — agent, run like the verdict judge as a `claude --print` process with no tools, that judges whether a FlowGoal is achieved, for `/flow:goal evaluate` and the Stop hook's `evaluator-loop` mode.
 - **Six-field escalation** — Situation / What I tried / Options / Recommendation / Blocking? (yes · soft · no) / Risk. Delivered via `AskUserQuestion`.
 
 ### Goals and runtime

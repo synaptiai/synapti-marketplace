@@ -6,14 +6,14 @@ allowed-tools: Bash, Read, AskUserQuestion
 
 # Create Release v$ARGUMENTS
 
-Tier 3 operation — **always requires human confirmation**, even in autonomous mode. The version bump reaches the default branch only through a release pull request. Before the tag is created and pushed, and before a GitHub release is created, this command asks you with AskUserQuestion. flow's tier hook then asks again when the tag push or the release command runs; it is a second check, and it also covers a tag push or release typed outside flow. You may see two prompts for one release, and nothing is published until you accept both.
+Tier 3 operation — **always requires human confirmation**, even in autonomous mode. The version bump reaches the default branch only through a release pull request. Before the tag is created and pushed, and before a GitHub release is created, this command asks you with AskUserQuestion. flow's tier hook then asks again when the tag push or the release command runs; it is a second check, and it also covers a tag push or release typed outside flow. You may see two prompts for one release, and nothing is published until you accept both. The first run, which opens the release pull request, pushes the release branch under `tiers.push`: with the default `journal` it runs and leaves a breadcrumb, and with `confirm` the block stops before the push so you can run it as its own command, which the tier hook asks about.
 
 Arguments: the bump type (`patch`, `minor` or `major`) and, in a plugin marketplace, the name of the plugin to release and optionally the marketplace's bump type (`/flow:release minor flow`).
 
 ## Required Skills
 
 - `merge-and-release` — version calculation, changelog generation
-- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries
 
 ```!
 # Inline the Required Skills above so their rules are in context before the
@@ -85,9 +85,9 @@ fi
 true
 ```
 
-### FlowRun (v3 runtime)
+### FlowRun
 
-A release is a long-running workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+A release is a long-running workflow, so it gets a durable FlowRun. Runs are written unless `flow.runtime.enabled` is `false` (default `true`); when it is `false` the block prints `FLOW_RUN_STATE=skip` and no run is written.
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
@@ -100,7 +100,7 @@ fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 if [ "$RUNTIME_ENABLED" != "true" ]; then
   printf '%s\n' "FLOW_RUN_STATE=skip"
-  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true"
 else
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-release"
   printf '%s\n' "FLOW_RUN_STATE=create"
@@ -112,7 +112,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`release`, goal=`null` — a release is not goal-bound; it verifies the goals of *included* PRs in Phase 4), initial phase `preflight`. The release is not issue-scoped, so the `workflow-run` journal artifact is best-effort: emit it only if a single issue can be inferred from the included PRs; otherwise the `run.yaml` is the durable record. A release takes two runs of `/flow:release`, matching `workflows/release.workflow.yaml`: phase order `preflight → bump → release_pr` on the first run, which opens the release pull request, and `preflight → tag` on the second, after that pull request is merged.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`release`, goal=`null` — a release is not goal-bound), initial phase `preflight`. The release is not issue-scoped, so the `workflow-run` journal artifact is best-effort: emit it only if a single issue can be inferred from the included PRs; otherwise the `run.yaml` is the durable record. A release takes two runs of `/flow:release`, matching `workflows/release.workflow.yaml`: phase order `preflight → bump → release_pr` on the first run, which opens the release pull request, and `preflight → tag` on the second, after that pull request is merged.
 
 ## Phase 2: Release State and Version
 
@@ -128,7 +128,7 @@ The block below works out which run this is, from the state of the repository an
 
 The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. It stops the same way when GitHub has only a draft release for the tag, whether the tag is already on origin or is the one this run would create (`RELEASE_RUN=tag` or `untagged`; a draft can name a tag that does not exist yet): `DRAFT_RELEASE` names the tag, to be published with `gh release edit <tag> --draft=false` or deleted with `gh release delete <tag>` (flow's tier hook asks before either runs); deleting the draft keeps any tag, so the next run creates the release. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
 
-The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`).
+The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`). The run stops with `STATE=blocked` when that is not a valid branch name, or when it starts with `+` or `-`, which `git push` would read as a forced push or an option.
 
 ```!
 # Output: `###`-headed sections + KEY=value per
@@ -365,6 +365,11 @@ else
     elif [ -z "$LOOKUP_VERSION" ]; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"the next version cannot be worked out; see REFUSED\""
+    elif case "$RELEASE_BRANCH" in [+-]*) true ;; *) false ;; esac; then
+      # A push reads a first + as a force and a first - as an option, and
+      # check-ref-format accepts a name that starts with +.
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "ERROR=\"conventions.branchPatterns.release, with {version} replaced, starts with + or -, which a push reads as a force or an option\""
     elif ! git check-ref-format --branch "$RELEASE_BRANCH" >/dev/null 2>&1; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"conventions.branchPatterns.release, with {version} replaced, is not a valid branch name\""
@@ -477,7 +482,7 @@ On `RELEASE_RUN=pr`, when the repository keeps a changelog file (the plugin's `C
 
 ## Phase 4: Show the Assessment and Act
 
-Show the assessment as text. The release pull request run continues without a question; the tag and publish runs ask with AskUserQuestion after the preview, in their sections below.
+Show the assessment as text. The release pull request run continues without an AskUserQuestion; the tag and publish runs ask with AskUserQuestion after the preview, in their sections below.
 
 ```markdown
 ## Release Preview
@@ -496,7 +501,7 @@ Show the assessment as text. The release pull request run continues without a qu
 
 ### `RELEASE_RUN=pr`: open the release pull request
 
-Run the block below with `RELEASE_BRANCH`, `DEFAULT_BRANCH` and `TAG_PREFIX` from Phase 2, `VERSION` set to `NEW_VERSION`, `PLUGIN` to the plugin name and `MARKET_VERSION` to `NEW_MARKETPLACE_VERSION` (both empty outside a marketplace), `CHANGELOG_FILE` to the changelog file you edited (empty when none), and `CHANGELOG` to the generated changelog. It creates the release branch from the commit checked out (the default branch, which Phase 2 requires), writes the bump, commits only the bumped files and the changelog file, pushes the branch and opens the pull request. Nothing is pushed to the default branch.
+Run the block below with `RELEASE_BRANCH`, `DEFAULT_BRANCH` and `TAG_PREFIX` from Phase 2, `VERSION` set to `NEW_VERSION`, `PLUGIN` to the plugin name and `MARKET_VERSION` to `NEW_MARKETPLACE_VERSION` (both empty outside a marketplace), `CHANGELOG_FILE` to the changelog file you edited (empty when none), and `CHANGELOG` to the generated changelog. The block runs `bin/flow-release-pr.sh`, which creates the release branch from the commit checked out (the default branch, which Phase 2 requires), writes the bump, commits only the bumped files and the changelog file, and pushes the branch; the pull request is opened after it. Nothing is pushed to the default branch. The work is a script, not a fence, because flow's force-push guard refuses a command that holds both a push and a substitution, and its destructive-command guard refuses a branch deletion inside a compound command.
 
 It stops before creating anything when the release branch already exists in this clone (`PR_ERROR` names both ways forward) or when a version file it would bump has uncommitted changes of its own. When the bump, the commit or the push fails, it puts the repository back as it found it: the version files restored, the branch or commit it started on checked out again, the release branch deleted, and the changelog edit and anything staged before kept as they were (a changelog you had staged stays staged). `PR_CLEANUP` says what it did, or what it could not undo.
 
@@ -504,174 +509,14 @@ The pull request title (also the commit subject) is `chore(release): <plugin> <v
 
 ```bash
 # RELEASE_PR_BLOCK_BEGIN
-if [ -z "${RELEASE_BRANCH:-}" ] || [ -z "${DEFAULT_BRANCH:-}" ] || [ -z "${VERSION:-}" ]; then
-  printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"set RELEASE_BRANCH, DEFAULT_BRANCH and VERSION from Phase 2\""
-  exit 1
-fi
-if [ -n "${PLUGIN:-}" ] && [ -n "${MARKET_VERSION:-}" ]; then
-  PR_TITLE="chore(release): $PLUGIN $VERSION, marketplace $MARKET_VERSION"
-elif [ -n "${PLUGIN:-}" ]; then
-  PR_TITLE="chore(release): $PLUGIN $VERSION"
-else
-  PR_TITLE="chore(release): ${TAG_PREFIX:-v}$VERSION"
-fi
-VERSIONS="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-release-versions.sh"
-if [ ! -x "$VERSIONS" ]; then
-  printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"flow-release-versions.sh missing or non-executable at $VERSIONS\""
-  exit 1
-fi
-if git rev-parse -q --verify "refs/heads/$RELEASE_BRANCH" >/dev/null; then
-  printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"the local branch $RELEASE_BRANCH is left from an earlier run; push it and open its pull request (git push -u origin $RELEASE_BRANCH, then gh pr create --base $DEFAULT_BRANCH --head $RELEASE_BRANCH), or delete it (git branch -D $RELEASE_BRANCH), then run /flow:release again\""
-  exit 1
-fi
-# The files the bump writes, from a plan with the same arguments. None may
-# hold a change of its own: the bump commit would carry it, and a failure
-# below restores these files from the last commit.
-if [ -n "${PLUGIN:-}" ] && [ -n "${MARKET_VERSION:-}" ]; then
-  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN" --market-to "$MARKET_VERSION")
-elif [ -n "${PLUGIN:-}" ]; then
-  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN")
-else
-  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION")
-fi
-# The script names only paths without spaces or quotes, one per line.
-VERSION_PATHS=$(printf '%s\n' "$PLAN_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
-DIRTY=""
-while IFS= read -r _p; do
-  [ -n "$_p" ] || continue
-  [ -z "$(git status --porcelain -- "$_p")" ] || DIRTY="$DIRTY $_p"
-done <<EOF
-$VERSION_PATHS
-EOF
-if [ -n "$DIRTY" ]; then
-  printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"these version files have uncommitted changes of their own:$DIRTY; commit or stash them, then run /flow:release again\""
-  exit 1
-fi
-# What was checked out, to return to on a failure: a branch, or the commit
-# of a detached HEAD.
-START_BRANCH=$(git symbolic-ref -q --short HEAD)
-START_COMMIT=$(git rev-parse HEAD)
-if [ -n "$START_BRANCH" ]; then
-  START_NAME="$START_BRANCH"
-  START_SWITCH="git switch $START_BRANCH"
-else
-  START_NAME="the detached commit $START_COMMIT"
-  START_SWITCH="git switch --detach $START_COMMIT"
-fi
-# The changelog's index entry before this block stages it: mode and blob,
-# empty when git does not track the file. A failure puts it back, so a
-# changelog the user had staged stays staged as they staged it.
-CL_MODE=""
-CL_BLOB=""
-if [ -n "${CHANGELOG_FILE:-}" ]; then
-  read -r CL_MODE CL_BLOB _cl_rest <<EOF
-$(git ls-files -s -- "$CHANGELOG_FILE" | head -n 1)
-EOF
-fi
-# _flow_undo: put the repository back as this block found it, and print
-# PR_CLEANUP with what it did or could not do. The version files go back to
-# the last commit (they were clean before the bump); the changelog edit and
-# anything staged before this block stay as they were.
-COMMITTED=0
-_flow_undo() {
-  _left=""
-  if [ "$COMMITTED" = 1 ] && ! git reset -q --soft HEAD~1; then
-    _left="$_left; the bump commit is still on $RELEASE_BRANCH"
-  fi
-  while IFS= read -r _p; do
-    [ -n "$_p" ] || continue
-    git reset -q -- "$_p" >/dev/null 2>&1
-    git checkout -q -- "$_p" || _left="$_left; $_p still holds the new version"
-  done <<EOF
-$VERSION_PATHS
-EOF
-  if [ -n "${CHANGELOG_FILE:-}" ]; then
-    if [ -n "$CL_BLOB" ]; then
-      git update-index --cacheinfo "$CL_MODE,$CL_BLOB,$CHANGELOG_FILE" \
-        || _left="$_left; the staged $CHANGELOG_FILE is the release's version, not yours"
-    else
-      git reset -q -- "$CHANGELOG_FILE" >/dev/null 2>&1
-    fi
-  fi
-  _back=0
-  if [ -n "$START_BRANCH" ]; then
-    git switch -q "$START_BRANCH" && _back=1
-  else
-    git switch -q --detach "$START_COMMIT" && _back=1
-  fi
-  if [ "$_back" = 1 ]; then
-    git branch -q -D "$RELEASE_BRANCH" || _left="$_left; the local branch $RELEASE_BRANCH is still there (git branch -D $RELEASE_BRANCH)"
-  else
-    _left="$_left; still on $RELEASE_BRANCH ($START_SWITCH, then git branch -D $RELEASE_BRANCH)"
-  fi
-  if [ -z "$_left" ]; then
-    printf '%s\n' "PR_CLEANUP=\"the version files are restored, $START_NAME is checked out and the local $RELEASE_BRANCH is deleted; the changelog edit and anything staged before are kept\""
-  else
-    printf '%s\n' "PR_CLEANUP=\"cleanup incomplete$_left\""
-  fi
-}
-if ! git switch -q -c "$RELEASE_BRANCH"; then
-  printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"cannot create the branch $RELEASE_BRANCH\""
-  exit 1
-fi
-if [ -n "${PLUGIN:-}" ] && [ -n "${MARKET_VERSION:-}" ]; then
-  BUMP_OUT=$("$VERSIONS" --write --to "$VERSION" --plugin "$PLUGIN" --market-to "$MARKET_VERSION"); BUMP_RC=$?
-elif [ -n "${PLUGIN:-}" ]; then
-  BUMP_OUT=$("$VERSIONS" --write --to "$VERSION" --plugin "$PLUGIN"); BUMP_RC=$?
-else
-  BUMP_OUT=$("$VERSIONS" --write --to "$VERSION"); BUMP_RC=$?
-fi
-printf '%s\n' "$BUMP_OUT"
-if [ "$BUMP_RC" -ne 0 ] || ! printf '%s\n' "$BUMP_OUT" | grep -qx 'VERSIONS_STATE=written'; then
-  # The script writes every file or none, and names any it could not put
-  # back on a WRITTEN_PATH line; the undo restores them all either way.
-  _flow_undo
-  printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"the version files were not bumped; see VERSIONS_STATE\""
-  exit 1
-fi
-COMMIT_FILES=$(printf '%s\n' "$BUMP_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
-if [ -n "${CHANGELOG_FILE:-}" ]; then
-  if git diff --quiet -- "$CHANGELOG_FILE" 2>/dev/null && ! git ls-files --others --exclude-standard -- "$CHANGELOG_FILE" | grep -q .; then
-    printf '%s\n' "PR_WARN=\"$CHANGELOG_FILE has no change; the release pull request carries no changelog entry\""
-  else
-    COMMIT_FILES=$(printf '%s\n%s\n' "$COMMIT_FILES" "$CHANGELOG_FILE")
-  fi
-fi
-# git add first: git commit's paths match only files git already knows, so a
-# changelog file written for the first time would fail the commit. Paths
-# given to git commit commit those files alone, whatever else is staged.
-set --
-ADD_OK=1
-while IFS= read -r _p; do
-  [ -n "$_p" ] || continue
-  git add -- "$_p" || ADD_OK=0
-  set -- "$@" "$_p"
-done <<EOF
-$COMMIT_FILES
-EOF
-if [ "$ADD_OK" = 1 ] && git commit -q -m "$PR_TITLE" -- "$@"; then
-  COMMITTED=1
-else
-  _flow_undo
-  printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"git add or git commit failed on $RELEASE_BRANCH, so nothing was committed; see the git output above\""
-  exit 1
-fi
-if ! git push -q -u origin "$RELEASE_BRANCH"; then
-  _flow_undo
-  printf '%s\n' "PR_STATE=blocked"
-  printf '%s\n' "PR_ERROR=\"git push of $RELEASE_BRANCH failed, so the bump commit was undone; check that origin is reachable, then run /flow:release again\""
-  exit 1
-fi
-printf '%s\n' "PR_STATE=pushed"
-printf '%s\n' "PR_TITLE=\"$PR_TITLE\""
+export RELEASE_BRANCH DEFAULT_BRANCH VERSION PLUGIN MARKET_VERSION TAG_PREFIX CHANGELOG_FILE
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-release-pr.sh"
 # RELEASE_PR_BLOCK_END
+```
+
+On `PR_STATE=blocked`, stop and show `PR_ERROR` and `PR_CLEANUP`. On `PR_STATE=committed` (`tiers.push` is `confirm`), run the push `PR_NEXT` names as its own command, `git push -u origin <RELEASE_BRANCH>` with the branch written out; the tier hook asks before it runs. If that push fails, the release branch with the bump commit stays in this clone: push it again when origin is reachable. On `PR_STATE=pushed`, or once that push has succeeded, open the pull request with `PR_TITLE` set to the title the block printed:
+
+```bash
 gh pr create --base "$DEFAULT_BRANCH" --head "$RELEASE_BRANCH" --title "$PR_TITLE" --body "$CHANGELOG"
 ```
 
@@ -687,12 +532,14 @@ Only after the user confirms via the tool, run the block below with `TAG`, `TAG_
 
 ```bash
 # RELEASE_TAG_BLOCK_BEGIN
-if [ -z "${TAG:-}" ] || [ -z "${TAG_COMMIT:-}" ] || [ -z "${DEFAULT_BRANCH:-}" ]; then
+# No ${...} expansions in this fence: flow's force-push guard cannot read one
+# in a command that also pushes, and refuses the whole call.
+if [ -z "$TAG" ] || [ -z "$TAG_COMMIT" ] || [ -z "$DEFAULT_BRANCH" ]; then
   printf '%s\n' "TAG_STATE=blocked"
   printf '%s\n' "TAG_ERROR=\"set TAG, TAG_COMMIT and DEFAULT_BRANCH from Phase 2\""
   exit 1
 fi
-TITLE="${TITLE:-$TAG}"
+[ -n "$TITLE" ] || TITLE=$TAG
 if ! git cat-file -e "$TAG_COMMIT^{commit}" 2>/dev/null \
    || ! git merge-base --is-ancestor "$TAG_COMMIT" "refs/remotes/origin/$DEFAULT_BRANCH" 2>/dev/null; then
   printf '%s\n' "TAG_STATE=blocked"
@@ -756,8 +603,8 @@ Display the pull request or release URL and a summary that lists every version f
 | Calculate next version, plan the version-file bump | 1 | Autonomous, read-only |
 | Generate changelog from PR titles | 1 | Autonomous |
 | Create the release branch, write the bump and changelog, commit | 1 | Autonomous, local |
-| `git push -u origin <release branch>` | 2 | Per `tiers.push` |
-| `gh pr create` (the release pull request) | 2 | Per `tiers.prCreate` |
+| `git push -u origin <release branch>` | 2 | Follows `tiers.push` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs). `bin/flow-release-pr.sh` pushes it, and flow's `git` wrapper applies the setting. With `confirm` the script stops before the push and the push is run as its own command, which the tier hook asks about |
+| `gh pr create` (the release pull request) | 2 | Follows `tiers.prCreate` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |
 | `git tag -a <tag> <merge commit>` | 1 | Autonomous, local; it runs in the tag block, so only after the user confirms the release question |
 | `git push origin <tag>` | 3 | **Confirm** — asks via `AskUserQuestion` before the tag block runs; the tier hook asks again when it runs |
 | `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push, in the same question and the same hook prompt; with the tag already on origin (`RELEASE_RUN=publish`), asks via `AskUserQuestion` for the release alone, and the tier hook asks again because the block names the tag as `"$TAG"`, which it cannot read; that prompt is wanted, since the tag may have been pushed outside flow |

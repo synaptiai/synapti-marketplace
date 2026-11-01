@@ -37,6 +37,11 @@
           "type": ["string", "null"],
           "description": "FlowGoal id this run is associated with."
         },
+        "trigger": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "Id of the FlowTrigger whose /flow:run trigger <id> (or /flow:trigger run <id>) started this run; absent or null for a run nobody triggered. The trigger's concurrency check finds its runs in flight by this field."
+        },
         "created_at": {
           "type": "string",
           "format": "date-time"

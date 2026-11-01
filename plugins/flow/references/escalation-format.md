@@ -6,7 +6,7 @@ Reference document. The canonical structure every command and agent uses when it
 
 Escalate when ALL THREE of the following hold:
 
-1. **The decision has consequences beyond the current command.** Examples: choosing a migration strategy, accepting a security risk, allowing a skip outside the runtime-verification whitelist, picking which P1/P2 finding becomes the merge blocker.
+1. **The decision has consequences beyond the current command.** Examples: choosing a migration strategy, accepting a security risk, allowing a skip outside the runtime-verification whitelist, choosing which of two incompatible API designs the issue should commit to.
 2. **There is no obvious right answer.** If reading the spec, the journal, or the surrounding code would resolve the question, the agent must do that work itself before asking.
 3. **The agent cannot resolve the question with high confidence using available tools.** "I'm not sure" is not enough. The agent must be able to articulate exactly what is unknown and why their tools cannot bridge the gap.
 
@@ -19,7 +19,7 @@ Do NOT escalate when ANY of these apply:
 - A reasonable default exists and the cost of asking exceeds the cost of being wrong.
 - The agent is asking permission for an already-authorized action ("can I commit?" — yes, that's Tier 1).
 - **The decision is about how to dispose of a code-review finding (P1/P2/P3 triage).** Finding triage is NEVER a valid escalation trigger — findings are work, not decisions. The default action for every finding is to fix it in this PR (see `skills/llm-operator-principles/SKILL.md`). If you find yourself drafting a Situation/Tried/Options block about a P1/P2/P3, stop and fix the finding instead.
-- **The agent is approaching but has not exceeded an iteration ceiling** (`fixForwardMaxIterations`, `reviewCycleLimit`, `qualityCheckMaxIterations`). Ceilings are safety nets against true infinite loops, not budgets — approaching one is a signal to re-check understanding, not to escalate the remaining work.
+- **The agent is approaching but has not exceeded an iteration ceiling** (`fixForwardMaxIterations`, `reviewCycleLimit`, `timeouts.qualityCheckMaxIterations`). Ceilings are safety nets against true infinite loops, not budgets — approaching one is a signal to re-check understanding, not to escalate the remaining work.
 
 The Iron Law: **resolve what can be resolved locally, escalate only when there is a real decision to make**. An agent that escalates too eagerly trains the user to ignore escalations.
 

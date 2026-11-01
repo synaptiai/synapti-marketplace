@@ -3,7 +3,7 @@
 # Generates a user-invoked /loop prompt that follows one issue's comments,
 # labels, assignees and state, read-only on GitHub. /flow:watch issue <N>
 # fills ${ISSUE}, ${REPO} and ${NOW}, writes the result to
-# .flow/triggers/issue-<N>-watch.trigger.yaml, and writes the loop prompt from
+# <runtime dir>/triggers/issue-<N>-watch.trigger.yaml, and writes the loop prompt from
 # issue-watch.loop.md to .claude/flow-loop-issue-<N>-watch.md.
 #
 # Plugin CANNOT invoke /loop. User invokes it manually using the generated

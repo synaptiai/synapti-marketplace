@@ -348,7 +348,7 @@ coarse one, because they will follow it.
 
 Emit security findings using the canonical schema in [`references/finding-schema.md`](../references/finding-schema.md) — a **two-column** `Finding | Suggested Fix` table per priority, with `{ID} · {category} · `{location}`` bolded on the Finding cell's first line and the problem prose after a `<br>`. Assign IDs with the `SEC-` prefix (`SEC-1`, `SEC-2`, ...) per the schema's recommended provenance convention. Use `category=security` for OWASP and code-level findings; the category can carry sub-types (`auth`, `injection`, `xss`, `idor`, `secrets`) when useful. Escape any literal `|` in a cell as `\|`. Every finding MUST carry a confidence suffix `_(HIGH|MEDIUM|LOW)_` under the three-tier rule in `references/finding-schema.md`: running code or a test, or an LSP diagnostic → HIGH; reading the code path → MEDIUM; pattern match only → LOW.
 
-Dependency judgments from Step 4 are findings like any other, with IDs carrying the `DEP-` prefix (`DEP-1`, `DEP-2`) and `category=dependency`. They have a `file:line` — the manifest line the package is declared on, which `bin/flow-dep-diff.sh` prints — so they fit the canonical schema and go into the same tables and the same `FLOW_REVIEW_CYCLE` marker as everything else. That is the point: a critical advisory with a fix available is something the merge gate can see, not telemetry beside it.
+Dependency judgments from Step 4 are findings like any other, with IDs carrying the `DEP-` prefix (`DEP-1`, `DEP-2`) and `category=dependency`. They have a location — the manifest line the package is declared on, or the file alone for a TOML manifest, as `bin/flow-dep-diff.sh` prints it — so they fit the canonical schema and go into the same tables and the same `FLOW_REVIEW_CYCLE` marker as everything else. That is the point: a critical advisory with a fix available is something the merge gate can see, not telemetry beside it.
 
 The Dependency Audit table below stays, and stays separate. It is the raw audit output for a human reading the review; it is not the finding, and the findings are not derived from reading it back.
 
@@ -391,7 +391,7 @@ When operating as part of an agent team:
 
 ## Review exceptions annotate, never suppress
 
-A project may ship `.flow/review-exceptions.md` — rules its team has already rejected a finding
+A project may ship `<runtime dir>/review-exceptions.md` (its runtime directory, `flow.runtime.stateDir`, default `.flow`) — rules its team has already rejected a finding
 over. Other reviewers are told not to raise a finding that matches one. You are not.
 
 A security finding that matches an exception is reported exactly as any other, with two additions:

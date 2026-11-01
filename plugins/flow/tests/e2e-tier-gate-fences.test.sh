@@ -30,12 +30,8 @@
 # ```! fence), each with text the fence must hold (F4). Each is a merge, a
 # release, a push that may send a tag, or a call the hook cannot read:
 #   commands/merge.md#1       gh pr merge
-#   commands/release.md#2     pushes the release branch after running
-#                             "$VERSIONS", a command word held in a
-#                             variable, which may be cd or eval: from then
-#                             on no push can be read
-#   commands/release.md#3     pushes the release tag (git push origin "$TAG")
-#   commands/release.md#4     gh release create
+#   commands/release.md#4     pushes the release tag (git push origin "$TAG")
+#   commands/release.md#5     gh release create, for a tag already on origin
 #   commands/merge.md!2       a GraphQL query of review threads written in
 #                             double quotes with $OWNER, $NAME and $PR_NUM in
 #                             it: what bash expands there could make it a
@@ -60,15 +56,14 @@ HOOK_TG=hooks/scripts/tier-gate.sh
 # <fence key>|<text the fence holds>
 TGF_EXPECT_ASK="
 commands/merge.md#1|gh pr merge
-commands/release.md#2|git push -q -u origin \"\$RELEASE_BRANCH\"
-commands/release.md#3|git push origin \"\$TAG\"
-commands/release.md#4|gh release create
+commands/release.md#4|git push origin \"\$TAG\"
+commands/release.md#5|gh release create
 commands/merge.md!2|gh api graphql -f query=\"query {
 "
 
 _flow_test_begin "tier-gate-fences"
 e2e_new tier-gate-fences
-e2e_describe "every bash and ! fence in flow's commands, skills and references through the tier hook: the five that merge, release, may push a tag or cannot be read ask, each holding its action, and every other fence is silent (F1, F2, F3, F4)"
+e2e_describe "every bash and ! fence in flow's commands, skills and references through the tier hook: the four that merge, release, may push a tag or cannot be read ask, each holding its action, and every other fence is silent (F1, F2, F3, F4)"
 e2e_repo feature/fences
 
 # One file per fence, named <relative path>#<ordinal> for a ```bash fence

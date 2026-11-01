@@ -160,7 +160,7 @@
         },
         "markerTrust": {
           "type": "object",
-          "description": "Trust filter for FLOW_REVIEW_CYCLE / FLOW_RESOLUTION_CYCLE markers honored by /flow:merge and /flow:status. SECURITY PIN: read from plugins/flow/settings.json ONLY (does NOT use the standard cascade) so a hostile fork PR cannot ship a permissive trust list via .claude/settings.flow.local.json after gh pr checkout. See references/gate-configuration.md for the threat model.",
+          "description": "Trust filter for FLOW_REVIEW_CYCLE / FLOW_RESOLUTION_CYCLE markers honored by /flow:merge and /flow:status. Resolved through the settings cascade, first valid value wins; the user and plugin tiers are read only from a flow install outside the repository. /flow:merge warns at every merge when the resolved list includes NONE, FIRST_TIMER, FIRST_TIME_CONTRIBUTOR or MANNEQUIN. See references/finding-ledger-parser.md for the threat model.",
           "properties": {
             "allowedAssociations": {
               "type": "array",
@@ -237,7 +237,7 @@
             "journal",
             "transcripts"
           ],
-          "description": "Where /flow:learn mines patterns from. 'journal' reads .decisions/*.md and .flow/runs/*/events.jsonl (what flow wrote). 'transcripts' reads the session transcripts under ~/.claude/projects/<project>/ via bin/flow-mine-corrections.sh, which is where user corrections actually live. Both are read-only and local."
+          "description": "Where /flow:learn mines patterns from. 'journal' reads .decisions/*.md and runs/*/events.jsonl under the runtime directory (flow.runtime.stateDir, default .flow): what flow wrote. 'transcripts' reads the session transcripts under ~/.claude/projects/<project>/ via bin/flow-mine-corrections.sh, which is where user corrections actually live. Both are read-only and local."
         },
         "transcriptDir": {
           "type": "string",
@@ -460,7 +460,7 @@
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable visual verification for UI-facing changes"
+          "description": "When false, /flow:start and /flow:pr do not run visual verification and records it as SKIP with this reason. When true, a UI-facing change is verified with screenshots."
         },
         "screenshotDir": {
           "type": "string",
@@ -545,7 +545,8 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "default": true
+          "default": true,
+          "description": "When false, /flow:start and /flow:pr run each build-and-run step and runtime check once and asks the user on a failure instead of fixing and retrying."
         },
         "maxBuildIterations": {
           "type": "integer",
@@ -564,7 +565,8 @@
         },
         "requireRuntimeVerification": {
           "type": "boolean",
-          "default": true
+          "default": true,
+          "description": "When false, /flow:start and /flow:pr may skip runtime verification without an escalation and records the skip; the completion gate accepts it. When true, a skip outside the runtime-verification skill's whitelist needs an escalation."
         }
       }
     },
@@ -592,7 +594,7 @@
     },
     "flow": {
       "type": "object",
-      "description": "Flow v3 runtime layer \u2014 goals, workflows, triggers. v3.0 wires goals into hooks + commands. See plugins/flow/references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
+      "description": "Flow runtime layer: goals, workflows, triggers and runs in the runtime directory (flow.runtime.stateDir, default .flow). Goals are enforced by the Stop hook and the commands that create them. See references/flow-goals.md and references/stop-hook-goal-enforcement.md.",
       "properties": {
         "runtime": {
           "type": "object",
@@ -600,18 +602,18 @@
             "enabled": {
               "type": "boolean",
               "default": true,
-              "description": "Master switch for the .flow/ runtime layer. Setting to false disables FlowGoal, FlowWorkflow, FlowTrigger, and FlowRun writes; existing files remain readable but no new ones are produced."
+              "description": "Switch for FlowRun records in runs/ under the runtime directory (flow.runtime.stateDir, default .flow). When false, commands skip creating and updating runs (FLOW_RUN_STATE=skip) and the SessionEnd hook writes no resume hint; existing runs stay readable. Goals, workflows and triggers have their own switches (flow.goals.enabled, flow.workflows.enabled, flow.triggers.enabled)."
             },
             "stateDir": {
               "type": "string",
               "default": ".flow",
-              "description": "Project-local directory for runtime state (relative to repo root). Changing this is rare \u2014 most teams should keep the default to maintain compatibility with the gitignore policy."
+              "description": "The runtime directory: where flow keeps goals, runs, triggers, watch state, workflow overrides and review exceptions, relative to the repository top. Every reader and writer takes it from bin/flow-runtime-dir.sh (runtime_dir() in bin/_repo_dir.py for Python). It must be a relative path with no '..' component, each name only letters, digits, '.', '_' and '-', that ends inside the repository with no symlink on the way; any other value prints one warning naming this setting and .flow is used. Not the per-user state directory (FLOW_STATE_DIR, ~/.claude/flow-state by default), which is a different place. duplication.excludePaths lists .flow/** by default: add the configured directory there to keep its files out of duplicate-code scans."
             },
             "runRetentionDays": {
               "type": "integer",
               "default": 30,
               "minimum": 1,
-              "description": "How many days of FlowRun records to keep under .flow/runs/ before a future cleanup helper prunes them. v3.0 reads this for documentation; a future minor release adds the prune script."
+              "description": "Days an ended FlowRun is kept. At the end of each session the SessionEnd hook removes runs in runs/ under the runtime directory (flow.runtime.stateDir, default .flow) whose run.yaml says completed or cancelled and was last written more than this many days ago. Active and blocked runs, and runs git tracks, are never removed. A value that is not a whole number of at least 1 means 30."
             }
           },
           "additionalProperties": false
@@ -718,17 +720,17 @@
                 "hook",
                 "loop_prompt"
               ],
-              "description": "Trigger types allowed in this project. v3.0 supports manual/hook/loop_prompt; github_actions/local_cron/local_daemon are deferred to v3.1+."
+              "description": "Trigger types allowed in this project. The default allows manual, hook and loop_prompt. github_actions, local_cron and local_daemon are valid in the trigger schema but no runner for them ships; the trigger-policy check reports a trigger whose type is not listed here as a violation."
             },
             "allowAutonomousMerge": {
               "type": "boolean",
               "default": false,
-              "description": "Non-negotiable in v3.0 \u2014 Tier 3 actions (merge, release) require explicit AskUserQuestion confirmation; no trigger can grant merge autonomy."
+              "description": "When true in the user's settings, a trigger may leave merge and release out of policy.forbidden_actions, so its target command may run /flow:merge or /flow:release. Those commands still ask before they merge or release, and the tier hook asks again: tiers.merge and tiers.release never go below confirm. A repository's own settings cannot turn it on (read with --no-repo-settings)."
             },
             "allowTriggerCreationFromTriggeredRun": {
               "type": "boolean",
               "default": false,
-              "description": "Recursion policy: by default, runs initiated by a trigger may NOT create new triggers. Prevents trigger-creates-trigger loops."
+              "description": "Whether the trigger-policy check accepts a trigger whose recursion_policy.triggered_runs_may_create_triggers is true. False (the default) refuses such a trigger; true accepts it. It covers creation only: a trigger that sets triggered_runs_may_modify_triggers or triggered_runs_may_enable_triggers to true is refused either way. Read from the whole settings cascade, so a repository's own settings can turn it on for everyone: a repository can then ship a trigger whose runs create triggers together with the setting that accepts it, so read a repository's triggers before enabling them. The check runs when a trigger is created, enabled or run; nothing checks at run time whether a triggered command creates a trigger."
             },
             "defaultConcurrency": {
               "enum": [
@@ -737,7 +739,7 @@
                 "cancel_previous"
               ],
               "default": "skip_if_running",
-              "description": "Default concurrency policy when a trigger fires while a prior run is in flight."
+              "description": "The concurrency policy for a trigger whose file sets no concurrency.policy: what /flow:run trigger and /flow:trigger run do when a run that trigger started is still active. skip_if_running stops with a notice, queue records a journal artifact, cancel_previous marks the active runs cancelled before starting. A trigger's own concurrency.policy wins; the templates /flow:watch fills all set one."
             },
             "maxActiveTriggers": {
               "type": "integer",

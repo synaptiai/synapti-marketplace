@@ -1,7 +1,8 @@
 # Template: nightly maintenance
 #
 # Periodic maintenance run — e.g., dependency updates, doc sync. Runs once
-# per night via user-invoked /loop (v3.0) or local_cron (v3.1+).
+# per night through a /loop the user starts; flow ships no scheduler that
+# runs it on its own.
 
 apiVersion: flow.synapti.ai/v1
 kind: FlowTrigger

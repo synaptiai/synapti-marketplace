@@ -1,14 +1,16 @@
 """Write a watch-mode trigger and its loop prompt from a shipped template.
 
 Usage (through bin/flow-watch-create.sh, from the repository root, after the
-/flow:watch pre-flight created .flow/triggers):
+/flow:watch pre-flight created <runtime dir>/triggers; the runtime directory is
+flow.runtime.stateDir, bin/flow-runtime-dir.sh, default .flow):
   flow-watch-create.sh --kind issue  --repo OWNER/NAME --now TIME --issue N
   flow-watch-create.sh --kind branch --repo OWNER/NAME --now TIME
                        --branch NAME --default-branch NAME
 
 The template is <plugin>/triggers/templates/<kind>-watch.trigger.yaml and the
 prompt <kind>-watch.loop.md, found next to this script, never under the
-working directory. Each ${NAME} placeholder is filled; a value going into a
+working directory. Each ${NAME} placeholder is filled (${RUNTIME_DIR} with
+the runtime directory); a value going into a
 single-quoted YAML scalar has its quotes doubled. The trigger is checked
 before anything is written: it must parse, carry the expected id and
 context, forbid merge and release, deny recursion, and validate against
@@ -20,10 +22,10 @@ Output, one KEY=value per line:
   WATCH_STATE=exists    the trigger file is already there; nothing written (exit 1)
   WATCH_STATE=refused   REFUSED="<reason>"; nothing written (exit 1)
 Exit 2 is a usage error, 3 a check that could not run (PyYAML missing).
-Neither file is written through a symbolic link: .flow, .flow/triggers,
-.claude and the files themselves are refused when they are links. For an
-issue watch it also creates .flow/watch/ with a .gitignore of `*`, where the
-loop keeps each iteration's snapshot.
+Neither file is written through a symbolic link: a directory on the way to
+<runtime dir>/triggers, .claude and the files themselves are refused when they
+are links. For an issue watch it also creates <runtime dir>/watch/ with a
+.gitignore of `*`, where the loop keeps each iteration's snapshot.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -41,6 +43,11 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 
 import json
 import re
+
+# PYTHONSAFEPATH keeps this script's own directory off sys.path; the helpers
+# it imports live there.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _repo_dir import runtime_dir
 
 ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -190,7 +197,8 @@ def main(argv):
             raise Refused("the repository %s is not OWNER/NAME" % args["repo"])
         if not NOW.match(args["now"]):
             raise Refused("the time %s is not YYYY-MM-DDTHH:MM:SSZ" % args["now"])
-        values = {"REPO": args["repo"], "NOW": args["now"]}
+        rt = runtime_dir()
+        values = {"REPO": args["repo"], "NOW": args["now"], "RUNTIME_DIR": rt}
         if kind == "issue":
             if not ISSUE.match(args.get("issue", "")):
                 raise Refused("the issue number %r is not a number" % args.get("issue", ""))
@@ -222,25 +230,28 @@ def main(argv):
             raise Refused("the filled template is not valid YAML: %s" % str(e).splitlines()[0])
         check(doc, tid, want_ctx)
 
-        tfile = ".flow/triggers/%s.trigger.yaml" % tid
+        tdir_out = rt + "/triggers"
+        wdir = rt + "/watch"
+        tfile = "%s/%s.trigger.yaml" % (tdir_out, tid)
         lfile = ".claude/flow-loop-%s.md" % tid
         no_link(tfile)
         no_link(lfile)
-        if not os.path.isdir(".flow/triggers"):
-            raise Refused(".flow/triggers does not exist; run the /flow:watch pre-flight first")
+        if not os.path.isdir(tdir_out):
+            raise Refused("%s does not exist; run the /flow:watch pre-flight first" % tdir_out)
         if os.path.lexists(tfile):
             out("exists", TRIGGER_ID=tid, TRIGGER_FILE=tfile,
                 REFUSED="%s already exists; disable or delete it with /flow:trigger first" % tfile)
             return 1
         if kind == "issue":
-            # The issue loop keeps each iteration's snapshot in .flow/watch/,
-            # which ignores itself, as the journal's auto-log folder does: a
-            # repository that never ran /flow:setup has no ignore line for it.
-            no_link(".flow/watch/.gitignore")
-            if not os.path.isdir(".flow/watch"):
-                os.mkdir(".flow/watch")
-            if not os.path.lexists(".flow/watch/.gitignore"):
-                write_new(".flow/watch/.gitignore", "*\n")
+            # The issue loop keeps each iteration's snapshot in
+            # <runtime dir>/watch/, which ignores itself, as the journal's
+            # auto-log folder does: a repository that never ran /flow:setup
+            # has no ignore line for it.
+            no_link(wdir + "/.gitignore")
+            if not os.path.isdir(wdir):
+                os.mkdir(wdir)
+            if not os.path.lexists(wdir + "/.gitignore"):
+                write_new(wdir + "/.gitignore", "*\n")
         if not os.path.isdir(".claude"):
             os.mkdir(".claude")
         if os.path.lexists(lfile):

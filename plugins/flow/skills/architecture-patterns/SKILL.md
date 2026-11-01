@@ -10,11 +10,11 @@ agent: Explore
 
 ## Contract
 
-Iron law: **design architecture from functionality, not to functionality — a component that cannot be traced to a user, admin, or system flow is deleted.** Invoked by `/flow:design` Phase 1 (map flows), Phase 2 (C4 level, coupling review, design proposal), and Phase 4 (decision record). Returns the enumerated flows, a coupling analysis with red flags, a proposal (components, responsibilities, dependencies, data flow, API surface) at the right C4 level, and a decision record with context, options, trade-offs, decision, consequences, non-goals, and failure modes. Permitted skips: none — a record without non-goals and failure modes is incomplete and does not ship; failure modes may be deferred only where `/flow:design` marks them optional.
+Iron law: **design architecture from functionality, not to functionality — a component that cannot be traced to a user, admin, or system flow is deleted.** Invoked by `/flow:design` Phase 1 (map flows), Phase 2 (C4 level, design proposal), Phase 3 (coupling review), and Phase 4 (decision record). Returns the enumerated flows, a coupling analysis with red flags, a proposal (components, responsibilities, dependencies, data flow, API surface) at the right C4 level, and a decision record with context, options, trade-offs, decision, consequences, non-goals, and failure modes. Permitted skips: none — a record without non-goals and failure modes is incomplete and does not ship; failure modes may be deferred only where `/flow:design` marks them optional.
 
 ## Map Flows First
 
-Track four tasks: map flows, coupling analysis, design proposal, decision documentation. First enumerate **user flows** (what the user does, step by step), **admin flows** (operator actions), and **system flows** (cron, webhooks, events). Each is trigger, steps, outcome; every component must serve at least one.
+Track the five tasks `/flow:design` creates. First enumerate **user flows** (what the user does, step by step), **admin flows** (operator actions), and **system flows** (cron, webhooks, events). Each is trigger, steps, outcome; every component must serve at least one.
 
 ## C4 Level
 
@@ -55,7 +55,7 @@ A design that only describes the success path fails at the first unexpected cond
 | **Non-goals** | Bulleted negations |
 | **Failure modes** | Mode → expected behavior per component touched |
 
-`TaskList` shows all four design tasks completed before implementation.
+`TaskList` shows all five design tasks completed before implementation.
 
 ## Anti-Patterns
 

@@ -38,6 +38,38 @@
 #   P3 a setting that could not be read (cascade-resolve.sh exits non-zero)
 #      is reported as false, or the command goes on, instead of saying it
 #      could not be read and stopping (watch.md, resume.md and goal.md too)
+#
+# flow.md, the bare /flow state block
+#   B1 the uncommitted, commits-ahead and conflict lines the suggestions key
+#      on are not printed, so the agent guesses them
+#   B2 an untracked file is not counted as uncommitted, or a conflicted file
+#      is not reported as a conflict
+#   B3 commits ahead are counted against a local main when the remote's
+#      default branch (origin/HEAD) is known, or printed as 0 when no default
+#      branch can be found
+#   B4 outside a git repository the block prints counts it could not take
+#
+# goal.md, the /flow:goal status scan
+#   G1 with active goals on several branches, the first in filename order is
+#      shown instead of the one on the current branch
+#   G2 with no active goal on the current branch, another branch's goal is
+#      shown, or the output does not say that goals are active elsewhere
+#   G3 two active goals on the current branch are not reported as such
+#   G4 an unreadable or refused goal stops being reported once the branch
+#      decides which goal is shown
+#
+# issue.md, the milestone check
+#   M1 the block reads REPO from an earlier fence, so gh is asked for
+#      repos//milestones
+#   M2 a repository that cannot be resolved still sends a milestone request,
+#      or prints nothing instead of saying the check did not run
+#
+# resolve.md, the conflict check and the completion step
+#   C1 in a linked worktree (.git is a file) a merge or rebase in progress is
+#      reported as inactive
+#   C2 in a linked worktree the completion step does nothing, so the merge is
+#      never committed
+#   C3 an ordinary checkout with no merge in progress reads as active
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -361,4 +393,302 @@ _off_in_repo triggers
 e2e_run_block commands/status.md TRIGGERS_BLOCK
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_line "STATE=disabled"
+e2e_expect_clean_edges
+
+# /flow:workflow inspect and graph receive "<subcommand> <id>" in $ARGUMENTS;
+# the id is the second word. Read whole, the path names no workflow (W1). An
+# id that is not a workflow id is refused before it reaches a path (W2).
+_flow_test_begin "/flow:workflow inspect and graph find the workflow named after the subcommand (W1, W2)"
+e2e_new workflow-inspect-id
+e2e_describe "/flow:workflow inspect start-issue: the fence prints the start-issue workflow"
+e2e_repo feature/e2e
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" 'cat "$WF_PATH"' 'inspect start-issue'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_out "id: start-issue"
+e2e_expect_clean_edges
+
+e2e_new workflow-graph-id
+e2e_describe "/flow:workflow graph debug: the fence prints the debug workflow's phases"
+e2e_repo feature/e2e
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" 'python3 - "$WF_PATH"' 'graph debug'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_out "diagnose"
+e2e_expect_clean_edges
+
+e2e_new workflow-inspect-bad-id
+e2e_describe "/flow:workflow inspect ../../etc/passwd: refused as not a workflow id"
+e2e_repo feature/e2e
+e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" 'cat "$WF_PATH"' 'inspect ../../etc/passwd'
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_err "not a workflow id"
+e2e_expect_clean_edges
+
+# _scratch_git <command...> — run a git setup step in the scenario's scratch
+# repository ($E2E_REPO), where the harness's git refuses to run anywhere else.
+_scratch_git() {
+  ( _e2e_git_env; cd "$E2E_REPO" && "$@" ) >/dev/null 2>&1 ||
+    _flow_assert_fail "$E2E_NAME: setup step failed: $*"
+}
+# _scratch_git_may_fail <command...> — the same, for a step that is expected to
+# exit non-zero (a merge that stops on a conflict).
+_scratch_git_may_fail() {
+  ( _e2e_git_env; cd "$E2E_REPO" && "$@" ) >/dev/null 2>&1
+  return 0
+}
+
+# --- flow.md: the bare /flow state block --------------------------------------
+
+FLOW_MD="$E2E_PLUGIN_DIR/commands/flow.md"
+FLOW_STATE_MARK='ASSIGNED_JSON='
+
+# _no_lists — gh answers bare /flow's two lists with nothing.
+_no_lists() {
+  e2e_gh_fixture assigned-issues '[]'
+  e2e_gh_fixture authored-prs '[]'
+}
+
+_flow_test_begin "bare /flow: uncommitted changes and commits ahead of main are printed (B1, B2)"
+e2e_new flow-bare-dirty-ahead
+e2e_describe "feature/e2e two commits ahead of a local main (no remote), one modified tracked file and one untracked file"
+e2e_repo feature/e2e
+_scratch_git git branch -f main HEAD
+_scratch_git sh -c 'printf one > a.txt && git add a.txt && git commit -qm one && printf two > b.txt && git add b.txt && git commit -qm two'
+printf 'changed\n' > "$E2E_REPO/a.txt"
+printf 'new\n' > "$E2E_REPO/notes.txt"
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "BRANCH=feature/e2e"
+e2e_expect_line "UNCOMMITTED=2"
+e2e_expect_line "CONFLICTS=no"
+e2e_expect_line "DEFAULT_BRANCH=main"
+e2e_expect_line "AHEAD=2"
+e2e_expect_clean_edges
+
+_flow_test_begin "bare /flow: a merge that stopped on a conflict is reported (B1, B2)"
+e2e_new flow-bare-conflict
+e2e_describe "main and feature/e2e each change README.md; main is merged into feature/e2e and stops on the conflict"
+e2e_repo feature/e2e
+_scratch_git git branch -f main HEAD
+_scratch_git sh -c 'printf "feature\n" > README.md && git commit -qam feature && git checkout -q main && printf "main\n" > README.md && git commit -qam main && git checkout -q feature/e2e'
+_scratch_git_may_fail git merge -q main
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "CONFLICTS=yes"
+e2e_expect_line "UNCOMMITTED=1"
+e2e_expect_line "AHEAD=1"
+e2e_expect_clean_edges
+
+_flow_test_begin "bare /flow: commits ahead are counted against the remote's default branch when it is known (B3)"
+e2e_new flow-bare-origin-head
+e2e_describe "origin/HEAD names origin/main, which is at the first of feature/e2e's two commits; a local main stays at the root commit"
+e2e_repo feature/e2e
+_scratch_git git branch -f main HEAD
+_scratch_git sh -c 'printf one > a.txt && git add a.txt && git commit -qm one && git update-ref refs/remotes/origin/main HEAD && git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main && printf two > b.txt && git add b.txt && git commit -qm two'
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "DEFAULT_BRANCH=origin/main"
+e2e_expect_line "AHEAD=1"
+e2e_expect_line "UNCOMMITTED=0"
+e2e_expect_clean_edges
+
+_flow_test_begin "bare /flow: with no default branch to compare against, commits ahead are unknown, not 0 (B3)"
+e2e_new flow-bare-no-default
+e2e_describe "the only branch is feature/e2e: the root commit's branch is renamed away and there is no remote"
+e2e_repo feature/e2e
+_scratch_git sh -c 'for b in main master; do if git show-ref --verify --quiet "refs/heads/$b"; then git branch -q -m "$b" old-root; fi; done'
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "DEFAULT_BRANCH=unknown"
+e2e_expect_line "AHEAD=unknown"
+e2e_expect_no_line "AHEAD=0"
+e2e_expect_clean_edges
+
+_flow_test_begin "bare /flow: outside a git repository the working-tree section says so (B4)"
+e2e_new flow-bare-not-a-repo
+e2e_describe "the block runs in a directory that is not in a git repository"
+E2E_REPO="$E2E_DIR/plain"
+mkdir -p "$E2E_REPO"
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "STATE=unavailable"
+e2e_expect_line "REASON=not in a git repository"
+e2e_expect_no_out "UNCOMMITTED="
+e2e_expect_no_out "AHEAD="
+e2e_expect_clean_edges
+
+# --- goal.md: the /flow:goal status scan --------------------------------------
+
+GOAL_MD="$E2E_PLUGIN_DIR/commands/goal.md"
+GOAL_SCAN_MARK='GOAL_SCAN_BLOCK_BEGIN'
+
+_flow_test_begin "/flow:goal status: the active goal on the current branch is shown, not the first by file name (G1)"
+e2e_new goal-status-current-branch
+e2e_describe "two active goals: a-other owns feature/other, z-here owns feature/e2e, the current branch; a-other sorts first"
+e2e_repo feature/e2e
+e2e_goal a-other feature/other active true
+e2e_goal z-here feature/e2e active true
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=ok"
+e2e_expect_line "ACTIVE_GOAL=.flow/goals/z-here.goal.yaml"
+e2e_expect_line "BRANCH=feature/e2e"
+e2e_expect_no_line "ACTIVE_GOAL=.flow/goals/a-other.goal.yaml"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: no active goal on this branch is none, with the count of goals active elsewhere (G2)"
+e2e_new goal-status-other-branch-only
+e2e_describe "one active goal, a-other, owning feature/other; the current branch is feature/e2e"
+e2e_repo feature/e2e
+e2e_goal a-other feature/other active true
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=none"
+e2e_expect_line "BRANCH=feature/e2e"
+e2e_expect_line "OTHER_BRANCH_ACTIVE=1"
+e2e_expect_no_out "ACTIVE_GOAL="
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: two active goals on this branch are reported, not one of them (G3)"
+e2e_new goal-status-degenerate
+e2e_describe "two active goals, g-one and g-two, both owning feature/e2e, the current branch"
+e2e_repo feature/e2e
+e2e_goal g-one feature/e2e active true
+e2e_goal g-two feature/e2e active true
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=degenerate"
+e2e_expect_out "REASON=2 active goals on branch 'feature/e2e'"
+e2e_expect_no_out "ACTIVE_GOAL="
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: an unreadable goal is still named beside the branch's active goal (G4)"
+e2e_new goal-status-unreadable-sibling
+e2e_describe "z-here, active, owns feature/e2e; a-broken is not YAML"
+e2e_repo feature/e2e
+e2e_goal z-here feature/e2e active true
+printf 'lifecycle: [unclosed\n' > "$E2E_REPO/.flow/goals/a-broken.goal.yaml"
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=ok"
+e2e_expect_line "ACTIVE_GOAL=.flow/goals/z-here.goal.yaml"
+e2e_expect_out "GOAL_UNREADABLE=.flow/goals/a-broken.goal.yaml"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: an unreadable goal with no active goal on this branch is unknown, not none (G4)"
+e2e_new goal-status-unreadable-no-match
+e2e_describe "a-other, active, owns feature/other; b-broken is not YAML; the current branch is feature/e2e"
+e2e_repo feature/e2e
+e2e_goal a-other feature/other active true
+printf 'lifecycle: [unclosed\n' > "$E2E_REPO/.flow/goals/b-broken.goal.yaml"
+e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
+e2e_expect_line "STATE=unavailable"
+e2e_expect_no_line "STATE=none"
+e2e_expect_out "GOAL_UNREADABLE=.flow/goals/b-broken.goal.yaml"
+e2e_expect_clean_edges
+
+# --- issue.md: the milestone check --------------------------------------------
+
+ISSUE_MD="$E2E_PLUGIN_DIR/commands/issue.md"
+MILESTONE_MARK='/milestones'
+
+_flow_test_begin "/flow:issue milestone check: the block finds the repository itself (M1)"
+e2e_new issue-milestones
+e2e_describe "gh names the repository acme/widgets, which has one milestone"
+e2e_repo feature/e2e
+e2e_gh_fixture repo '{"nameWithOwner":"acme/widgets"}'
+e2e_gh_fixture milestones-acme_widgets '[{"number":3,"title":"v2 launch"}]'
+e2e_run_fence "$ISSUE_MD" "$MILESTONE_MARK"
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "STATE=ok"
+e2e_expect_line "MILESTONE=3: v2 launch"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:issue milestone check: a repository with no milestones is empty (M1)"
+e2e_new issue-milestones-empty
+e2e_describe "gh names the repository acme/widgets, which has no milestones"
+e2e_repo feature/e2e
+e2e_gh_fixture repo '{"nameWithOwner":"acme/widgets"}'
+e2e_gh_fixture milestones-acme_widgets '[]'
+e2e_run_fence "$ISSUE_MD" "$MILESTONE_MARK"
+e2e_expect_line "STATE=empty"
+e2e_expect_no_out "MILESTONE="
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:issue milestone check: a repository that cannot be resolved is refused before any request (M2)"
+e2e_new issue-milestones-no-repo
+e2e_describe "gh repo view fails (HTTP 502)"
+e2e_repo feature/e2e
+e2e_gh_fail repo
+e2e_run_fence "$ISSUE_MD" "$MILESTONE_MARK"
+e2e_expect_line "STATE=unavailable"
+e2e_expect_out "cannot resolve the repository"
+e2e_expect_no_out "MILESTONE="
+e2e_expect_clean_edges
+
+# --- resolve.md: the conflict check and the completion step in a worktree ------
+
+RESOLVE_MD="$E2E_PLUGIN_DIR/commands/resolve.md"
+RESOLVE_CHECK_MARK='CONFLICT_STATE=active'
+RESOLVE_DONE_MARK='git rebase --continue'
+
+# _conflict_branches — feature/e2e and other each change README.md from the
+# root commit; the main checkout stays on feature/e2e.
+_conflict_branches() {
+  _scratch_git sh -c 'printf "feature\n" > README.md && git commit -qam feature && git checkout -q -b other HEAD~1 && printf "other\n" > README.md && git commit -qam other && git checkout -q feature/e2e'
+}
+# _linked_worktree — a linked worktree at $E2E_DIR/wt on a new branch wt-e2e
+# from feature/e2e; E2E_REPO then names it, so the code runs there.
+_linked_worktree() {
+  _scratch_git git worktree add -q -b wt-e2e "$E2E_DIR/wt" feature/e2e
+  E2E_REPO="$E2E_DIR/wt"
+  [ -f "$E2E_REPO/.git" ] || _flow_assert_fail "$E2E_NAME: $E2E_REPO/.git is not a file, so this is not a linked worktree"
+}
+
+_flow_test_begin "/flow:resolve: a merge in progress in a linked worktree is active (C1)"
+e2e_new resolve-worktree-merge
+e2e_describe "a linked worktree on wt-e2e (from feature/e2e) merges other, which stops on a conflict in README.md"
+e2e_repo feature/e2e
+_conflict_branches
+_linked_worktree
+_scratch_git_may_fail git merge -q other
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_CHECK_MARK"
+e2e_expect_line "CONFLICT_STATE=active"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:resolve: a rebase in progress in a linked worktree is active (C1)"
+e2e_new resolve-worktree-rebase
+e2e_describe "a linked worktree on wt-e2e (from feature/e2e) rebases onto other, which stops on a conflict in README.md"
+e2e_repo feature/e2e
+_conflict_branches
+_linked_worktree
+_scratch_git_may_fail git rebase -q other
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_CHECK_MARK"
+e2e_expect_line "CONFLICT_STATE=active"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:resolve: the completion step commits a resolved merge in a linked worktree (C2)"
+e2e_new resolve-worktree-complete
+e2e_describe "a linked worktree merges other, stops on README.md, which is then resolved and staged; the completion step runs"
+e2e_repo feature/e2e
+_conflict_branches
+_linked_worktree
+_scratch_git_may_fail git merge -q other
+_scratch_git sh -c 'printf "resolved\n" > README.md && git add README.md'
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_DONE_MARK"
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_equal 2 "$( ( _e2e_git_env; cd "$E2E_REPO" && git rev-list --parents -n 1 HEAD ) | awk '{print NF - 1}')" "the number of parents of the worktree's HEAD commit"
+e2e_expect_equal no "$( ( _e2e_git_env; cd "$E2E_REPO" && git rev-parse -q --verify MERGE_HEAD >/dev/null ) && echo yes || echo no)" "whether a merge is still in progress"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:resolve: an ordinary checkout reads active during a merge, and inactive with none (C3)"
+e2e_new resolve-checkout-merge
+e2e_describe "the main checkout on feature/e2e merges other, which stops on a conflict"
+e2e_repo feature/e2e
+_conflict_branches
+_scratch_git_may_fail git merge -q other
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_CHECK_MARK"
+e2e_expect_line "CONFLICT_STATE=active"
+e2e_expect_clean_edges
+
+e2e_new resolve-checkout-clean
+e2e_describe "the main checkout on feature/e2e with no merge or rebase in progress"
+e2e_repo feature/e2e
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_CHECK_MARK"
+e2e_expect_line "CONFLICT_STATE=inactive"
 e2e_expect_clean_edges

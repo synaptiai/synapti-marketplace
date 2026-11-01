@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # [flow] Record the most-recent verdict for a FlowRun.
 #
-# Writes .flow/runs/<run-id>/last-verdict.json — read by
+# Writes <runtime dir>/runs/<run-id>/last-verdict.json — read by
 # bin/_flow_evidence_bundle.py on subsequent turns to compute delta
 # (made_progress / unchanged / regressed). Without this producer, every
 # evaluator-loop turn computes delta against "nothing", so the loop has
@@ -26,14 +26,18 @@
 #   }
 #
 # Usage:
-#   flow-record-verdict.sh --run-id <ISO-id> --verdict-file <path-to-json>
+#   flow-record-verdict.sh --run-id <ISO-id> --verdict-file <path-to-json> [--runtime-dir DIR]
+#
+#   --runtime-dir DIR  the runtime directory the caller already resolved (a
+#                      hook asks once per run); otherwise it is resolved here
 #
 # Atomicity: writes go through bin/_journal_atomic.py (O_NOFOLLOW + flock
 # + tempfile+rename+fsync). Replace semantics — each turn supersedes the
 # prior file.
 #
 # The run directory is created if it is missing, and never through a
-# symlink: when .flow, .flow/runs or the run directory is one, nothing is
+# symlink: when the runtime directory (flow.runtime.stateDir,
+# bin/flow-runtime-dir.sh, default .flow), runs or the run directory is one, nothing is
 # written and the helper exits 2 (a repository can commit such a link to a
 # directory outside the checkout).
 #
@@ -53,7 +57,7 @@
 #       range or of the wrong type
 #   2 — python3 or PyYAML missing; a --verdict-file that is a symlink, or
 #       that cannot be read for a reason of the system; the run directory
-#       refused or not made (a symlinked .flow, .flow/runs or run directory
+#       refused or not made (a symlinked runtime directory, runs or run directory
 #       included); the write refused or failing
 
 set -euo pipefail
@@ -93,7 +97,7 @@ fi
 wants_help() {
   while [ $# -gt 0 ]; do
     case "$1" in
-      --run-id|--verdict-file) [ $# -ge 2 ] || return 1; shift 2 ;;
+      --run-id|--verdict-file|--runtime-dir) [ $# -ge 2 ] || return 1; shift 2 ;;
       -h|--help) return 0 ;;
       *) return 1 ;;
     esac
@@ -107,7 +111,7 @@ fi
 
 # The run directory is created in Python, after the verdict is validated,
 # through ensure_repo_dir(): O_NOFOLLOW on the verdict file alone is
-# insufficient if .flow, .flow/runs or .flow/runs/<id> is a symlink to a
+# insufficient if the runtime directory, runs or runs/<id> is a symlink to a
 # directory outside the repository — mkdir -p would follow it, and
 # tempfile.mkstemp + os.rename inside _journal_atomic would then write there.
 python3 - "$SCRIPT_DIR" "$@" <<'PYTHON'
@@ -129,11 +133,12 @@ import json
 import os
 from _flow_cli import Messages, name_max, shown
 from _journal_atomic import JournalAtomicError, ensure_repo_dir, write_json_file
+from _repo_dir import runtime_dir
 
 messages = Messages("flow-record-verdict.sh")
 say, refuse = messages.say, messages.refuse
 
-options = messages.read_arguments(sys.argv[2:], ("--run-id", "--verdict-file"))
+options = messages.read_arguments(sys.argv[2:], ("--run-id", "--verdict-file", "--runtime-dir"))
 run_id = options["--run-id"]
 verdict_file = options["--verdict-file"]
 if not run_id:
@@ -142,7 +147,7 @@ if not verdict_file:
     refuse("--verdict-file is required")
 # Defense against path traversal in the run-id (the schema also rejects
 # but defend at every layer per project convention), and the bare `.`/`..`
-# identifiers, which would collapse the run dir to `.flow/runs/` itself. A
+# identifiers, which would collapse the run dir to `<runtime dir>/runs/` itself. A
 # run id longer than a directory name fails to be made, and its error prints
 # the whole path.
 if run_id in (".", "..") or ".." in run_id or "/" in run_id:
@@ -151,7 +156,7 @@ NAME_MAX = name_max()
 run_id_bytes = len(os.fsencode(run_id))
 if run_id_bytes > NAME_MAX:
     refuse(f"--run-id is {run_id_bytes} bytes; a directory name here holds at most {NAME_MAX}")
-run_dir = os.path.join(".flow", "runs", run_id)
+run_dir = os.path.join(runtime_dir(options["--runtime-dir"] or None), "runs", run_id)
 
 # The verdict file is opened as the recorder opens its inputs
 # (bin/_flow_cli.py): looked at by name, then opened without following a

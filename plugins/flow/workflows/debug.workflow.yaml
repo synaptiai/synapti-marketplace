@@ -41,10 +41,6 @@ phases:
         type: skill
         skill: debugging-patterns
         evidence: reproducing_test
-      - id: goal_creation
-        type: skill
-        skill: goal-contract-capture
-        evidence: debug_goal_yaml
 
   - id: diagnose
     type: mixed
@@ -56,6 +52,10 @@ phases:
       - id: confirm_root_cause
         type: bash
         evidence: root_cause_evidence
+      - id: goal_creation
+        type: skill
+        skill: goal-contract-capture
+        evidence: debug_goal_yaml
 
   - id: fix
     type: loop

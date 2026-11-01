@@ -1,14 +1,14 @@
 # Hello, FlowGoal — quickstart
 
-A 5-minute walkthrough of the v3 runtime layer on a synthetic issue. By the end you'll have a FlowGoal in `active`, an evaluation that produces a verdict, and a clear picture of how the pieces fit together.
+A 5-minute walkthrough of the FlowGoal runtime layer on a synthetic issue. By the end you'll have a FlowGoal in `active`, an evaluation that produces a verdict, and a clear picture of how the pieces fit together.
 
 ## Prerequisites
 
-- flow v3.0.0 installed (`claude plugins list | grep flow`)
+- flow installed (`claude plugins list | grep flow`)
 - A git repository (any one — a scratch repo works)
 - `python3` with `PyYAML` available (`python3 -c 'import yaml'` exits 0)
 
-As of v3.1, FlowGoals are on by default (`goalCreation: auto`) — there is no onboarding prompt. Running `/flow:start <issue>` on an issue with ≥1 verifiable AC just creates the goal.
+FlowGoals are on by default (`goalCreation: auto`) — there is no onboarding prompt. Running `/flow:start <issue>` on an issue with ≥1 verifiable AC just creates the goal.
 
 ## Step 1 — (Optional) tune goal creation
 
@@ -51,10 +51,10 @@ Note the issue number gh prints — let's call it `N`.
 What happens:
 
 1. Phase 0 PRE-FLIGHT validates clean git state, gh auth, etc.
-2. Phase 1 EXPLORE fetches the issue, runs `specification-capture`, and the Spec Validation Gate confirms each AC has a `verification_command`.
-3. After the gate passes, you see this in the output:
+2. Phase 1 EXPLORE fetches the issue, runs `specification-capture`, and the Spec Validation Gate checks the acceptance criteria. Under `goalCreation: auto` the goal is created because at least one AC carries a `verification_command` (both do here).
+3. After the gate passes, the goal is written to `.flow/goals/issue-N.goal.yaml` and the start summary shows a line like:
    ```
-   FlowGoal created: issue-N at .flow/goals/issue-N.goal.yaml (status: active)
+   Goal: issue-N (active) — 2 of 2 ACs carry a verification_command
    ```
 4. Phase 2+ proceed normally — branch creation, task decomposition, code, verify.
 
@@ -64,7 +64,7 @@ What happens:
 /flow:goal inspect issue-N
 ```
 
-You'll see the full YAML: outcome, acceptance criteria with verification commands, specification (non-goals, failure modes, interface contracts), evaluator binding, lifecycle.
+You'll see the full YAML: outcome, acceptance criteria with verification commands, specification (non-goals, failure modes, interface contracts, risk map), evaluator binding, lifecycle.
 
 ## Step 5 — Evaluate
 
@@ -76,7 +76,7 @@ After you've implemented and committed:
 
 The evaluator:
 
-1. Runs each AC's `verification_command` (because `executeVerificationCommands: true`).
+1. Runs each AC's `verification_command` (`/flow:goal evaluate` always runs them; `executeVerificationCommands` affects only the Stop hook).
 2. Captures stdout/stderr/exit_code as evidence sidecars at `.flow/runs/<run-id>/evidence/`.
 3. Decides per-AC status: `pass` (deterministic command succeeded), `evidence_collected` (output captured, judge needed), or `fail`.
 4. If any ACs are fuzzy (no `verification_command`), runs the goal judge (`bin/flow-judge.sh --judge goal`, the claude CLI with every tool disallowed) on the evidence bundle.
@@ -90,7 +90,7 @@ You'll see a per-AC table and the verdict.
 /flow:goal status
 ```
 
-If lifecycle is `achieved`, the goal is complete. When an active goal exists for the branch, `/flow:pr` and `/flow:merge` require it to be `achieved` — the gate is on goal *existence*, so a branch with no goal is not blocked.
+If lifecycle is `achieved`, the goal is complete. When an active goal exists for the branch, `/flow:merge` requires it to be `achieved`, and `/flow:pr` asks before opening a pull request with the goal not yet achieved (you can proceed; the choice is journaled). The gate is on goal *existence*, so a branch with no goal is not blocked.
 
 ## Common adjustments
 

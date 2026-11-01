@@ -31,8 +31,14 @@
 #                   as a string; json is parsed and sent as a JSON value
 #   --current       the decision Flow makes without System One, written into
 #                   the records so shadow mode can be compared against it
-#   --run-id        records go to .flow/runs/<id>/system-one.jsonl when that
-#                   run exists
+#   --run-id        records go to <runtime dir>/runs/<id>/system-one.jsonl
+#                   when that run exists (the runtime directory is
+#                   flow.runtime.stateDir, bin/flow-runtime-dir.sh, default
+#                   .flow)
+#   --runtime-dir   the runtime directory the caller already resolved (a hook
+#                   asks once per run); a value that is absolute, starts
+#                   with ~ or has a .. component is ignored and the
+#                   directory is resolved here
 #   --ref           what the questions were about, as the caller names it
 #                   (e.g. pr:275/inline:12345, goal:issue-274/AC2): written
 #                   into the records, never sent to the provider, so a shadow
@@ -134,10 +140,10 @@ SUB="${1:-}"
 case "$SUB" in ask|ask-many) ;; *) usage "the first argument must be 'ask' or 'ask-many'" ;; esac
 shift
 
-SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""; ITEMS_FILE=""
+SITE=""; STATE_FILE=""; STATE_FORMAT=text; CURRENT=""; RUN_ID=""; REF=""; MAX_TIMEOUT_MS=""; ITEMS_FILE=""; RT_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms|--items-file)
+    --site|--state-file|--state-format|--current|--run-id|--ref|--max-timeout-ms|--items-file|--runtime-dir)
       [ $# -ge 2 ] || usage "$1 needs a value"
       if [ "$SUB" = ask-many ]; then
         case "$1" in --state-file|--state-format|--current|--ref) usage "$1 is not an ask-many argument: each item names its own" ;; esac
@@ -153,6 +159,7 @@ while [ $# -gt 0 ]; do
         --ref) REF="$2" ;;
         --max-timeout-ms) MAX_TIMEOUT_MS="$2" ;;
         --items-file) ITEMS_FILE="$2" ;;
+        --runtime-dir) RT_ARG="$2" ;;
       esac
       shift 2 ;;
     *) usage "unknown argument: $1" ;;
@@ -256,6 +263,15 @@ for _v in "$PROVIDER" "$BASE_URL" "$MODEL" "$KEY_ENV" "$TIMEOUT_MS" "$CAP"; do
 done
 
 TOP=$(git rev-parse --show-toplevel 2>/dev/null) || TOP=$(pwd -P)
+# The runtime directory, named from the top; asked only when a run can hold
+# the records.
+RT=""
+if [ -n "$RUN_ID" ]; then
+  case "/$RT_ARG/" in
+    //|/[/~]*|*/../*) RT=$(cd "$TOP" 2>/dev/null && "${BASH:-bash}" "$SELF_DIR/flow-runtime-dir.sh") || RT="" ;;
+    *) RT="$RT_ARG" ;;
+  esac
+fi
 
 # Every value is passed as --name=value: a separate word that starts with a
 # dash (--current -keep, a settings value) would be read as an option.
@@ -271,5 +287,5 @@ exec python3 "$SELF_DIR/_flow_s1.py" \
   --provider="$PROVIDER" --base-url="$BASE_URL" --model="$MODEL" --api-key-env="$KEY_ENV" \
   --timeout-ms="$TIMEOUT_MS" --max-timeout-ms="$MAX_TIMEOUT_MS" --state-token-cap="$CAP" --mode="$MODE" \
   --questions="$SELF_DIR/../system-one/questions.yaml" \
-  --repo-top="$TOP" --state-dir="$STATE_DIR" \
+  --repo-top="$TOP" --state-dir="$STATE_DIR" --runtime-dir="$RT" \
   --subcommand="$SUB" --items-file="$ITEMS_FILE" --batch="$BATCH"

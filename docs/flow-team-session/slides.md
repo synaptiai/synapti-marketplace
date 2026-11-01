@@ -72,7 +72,7 @@ The shape of "done" is the difference. Strict by default — opt out, don't opt 
 
 # Section B — The 6 Excellence Principles
 
-Mental model first. Without these, the rest of the plugin reads as bureaucracy.
+Mental model first. Without these, the rest of the plugin reads as bureaucracy. (The plugin README lists a seventh, "Rules in the Room, Checked by Machine": each command loads its required skills into its own prompt, and hooks check what the rules say.)
 
 ---
 
@@ -174,14 +174,14 @@ Three-tier safety + Explore-Plan-Code-Verify. Tiers are the *consequence* of the
 │          │ edits, commits, branches, tests│ → Execute. Don't ask.        │
 ├──────────┼────────────────────────────────┼──────────────────────────────┤
 │ Tier 2   │ JOURNAL                        │ Team-visible + recoverable   │
-│          │ push, PR create, issue assign  │ → Execute, log, move on.     │
+│          │ push, PR, issue create+assign  │ → Execute, log, move on.     │
 ├──────────┼────────────────────────────────┼──────────────────────────────┤
 │ Tier 3   │ CONFIRM                        │ Hard to reverse + high blast │
-│          │ merge, release, force-push     │ → Always ask. Non-negotiable.│
+│          │ merge, release, tag push       │ → Always ask. Non-negotiable.│
 └──────────┴────────────────────────────────┴──────────────────────────────┘
 ```
 
-**Promotion rule**: actions can be promoted, never demoted. Safety can never accidentally be reduced.
+**The `tiers` setting**: the `tier-gate` hook applies it to every Bash command. `push`, `prCreate`, `issueAssign` and `issueCreate` take `autonomous`, `journal` or `confirm`; `merge` and `release` are always `confirm`. Force-push is not asked about: a hook blocks it.
 
 ---
 
@@ -194,11 +194,12 @@ Three-tier safety + Explore-Plan-Code-Verify. Tiers are the *consequence* of the
 /flow:commit ── commit (T1)
 /flow:pr ────── parallel review (T1) ─── push (T2) ─── PR create (T2)
 /flow:address ─ commits (T1) ─── push (T2) ─── re-request review (T2)
-/flow:merge ─── PREREQUISITE CHECK ─── ASK USER (T3) ─── merge
-/flow:release ─ CHANGELOG ─── ASK USER (T3) ─── tag + release
+/flow:merge ─── PREREQUISITE CHECK ─── ASK USER (T3) ─── merge (tier-gate asks again)
+/flow:release ─ run 1: VERSION BUMP + CHANGELOG ─── release PR (T2)
+                run 2, after merge: ASK USER (T3) ─── tag + release (tier-gate asks again)
 ```
 
-**Important**: merge/release confirmation is in the **command** files via `AskUserQuestion`. There is no `gate-merge` or `gate-release` hook script — Tier 3 confirmation is a structural prompt at command time, not a hook. Hooks block force-push, destructive ops, merges with unfinished or red checks, and inline secrets at the Bash layer (`three-tier-safety.md`, "Hook Enforcement"; `hooks/hooks.json`).
+**Important**: `/flow:merge` and `/flow:release` confirm via `AskUserQuestion`. There is no `gate-merge` or `gate-release` hook script, but the `tier-gate` hook asks again when the merge, tag push or release command runs, inside or outside flow — expect two prompts. Hooks also block force-push, destructive ops, merges with unfinished or red checks, and inline secrets at the Bash layer (`three-tier-safety.md`, "Hook Enforcement"; `hooks/hooks.json`).
 
 ---
 
@@ -241,7 +242,7 @@ Sources: `autonomous-workflow/SKILL.md`, `criterion-verification-map/SKILL.md`, 
 a. STATIC      lint + test + typecheck (parallel) + LSP diagnostics
 b. RUNTIME     build + start + smoke test (debug-fix-retest, bounded)
 c. REVIEW      self-review with FIX-FORWARD (findings fixed, not just reported)
-d. VERDICT     dispatch verdict-judge agent
+d. VERDICT     run the verdict judge (claude --print, no tools)
                   ├─ receives: ACs + evidence bundle + holdout output
                   └─ does NOT receive: diff, journal, planning notes, self-review
 ```
@@ -252,7 +253,7 @@ d. VERDICT     dispatch verdict-judge agent
 
 [QUOTE] `plugins/flow/skills/autonomous-workflow/SKILL.md` line 11:
 
-> **NO SKIPPING PHASES. Explore, then Plan, then Code, then Verify. Every phase produces an artifact.**
+> **Explore, then Plan, then Code, then Verify, and every phase produces an artifact: a skipped phase comes back as rework.**
 
 Jumping to code without exploration is the #1 cause of rework. Jumping to "done" without verification is the #1 cause of bugs reaching review.
 
@@ -279,8 +280,8 @@ Skills, agents, commands. Different containers, different reuse profiles.
                 │ dispatches
                 ▼
          ┌────── AGENTS ────────┐    "specialists you hire"
-         │  10 forked contexts  │    verdict-judge, security-reviewer
-         │  narrow tool budgets │    (own context, memory: none)
+         │  10 own contexts     │    security-reviewer: a subagent
+         │  narrow tool budgets │    verdict-judge: claude --print, no tools
          └──────┬───────────────┘
                 │ load
                 ▼
@@ -396,16 +397,19 @@ Behavioral verifier — grep the files, read the test assertions, check the erro
 ## Hooks — what's actually wired
 
 ```
-[ASCII]  (source: plugins/flow/hooks/hooks.json — 14 scripts)
+[ASCII]  (source: plugins/flow/hooks/hooks.json — 17 scripts)
 
 PreToolUse   Bash   block-force-push.sh         exit 2 on git push --force
 PreToolUse   Bash   block-destructive.sh        exit 2 on rm -rf, git reset --hard
 PreToolUse   Bash   block-unchecked-merge.sh    exit 2 on gh pr merge with unfinished/red checks
 PreToolUse   Bash   block-secrets.sh            exit 2 on inline credentials
 PreToolUse   Bash   ask-issue-create.sh         asks before gh issue create (active goal)
+PreToolUse   Bash   tier-gate.sh                applies tiers.*: confirm asks, journal logs
 PostToolUse  Edit   log-file-changes.sh         <!-- auto-log: ... --> (local trail)
 PostToolUse  Bash   log-commits.sh              <!-- auto-log: commit ... --> (local trail)
 PostToolUse  Bash   record-quality-run.sh       records test/lint runs (also on failure)
+PostToolUse  Bash   s1-screen-text.sh           off unless guard.planted-instructions is set
+SessionStart (any)  tier-session-start.sh       puts flow's git/gh wrappers on PATH
 TaskCompleted (any) verify-task-completion.sh   blocks while edits postdate last passing check
 TeammateIdle (any)  nudge-idle-teammate.sh      agent-teams
 SessionEnd   (any)  session-end-learn.sh        marks /flow:learn pending
@@ -414,7 +418,7 @@ Stop         (any)  flow-goal-stop.sh           FlowGoal evidence check (warn by
 Stop         (any)  reply-style-check.sh        opt-in reply-style check, never blocks
 ```
 
-**Note**: `gate-merge` / `gate-release` are not hook scripts. Merge and release confirmation runs at the **command** level via `AskUserQuestion` (`plugins/flow/references/three-tier-safety.md`, "Hook Enforcement"). The hook layer (Bash exit-2 blocks) catches the dangerous primitives — `git push --force`, `rm -rf`, an unchecked `gh pr merge`, inline credentials — that any recovery attempt would have to use.
+**Note**: `gate-merge` / `gate-release` are not hook scripts. `/flow:merge` and `/flow:release` confirm via `AskUserQuestion`, and `tier-gate.sh` asks again when the merge, tag push or release command runs, inside or outside flow (`plugins/flow/references/three-tier-safety.md`, "Hook Enforcement"). The block hooks (Bash exit-2 blocks) catches the dangerous primitives — `git push --force`, `rm -rf`, an unchecked `gh pr merge`, inline credentials — that any recovery attempt would have to use.
 
 ---
 
@@ -491,9 +495,9 @@ Every finding ends up **resolved**, **escalated** or **disputed**. All are audit
 
 Tier 3. Merge is hard to reverse — once it's on the default branch, getting it off is a revert commit visible to everyone.
 
-The plugin will not auto-merge. The hooks will not auto-merge. Even if a custom command tried, `block-force-push` and `block-destructive` catch the recovery attempt.
+The plugin will not auto-merge. `/flow:merge` asks first; when the merge command runs, the `tier-gate` hook asks a second time. That hook asks for any merge, inside flow or typed straight into Bash.
 
-Confirmation here is structural. The user has to say yes.
+Confirmation here is structural. The user has to say yes — twice.
 
 ---
 
@@ -617,11 +621,11 @@ These shape work *before* the daily five. They prevent the daily five from being
 
 | Command | When |
 |---------|------|
-| **`/flow:setup`** | Once per repo. Detect tech stack, generate `.claude/settings.flow.json`, configure LSP, optionally add CLAUDE.md sections, warn about plugin coexistence. |
+| **`/flow:setup`** | Once per repo. Detect tech stack, generate `.claude/settings.flow.json`, configure LSP, warn about plugin coexistence, offer GitHub rulesets for the default branch and tags, optionally add CLAUDE.md sections. |
 | **`/flow:resolve`** | Merge conflicts on a branch or PR. Detect conflict type, classify, per-file strategy, post-resolution verification. |
 | **`/flow:flow`** | Universal dispatcher — `/flow <verb> <target>`. Useful in scripts; humans should type the specific verb. |
 
-**Runtime / admin** — `/flow:goal`, `/flow:workflow`, `/flow:trigger`, `/flow:run`, `/flow:resume`, `/flow:watch`. They inspect the goals, workflows, triggers and runs flow manages for you; `/flow:start` creates the goal on its own.
+**Runtime / admin** — `/flow:goal`, `/flow:workflow`, `/flow:trigger`, `/flow:run`, `/flow:resume`, `/flow:watch`. They inspect the goals, workflows, triggers and runs flow manages for you; `/flow:start` creates the goal on its own. `/flow:watch` has four modes: `pr <N>`, `ci`, `issue <N>` and `branch` (merges the default branch in, fixes failures, commits and pushes).
 
 ---
 
@@ -724,9 +728,9 @@ If you vote anything non-default, that vote lands in #3 as part of the post-sess
 
 **Defaults**: push=journal, prCreate=journal, issueAssign=journal, issueCreate=journal, merge=confirm, release=confirm
 
-**Options**: keep defaults | promote any to `confirm` (more friction, more safety)
+**Options**: keep defaults | set `push`, `prCreate`, `issueAssign` or `issueCreate` to `confirm` (more friction, more safety) or `autonomous` (no breadcrumb)
 
-**Reminder**: tiers can be promoted, never demoted — that is the documented policy. No flow command or hook reads the `tiers` keys today: `/flow:merge` and `/flow:release` always ask, whatever the file says.
+**What the setting does**: the `tier-gate` hook applies `tiers.*` to every Bash command, whether a flow command or the agent wrote it — `confirm` asks, `journal` writes a breadcrumb to the local auto-log trail, `autonomous` runs. `merge` and `release` are always `confirm`; a lower value is ignored with a warning. Pushing or deleting a tag counts as `release`.
 
 **Lands in**: `settings.flow.json` → `tiers`
 
@@ -783,6 +787,7 @@ Phase 1 — detecting environment...
   • test/lint/typecheck: jest, eslint, tsc --noEmit
   • CLAUDE.md: present
   • gh-workflow plugin also installed (enable only one at a time; see HANDBOOK Appendix A)
+  • timeout/gtimeout: found (the verdict and goal judges need one)
 
 Phase 2 — generating .claude/settings.flow.json (merge with existing if present)
 
@@ -792,10 +797,20 @@ Phase 3 — LSP setup
     2. Register the Piebald-AI/claude-code-lsps marketplace? (yes / skip)
     3. ENABLE_LSP_TOOL not set — add to ~/.claude/settings.json? (yes / no)
 
+Phase 4 — coexistence warning (only when gh-workflow is detected)
+
+Phase 5 — GitHub rulesets
+  ⚠ INTERACTIVE: protect the default branch and tags / the same and require
+    one approving review / skip
+
+Phase 6 — CLAUDE.md integration
+  ⚠ INTERACTIVE: add the flow workflow section to CLAUDE.md? (yes / no)
+
+Phase 7 — summary
 flow: setup complete. Try /flow:status next.
 ```
 
-**Heads-up for hands-on**: the LSP phase is interactive — accept defaults to keep moving. Re-run is safe (won't overwrite settings without confirmation).
+**Heads-up for hands-on**: the LSP, rulesets and CLAUDE.md phases are interactive — accept defaults to keep moving, and skip rulesets unless you administer the repository. If Phase 1 reports `timeout` and `gtimeout` missing, install GNU coreutils (`brew install coreutils` on macOS). Re-run is safe (won't overwrite settings without confirmation).
 
 ---
 
@@ -861,8 +876,8 @@ Read-only. Safe to run anywhere, anytime. Plain `/flow:status` prints a five-lin
 
 1. **`gh` CLI not authenticated** — preflight fails. Fix: `gh auth login`.
 2. **Dirty worktree on `/flow:start`** — preflight fails. Fix: stash or commit before starting.
-3. **`CLAUDE.md` integration depends on file existence** — `/flow:setup` Phase 5 asks via AskUserQuestion whether to add the flow section. If you say yes, it appends `templates/CLAUDE-flow.md` to your existing `CLAUDE.md`. If `CLAUDE.md` doesn't exist yet, create it first (or copy the template manually) before answering yes.
-4. **`block-force-push` blocks a legitimate rebase push** — use `--force-with-lease`. Allowed (`three-tier-safety.md`, Tier 3 table).
+3. **`CLAUDE.md` integration depends on file existence** — `/flow:setup` Phase 6 asks via AskUserQuestion whether to add the flow section. If you say yes, it appends `templates/CLAUDE-flow.md` to your existing `CLAUDE.md`. If `CLAUDE.md` doesn't exist yet, create it first (or copy the template manually) before answering yes.
+4. **`block-force-push` blocks a legitimate rebase push** — use `--force-with-lease`. Allowed (`three-tier-safety.md`, Tier 2 table).
 5. **Auto-log seems to duplicate commits** — `log-commits.sh` skips commits whose subject starts with `chore(decisions):` and commits that touched only the journal, and it writes to the local trail in `.decisions/auto-log/`, not the tracked journal. If you see duplication, your plugin is out of date — `claude plugins update flow`.
 6. **`gh pr merge` blocked** — a check is still queued, running or failed, or the command is not in the one shape the hook reads (`gh pr merge <N> --repo owner/name --squash`). Wait for checks, or use `/flow:merge`.
 
@@ -872,12 +887,12 @@ Read-only. Safe to run anywhere, anytime. Plain `/flow:status` prints a five-lin
 
 | Symptom | First place to look |
 |---------|--------------------|
-| Plan got blocked | `.decisions/issue-N.md` — search "Stranger Test" or "Spec Validation" |
+| Plan got blocked | `.decisions/issue-N.md` (`session-YYYY-MM-DD.md` on a branch with no issue number) — search "Stranger Test" or "Spec Validation" |
 | Verdict FAIL but code works | Evidence bundle — missing completeness subsection? Expected value copied from the implementation? |
 | Hooks aren't firing | `~/.claude/logs/` for hook stderr |
 | `/flow:learn` empty | `learning.enabled`? `learning.sources`? `journal.dir` populated? |
 | Agent teams not spawning | Both `agentTeams: true` AND `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var; `/flow:review` only |
-| Tier 3 prompt missing | `/flow:merge` and `/flow:release` always ask — the merge or release did not go through the command |
+| Tier 3 prompt missing | A merge, release or tag push always asks, inside or outside flow (`tier-gate`). No prompt means it was typed with `!` (no hooks run) or the session started before flow was installed or updated. In `claude -p` it is refused |
 | Task won't complete | Files changed since the last passing test/lint run — re-run it |
 
 When in doubt, `/flow:status` first, then `~/.claude/logs/`.
@@ -903,12 +918,13 @@ Monday checklist · the docs · glossary · Q&A.
 
 ---
 
-## The eight docs
+## The nine docs
 
 | File | Use it when |
 |------|-------------|
 | `README.md` (this folder) | Onboarding new teammates — start here |
 | `slides.md` | This deck — re-skim sections you missed |
+| `slides-v2.md` | The deep-dive deck — principles, safety model, agents, setup, troubleshooting |
 | `HANDBOOK.md` | Something doesn't make sense; deep reference |
 | `CHEATSHEET.md` | Daily — pin to the wall |
 | `CONVENTIONS-WORKSHEET.md` | The session — fillable template |

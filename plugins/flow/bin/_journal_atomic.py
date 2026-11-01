@@ -878,7 +878,7 @@ def write_json_file(target_path, lockfile_path, data):
     """Atomically write `data` (dict) as a standalone JSON file.
 
     Used for FlowRun last-verdict.json and any other JSON state file under
-    .flow/runs/. Replace semantics (NOT merge) — verdicts are immutable per
+    <runtime dir>/runs/. Replace semantics (NOT merge) — verdicts are immutable per
     turn but mutable across turns; the new verdict supersedes the old.
 
     Same security defenses as write_yaml_file:

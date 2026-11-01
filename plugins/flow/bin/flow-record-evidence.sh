@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# [flow] Record a FlowEvidence sidecar in .flow/runs/<run-id>/evidence/.
+# [flow] Record a FlowEvidence sidecar in <runtime dir>/runs/<run-id>/evidence/.
+# The runtime directory is flow.runtime.stateDir (bin/flow-runtime-dir.sh,
+# default .flow).
 #
 # Writes a FlowEvidence YAML sidecar plus optionally captures raw output
 # (e.g., the stdout of a verification command) into a .txt file alongside.
@@ -39,7 +41,7 @@
 #   2 — python3 or PyYAML missing; an --evidence-file or a --raw-output that
 #       is a symlink, or that cannot be opened or read for a reason of the
 #       system (too many open files, an I/O error); the run or evidence
-#       directory refused or not made (a symlinked .flow, .flow/runs or run
+#       directory refused or not made (a symlinked runtime directory, runs or run
 #       directory included); the id already recorded, or recorded by another
 #       record while this one ran; something in the way of the copy; the copy
 #       failing; the sidecar's write failing
@@ -112,6 +114,7 @@ import stat
 import yaml
 from _flow_cli import O_BINARY, O_NOFOLLOW, Messages, name_max, schema_problem, shown, yaml_problem
 from _journal_atomic import JournalAtomicError, TargetExists, ensure_repo_dir, write_yaml_file, yaml_text
+from _repo_dir import runtime_dir
 
 
 # Every message is one line of text, printed by say(), which escapes the
@@ -303,9 +306,9 @@ except RecursionError:
 except Exception as e:
     refuse(f"evidence {safe_name} cannot be written as YAML: {type(e).__name__}: {shown(e)}")
 
-run_dir = os.path.join(".flow", "runs", run_id)
+run_dir = os.path.join(runtime_dir(), "runs", run_id)
 evidence_dir = os.path.join(run_dir, "evidence")
-# Never os.makedirs: a repository can commit .flow or .flow/runs as a symlink
+# Never os.makedirs: a repository can commit the runtime directory or runs as a symlink
 # to a directory outside the checkout, and makedirs would create the run there.
 try:
     ensure_repo_dir(evidence_dir, create=True)

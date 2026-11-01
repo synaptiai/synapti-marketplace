@@ -59,7 +59,14 @@ esac
 printf '%s\n' "### Resolve Mode"
 # Quote parenthesized fallback per command-output-format.md rule 2.
 printf '%s\n' "RESOLVE_TARGET=${RESOLVE_TARGET:-\"(none — in-progress merge mode)\"}"
-if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+# git rev-parse --git-path names the files in the git directory of this checkout,
+# which in a linked worktree is not .git (there .git is a file).
+MERGE_HEAD_PATH=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
+REBASE_MERGE_PATH=$(git rev-parse --git-path rebase-merge 2>/dev/null)
+REBASE_APPLY_PATH=$(git rev-parse --git-path rebase-apply 2>/dev/null)
+if { [ -n "$MERGE_HEAD_PATH" ] && [ -f "$MERGE_HEAD_PATH" ]; } ||
+   { [ -n "$REBASE_MERGE_PATH" ] && [ -d "$REBASE_MERGE_PATH" ]; } ||
+   { [ -n "$REBASE_APPLY_PATH" ] && [ -d "$REBASE_APPLY_PATH" ]; }; then
   printf '%s\n' "CONFLICT_STATE=active"
 else
   printf '%s\n' "CONFLICT_STATE=inactive"
@@ -68,6 +75,7 @@ fi
 true
 ```
 
+- `CONFLICT_STATE` is `active` while a merge (`MERGE_HEAD`) or rebase (`rebase-merge`, `rebase-apply`) is in progress in this checkout's git directory, found with `git rev-parse --git-path`, so it holds in a linked worktree too.
 - If mode is PR: verify `gh auth status` succeeds
 - Warn if there are uncommitted changes (`git status --porcelain` is non-empty and no active conflict)
 
@@ -137,10 +145,9 @@ true
 # `references/command-output-format.md`.
 
 printf '%s\n' "### Hunks Per Conflicted File"
-# Capture into a var so the loop runs in the parent shell (no subshell pipe).
-# Previous form `git diff … | while … done; [ "$ANY" = "0" ] && …` ran the
-# loop in a subshell so `ANY=1` never propagated and `STATE=empty` ALWAYS
-# fired even when HUNKS records were just emitted (contradictory output).
+# Capture into a var so the loop runs in the parent shell, not a pipe
+# subshell: ANY_EXISTING set inside the loop must still be set after it, or
+# STATE=empty would print beside HUNKS records.
 CONFLICTED_LIST=$(git diff --name-only --diff-filter=U 2>/dev/null)
 ANY_EXISTING=0
 if [ -n "$CONFLICTED_LIST" ]; then
@@ -237,11 +244,16 @@ If any markers found, go back to Phase 3 for those files.
 ### 2. Complete Merge/Rebase
 
 ```bash
-# Complete the merge or rebase
-if [ -f .git/MERGE_HEAD ]; then
-  git commit --no-edit
-elif [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-  git rebase --continue
+# Complete the merge or rebase. git rev-parse --git-path finds this checkout's
+# git directory, which in a linked worktree is not .git.
+MERGE_HEAD_PATH=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
+REBASE_MERGE_PATH=$(git rev-parse --git-path rebase-merge 2>/dev/null)
+REBASE_APPLY_PATH=$(git rev-parse --git-path rebase-apply 2>/dev/null)
+if [ -n "$MERGE_HEAD_PATH" ] && [ -f "$MERGE_HEAD_PATH" ]; then
+  git commit -q --no-edit
+elif { [ -n "$REBASE_MERGE_PATH" ] && [ -d "$REBASE_MERGE_PATH" ]; } ||
+     { [ -n "$REBASE_APPLY_PATH" ] && [ -d "$REBASE_APPLY_PATH" ]; }; then
+  GIT_EDITOR=true git rebase --continue
 fi
 ```
 
@@ -277,6 +289,6 @@ Quality: lint PASS | tests PASS | typecheck PASS
 |--------|------|----------|
 | Conflict analysis | 1 | Autonomous |
 | Trivial resolution | 1 | Autonomous |
-| Semantic/structural resolution | 2 | Journal + show rationale |
-| Delete-modify decisions | 2 | Journal + AskUserQuestion |
+| Semantic/structural resolution | 1 | Autonomous, local file edit; show the rationale and ask (Phase 2) before applying |
+| Delete-modify decisions | n/a | User-driven decision via AskUserQuestion; the resolution is a local file edit |
 | Post-resolution commit | 1 | Autonomous |

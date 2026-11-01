@@ -1,5 +1,5 @@
 ---
-description: "Create a FlowTrigger from a template AND generate a /loop prompt file the user invokes manually. Subcommands: pr <N>, ci, issue <N>, branch. Flow CANNOT invoke /loop from plugin code; this command prepares the prompt and tells the user how to start the loop themselves."
+description: "Create a FlowTrigger from a template and, for pr, issue and branch, a /loop prompt file the user invokes manually. Subcommands: pr <N>, ci, issue <N>, branch. Flow CANNOT invoke /loop from plugin code; this command prepares the prompt and tells the user how to start the loop themselves. ci creates a hook trigger that the user runs with /flow:run trigger <id>."
 argument-hint: "<subcommand> [N]"
 allowed-tools: Bash, Read, Write, AskUserQuestion, Skill
 ---
@@ -8,8 +8,10 @@ allowed-tools: Bash, Read, Write, AskUserQuestion, Skill
 
 Watch mode is flow's project-local replacement for "long-running monitoring of CI / PR / issue state." Plugins cannot invoke `/loop` directly, so this command does two things:
 
-1. Creates a FlowTrigger YAML at `.flow/triggers/<id>.trigger.yaml` from a plugin-shipped template
-2. Generates a loop-prompt file at `.claude/flow-loop-<id>.md` that the user invokes with `/loop @.claude/flow-loop-<id>.md`
+`<runtime dir>` below is the runtime directory the pre-flight block prints as `RUNTIME_DIR=` (`flow.runtime.stateDir`, default `.flow`).
+
+1. Creates a FlowTrigger YAML at `<runtime dir>/triggers/<id>.trigger.yaml` from a plugin-shipped template
+2. For `pr`, `issue` and `branch`, generates a loop-prompt file the user invokes with `/loop @<file>`: `.claude/flow-loop-<id>.md` for `issue` and `branch`, and `.claude/flow-loop-pr-<N>.md` for `pr` (its trigger id is `pr-<N>-watch`). `ci` writes no loop prompt (see its section).
 
 The user manually starts the loop. Flow does NOT invoke `/loop` from plugin code.
 
@@ -45,11 +47,16 @@ if [ "$ENABLED" != "true" ]; then
   exit 0
 fi
 
-# Never through a symlink: a repository can commit .flow as a link to a
-# directory outside the checkout, where the trigger would then be written.
+# Triggers are under the runtime directory, flow.runtime.stateDir (default
+# .flow), printed as RUNTIME_DIR. Never through a symlink: a repository can
+# commit that directory as a link to a directory outside the checkout, where
+# the trigger would then be written.
 # Exit 1 is that refusal; exit 3 is a check that could not run (python3
 # missing), which is not a symlink: say which, and create nothing.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" -- .flow/triggers || { [ $? -eq 3 ] && exit 3; exit 1; }
+RT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+printf '%s\n' "RUNTIME_DIR=$RT"
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" -- "$RT/triggers" || { [ $? -eq 3 ] && exit 3; exit 1; }
 mkdir -p .claude
 # The templates of the plugin, wherever flow is installed (never plugins/flow under
 # the working directory, which only the flow repository itself has).
@@ -65,20 +72,26 @@ Create a PR-watch trigger that monitors PR #N's CI + review state.
 
 1. Read the template `pr-watch.trigger.yaml` in the `TEMPLATE_DIR` the pre-flight printed (the plugin root's `triggers/templates/`, resolved as `references/plugin-root-resolution.md` describes).
 2. Substitute `${PR}` → N, `${REPO}` → from `gh repo view`, `${BRANCH}` → from PR metadata, `${NOW}` → current ISO timestamp.
-3. Write to `.flow/triggers/pr-<N>-watch.trigger.yaml`.
+3. Write to `<runtime dir>/triggers/pr-<N>-watch.trigger.yaml`.
 4. Invoke `Skill(trigger-policy)` in `validate` mode. Abort on violation.
 5. Generate `.claude/flow-loop-pr-<N>.md` with the watch-mode prompt.
 6. Print the manual invocation instructions.
 
 ### `/flow:watch ci`
 
-Create a CI-failure trigger that fires on CI status changes for the current branch.
+Create a CI-failure trigger for the current branch. It is a `hook` trigger, not a loop: no loop prompt is written and there is nothing to start with `/loop`. Flow ships no hook that fires it. When CI fails on the branch, run `/flow:run trigger ci-failure-<slug>` yourself, or from a hook or CI job you set up; it checks the trigger's policy and runs its target (`/flow:debug "CI failure on <branch>"`) once.
+
+1. Read the template `ci-failure.trigger.yaml` in the `TEMPLATE_DIR` the pre-flight printed.
+2. Substitute `${BRANCH}` → the current branch (`git branch --show-current`; refuse a detached HEAD), `${BRANCH_SLUG}` → the branch name lowercased, each run of characters other than `a-z` and `0-9` replaced by one `-`, leading and trailing `-` removed, and cut to 53 characters (the trigger id `ci-failure-<slug>` must match `^[a-z0-9][a-z0-9-]{0,63}$`), `${REPO}` → from `gh repo view`, `${NOW}` → current ISO timestamp.
+3. Write to `<runtime dir>/triggers/ci-failure-<slug>.trigger.yaml`. Do not overwrite an existing file.
+4. Invoke `Skill(trigger-policy)` in `validate` mode. Abort on violation.
+5. Print the trigger file path and the command that runs it: `/flow:run trigger ci-failure-<slug>`.
 
 ### `/flow:watch issue <N>`
 
 Create an issue-watch trigger that follows issue #N, read-only on GitHub. Each iteration reads the issue; when its comments, labels, assignees or state changed since the last iteration, it writes a summary to the issue's decision journal and prints it; when the issue is assigned to you and has no branch, it suggests `/flow:start N`. It stops when the issue is closed.
 
-1. Run the block below. It reads the repository and the issue's state from GitHub, refuses a closed issue, and runs `bin/flow-watch-create.sh`, which fills the plugin's `issue-watch.trigger.yaml` template (`${ISSUE}`, `${REPO}`, `${NOW}`), checks it against the schema and the trigger-policy rules, and writes `.flow/triggers/issue-<N>-watch.trigger.yaml` and the loop prompt `.claude/flow-loop-issue-<N>-watch.md` (from `issue-watch.loop.md`). An existing trigger is never overwritten (`WATCH_STATE=exists`).
+1. Run the block below. It reads the repository and the issue's state from GitHub, refuses a closed issue, and runs `bin/flow-watch-create.sh`, which fills the plugin's `issue-watch.trigger.yaml` template (`${ISSUE}`, `${REPO}`, `${NOW}`), checks it against the schema and the trigger-policy rules, and writes `<runtime dir>/triggers/issue-<N>-watch.trigger.yaml` and the loop prompt `.claude/flow-loop-issue-<N>-watch.md` (from `issue-watch.loop.md`). An existing trigger is never overwritten (`WATCH_STATE=exists`).
 2. Invoke `Skill(trigger-policy)` in `validate` mode on the trigger file. On a violation, delete both files and abort.
 3. Print the manual invocation instructions (see Output).
 
@@ -123,7 +136,7 @@ fi
 
 Create a branch-watch trigger for the current branch. Each iteration merges the default branch in when it has moved (a merge commit: never a rebase, never a force push), runs the quality checks, fixes failures the merge introduced, and commits and pushes. Merging a pull request, releasing, deleting a branch, force-pushing and rebasing are forbidden. It stops when the branch's pull request is merged or the branch is deleted.
 
-1. Run the block below. It reads the current branch, the repository and its default branch, refuses the default branch itself and a detached HEAD, and runs `bin/flow-watch-create.sh`, which fills the plugin's `branch-watch.trigger.yaml` template (`${BRANCH}`, `${BRANCH_SLUG}` — the branch name made into an id —, `${DEFAULT_BRANCH}`, `${REPO}`, `${NOW}`), checks it against the schema and the trigger-policy rules, and writes `.flow/triggers/branch-<slug>-watch.trigger.yaml` and the loop prompt `.claude/flow-loop-branch-<slug>-watch.md` (from `branch-watch.loop.md`). An existing trigger is never overwritten (`WATCH_STATE=exists`).
+1. Run the block below. It reads the current branch, the repository and its default branch, refuses the default branch itself and a detached HEAD, and runs `bin/flow-watch-create.sh`, which fills the plugin's `branch-watch.trigger.yaml` template (`${BRANCH}`, `${BRANCH_SLUG}` — the branch name made into an id —, `${DEFAULT_BRANCH}`, `${REPO}`, `${NOW}`), checks it against the schema and the trigger-policy rules, and writes `<runtime dir>/triggers/branch-<slug>-watch.trigger.yaml` and the loop prompt `.claude/flow-loop-branch-<slug>-watch.md` (from `branch-watch.loop.md`). An existing trigger is never overwritten (`WATCH_STATE=exists`).
 2. Invoke `Skill(trigger-policy)` in `validate` mode on the trigger file. On a violation, delete both files and abort.
 3. Print the manual invocation instructions (see Output).
 
@@ -162,11 +175,11 @@ For `issue <N>` and `branch`, the loop prompt comes from the plugin's `issue-wat
 You are running flow watch mode for <target>.
 
 Read these files on each iteration:
-- .flow/triggers/<id>.trigger.yaml — the trigger config (allowed_actions, stop_conditions, policy)
-- .flow/goals/<linked-goal>.goal.yaml — the active FlowGoal, if any
-- .flow/runs/ — latest run state for this branch/PR
+- <runtime dir>/triggers/<id>.trigger.yaml — the trigger config (allowed_actions, stop_conditions, policy)
+- <runtime dir>/goals/<linked-goal>.goal.yaml — the active FlowGoal, if any
+- <runtime dir>/runs/ — latest run state for this branch/PR
 
-Read none of them through a symlink: when .flow, .flow/goals, .flow/runs, a run directory or a file in it (run.yaml, last-verdict.json, events.jsonl) is one, skip it and say so.
+Read none of them through a symlink: when <runtime dir> or a directory above it, <runtime dir>/goals, <runtime dir>/runs, a run directory or a file in it (run.yaml, last-verdict.json, events.jsonl) is one, skip it and say so.
 
 On each iteration:
 1. Check CI status (gh pr checks <N>)
@@ -188,10 +201,10 @@ When all stop conditions are met, exit cleanly with a summary.
 
 ## Output (after successful creation)
 
-Shown for `pr <N>`; for `issue <N>` and `branch` the files are the `TRIGGER_FILE` and `LOOP_FILE` the block printed, and the trigger id is its `TRIGGER_ID`.
+Shown for `pr <N>`; for `issue <N>` and `branch` the files are the `TRIGGER_FILE` and `LOOP_FILE` the block printed, and the trigger id is its `TRIGGER_ID`. For `ci` there is no loop prompt and no `/loop` instruction: print the trigger file and `/flow:run trigger ci-failure-<slug>`.
 
 ```text
-Created .flow/triggers/pr-<N>-watch.trigger.yaml
+Created <runtime dir>/triggers/pr-<N>-watch.trigger.yaml
 Created .claude/flow-loop-pr-<N>.md
 
 To start watch mode manually, invoke:
@@ -232,8 +245,8 @@ Paths below are relative to the flow plugin root (`references/plugin-root-resolu
 | Read a template under the plugin root's `triggers/templates/` | 1 | Autonomous, read-only |
 | Read the repository, issue state and current branch (`gh repo view`, `gh issue view`, `git branch`) | 1 | Autonomous, read-only |
 | Substitute template variables (`${PR}`, `${ISSUE}`, `${REPO}`, `${BRANCH}`, `${BRANCH_SLUG}`, `${DEFAULT_BRANCH}`, `${NOW}`) | 1 | Autonomous |
-| Write `.flow/triggers/<id>.trigger.yaml` (validated via `Skill(trigger-policy)`) | 2 | Journal-and-proceed — atomic write after validation |
-| Write `.claude/flow-loop-<id>.md` (the prompt the user feeds to `/loop`) | 2 | Journal-and-proceed — produces a discrete artifact for `/loop` |
+| Write `<runtime dir>/triggers/<id>.trigger.yaml` (validated via `Skill(trigger-policy)`) | 1 | Autonomous, local file write — atomic write after validation |
+| Write the loop-prompt file under `.claude/` (the prompt the user feeds to `/loop`; not for `ci`) | 1 | Autonomous, local file write |
 | Print manual invocation instructions for `/loop @<path>` | 1 | Autonomous, output-only |
 
 `/flow:watch` never invokes `/loop` itself — the plugin model forbids native-slash invocation. The user must start the loop manually with the printed instruction.

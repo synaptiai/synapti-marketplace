@@ -152,6 +152,9 @@ case "$args" in
   "issue view "*) n=${args#issue view }; f=issue-${n%% *} ;;
   "repo view --json "*) f=repo ;;
   "pr list --state open --limit 100 --json number,author,assignees") f=prs ;;
+  # /flow:pr's existing-PR check: open-prs-<head>, a / in the branch as _.
+  "pr list --head "*" --state open --json number,url")
+    h=${args#pr list --head }; h=${h%% *}; f=open-prs-$(printf '%s' "$h" | tr / _) ;;
   "api repos/"*"/issues/"*"/comments") n=${args%/comments}; f=comments-${n##*/} ;;
   "api repos/"*"/pulls/"*"/reviews") n=${args%/reviews}; f=reviews-${n##*/} ;;
   "api repos/"*"/pulls/comments/"*) f=pull-comment-${args##*/} ;;
@@ -179,6 +182,14 @@ case "$args" in
     h=${args#*--head }; h=${h%% *}; b=${args#*--base }; b=${b%% *}
     f=prs-all-$(printf '%s' "$h" | tr / _)-$(printf '%s' "$b" | tr / _) ;;
   "api repos/"*"/compare/"*) f=compare-${args#*/compare/} ;;
+  # bin/flow-review-exceptions.sh resolves its ref: commit-<ref>, a / as _.
+  "api repos/"*"/commits/"*) f=commit-$(printf '%s' "${args#*/commits/}" | tr / _) ;;
+  # Bare /flow's lists of your open issues and pull requests.
+  "issue list --assignee @me "*) f=assigned-issues ;;
+  "pr list --author @me "*) f=authored-prs ;;
+  # /flow:issue's milestone list: milestones-<owner>_<repo>, so a call made
+  # with no repository (repos//milestones) has no fixture.
+  "api repos/"*"/milestones") n=${args#api repos/}; f=milestones-$(printf '%s' "${n%/milestones}" | tr / _) ;;
   # /flow:release asks whether a tag has a GitHub release: release-<tag>.
   "api repos/"*"/releases/tags/"*) f=release-${args##*/releases/tags/} ;;
   # and creates one: release-create-<tag>, the release's JSON.
@@ -332,7 +343,9 @@ e2e_judge_says() {
 # protection-<branch> and rules-<branch> (a base branch's required checks),
 # merged-prs-<head>-<base> (the pull requests merged from <head> into <base>),
 # compare-<base>...<head> (two commits compared on GitHub), prs-all-<head>-<base>
-# (the pull requests from <head> into <base> in any state). e2e_gh_fail <name> makes that
+# (the pull requests from <head> into <base> in any state), assigned-issues and
+# authored-prs (bare /flow's lists of your open issues and pull requests),
+# milestones-<owner>_<repo> (a repository's milestones). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }

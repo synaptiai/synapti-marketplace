@@ -57,6 +57,8 @@
 #      release", and the run re-creates one
 #   S10 the release branch name is built from a version or a branch pattern
 #      that does not make a valid branch name
+#   S15 a branch pattern starting with + (which git check-ref-format --branch
+#      accepts) gives a release branch that git push reads as a forced push
 #   S11 a tag whose only release is a draft counts as having no release
 #      (GitHub's lookup by tag name returns published releases only), so the
 #      run creates a second release beside the draft
@@ -94,6 +96,15 @@
 #      ends on the default branch instead of where it started
 #   P9 a failed run unstages a changelog the user had staged before it, or
 #      leaves the release's version of it staged in place of the user's
+#   P10 a changelog edit the user already staged reads as "no change" (the
+#      working tree matches the index) and is left out of the bump commit
+#   P11 a RELEASE_BRANCH starting with + or - is created and pushed: git push
+#      reads +<branch> as a forced push of <branch>, and -<branch> as an option
+#   P12 the plan that names the version files fails, or names none, and the
+#      run goes on with no file checked for changes of its own and nothing
+#      said about the plan
+#   P13 tiers.push cannot be read, and the run treats it as journal with
+#      nothing said, so a confirm the user set is skipped silently
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
@@ -891,6 +902,20 @@ e2e_expect_no_out "RELEASE_BRANCH="
 e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 
+for PATTERN in '+release/{version}' '-release/{version}'; do
+  e2e_new "release-plan-pattern-$(printf '%s' "$PATTERN" | cut -c1 | tr '+-' 'pm')"
+  e2e_describe "conventions.branchPatterns.release set to '$PATTERN' (S15)"
+  _released_marketplace
+  mkdir -p "$E2E_REPO/.claude"
+  printf '{"conventions":{"branchPatterns":{"release":"%s"}}}\n' "$PATTERN" > "$E2E_REPO/.claude/settings.flow.json"
+  e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_out "starts with + or -"
+  e2e_expect_no_out "RELEASE_BRANCH="
+  e2e_expect_no_out "RELEASE_RUN="
+  e2e_expect_clean_edges
+done
+
 e2e_new release-plan-bad-next-version
 e2e_describe "a version script that answers with a next version holding a slash"
 _released_marketplace
@@ -1052,6 +1077,26 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_equal "" "$(_status)" "the working tree"
 done
 
+_flow_test_begin "Phase 4 pr: with tiers.push confirm the block commits and stops before the push"
+# flow's git wrapper refuses a confirm push the tier hook did not ask about, so
+# a push from the script could only fail; the push has to be its own command.
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-push-confirm-$E2E_FENCE_SHELLS"
+  e2e_describe "npm package released as v1.2.3; the project sets tiers.push to confirm; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"tiers":{"push":"confirm"}}' > "$E2E_REPO/.claude/settings.flow.json"
+  _git add .claude/settings.flow.json
+  _git commit -q -m settings
+  _pr_block
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=committed"
+  e2e_expect_out "git push -u origin chore/release-1.3.0"
+  e2e_expect_equal "chore/release-1.3.0" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "chore(release): v1.3.0" "$(_head_subject)" "the bump commit's subject"
+  e2e_expect_equal "" "$(_git ls-remote origin refs/heads/chore/release-1.3.0)" "origin's release branch (not pushed)"
+done
+
 _flow_test_begin "Phase 4 pr: a failed commit or push puts everything back as it was (P5)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_new "release-pr-commit-fails-$E2E_FENCE_SHELLS"
@@ -1091,9 +1136,9 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_out "git push"
 done
 
-# _released_with_changelog <commit|push> — the npm package released as
+# _released_with_changelog <commit|push|none> — the npm package released as
 # v1.2.3 with a committed CHANGELOG.md, then made to fail at that step: a
-# pre-commit hook that fails, or origin unreachable.
+# pre-commit hook that fails, or origin unreachable; none fails nothing.
 _released_with_changelog() {
   e2e_repo main
   _npm_fixture
@@ -1109,6 +1154,22 @@ _released_with_changelog() {
     push) _git remote set-url origin "$E2E_DIR/missing.git" ;;
   esac
 }
+
+_flow_test_begin "Phase 4 pr: a changelog edit already staged is committed with the bump (P10)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-staged-changelog-$E2E_FENCE_SHELLS"
+  e2e_describe "npm package released as v1.2.3 with a committed CHANGELOG.md; the 1.3.0 entry written and staged, nothing unstaged; block under $E2E_FENCE_SHELLS"
+  _released_with_changelog none
+  printf '# Changelog\n\n## 1.3.0\n- new\n' > "$E2E_REPO/CHANGELOG.md"
+  _git add CHANGELOG.md
+  _pr_block CHANGELOG_FILE=CHANGELOG.md
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=pushed"
+  e2e_expect_no_out "PR_WARN="
+  e2e_expect_equal "CHANGELOG.md package.json" "$(_head_files)" "the files in the bump commit"
+  e2e_expect_equal "" "$(_status)" "the working tree"
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
 
 _flow_test_begin "Phase 4 pr: a failed run returns to what was checked out, and keeps a changelog staged before (P8, P9)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do
@@ -1166,6 +1227,33 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_equal "" "$(_status)" "the working tree"
 done
 
+_flow_test_begin "Phase 4 pr: a release branch starting with + or - is refused before anything is created (P11)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  for BR in +chore/release-1.3.0 -chore/release-1.3.0; do
+    e2e_new "release-pr-branch-$(printf '%s' "$BR" | cut -c1 | tr '+-' 'pm')-$E2E_FENCE_SHELLS"
+    e2e_describe "RELEASE_BRANCH=$BR; origin has chore/release-1.3.0 with a commit of its own, and this clone a diverged local chore/release-1.3.0; block under $E2E_FENCE_SHELLS"
+    _released_npm
+    # A push of +chore/release-1.3.0 force-pushes the local chore/release-1.3.0
+    # over origin's.
+    _git switch -q -c chore/release-1.3.0
+    _git commit -q --allow-empty -m "origin's own"
+    _git push -q origin chore/release-1.3.0
+    ORIGIN_RELEASE=$(_git rev-parse HEAD)
+    _git reset -q --hard main
+    _git commit -q --allow-empty -m "local, diverged"
+    _git switch -q main
+    e2e_run_block "RELEASE_BRANCH=$BR" DEFAULT_BRANCH=main VERSION=1.3.0 TAG_PREFIX=v "$RELEASE_MD" RELEASE_PR_BLOCK
+    e2e_expect_equal 1 "$E2E_RC" "the exit status"
+    e2e_expect_line "PR_STATE=blocked"
+    e2e_expect_out "starts with + or -"
+    e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+    e2e_expect_equal 0 "$(_git for-each-ref --format='%(refname:short)' refs/heads/ | grep -c '^[+-]')" "local branches named with a leading + or - (none created)"
+    e2e_expect_equal "$ORIGIN_RELEASE" "$(_git ls-remote origin refs/heads/chore/release-1.3.0 | cut -f1)" "origin's chore/release-1.3.0 (not overwritten)"
+    e2e_expect_file_has package.json '"version": "1.2.3"'
+  done
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
+
 _flow_test_begin "Phase 4 pr: a version file with changes of its own stops the run before anything is written (P7)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_new "release-pr-dirty-version-file-$E2E_FENCE_SHELLS"
@@ -1181,6 +1269,55 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_file_has package.json '"test": "make test"'
   e2e_expect_file_has package.json '"version": "1.2.3"'
 done
+
+_flow_test_begin "Phase 4 pr: a plan that fails or names no version file stops the run before the branch (P12)"
+# The version script is replaced: its plan fails (or names no file) while its
+# write bumps package.json, as a real write would, so a run that ignores the
+# plan goes on to commit and push.
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+for PLAN in fails no-bump-line; do
+  e2e_new "release-pr-plan-$PLAN-$E2E_FENCE_SHELLS"
+  e2e_describe "the version script's --plan $PLAN; its --write bumps package.json to 1.3.0; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  case "$PLAN" in
+    fails) PLAN_CODE='printf "%s\n" "VERSIONS_STATE=refused" "REFUSED=plan broke"; exit 1' ;;
+    no-bump-line) PLAN_CODE='printf "%s\n" "VERSIONS_STATE=planned"; exit 0' ;;
+  esac
+  e2e_plugin_copy bin/flow-release-versions.sh '#!/bin/sh
+case " $* " in
+  *" --plan "*) '"$PLAN_CODE"' ;;
+  *" --write "*)
+    sed "s/\"version\": \"1.2.3\"/\"version\": \"1.3.0\"/" package.json > package.json.new && mv package.json.new package.json
+    printf "%s\n" "VERSION_FILE=bump path=package.json current=1.2.3 new=1.3.0" "VERSIONS_STATE=written" ;;
+esac'
+  _pr_block
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=blocked"
+  e2e_expect_out "the version files could not be planned"
+  e2e_expect_line "VERSIONS_STATE=$( [ "$PLAN" = fails ] && echo refused || echo planned )"
+  e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "" "$(_git branch --list chore/release-1.3.0)" "the release branch (never created)"
+  e2e_expect_equal "refs/heads/main" "$(_git ls-remote --heads origin | cut -f2)" "origin's branches (only main; nothing pushed)"
+  e2e_expect_file_has package.json '"version": "1.2.3"'
+done
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
+
+_flow_test_begin "Phase 4 pr: tiers.push that cannot be read is named, and read as journal (P13)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-push-tier-unreadable-$E2E_FENCE_SHELLS"
+  e2e_describe "cascade-resolve.sh fails with a message of its own; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  e2e_plugin_copy bin/cascade-resolve.sh '#!/bin/sh
+echo "cascade-resolve.sh: settings file is not valid JSON" >&2
+exit 1'
+  _pr_block
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=pushed"
+  e2e_expect_line 'PR_WARN="tiers.push could not be read; treating it as journal"'
+  e2e_expect_err "cascade-resolve.sh: settings file is not valid JSON"
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
 
 _flow_test_begin "Phase 4 tag: an annotated tag on the merge commit, not pushed by the block (T1, T2)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do

@@ -19,8 +19,8 @@ This is the source of truth for the team's flow plugin overrides. Settings decis
 | 3 | `agentTeams` | _____ | |
 | 4 | `conventions.branchPatterns` | _____ | |
 | 5 | `conventions.commitTypes` | _____ | |
-| 6 | `journal.sensitivityDefault` | _____ | Flow has no such setting: each journal entry declares `Sensitivity:`, and an entry without the line is `public`. Record the choice here as a writing policy. |
-| 7 | `tiers` | _____ | No flow command or hook reads these keys; `/flow:merge` and `/flow:release` always ask for confirmation. |
+| 6 | Journal sensitivity (writing policy) | _____ | Flow has no setting for this: each journal entry declares `Sensitivity:`, and an entry without the line is `public`. Record the choice here as a writing policy. |
+| 7 | `tiers` | _____ | Applied to every Bash command by the `tier-gate.sh` hook. `push`, `prCreate`, `issueAssign`, `issueCreate` take `autonomous`, `journal` or `confirm`; `merge` and `release` always ask. |
 | 8 | `specFirst.allowSpecFreeLabels` | _____ | |
 
 If any value differs from `plugins/flow/settings.json` defaults, file a follow-up PR adding the override to `.claude/settings.flow.json` (committed) within one week.

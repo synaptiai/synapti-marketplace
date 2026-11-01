@@ -1,5 +1,100 @@
 # Changelog
 
+## Unreleased
+
+flow's documentation describes the plugin as it behaves at this release: an
+audit of every command, skill, agent, reference, template, the READMEs, the
+Windows notes and the team-session material corrected the places that
+described 3.9-era behaviour or behaviour flow never had. The audit also found
+shipped command steps that flow's own guards refuse, and settings that
+nothing read; both are fixed. Every bash fence in a command now passes flow's
+Bash guards, checked by a test, and every setting in the plugin defaults
+takes effect, except `timeouts.teammateTimeout` and
+`visualVerification.screenshotDir`, which are instructions the agent follows
+and no script reads.
+
+### Added
+
+- `flow.runtime.runRetentionDays` takes effect: at the end of each session the
+  SessionEnd hook removes runs under `.flow/runs/` that ended (completed or
+  cancelled) more than that many days ago (default 30). This is on by
+  default. Active and blocked runs are kept, a run directory that holds a
+  file git tracks is kept, and nothing is removed through a symlink or while
+  `flow.runtime.enabled` is false. A run that cannot be removed is named on
+  one line with the reason.
+- `closedLoop.enabled`, `closedLoop.requireRuntimeVerification` and
+  `visualVerification.enabled` take effect in `/flow:start` and `/flow:pr`:
+  false turns off the fix-and-retry loop (the agent asks on a failure),
+  makes runtime verification optional, or skips visual verification.
+- `flow.triggers.allowAutonomousMerge`, read from your user settings only,
+  lets a trigger leave merge and release out of its forbidden actions;
+  `/flow:merge`, `/flow:release` and the tier hook still ask.
+  `bin/flow-trigger-tier3-check.sh` runs that check.
+- `flow.triggers.defaultConcurrency` is the concurrency policy of a trigger
+  that sets none, and `flow.triggers.allowTriggerCreationFromTriggeredRun`
+  lets a trigger's runs create triggers; a repository's own settings can turn
+  it on.
+  A triggered run records its trigger id (`metadata.trigger`), and the
+  in-flight check matches on it. The in-flight check stops when it cannot
+  read the runs directory or a run's `run.yaml`, so an unreadable run is
+  never taken as not running.
+- `flow.runtime.stateDir` takes effect: every command, hook and script keeps
+  runtime state (goals, runs, triggers, watch state, review exceptions) in
+  that directory, `bin/flow-runtime-dir.sh` prints it, and `/flow:status`
+  shows it. It must be a relative path below the repository top with no
+  `..`, no symlink on the way, and names made only of letters, digits, `.`,
+  `_` and `-`; anything else prints one warning and `.flow` is used. It is not `FLOW_STATE_DIR`, the per-user state directory.
+- `bin/flow-release-pr.sh` does the first `/flow:release` run's branch, bump,
+  commit and push, and undoes them on a failure. It stops before creating
+  anything when the release branch name starts with `+` or `-`, or the
+  version plan fails, and it commits a changelog edit that was already
+  staged.
+- `tests/e2e-fence-guards.test.sh` runs every bash fence in `commands/*.md`
+  through the four PreToolUse Bash guards and fails on a refusal.
+
+### Changed
+
+- `/flow:release`'s first run pushes the release branch from the script, so
+  the tier hook no longer asks at that push; `tiers.push` applies through
+  flow's `git` wrapper, and with `confirm` the script stops before the push
+  and names it to run as its own command.
+- The force-push guard refuses a git command that carries a force flag and
+  a backquoted substitution in any word; it looked only for `$` before.
+- `/flow:goal status` shows the active goal of the current branch.
+- `/flow:status` Recent Runs shows each run's workflow, phase and status, and
+  bare `/flow` prints uncommitted changes, commits ahead and conflicts.
+- `/flow:pr`, `/flow:explain`, `/flow:design` and `/flow:brainstorm` read and
+  write the session journal on a branch with no issue number.
+- `promote-proposal.sh` stops before a push or pull request whose tier is
+  `confirm` and prints the commands to run.
+- The debug workflow creates its goal in the diagnose phase; merge-pr's
+  branch deletion is `confirm`; the design journal entry records options,
+  trade-offs, non-goals and failure modes.
+
+### Fixed
+
+- `/flow:pr`'s push, `/flow:release`'s release pull request and tag push,
+  and `/flow:review`'s checkout of another author's pull request were refused
+  by flow's own force-push or destructive-command guard before they ran.
+  The force-push guard reads a variable as an argument when the word right
+  after `git` is `worktree`, `branch` or `tag`, which never run their
+  arguments as a command (`git worktree remove --force "$TREE"`). After any
+  other subcommand, or after a global option, a variable is still refused.
+- `/flow:start`'s specification manifest block had an unclosed quote.
+- `/flow:workflow inspect` and `graph` read the subcommand as part of the
+  workflow id and never found a workflow.
+- `/flow:watch ci` built a trigger id from the branch name, which holds `/`
+  and fails the id pattern.
+- `/flow:pr` continues with zero commits ahead of the default branch; it now
+  stops. Its goal-gate override is recorded on branches with no issue too.
+- `/flow:resolve` did not detect a merge or rebase in a linked worktree, and
+  `/flow:issue`'s milestone check used a repository variable from another
+  block.
+- `goal-contract-capture` wrote a goal as active, so the draft to active step
+  its callers run failed, and `goal-created` was recorded twice.
+- The marker trust list was documented as read from the plugin settings
+  only; it is resolved through the settings cascade.
+
 ## 3.12.0 (2026-10-31)
 
 flow applies the tier settings (`tiers.*`) to every Bash command (#317). A

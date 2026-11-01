@@ -27,7 +27,7 @@
 #   --ref-prefix   the start of each record's ref, e.g. pr:275/review-cycle:2;
 #                  each finding adds /<id>. At most 150 characters
 #   --run-id       records, and the state sent for each finding, go beside
-#                  .flow/runs/<id> when that run exists
+#                  <runtime dir>/runs/<id> when that run exists
 #
 # FLOW_S1_CHALLENGE_BUDGET_S may lower the 90-second limit on asking (whole
 # seconds, 1 to 90; any other value is 90).

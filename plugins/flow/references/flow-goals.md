@@ -39,7 +39,7 @@ The full schema lives at `plugins/flow/schemas/v1/goal.schema.json`.
 - `flow.goals.enabled: false` — disables `/flow:goal`; the Stop hook does not read this switch. Distinct from `goalCreation: off`, which keeps the feature on and only suppresses auto-creation.
 - `executeVerificationCommands: true` — lets the Stop hook's deterministic-checks runner execute every goal's `verification_command` strings, trusted or not. Governs only the Stop hook path (`hooks/scripts/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` and `Skill(goal-evaluator)` execute verification commands when present regardless. You rarely need it: goals created through flow are recorded in the per-user **trust ledger** (`bin/flow-goal-trust.sh`, `<state dir>/goal-trust.jsonl` (the per-user state directory: `~/.claude/flow-state`, or a `FLOW_STATE_DIR` you set; see [README: Per-user locations](../README.md#per-user-locations))) and the Stop hook executes a trusted goal's commands with the flag left `false`. A goal that arrived with a checkout is untrusted; its ACs are reported `not_executed` until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml` (also required after editing a `verification_command` by hand). Set the flag `true` only when every `.flow/goals/*.goal.yaml` source is trusted — the Stop hook fires on every turn, so unvetted commands run every turn.
 
-> **Upgrading from the v3.0 `requireGoalForStart` flag?** It is mapped read-only — `true` → `always`, `false` → `off`, absent → `auto` — and your settings file is never rewritten. See `migration-v2-to-v3.md`.
+> **Still setting the deprecated `requireGoalForStart` flag?** It is mapped read-only — `true` → `always`, `false` → `off`, absent → `auto` — and your settings file is never rewritten. See `migration-v2-to-v3.md`.
 
 See [`flow-goals-quickstart.md`](flow-goals-quickstart.md) for a 5-minute walkthrough on a synthetic issue, and [`migration-v2-to-v3.md`](migration-v2-to-v3.md) for the step-by-step v2 → v3 opt-in across all four feature areas (goals, Stop hook, workflows, triggers).
 
@@ -68,7 +68,7 @@ See [`flow-goals-quickstart.md`](flow-goals-quickstart.md) for a 5-minute walkth
        Resumable: {waiting_for_user, waiting_for_ci, blocked}
 ```
 
-State transitions are mediated through the `goal-lifecycle` skill — every transition writes a `goal-evaluation` artifact to the linked decision journal. The allowed-transition table, the disallowed transitions, and the evaluator's verdict → status mapping live in [`goal-lifecycle-transitions.md`](goal-lifecycle-transitions.md); `bin/flow-goal-record.sh` enforces the same table.
+State transitions are mediated through the `goal-lifecycle` skill — every transition writes a journal artifact to the linked decision journal: `goal-created` for draft → active, `goal-evaluation` for the others. The Stop hook's own `failed` writes (stuck, budget) are the exception; they are recorded as run events. The allowed-transition table, the disallowed transitions, and the evaluator's verdict → status mapping live in [`goal-lifecycle-transitions.md`](goal-lifecycle-transitions.md); `bin/flow-goal-record.sh` enforces the same table.
 
 ## Goal YAML example
 
@@ -139,13 +139,13 @@ Each `risk_map` row carries the three columns of the journal table (`Area | Plau
 
 | Command | Purpose | Tier |
 |---|---|---|
-| `/flow:goal` (or `/flow:goal status`) | Show the active goal + AC pass/fail state | autonomous |
+| `/flow:goal` (or `/flow:goal status`) | Show the active goal for the current branch + AC pass/fail state | autonomous |
 | `/flow:goal create <kind> [id]` | Create a goal from issue / PR-review / PR-address / adhoc | journal |
 | `/flow:goal inspect <id>` | Read-only deep dump of a specific goal | autonomous |
-| `/flow:goal evaluate <id>` | Run deterministic checks + (optional) judge; update lifecycle | journal |
-| `/flow:goal pause <id>` | `active → waiting_for_user` | journal |
-| `/flow:goal resume <id>` | `{waiting_for_user, waiting_for_ci, blocked} → active` | journal |
-| `/flow:goal clear <id>` | `<any non-terminal> → cancelled` (requires confirmation) | journal |
+| `/flow:goal evaluate <id>` | Run deterministic checks + (optional) judge; update lifecycle | autonomous for a non-terminal verdict; confirm (AskUserQuestion) before writing `achieved` or `failed` |
+| `/flow:goal pause <id>` | `active → waiting_for_user` | autonomous |
+| `/flow:goal resume <id>` | `{waiting_for_user, waiting_for_ci, blocked} → active` | autonomous |
+| `/flow:goal clear <id>` | `<any non-terminal> → cancelled` | confirm (AskUserQuestion) |
 | `/flow:goal history` | List all goals (active + terminal) | autonomous |
 
 ## Stop hook integration
@@ -204,31 +204,33 @@ The schema validation rules for these keys live in `plugins/flow/schema.json`.
 
 ## Gitignore policy
 
+`/flow:setup` ignores `.flow/watch/` (plus `.claude/settings.flow.local.json`, `.claude/*.lock` and the journal's `auto-log/`); it does not ignore `.flow/runs/`, so add that line yourself:
+
 ```
-.flow/runs/             # gitignored — per-developer execution noise
-.flow/evidence/         # gitignored — per-developer evidence captures
-.flow/triggers/*.local.yaml  # gitignored — local trigger configs
+.flow/runs/             # add to .gitignore — per-developer execution records, evidence included
 .flow/goals/*.goal.yaml      # tracked — teams share goal contracts
 .flow/workflows/*.workflow.yaml  # tracked
-.flow/triggers/*.trigger.yaml    # tracked (non-.local variants)
+.flow/triggers/*.trigger.yaml    # tracked
 ```
+
+See [`flow-runtime-state.md`](flow-runtime-state.md#gitignore-policy).
 
 Teams that want fully-private goals can add `.flow/goals/` to their personal `.gitignore`; the helper writes don't depend on git state.
 
 ## What FlowGoal explicitly does NOT do
 
-These are non-goals — flow v3 makes no claim to provide them:
+These are non-goals — flow makes no claim to provide them:
 
 1. **Native /goal invocation** — plugins can't call Claude Code's built-in slash commands. FlowGoal is a replacement, not a wrapper.
 2. **Exactly-once execution** — `.flow/runs/` writes are atomic per-file but flow makes no claim to deterministic replay or crash-safe distributed execution.
 3. **Background execution** — the Stop hook fires inside the user's turn; goals don't run "in the background" without an external trigger (CI, cron, user-driven `/loop`).
 4. **Tier 3 autonomy** — goals can never grant merge or release autonomy. Those remain AskUserQuestion-gated.
 
-If your needs require any of the above, FlowGoal is the wrong primitive — escalate to a durable runtime adapter (github_actions, temporal) via `runtime_target`.
+If your needs require any of the above, FlowGoal is the wrong primitive; flow ships no durable runtime adapter for them.
 
 ## Compose with other flow features
 
-- **`/flow:start <issue>`** — under `goalCreation: auto` (default), creates `.flow/goals/issue-<N>.goal.yaml` after the Spec Validation Gate **iff** ≥1 AC carries a `verification_command`. Lifecycle stays `active` through Phase 4 (CODE, VERIFY); `verdict-judge` PASS transitions to `achieved`.
+- **`/flow:start <issue>`** — under `goalCreation: auto` (default), creates `.flow/goals/issue-<N>.goal.yaml` after the Spec Validation Gate **iff** ≥1 AC carries a `verification_command`. Lifecycle stays `active` through Phases 3 and 4 (CODE, VERIFY); `verdict-judge` PASS transitions to `achieved`.
 - **`/flow:review <PR>`** — creates no goal. A review is FlowRun-only: it is bounded by the pull request, and the posted review with its `FLOW_REVIEW_CYCLE` marker is the durable record of what it found. When the pull request head carries `.flow/goals/issue-<N>.goal.yaml`, Phase 1 **reads** it — the acceptance criteria, non-goals, interface contracts and risk map become what the review checks the change against — and never executes anything it contains.
 - **`/flow:address <PR>`** — creates no goal, for the same reason: the resolution comment and its `FLOW_RESOLUTION_CYCLE` marker are the record.
 - **`/flow:debug`** — Goal with `outcome: "The reported failure is reproduced, root-caused, and a fix is verified."` and ACs derived from the bug hypothesis.
@@ -246,4 +248,3 @@ If your needs require any of the above, FlowGoal is the wrong primitive — esca
 - `plugins/flow/bin/flow-goal-record.sh` — atomic goal writer (records the goal in the trust ledger on `--create`)
 - `plugins/flow/bin/flow-goal-trust.sh` — per-user trust ledger: `record | check | list`
 - `plugins/flow/references/goal-lifecycle-transitions.md` — transition tables and verdict → status mapping
-- `docs/plans/flow-v3-goals-workflows-triggers-plan.md` — full v3 design (local-only; not committed)

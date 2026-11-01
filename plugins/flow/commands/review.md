@@ -13,7 +13,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 - `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `code-review-methodology` — 6-facet review, finding synthesis, adversarial protocol
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
-- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries
 
 ```!
 # Inline the Required Skills above so their rules are in context before the
@@ -159,9 +159,15 @@ else
       printf '%s\n' "RISK_MAP_SOURCE=issue-text"
       ;;
     *)
-      # LINKED is all digits by the case above, so the path below carries no
-      # value that could reshape the jq filter or the request it goes into.
-      FLOW_GOAL_PATH=".flow/goals/issue-$LINKED.goal.yaml"
+      # LINKED is all digits by the case above, and flow-runtime-dir.sh prints
+      # only names of letters, digits, ., _ and -, so the path below carries
+      # no value that could reshape the jq filter or the request it goes into.
+      # Goals are under the runtime directory (flow.runtime.stateDir, default
+      # .flow), named from the top as the file list of the pull request names them.
+      FLOW_GOAL_RT=$("${LINKED_HELPER%/flow-pr-linked-issue.sh}/flow-runtime-dir.sh") || FLOW_GOAL_RT=""
+      FLOW_GOAL_RT=${FLOW_GOAL_RT#./}
+      [ -n "$FLOW_GOAL_RT" ] || FLOW_GOAL_RT=".flow"
+      FLOW_GOAL_PATH="$FLOW_GOAL_RT/goals/issue-$LINKED.goal.yaml"
       printf '%s\n' "GOAL_PATH=$FLOW_GOAL_PATH"
       # Whether this pull request changes the goal it is reviewed against.
       # The goal is trusted because it is tracked and a weakening shows up
@@ -752,11 +758,13 @@ fi
 true
 ```
 
+Set `CYCLE_NUMBER`, this review's cycle, to `REVIEW_CYCLE_COUNT` + 1 from the block above (1 on a first review). Every later step that records or posts a cycle uses it. When that section printed `STATE=unavailable`, the earlier cycles are unknown: say so in the review rather than numbering this one 1.
+
 If previous cycles exist, build a **Previous Feedback Status** table and cross-reference each finding's location against `git -C "$REVIEW_TREE" diff --text --no-ext-diff --no-textconv <previous head>..HEAD` to verify resolution.
 
-### FlowRun (v3 runtime)
+### FlowRun
 
-A review is a long-running workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+A review is a long-running workflow, so it gets a durable FlowRun. Runs are written unless `flow.runtime.enabled` is `false` (default `true`); when it is `false` the block prints `FLOW_RUN_STATE=skip` and no run is written.
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
@@ -769,7 +777,7 @@ fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 if [ "$RUNTIME_ENABLED" != "true" ]; then
   printf '%s\n' "FLOW_RUN_STATE=skip"
-  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true"
 else
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-review"
   printf '%s\n' "FLOW_RUN_STATE=create"
@@ -781,7 +789,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`review-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → fan-out → consolidate → report`. Review is **FlowRun-only — it creates NO FlowGoal**: a review session is bounded by the PR under review, and the PR's own review-thread state (the posted review comment plus its FLOW_REVIEW_CYCLE marker) is the durable record of what the review found. The `run.yaml` captures the workflow's resumability state; there is no separate goal contract to satisfy.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`review-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → fan_out → consolidate → report`. Review is **FlowRun-only — it creates NO FlowGoal**: a review session is bounded by the PR under review, and the PR's own review-thread state (the posted review comment plus its FLOW_REVIEW_CYCLE marker) is the durable record of what the review found. The `run.yaml` captures the workflow's resumability state; there is no separate goal contract to satisfy.
 
 ## Phase 2: PLAN
 
@@ -983,7 +991,7 @@ if [ "$USE_PATH_A" = "1" ]; then
       AGENT_TEAM_MODEL=sonnet
       ;;
     *)
-      printf '%s\n' "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|fable|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, \$HOME/.claude/settings.flow.json, or the plugin settings.json." >&2
+      printf '%s\n' "WARN: agentTeamModel='$AGENT_TEAM_MODEL' is not one of haiku|sonnet|opus|fable|inherit; rejecting and using sonnet. Set a valid value in .claude/settings.flow.local.json, .claude/settings.flow.json, your user settings file (\$FLOW_USER_SETTINGS when you set it outside this repository, otherwise \$HOME/.claude/settings.flow.json), or the plugin settings.json." >&2
       AGENT_TEAM_MODEL=sonnet
       ;;
   esac
@@ -1419,7 +1427,7 @@ neutral.
 
 TaskUpdate each review task as agents complete.
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the consolidate boundary completes — once the per-facet findings (Path A consolidation or Path B synthesis) have been merged into a single deduplicated finding set (after the optional System One step of Phase 4 step 2 when its block printed `S1_DEDUP=`), advancing `state.current_phase` to `consolidate` per the `preflight → fan-out → consolidate → report` order.
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the consolidate boundary completes — once the per-facet findings (Path A consolidation or Path B synthesis) have been merged into a single deduplicated finding set (after the optional System One step of Phase 4 step 2 when its block printed `S1_DEDUP=`), advancing `state.current_phase` to `consolidate` per the `preflight → fan_out → consolidate → report` order.
 
 ## Phase 4: VERIFY
 
@@ -2322,7 +2330,7 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
    # REVIEW_TREE_CLEANUP_BLOCK_END
    ```
 
-**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the report boundary completes — once the review comment is posted (step 7) and posting is verified (step 8), advancing `state.current_phase` to `report` per the `preflight → fan-out → consolidate → report` order.
+**FlowActivity writes** (when `FLOW_RUN_STATE=create`): invoke `Skill(run-state-management)` to record a FlowActivity as the report boundary completes — once the review comment is posted (step 7) and posting is verified (step 8), advancing `state.current_phase` to `report` per the `preflight → fan_out → consolidate → report` order.
 
 **FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): once the review comment is posted (or no-finding evidence is recorded), invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. The `workflow-run` journal artifact is best-effort — a review is PR-scoped, not issue-scoped — so emit `bin/journal-record.sh --type workflow-run` only if `bin/flow-pr-linked-issue.sh` prints an issue for the PR (the one GitHub lists it as closing, the lowest when there are several); otherwise the `run.yaml` is the durable record and no journal artifact is written. If the review failed or was cancelled before posting, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
 
@@ -2332,9 +2340,9 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
 |---|---|---|
 | Check out your own pull request (`gh pr checkout`), or fetch someone else's into a worktree under the temporary directory | 1 | Autonomous |
 | Read PR diff / files / previous reviews | 1 | Autonomous, read-only |
-| Multi-agent dispatch (Path B: 5 agents + holdout) or paired-reviewer dispatch (Path A: 12 invocations + 10 challenge) | 1 | Autonomous; Tasks tracked |
+| Multi-agent dispatch (Path B: 5 agents + holdout, 4 agents on someone else's pull request) or paired-reviewer dispatch (Path A: 12 invocations, 10 on someone else's pull request, plus up to 10 challenge prompts, 8 without the test-runner facet) | 1 | Autonomous; Tasks tracked |
 | Holdout validation (skill, parallel) | 1 | Autonomous |
-| Self-review fix-forward (when reviewing own PR) | 1 | File edits + commits autonomous; push is Tier 2 |
-| `gh pr review --comment / --request-changes / --approve` | 2 | Journal-and-proceed |
-| `gh pr comment` (self-review `FLOW_RESOLUTION_CYCLE` marker) | 2 | Journal-and-proceed |
-| Follow-up issue creation (cosmetic P3 in untouched files, external PR review only) | 2 | Journal-and-proceed |
+| Self-review fix-forward (when reviewing own PR) | 1 | File edits + commits autonomous; push is Tier 2 and follows `tiers.push` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |
+| `gh pr review --comment / --request-changes / --approve` | 2 | Runs without asking; no tier setting covers it |
+| `gh pr comment` (self-review `FLOW_RESOLUTION_CYCLE` marker) | 2 | Runs without asking; no tier setting covers it |
+| Follow-up issue creation (cosmetic P3 in untouched files, external PR review only) | 2 | Follows `tiers.issueCreate` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |

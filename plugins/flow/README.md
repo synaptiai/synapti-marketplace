@@ -4,9 +4,9 @@ A Claude Code plugin that replaces command-driven GitHub workflow automation wit
 
 ## Flow Runtime Layer
 
-Flow keeps a **runtime layer** at `.flow/` on top of the skill + command framework. Its primitives give the plugin durable goals, inspectable workflows, declarative triggers, and resumable execution:
+Flow keeps a **runtime layer** in the runtime directory, `flow.runtime.stateDir` (default `.flow`, a relative path inside the repository; in this README `.flow/` stands for it), on top of the skill + command framework. Its primitives give the plugin durable goals, inspectable workflows, declarative triggers, and resumable execution:
 
-- **FlowGoal** — `.flow/goals/<id>.goal.yaml`, durable completion contracts (`/flow:goal status | create | inspect | evaluate | pause | resume | clear`).
+- **FlowGoal** — `.flow/goals/<id>.goal.yaml`, durable completion contracts (`/flow:goal status | create | inspect | evaluate | pause | resume | clear | history`).
 - **FlowWorkflow** — `plugins/flow/workflows/*.workflow.yaml`, machine-readable process contracts for every `/flow:*` command (`/flow:workflow list | inspect | validate | graph`).
 - **FlowTrigger** — `.flow/triggers/<id>.trigger.yaml`, wake-up intent contracts (`/flow:trigger`, `/flow:watch`, `/flow:run`). Supported types are `manual | hook | loop_prompt`.
 - **FlowRun + FlowActivity** — `.flow/runs/<ISO-id>/`, durable execution ledger (`/flow:resume`).
@@ -87,7 +87,7 @@ Two findings shape this principle. An audit of 43 sessions showed flow's rules w
 The `llm-operator-principles` foundational skill frames Claude as an LLM operator that does not tire. `/flow:start`, `/flow:commit`, `/flow:pr`, `/flow:review`, `/flow:address` and `/flow:merge` load it whole, and it sets default behavior in three ways:
 
 1. **Convergence = zero findings, not exhausted budget.** Iteration ceilings (`fixForwardMaxIterations`, `reviewCycleLimit`) default to 10 because the ceiling is a safety net against true infinite loops, not a planned stop point. Approaching the ceiling without convergence is a signal to re-check understanding, not to escalate.
-2. **In-PR fix by default for all findings.** P1/P2/P3 findings are fixed in the current PR. Finding triage is NEVER a valid escalation trigger — escalations are reserved for true product/architecture/irreversible-action decisions. Default mode does NOT create follow-up issues; cosmetic P3 in untouched files is fix-if-bounded or document inline.
+2. **In-PR fix by default for all findings.** P1/P2/P3 findings are fixed in the current PR. Finding triage is NEVER a valid escalation trigger — escalations are reserved for true product/architecture/irreversible-action decisions. Default mode does NOT create follow-up issues; a cosmetic P3 in a file the PR did not touch is fixed in the PR with an `improve:` commit. Only `minimalScope: true` turns such a finding into a follow-up issue.
 3. **Calendar-time estimates prohibited.** PR bodies, decision-journal entries, escalations, and resolution comments MUST NOT include weeks/days/hours/sprints/ETAs. Escalations carry a "Blocking?" field with yes/soft/no values instead of a time-sensitivity field.
 
 See [`skills/llm-operator-principles/SKILL.md`](skills/llm-operator-principles/SKILL.md) for the full operating frame.
@@ -169,8 +169,9 @@ python3 -c "import yaml; print(yaml.__version__)"
 ## Quick Start
 
 ```bash
-# Install the plugin
-claude plugins add ./plugins/flow
+# Add the marketplace (once), then install the plugin
+claude plugin marketplace add synaptiai/synapti-marketplace
+claude plugin install flow
 
 # Initialize for your repository
 /flow:setup
@@ -243,7 +244,8 @@ COMMANDS (23)
   Runtime / admin (6) — inspect & debug the layer Flow manages for you:
   └── goal, workflow, trigger, run, resume, watch
 
-HOOKS (17 scripts; 15 registered in hooks/hooks.json, the other two run from flow-goal-stop)
+HOOKS (19 scripts; 17 registered in hooks/hooks.json, the other two run from flow-goal-stop;
+       plus the git and gh wrappers in hooks/shims)
   ├── Safety (PreToolUse): block-force-push, block-destructive, block-secrets,
   │                        block-unchecked-merge (refuses `gh pr merge` while checks are
   │                        queued, running or failed), ask-issue-create (asks before
@@ -254,6 +256,7 @@ HOOKS (17 scripts; 15 registered in hooks/hooks.json, the other two run from flo
   │                        wrappers first on PATH; they refuse a merge, release, tag
   │                        push or confirm action tier-gate did not ask about
   ├── Ledger (PostToolUse / PostToolUseFailure): log-file-changes, log-commits, record-quality-run
+  ├── Screen (PostToolUse): s1-screen-text (System One site guard.planted-instructions; off by default)
   ├── Gates: verify-task-completion (TaskCompleted — blocks while edits postdate the last
   │          passing quality run), flow-goal-stop + flow-run-deterministic-checks +
   │          flow-goal-evaluator (Stop — FlowGoal evidence)
@@ -261,8 +264,9 @@ HOOKS (17 scripts; 15 registered in hooks/hooks.json, the other two run from flo
   └── Session: session-end-learn, session-end-state, nudge-idle-teammate
 
   Note: /flow:merge and /flow:release ask with AskUserQuestion first; tier-gate's
-  permission prompt asks again when the command runs, and is the only check for a
-  merge or release typed directly (references/three-tier-safety.md).
+  permission prompt asks again when the command runs. A merge or release typed
+  directly gets only tier-gate's prompt, and the gh wrapper checks it again when gh
+  starts (references/three-tier-safety.md).
 
 BIN/ HELPER SCRIPTS (most print usage with --help)
   Settings and skills
@@ -279,14 +283,22 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-clone-scan.sh    — lists duplicated blocks a branch introduced, using jscpd against the merge base
   ├── flow-pr-linked-issue.sh — prints the issue GitHub lists as closed by a pull request
   ├── flow-check-resolution-body.sh — refuses a resolution comment the merge finding-ledger gate would misread
-  └── flow-pr-feedback.sh   — prints a pull request's inline review comments, reviews and conversation comments, every page, one JSON object per line
+  ├── flow-pr-feedback.sh   — prints a pull request's inline review comments, reviews and conversation comments, every page, one JSON object per line
+  └── flow-finding-state.sh, flow-comment-state.sh, flow-test-state.sh — build the state a System One question about one finding, review comment or test is asked with
   Goals, runs and the quality ledger
   ├── flow-active-goal.sh   — finds the FlowGoal for the current branch and prints its status, criteria or JSON
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
   ├── flow-goal-judge-run.sh — runs the goal judge for /flow:goal evaluate, as the Stop hook runs it
+  ├── flow-judge.sh         — runs the goal judge or the verdict judge through the claude CLI with every tool disallowed
   ├── flow-trigger-schema-check.sh — validates a FlowTrigger YAML against the plugin's trigger schema
+  ├── flow-trigger-concurrency.sh — a trigger's concurrency policy and its runs in flight, for /flow:run trigger and /flow:trigger run
+  ├── flow-trigger-tier3-check.sh — refuses a trigger that does not forbid merge and release, unless the user's flow.triggers.allowAutonomousMerge is true
+  ├── flow-trigger-recursion-check.sh — refuses a trigger whose runs may modify or enable triggers, or create them unless flow.triggers.allowTriggerCreationFromTriggeredRun is true
+  ├── _flow_trigger_read.py — reads a trigger or a run.yaml for the three checks above: never through a symbolic link, a regular file holding a YAML mapping only
+  ├── flow-watch-create.sh  — writes an issue-watch or branch-watch trigger and its loop prompt for /flow:watch
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
+  ├── flow-runtime-dir.sh   — prints the runtime directory: flow.runtime.stateDir (default .flow), held inside the repository with no symlink on the way, or .flow with one warning
   ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink (exit 2), or says the check could not run (exit 3); needs python3 but not PyYAML
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
   Decision journal
@@ -294,7 +306,16 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── journal-record.sh     — atomically updates the YAML manifest in .decisions/issue-{N}.md
   ├── journal-append.sh     — appends to, or replaces a section of, a journal body under the same lock
   ├── journal-read-section.sh — prints one journal section, ignoring headings inside code fences
+  ├── commit-journal-churn.sh — commits leftover decision-journal changes as a housekeeping commit
   └── flow-strip-auto-log.sh — removes auto-log lines older journals committed (dry-run unless --apply; /flow:setup offers it)
+  Release
+  ├── flow-release-versions.sh — finds the version files /flow:release bumps, checks they agree, and writes the new version to all of them
+  └── flow-release-pr.sh    — creates the release branch, commits the bump and pushes it for /flow:release's first run, and undoes it all on a failure
+  System One (optional; see System One below)
+  ├── flow-s1.sh, flow-s1-mode.sh — asks the configured provider one decision point's questions; decides a site's mode
+  ├── flow-s1-dedup.sh, flow-s1-confidence.sh, flow-s1-challenge.sh, flow-classify-s1.sh — the review.dedup, review.confidence, review.challenge and classify.serves-issue sites
+  ├── flow-learn-verdict.sh — records /flow:learn Phase 2's decision on one screened correction candidate
+  └── flow-s1-eval.sh, flow-eval-s1-replay.sh — System One measurements used by the evals
   Learning, escalation and evals
   ├── flow-mine-corrections.sh — mines user corrections from session transcripts for /flow:learn
   ├── promote-proposal.sh   — promotes a /flow:learn proposal: a skill via draft PR, or a review exception as a row in the project
@@ -309,8 +330,10 @@ TESTS (not part of what a user runs)
   ├── plugins/flow/tests/run.sh  — the plugin suite. The e2e-*.test.sh scenarios run a shipped command
   │                                block or hook the way Claude Code does (arguments substituted, under
   │                                zsh and bash) in a scratch repository, and write one artifact file per
-  │                                scenario; set FLOW_E2E_ARTIFACT_DIR to keep them. FLOW_TEST_SHARD=K/N
-  │                                runs part K of N (every Nth file), as CI does on Linux
+  │                                scenario; set FLOW_E2E_ARTIFACT_DIR to keep them. Files run in
+  │                                parallel (FLOW_TEST_JOBS=N; default the number of CPUs) and each
+  │                                file's time is reported. FLOW_TEST_SHARD=K/N runs part K of N
+  │                                (every Nth file), as CI does on Linux
   └── tests/run-all.sh           — repository-level checks: agentteams-gate, markertrust-gate,
                                    hooks-symlink, journal-orchestration, command-fence-arguments
 ```
@@ -357,7 +380,7 @@ The plugin ships five canonical reference documents (under `plugins/flow/referen
 | Reference | What it canonicalizes | Primary consumers |
 |---|---|---|
 | [`finding-schema.md`](references/finding-schema.md) | Reviewer output: 7-field finding data model (id, priority, category, location, problem, suggested_fix, confidence — all required of the agents) rendered as a two-column table (`Finding` and `Suggested Fix` columns) for legibility in GitHub's narrow PR-comment column, plus the marker-only `status` and `disposition` fields. Both review paths write the 7-field `FLOW_REVIEW_CYCLE` marker. | All 4 reviewer agents (`code-reviewer`, `security-reviewer`, `error-handler-inspector`, `integration-verifier`); orchestrators (`commands/review.md`, `commands/pr.md`, `commands/address.md`) |
-| [`escalation-format.md`](references/escalation-format.md) | Six-field Proactive-Autonomy escalation structure (Situation, What I tried, Options, Recommendation, Blocking?, Risk). Delivered via `AskUserQuestion`, never inline text. | All 6 escalating commands (`start`, `pr`, `merge`, `commit`, `address`, `resolve`); reviewer agents that surface NEEDS-HUMAN-REVIEW |
+| [`escalation-format.md`](references/escalation-format.md) | Six-field Proactive-Autonomy escalation structure (Situation, What I tried, Options, Recommendation, Blocking?, Risk). Delivered via `AskUserQuestion`, never inline text. | The 9 escalating commands (`start`, `pr`, `review`, `address`, `merge`, `commit`, `resolve`, `brainstorm`, `design`); reviewer agents that surface NEEDS-HUMAN-REVIEW |
 | [`specification-journal-format.md`](references/specification-journal-format.md) | The `## Specification` journal shape: non-goals, failure modes, interface contracts, and the risk map (2-6 rows of area / plausible wrong version / discriminating check), plus the `specFirst.riskMap` disabled marker and the goal-YAML `risk_map` mapping. | `specification-capture` skill (producer); `implementation-planner`, `goal-contract-capture`, Phase 4 bundle producer (consumers) |
 | [`verdict-output-format.md`](references/verdict-output-format.md) | The verdict table the judge returns, with a fixed rationale vocabulary (`self-referential oracle`, `degenerate inputs`, `risk map uncovered`, ...). | `agents/verdict-judge.md`, `commands/start.md` Phase 4 step 6 |
 | [`evidence-bundle-format.md`](references/evidence-bundle-format.md) | Markdown shape verdict-judge consumes: per-criterion sections with mandatory `### Does NOT promise`, `### Visual analysis` (per-viewport `Observed:` blocks on ui criteria, plus a `Step:` block per step, or a `Flows: none — {reason}` line, when the criterion describes a user action; the judge has no file tools and never opens the screenshot), plus five completeness subsections (including test inputs with their expected-value sources and risk-map coverage). `none` is a valid positive-statement answer; bare blank triggers auto-FAIL. | `commands/start.md` Phase 4 (producer), `agents/verdict-judge.md` Step 1 (consumer); `criterion-verification-map` skill (plan-time inputs) |
@@ -365,7 +388,7 @@ The plugin ships five canonical reference documents (under `plugins/flow/referen
 Plus the existing references documenting policy, parser rules, and configuration:
 
 - [`finding-ledger-parser.md`](references/finding-ledger-parser.md) — `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE` marker grammar
-- [`gate-configuration.md`](references/gate-configuration.md) — the eleven quality gates flow enforces
+- [`gate-configuration.md`](references/gate-configuration.md) — the twelve quality gates flow enforces
 - [`decision-journal-schema.md`](references/decision-journal-schema.md) — `.decisions/` file format
 - [`three-tier-safety.md`](references/three-tier-safety.md) — Tier 1/2/3 action classification
 - [`skill-manifests.md`](references/skill-manifests.md) — command → required-skill mapping (kept in lockstep with command files)
@@ -383,8 +406,8 @@ Every command in `plugins/flow/commands/` ships with a `## Tier Classification` 
 | Tier | Behavior |
 |---|---|
 | 1 (Autonomous) | File edits, branches, commits — execute without asking |
-| 2 (Journal) | Push, PR creation, posting reviews / resolution comments — execute and log |
-| 3 (Confirm) | Merge, release — always ask via `AskUserQuestion`; the tier hook's permission prompt asks again when the command runs |
+| 2 (Journal) | Push, PR creation, issue creation and assignment, posting reviews / resolution comments — execute and log |
+| 3 (Confirm) | Merge, release, pushing or deleting a tag — always ask via `AskUserQuestion`; the tier hook's permission prompt asks again when the command runs |
 
 Per-command tier tables make the safety boundary explicit at the point of use. Reviewers can audit a command's behavior without reading the full prose; users can see what a command will do before invoking it. Verification: `grep -L "^## Tier Classification" plugins/flow/commands/*.md` returns nothing.
 
@@ -403,7 +426,7 @@ Per-command tier tables make the safety boundary explicit at the point of use. R
 | `/flow:review <pr>` | Multi-faceted code review (single or team) |
 | `/flow:address <pr>` | Systematic feedback resolution |
 | `/flow:merge <pr>` | Merge with prerequisite verification (Tier 3) |
-| `/flow:release <type>` | Changelog + semantic version release (Tier 3) |
+| `/flow:release <type>` | Release in two runs: the first opens a release PR that bumps the version files and changelog; after it is merged, the second tags the merge commit and publishes the GitHub release (Tier 3) |
 | `/flow:resolve [pr-or-branch]` | Resolve merge conflicts on the current branch or a pull request |
 | `/flow:status` | Read-only workflow overview |
 | `/flow:learn` | Analyze decision patterns, propose new skills |
@@ -425,7 +448,7 @@ These commands expose the runtime layer Flow normally manages for you. You rarel
 | `/flow:trigger` | Manage FlowTriggers (on by default; `flow.triggers.enabled: false` turns it and `/flow:watch` off) |
 | `/flow:run trigger <id>` | Run one FlowTrigger's target once; schedules nothing |
 | `/flow:resume` | Read an interrupted run and propose the next safe action (informational-only) |
-| `/flow:watch` | Generate a `/loop` prompt file for hands-off iteration (user invokes the loop) |
+| `/flow:watch` | Generate a trigger and a `/loop` prompt file for hands-off iteration (user invokes the loop): `pr <N>`, `ci`, `issue <N>` (reports changes to an issue, read-only) or `branch` (keeps the current branch passing: merges in the default branch, fixes failures it caused, and pushes) |
 
 ## Safety Model
 
@@ -434,10 +457,12 @@ Three-tier action classification:
 | Tier | Actions | Behavior |
 |------|---------|----------|
 | **Tier 1** (Autonomous) | Commits, branches, edits | Execute without asking |
-| **Tier 2** (Journal) | Push, PR creation | Execute and log |
-| **Tier 3** (Confirm) | Merge, release | Always ask |
+| **Tier 2** (Journal) | Push, PR creation, issue creation, issue assignment | By default, execute and write one breadcrumb to the git-ignored auto-log trail. Each is a `tiers.*` setting (`push`, `prCreate`, `issueCreate`, `issueAssign`) that also takes `autonomous` or `confirm` |
+| **Tier 3** (Confirm) | Merge, release, pushing or deleting a tag | Always ask; `tiers.merge` and `tiers.release` cannot go below `confirm` |
 
-Hooks provide structural enforcement — they block dangerous operations even if command logic fails. A `gh pr merge` typed outside `/flow:merge` is still checked: the merge guard refuses it while any check is unfinished or failed.
+The `tier-gate.sh` hook applies these settings to every Bash command, whether a flow command or the agent wrote it, and flow's `git` and `gh` wrappers check again when the program starts, so a script, an alias or `eval` cannot hide the action. `/flow:merge` and `/flow:release` ask with `AskUserQuestion` first, so a merge or release run through them shows two prompts. In `claude -p` an action that would ask is refused. These checks run on your machine only; `/flow:setup` offers GitHub rulesets that protect the default branch and tags however a push or merge is made. See [`references/three-tier-safety.md`](references/three-tier-safety.md) for what each check reads and what it does not cover.
+
+Other hooks block dangerous operations even if command logic fails: force pushes, destructive commands, committed secrets, and a merge while any check is unfinished or failed, inside or outside `/flow:merge`.
 
 ## LSP Code Intelligence
 
@@ -460,7 +485,7 @@ LSP is additive — all phases fall back to grep/CLI-based analysis when no LSP 
 - **The goal is read at the pull request's head.** `/flow:review` reads the linked issue's FlowGoal over the GitHub API at the head commit and hands its criteria, non-goals, interface contracts and risk map to the reviewers as text; no `verification_command` from it is run. When the goal has no risk map, the rows are derived from the issue text and labelled as such. A pull request that removes its own goal is a P1 finding, and one that weakens a goal that already existed on the base is a P2 finding.
 - **Contract changes list their blast radius.** When the diff touches an OpenAPI, GraphQL or protobuf file, a migration, a schema file or a goal file, the review body gets a `Blast radius` section listing the code that depends on it. Every consumer either appears in the diff or earns a `breaking-change` finding.
 - **Someone else's pull request is read, not run.** `/flow:review` fetches it into a detached worktree outside this session's directory, with git hooks and the pull request's `.gitattributes` switched off. Its tests, build, dependency audit and duplication scan are not run, and the review lists them under `Checks not run`. Start the session with `FLOW_REVIEW_RUN_PR_COMMANDS=1` to run them anyway. Your own pull request is checked out normally, because self-review fixes forward onto its branch.
-- **Review exceptions.** A team records a finding it has rejected on principle as a row in `.flow/review-exceptions.md` (rule, path glob, reason, source), by hand or by promoting a `/flow:learn` proposal. Reviewers are handed the rows and do not raise a matching finding inside the glob. The file is read at the pull request's base commit, or the default branch for `/flow:pr`, so a pull request cannot grant itself an exception, and a row takes effect once it is on the branch pull requests merge into. A security finding is never withheld because of an exception: the reviewer raises it labelled `exception-override` so a person decides. See the Learning Loop for how rows are proposed.
+- **Review exceptions.** A team records a finding it has rejected on principle as a row in `.flow/review-exceptions.md` (rule, path glob, reason, source), by hand or by promoting a `/flow:learn` proposal. Reviewers are handed the rows and do not raise a matching finding inside the glob. The file is read at the pull request's base commit, or the default branch for `/flow:pr`, so a pull request cannot grant itself an exception, and a row takes effect once it is on the branch pull requests merge into. The file's path follows `flow.runtime.stateDir` as the checkout sets it, so a pull request that changes that setting can point the review at another `review-exceptions.md` that already exists at the base commit. A security finding is never withheld because of an exception: the reviewer raises it labelled `exception-override` so a person decides. See the Learning Loop for how rows are proposed.
 - **New and bumped dependencies.** `security-reviewer` reads the dependency changes from the manifests, compares them with the dependencies at the base commit, and raises `DEP-` findings: a critical or high advisory with a fix available (P1), a license the project cannot include (P1 with an escalation), install hooks, a name within edit distance 2 of an existing dependency, and a dependency redirected elsewhere. These enter the same finding ledger as every other finding.
 - **Duplication, in two layers.** `code-reviewer` runs a clone scan (jscpd) against the merge base and raises a `DUP-` finding for each block the change copied from existing code (P2) or duplicated within itself (P3). It also looks for new functions that re-implement behaviour an existing symbol already provides (P2, MEDIUM). `/flow:start` runs the same scan after each task and does not mark the task complete while a copied block stands, and its plan names, for each new function, the existing code it reuses. Settings: `duplication.enabled`, `minLines`, `minTokens`, `excludePaths`. Without jscpd the scan says it did not run; it is never reported as clean.
 - **Grounding critic (off by default).** With `review.groundingCritic: "on"`, each consolidated P1/P2 finding goes to the `finding-critic` agent, which tries to refute it from the code; the reviewer that raised a disputed finding must cite code or drop it. Security findings are never dropped by this pass. It applies to the single-session path only. The review-precision eval found it lowered precision on both models tested, so it stays off. `/flow:review` reads this setting only from your user settings file and the plugin default, never from the repository under review; `/flow:pr` reads the full cascade.
@@ -514,13 +539,13 @@ Flow finds every per-user file under your home: the two defaults above, the lear
 
 The same rule covers the other ways to move those files. `CLAUDE_TRANSCRIPT_DIR` and `CLAUDE_CONFIG_DIR` count for `/flow:learn` only when they pass the same checks as `FLOW_STATE_DIR`. `learning.proposalDir` and `learning.transcriptDir` are read from your user settings file and the plugin default only, and must be absolute paths (or start with `~`). A value a repository supplies is not used. `/flow:learn` prints a `WARN=` line when it cannot read these settings or a value is not absolute; the SessionEnd hook drops such a value silently.
 
-Example project settings in `.claude/settings.flow.json` (`tiers` is recorded for reference; no command or hook reads it):
+Example project settings in `.claude/settings.flow.json` (`tiers` is applied to every Bash command by the `tier-gate.sh` hook; see [Safety Model](#safety-model)):
 
 ```json
 {
   "agentTeams": false,
   "agentTeamModel": "sonnet",
-  "tiers": { "push": "journal", "merge": "confirm", "release": "confirm" },
+  "tiers": { "push": "journal", "prCreate": "journal", "issueAssign": "journal", "issueCreate": "journal", "merge": "confirm", "release": "confirm" },
   "conventions": { "commitTypes": ["feat", "fix", "docs", "..."] },
   "merge": { "strategy": "squash", "deleteBranch": true },
   "lsp": { "enabled": true, "timeout": 5000, "diagnosticsAsQuality": true },
@@ -610,7 +635,7 @@ what each one does are in
 | Interaction | ~40 decision points | Autonomous with journal |
 | Learning | None across sessions | Decision journal + skill proposals |
 | Review | Sequential agents | Parallel + adversarial (team option) |
-| Safety | Interactive gates | Command-level tiers, hook-enforced guards |
+| Safety | Interactive gates | Hook-enforced tiers and guards |
 | Knowledge | Locked in commands | Composable, reusable skills |
 
 ## License

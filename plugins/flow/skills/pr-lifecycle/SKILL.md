@@ -12,7 +12,7 @@ Policy reference for PR creation and the pre-merge finding-ledger gate; the runn
 
 ## Contract
 
-Iron law: **no PR without verification — a PR body that cannot show test, lint, and runtime evidence is not ready.** Consumed by `/flow:pr` (Phase 1 pre-flight; Phase 4 verification gate, body assembly, push, create, reviewer suggestion at step 11) and by `/flow:merge` Phase 1 (finding-ledger check). Returns the policy those commands apply: four pre-flight conditions, five verification-gate conditions, the PR body section order, the reviewer cascade, and the two ledger rules that block a merge. Permitted skips: none — pre-flight conditions 1, 2, and 4 are hard errors; condition 3 is a warning that offers `/flow:commit`.
+Iron law: **no PR without verification — a PR body that cannot show test, lint, and runtime evidence is not ready.** Consumed by `/flow:pr` (Phase 1 pre-flight; Phase 4 verification gate, body assembly, push, create, reviewer suggestion at step 11) and by `/flow:merge` Phase 1 (finding-ledger check). Returns the policy those commands apply: four pre-flight conditions, four verification-gate conditions, the PR body section order, the reviewer cascade, and the two ledger rules that block a merge. Permitted skips: none — pre-flight conditions 1 and 2 are hard errors; condition 3 is a warning that offers `/flow:commit`; condition 4 offers to update the existing PR.
 
 ## Pre-Flight Gate (`/flow:pr` Phase 1)
 
@@ -21,17 +21,16 @@ Iron law: **no PR without verification — a PR body that cannot show test, lint
 | 1 | Not on the default branch | Hard error — PRs come from feature branches |
 | 2 | At least one commit ahead of the default branch | Hard error — empty PRs are noise |
 | 3 | No uncommitted changes | Warning — offer `/flow:commit` first |
-| 4 | No existing open PR for this branch | Hard error — update the existing PR |
+| 4 | No existing open PR for this branch | Offer to update the existing PR instead |
 
 ## Verification Gate (`/flow:pr` Phase 4)
 
-All five must hold before creation; otherwise stop:
+All four must hold before creation; otherwise stop:
 
 1. All quality commands (lint, test, typecheck) pass — output captured for the PR body.
-2. Self-review completed against the `code-quality-principles` checklist.
-3. Change classification shows no out-of-context files.
-4. Every acceptance criterion has a "Met" or "Interpreted" status with concrete evidence.
-5. No P1 findings remain from code review.
+2. Self-review completed (the Phase 3 review fan-out).
+3. Every acceptance criterion has a "Met" or "Interpreted" status with concrete evidence.
+4. No P1 or P2 findings remain from code review; P3 findings are fixed in the PR.
 
 "Get the PR up and fix it after", "the reviewer will catch it", "small change", and "CI will validate it" are not exemptions. The quality gates flow enforces are mapped in [`gate-configuration.md`](../../references/gate-configuration.md#quality-gates).
 
@@ -45,7 +44,7 @@ Priority cascade: (1) CODEOWNERS entries for paths in the diff; (2) file experti
 
 ## Push and Create
 
-`git push -u origin <branch>` and `gh pr create` are Tier 2 (journal-and-proceed). Afterwards verify with `gh pr view --json number,url,state,title`, surface the URL, and suggest `/flow:review {number}`.
+`git push -u origin HEAD` and `gh pr create` follow `tiers.push` and `tiers.prCreate` (default journal: run, one auto-log breadcrumb; confirm asks). Afterwards verify with `gh pr view --json number,url,state,title`, surface the URL, and suggest `/flow:review {number}`.
 
 ## Merge Prerequisite: Finding-Ledger Check (`/flow:merge` Phase 1)
 

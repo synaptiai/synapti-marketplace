@@ -22,7 +22,7 @@ CONTENT=$(cat "$STATUS_MD")
 
 _flow_test_begin "status.md has an Active Triggers section (AC6)"
 assert_contains "### Active Triggers" "$CONTENT" "Active Triggers heading present (both reader + render)"
-assert_contains ".flow/triggers" "$CONTENT" "reads the triggers directory"
+assert_contains "\"\$RT\"/triggers/" "$CONTENT" "reads the triggers directory of the runtime directory"
 assert_contains "*.trigger.yaml" "$CONTENT" "enumerates trigger yamls"
 assert_contains "flow.triggers.enabled" "$CONTENT" "gated behind the triggers flag"
 assert_contains "enabled" "$CONTENT" "surfaces the enabled state per trigger (schema-backed metadata.enabled)"

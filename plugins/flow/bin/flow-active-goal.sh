@@ -3,11 +3,13 @@
 #
 # Used by /flow:pr, /flow:merge, /flow:status, /flow:learn, and any other
 # command that needs to know whether a FlowGoal is in flight and what its
-# state is. Centralized so changes to the .flow/goals/ layout or YAML
-# schema only touch one reader.
+# state is. Centralized so changes to the goals layout or YAML schema only
+# touch one reader. Goals are read from <runtime dir>/goals/, the runtime
+# directory being flow.runtime.stateDir (bin/flow-runtime-dir.sh, default
+# .flow).
 #
 # Output modes (exactly one allowed, default --status):
-#   --path             absolute-or-relative path to .flow/goals/<id>.goal.yaml
+#   --path             absolute-or-relative path to <runtime dir>/goals/<id>.goal.yaml
 #   --id               metadata.id
 #   --status           lifecycle.status (e.g., active, waiting_for_user)
 #   --json             full goal as JSON, sorted keys (jq-compatible)
@@ -47,17 +49,19 @@
 #                      is nothing to discriminate on, so it still falls back to
 #                      the most-recent active goal. Lenient callers (status/learn)
 #                      omit the flag.
+#   --runtime-dir <dir> the runtime directory the caller already resolved (a
+#                      hook asks once per run); otherwise it is resolved here
 #
 # Exit codes:
 #   0  active goal found; output on stdout
 #   1  no active goal (caller decides whether this is OK)
-#   2  infrastructure error (python3 / PyYAML missing) or refused: .flow,
-#      .flow/goals or a goal file is a symlink, or .flow or .flow/goals is not a
-#      directory
+#   2  infrastructure error (python3 / PyYAML missing) or refused: a directory
+#      on the way to <runtime dir>/goals, or a goal file, is a symlink, or a
+#      directory on the way is not a directory
 #   3  degenerate state (>1 active goal on the current branch)
 #
-# Symlink defense: refuses to read, exit 2 with a note on stderr, when .flow,
-# .flow/goals or any *.goal.yaml is a symlink, wherever it points. A repository
+# Symlink defense: refuses to read, exit 2 with a note on stderr, when a
+# directory on the way to <runtime dir>/goals or any *.goal.yaml is a symlink, wherever it points. A repository
 # can commit one to a directory outside the checkout, and a goal read through
 # it belongs to the link's target. The directory rule is ensure_repo_dir() in
 # bin/_journal_atomic.py, the one every flow writer applies; the gates read the
@@ -84,6 +88,7 @@ SAW_MODE=0
 OVERRIDE_BRANCH=""
 ALLOW_TERMINAL=0
 BRANCH_STRICT=0
+RUNTIME_DIR_ARG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -105,6 +110,11 @@ while [ $# -gt 0 ]; do
     --branch-strict)
       BRANCH_STRICT=1
       shift
+      ;;
+    --runtime-dir)
+      [ $# -lt 2 ] && { echo "flow-active-goal.sh: --runtime-dir requires a value" >&2; exit 2; }
+      RUNTIME_DIR_ARG="$2"
+      shift 2
       ;;
     -h|--help)
       awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
@@ -128,7 +138,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" <<'PYEOF'
+python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" "$RUNTIME_DIR_ARG" <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -142,23 +152,26 @@ sys.path.insert(0, sys.argv[5])
 import yaml
 from _flow_cli import open_regular
 from _journal_atomic import JournalAtomicError, ensure_repo_dir
+from _repo_dir import runtime_dir
 
 mode = sys.argv[1]
 override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
 allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
 branch_strict = (sys.argv[4] if len(sys.argv) > 4 else "0") == "1"
 
-# Symlink defense — no goal is read through a symlinked .flow or .flow/goals.
+GOALS_DIR = os.path.join(runtime_dir(sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None), "goals")
+
+# Symlink defense — no goal is read through a symlinked runtime directory or goals.
 READ_NOTE = "goals are not read through it"
 try:
-    ensure_repo_dir(".flow/goals")
+    ensure_repo_dir(GOALS_DIR)
 except JournalAtomicError as exc:
     # "refusing — .flow is a symlink", which names the component: the
     # summary set where the rule refused, never the message cut at a "; ".
     print(f"flow-active-goal.sh: {exc.summary}; {READ_NOTE}", file=sys.stderr)
     sys.exit(2)
 
-if not os.path.isdir(".flow/goals"):
+if not os.path.isdir(GOALS_DIR):
     sys.exit(1)
 
 # Determine the current branch for branch-first selection. An
@@ -187,7 +200,7 @@ active = []
 # mtime.
 terminal = []
 unreadable = []
-for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
+for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
     if os.path.islink(path):
         print(f"flow-active-goal.sh: refusing — {path} is a symlink; {READ_NOTE}", file=sys.stderr)
         sys.exit(2)

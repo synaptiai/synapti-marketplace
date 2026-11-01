@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# [flow] Record a FlowActivity in .flow/runs/<run-id>/activities/.
+# [flow] Record a FlowActivity in <runtime dir>/runs/<run-id>/activities/.
+# The runtime directory is flow.runtime.stateDir (bin/flow-runtime-dir.sh,
+# default .flow).
 #
 # Writes a sequence-numbered, atomic YAML file plus appends an event to
-# .flow/runs/<run-id>/events.jsonl. Activities are immutable once written;
+# <runtime dir>/runs/<run-id>/events.jsonl. Activities are immutable once written;
 # re-running an activity creates a new sequence-numbered file rather than
 # overwriting.
 #
@@ -32,7 +34,7 @@
 #       an activity that does not match the schema (with jsonschema installed)
 #   2 — python3 or PyYAML missing; the activity file cannot be read for a
 #       reason of the system; the run, activities or evidence directory
-#       refused or not made (a symlinked .flow, .flow/runs or run directory
+#       refused or not made (a symlinked runtime directory, runs or run directory
 #       included); the write failing
 #
 # Atomicity: all writes go through bin/_journal_atomic.py — same O_NOFOLLOW
@@ -116,6 +118,7 @@ import re
 
 import yaml
 from _flow_cli import Messages, name_max, open_regular, schema_problem, shown, yaml_problem
+from _repo_dir import runtime_dir
 from _journal_atomic import (
     JournalAtomicError,
     ensure_repo_dir,
@@ -250,15 +253,15 @@ except RecursionError:
 except Exception as e:
     refuse(f"activity cannot be written as YAML: {type(e).__name__}: {shown(e)}")
 
-# Layout: .flow/runs/<run-id>/activities/<NNN>-<id>.yaml.
+# Layout: <runtime dir>/runs/<run-id>/activities/<NNN>-<id>.yaml.
 # The sequence number is the count of existing .yaml files in activities/
 # zero-padded to 3 digits. This stays sortable up to 999 activities; if
 # we ever hit that we have bigger problems than a 4-digit rename.
-run_dir = os.path.join(".flow", "runs", run_id)
+run_dir = os.path.join(runtime_dir(), "runs", run_id)
 activity_dir = os.path.join(run_dir, "activities")
 evidence_dir = os.path.join(run_dir, "evidence")
 
-# Never os.makedirs: a repository can commit .flow or .flow/runs as a symlink
+# Never os.makedirs: a repository can commit the runtime directory or runs as a symlink
 # to a directory outside the checkout, and makedirs would create the run there.
 try:
     ensure_repo_dir(activity_dir, create=True)
@@ -283,7 +286,7 @@ try:
 except JournalAtomicError as e:
     refuse(f"{e}", e.exit_code)
 
-# Append a one-line event to .flow/runs/<id>/events.jsonl. This is the
+# Append a one-line event to <runtime dir>/runs/<id>/events.jsonl. This is the
 # high-volume hook-level ledger; the FlowRun.events array is for
 # low-volume top-level lifecycle moments.
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

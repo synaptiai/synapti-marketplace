@@ -125,16 +125,23 @@ SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9_-' | head -c 64)
 [ -z "$SESSION_ID" ] && SESSION_ID="anon"
 
 # Find the active goal (lifecycle.status == active) for the current repo
-# state. We iterate over .flow/goals/*.goal.yaml and take the first match.
+# state. We iterate over $RT/goals/*.goal.yaml and take the first match. RT
+# is the runtime directory (flow.runtime.stateDir, bin/flow-runtime-dir.sh,
+# default .flow), resolved once here and passed to the evaluator.
 #
-# Never through a symlink. A repository can commit .flow or .flow/goals, or a
+# Never through a symlink. A repository can commit the runtime directory or
+# its goals, or a
 # goal file, as a symlink to something outside the checkout, and a goal read
 # through it belongs to the link's target: the hook would block or approve on
 # it. Goal trust is keyed on this repository, so none of its commands would
 # run, but the loop would still act on it. ensure_repo_dir() is the rule every
 # flow writer applies below the repository; a refusal is reported and the goal
 # treated as absent.
-ACTIVE_GOAL=$(python3 - "$PLUGIN_ROOT/bin" <<'PYEOF' 2>/dev/null
+RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+# lib/goal-s1.sh passes it to flow-s1.sh.
+_GOAL_S1_RT="$RT"
+ACTIVE_GOAL=$(python3 - "$PLUGIN_ROOT/bin" "$RT" <<'PYEOF' 2>/dev/null
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -153,8 +160,9 @@ except BaseException as exc:  # SystemExit when PyYAML is missing, ImportError o
     sys.exit(0)
 import yaml
 READ_NOTE = "goals are not read through it"
+GOALS_DIR = os.path.join(sys.argv[2], "goals")
 try:
-    ensure_repo_dir(".flow/goals")
+    ensure_repo_dir(GOALS_DIR)
 except RepoDirRefused as exc:
     # "refusing — .flow is a symlink", which names the component: the
     # summary set where the rule refused, never the message cut at a "; ".
@@ -163,12 +171,12 @@ except RepoDirRefused as exc:
 except JournalAtomicError as exc:
     # Not a refusal: the check could not be done (a component could not be
     # inspected), so whether a goal is active is unknown, not "none".
-    print("!unreadable:.flow/goals (%s)" % " ".join(str(exc).split()))
+    print("!unreadable:%s (%s)" % (GOALS_DIR, " ".join(str(exc).split())))
     sys.exit(0)
-if not os.path.isdir(".flow/goals"):
+if not os.path.isdir(GOALS_DIR):
     sys.exit(0)
 unreadable = []
-for path in sorted(glob.glob(".flow/goals/*.goal.yaml")):
+for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
     if os.path.islink(path):
         print("!refused:refusing — %s is a symlink; %s" % (path, READ_NOTE))
         sys.exit(0)
@@ -220,7 +228,7 @@ case "${ACTIVE_GOAL}" in
     ;;
 esac
 
-# Fast-path: no .flow/goals or no active goal — be silent.
+# Fast-path: no $RT/goals or no active goal — be silent.
 if [ -z "${ACTIVE_GOAL}" ]; then
   echo '{"decision":"approve","reason":"no active flow goal"}'
   exit 0
@@ -379,12 +387,12 @@ PYEOF
   # through no symlink (checked, never created).
   (LC_ALL=C; [[ "$run_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]) || return 0
   case "$run_id" in *..*) return 0 ;; esac
-  [ -d ".flow/runs/$run_id" ] || return 0
-  "${PLUGIN_ROOT}/bin/flow-mkdir.sh" --check -- ".flow/runs/$run_id" >/dev/null 2>&1 || return 0
+  [ -d "$RT/runs/$run_id" ] || return 0
+  "${PLUGIN_ROOT}/bin/flow-mkdir.sh" --check -- "$RT/runs/$run_id" >/dev/null 2>&1 || return 0
   trap '_goal_s1_cleanup' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  _goal_s1_prepare "$PLUGIN_ROOT" "$ACTIVE_GOAL" "$REPORT" ".flow/runs/$run_id" || return 0
+  _goal_s1_prepare "$PLUGIN_ROOT" "$ACTIVE_GOAL" "$REPORT" "$RT/runs/$run_id" || return 0
   goal=$(printf '%s' "$GOAL_NAME" | LC_ALL=C tr -c 'A-Za-z0-9_-' '?' | cut -c1-64)
   goal_ref=$(printf '%s' "$GOAL_NAME" | LC_ALL=C tr -c 'A-Za-z0-9_-' '_' | cut -c1-64)
   while IFS=$'\t' read -r n cov id ref; do
@@ -528,7 +536,7 @@ case "${MODE}" in
     trap '_eval_stop; exit 130' INT
     trap '_eval_stop; exit 143' TERM
     if [ -n "$EVAL_OUT" ]; then
-      printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" > "$EVAL_OUT" 2>"$EVAL_ERR" &
+      printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" --runtime-dir "$RT" > "$EVAL_OUT" 2>"$EVAL_ERR" &
       EVAL_PID=$!
       wait "$EVAL_PID"
       EVAL_RC=$?
@@ -538,7 +546,7 @@ case "${MODE}" in
     else
       # No file to hold the output: run it as before, which a signal reaches
       # only once it exits.
-      EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" 2>"$EVAL_ERR")
+      EVAL_OUTPUT=$(printf '%s' "$EVENT" | "${PLUGIN_ROOT}/hooks/scripts/flow-goal-evaluator.sh" --runtime-dir "$RT" 2>"$EVAL_ERR")
       EVAL_RC=$?
     fi
     if [ "$EVAL_ERR" != /dev/null ]; then

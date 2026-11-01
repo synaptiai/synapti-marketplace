@@ -14,7 +14,7 @@ Iron law: **explore before committing — choosing wrong costs ten times what ex
 
 ## Process
 
-Track five tasks — clarify goal, check existing patterns, generate approaches, compare and recommend, user decision — and confirm with `TaskList` at the end.
+Track the four tasks `/flow:brainstorm` creates — explore existing patterns, generate approaches, compare trade-offs, select approach — and confirm with `TaskList` at the end.
 
 ### 1. Clarify the goal
 

@@ -16,7 +16,7 @@ Defaults are pulled from `plugins/flow/settings.json`.
 | 4 | Branch naming patterns | `feature/issue-{N}-{desc}`, `fix/issue-{N}-{desc}`, `docs/issue-{N}-{desc}` | keep / adjust prefixes / add categories | `settings.flow.json` → `conventions.branchPatterns` | ☐ default ☐ change to: ____ |
 | 5 | Commit type vocabulary | 12 types: `feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert, improve` | keep / drop unused / add | `settings.flow.json` → `conventions.commitTypes` | ☐ default ☐ change to: ____ |
 | 6 | Journal sensitivity default | `public` | `public` / `internal` | `CONVENTIONS-DECIDED.md` (policy) — flow has no setting for this; see note | ☐ default ☐ change to: ____ |
-| 7 | Tier overrides | push=journal, prCreate=journal, issueAssign=journal, issueCreate=journal, merge=confirm, release=confirm | keep / promote any to `confirm` (cannot demote) | `settings.flow.json` → `tiers` (see note) | ☐ default ☐ change to: ____ |
+| 7 | Tier overrides | push=journal, prCreate=journal, issueAssign=journal, issueCreate=journal, merge=confirm, release=confirm | keep / set `push`, `prCreate`, `issueAssign` or `issueCreate` to `autonomous`, `journal` or `confirm` (`merge` and `release` are always `confirm`) | `settings.flow.json` → `tiers` (see note) | ☐ default ☐ change to: ____ |
 | 8 | Spec-free label list | `["documentation", "chore"]` | keep / add labels / remove | `settings.flow.json` → `specFirst.allowSpecFreeLabels` | ☐ default ☐ change to: ____ |
 | 9 | Reviewer routing (policy) | n/a | round-robin / by area / by author preference / least-recently-reviewed | `CONVENTIONS-DECIDED.md` (policy) | choice: ____ |
 | 10 | Learning-loop cadence (policy) | n/a | owner of `/flow:learn` + cadence + proposal triage | `CONVENTIONS-DECIDED.md` (policy) | owner: ____ cadence: ____ |
@@ -24,7 +24,7 @@ Defaults are pulled from `plugins/flow/settings.json`.
 **Notes on what flow does today**
 
 - Row 6: flow has no setting for the journal sensitivity default. Each entry declares `Sensitivity: public` or `internal`; an entry without the line is `public`. `internal` entries appear in PR bodies only as "[Internal decision]". Whatever the team chooses here is a writing policy, not a config value.
-- Row 7: the `tiers` keys are accepted in settings, but no flow command or hook reads them. `/flow:merge` and `/flow:release` ask for confirmation whatever the setting says, and every other command applies the tier listed in its own Tier Classification section. "Cannot demote" is documented policy, not something the settings loader enforces.
+- Row 7: the `tier-gate.sh` hook applies the `tiers` keys to every Bash command, whether a flow command or the agent wrote it: `confirm` asks through Claude Code's permission prompt, `journal` runs the command and writes a breadcrumb to the local, gitignored auto-log trail, `autonomous` runs it. `merge` and `release` cannot be set below `confirm`; a lower value is ignored with a warning. Pushing or deleting a tag counts as `release`. `/flow:merge` and `/flow:release` also ask with AskUserQuestion, so a merge or release shows two prompts.
 - Row 10: `/flow:learn` reads session transcripts as well as the journal, and proposes review exceptions as well as skills. Promoting a proposal is done with `bin/promote-proposal.sh`, which opens a draft PR.
 
 ---

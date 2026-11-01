@@ -2,7 +2,7 @@
 # [flow] Mine Claude Code session transcripts for user corrections.
 #
 # /flow:learn and the SessionEnd hook historically read only what flow wrote
-# itself (.decisions/*.md, .flow/runs/*/events.jsonl). Every user correction
+# itself (.decisions/*.md, <runtime dir>/runs/*/events.jsonl). Every user correction
 # ("that's not what I asked", "it is still empty", "why didn't you run the
 # tests?") lives in the session transcript, which nothing opened. This script
 # streams those transcripts and emits the user turns that look like reactions

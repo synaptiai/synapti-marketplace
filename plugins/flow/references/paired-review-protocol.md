@@ -15,6 +15,8 @@ Per `/flow:review` run with default 6-facet fan-out:
 | Phase 5 — Emit consolidated output (lead-only; no LLM call) | 0 |
 | **Total** | **≈23 calls** (≈3.8× single-session baseline of 6) |
 
+When `REVIEW_RUN_PR_COMMANDS` is not `yes`, the two `test-runner` variants are not dispatched: Phase 1 is 10 invocations (4 agent facets × 2 + 2 holdout-validation Skill calls), Phase 3 is 8 challenge prompts, and the total is ≈19 calls.
+
 Wall-clock: ≈1.5–2× single-session via parallel dispatch within each phase. The cost is opt-in (`agentTeams: false` by default) and gated behind `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`.
 
 ## Phase 1: Independent Analysis (paired reviewers per facet)
@@ -49,7 +51,7 @@ Each returns P1/P2/P3 findings with `file:line` citations and a category. **No c
 
 ## Phase 2: Share Findings
 
-Lead collects all 12 finding sets (10 Agent + 2 Skill). No LLM call. Indexes findings by facet for the per-facet challenge round. Holdout-validation findings are indexed for A.2 auto-consensus matching only and bypass Phase 3.
+Lead collects all 12 finding sets (10 Agent + 2 Skill; 10 sets when the `test-runner` variants were not dispatched). No LLM call. Indexes findings by facet for the per-facet challenge round. Holdout-validation findings are indexed for A.2 auto-consensus matching only and bypass Phase 3.
 
 ## Phase 3: Challenge (disposition-only, no diff re-read)
 
@@ -78,7 +80,7 @@ Findings to challenge:
 {list of the OTHER reviewer's findings: ID, file:line, priority, category}
 ```
 
-10 challenge prompts run in parallel (5 agent facets × 2 directions; the holdout-validation Skill pair is excluded by design — see A.1 note for the principled rationale: holdout is objective claim-verification, not subjective judgment, so AGREE/DISAGREE/REFINE doesn't apply).
+10 challenge prompts run in parallel, 8 without the `test-runner` facet (5 agent facets × 2 directions; the holdout-validation Skill pair is excluded by design — see A.1 note for the principled rationale: holdout is objective claim-verification, not subjective judgment, so AGREE/DISAGREE/REFINE doesn't apply).
 
 ## Phase 4: Synthesize (consolidation rules)
 
@@ -95,7 +97,7 @@ Lead applies the consolidation table to each finding:
 
 A System One answer is not a challenger answer and never counts toward a drop. The optional System One step (`review.challenge`, `references/system-one.md`) shows a note next to a challenged finding and changes neither its confidence nor its disposition.
 
-**Independence-match window** (hard-coded for v1): same facet AND same file AND lines within ±2 AND priority within ±1 (P1↔P2 counts; P1↔P3 does not).
+**Independence-match window** (fixed): same facet AND same file AND lines within ±2 AND priority within ±1 (P1↔P2 counts; P1↔P3 does not).
 
 The disposition vocabulary `consensus|validated|refined|kept|unchallenged` is the controlled set emitted into the `FLOW_REVIEW_CYCLE` marker — see `references/finding-ledger-parser.md` for the marker schema.
 
@@ -161,7 +163,7 @@ A failure in the paired/challenge mechanism **never blocks `/flow:review`**. Per
 | `agentTeams: false` | Skip paired protocol entirely. Emit `Path A skipped: agentTeams=false. Using Path B (single-session).` to stdout and use single-reviewer dispatch (the `commands/review.md` Path B fallback). |
 | `agentTeams: true` AND env var `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` unset | Single-line `WARN` to stderr: `agentTeams enabled but env var unset; using single-reviewer fallback`. Use Path B. |
 | `agentTeams: true` AND env var set, but one variant (skeptic OR verifier) fails to spawn for one facet | That facet uses single-reviewer fallback (the responding variant). Other facets continue paired. Note in output: `facet {facet}: single-reviewer fallback (verifier failed to spawn)`. |
-| Variant times out (`timeouts.teammateTimeout`) | Use the responding variant's findings only for that facet. Mark each finding as `unchallenged` (MEDIUM confidence). |
+| Variant times out (`timeouts.teammateTimeout`, default 300 s: guidance the lead applies; no script reads it) | Use the responding variant's findings only for that facet. Mark each finding as `unchallenged` (MEDIUM confidence). |
 | BOTH variants fail for one facet | Re-dispatch with single-reviewer Path B for that facet. Note in output. |
 | Challenge round itself fails (cannot dispatch challenger prompt) | Skip challenge step. Findings included as `unchallenged`. Do not block review. |
 

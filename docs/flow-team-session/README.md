@@ -7,6 +7,7 @@ A 90-minute mixed-audience (engineering + PM/design) workshop for the `/flow` pl
 | File | Purpose | When to use |
 |------|---------|-------------|
 | `slides.md` | Marp source for the deck (~63 slides) | Project this during the session. Render with `npx -y @marp-team/marp-cli --pdf slides.md`. |
+| `slides-v2.md` | Marp source for the deep-dive deck: principles, safety model, agents, commands, setup and troubleshooting | Reference after the session, or a longer follow-up session. Render with `npx -y @marp-team/marp-cli --pdf slides-v2.md`. |
 | `HANDBOOK.md` | Long-form reference (~15 pages) | Read after the session. Bookmark for later. |
 | `CHEATSHEET.md` | One-page printable, two-column | Pin to the wall. Reach for it daily. |
 | `walkthrough-script.md` | Pre-recording shotlist + live-narration timing + dry-run checklist | Producing the recording. Re-recording it later. |
@@ -37,7 +38,7 @@ Mixed engineering + PM/design, varied Claude Code experience. The deck deliberat
 - Puts the **conventions vote** after the demo (the room can't vote on `tddMode: enforce` until they've felt it).
 - Puts **hands-on** before Q&A (everyone leaves with a running plugin, not the intent to install tomorrow).
 
-If only one concept lands, it should be **verdict-judge information isolation** (slide 22, pause beat 2). PM/design will ask "but how does the agent know if it's right?" and that's the answer.
+If only one concept lands, it should be **verdict-judge information isolation** (slide 23, and pause beat 2 on slide 30). PM/design will ask "but how does the agent know if it's right?" and that's the answer.
 
 ## What's the deliverable?
 

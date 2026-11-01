@@ -9,7 +9,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: a workflow that schema-validates but references a non-existent skill is a bug waiting to fire at runtime — cross-reference validation catches it at author time. Invoked by `/flow:workflow validate <id>` (read-only, Tier 1) and by CI workflow schema gates, with a workflow id that maps to `.flow/workflows/<id>.workflow.yaml` (project-local override) or `plugins/flow/workflows/<id>.workflow.yaml`. Returns the JSON report below on stdout with exit 0 (`pass`), 1 (any cross-reference, tier-3, or native-slash violation), or 2 (schema invalid). Permitted skips: none — every step runs in order; a schema failure stops after Step 1 with `overall: schema_invalid`.
+Iron law: a workflow that schema-validates but references a non-existent skill is a bug waiting to fire at runtime — cross-reference validation catches it at author time. Invoked by `/flow:workflow validate <id>` (read-only, Tier 1) and by CI workflow schema gates, with a workflow id that maps to `<runtime dir>/workflows/<id>.workflow.yaml` (project-local override; `<runtime dir>`: `bin/flow-runtime-dir.sh` output) or `plugins/flow/workflows/<id>.workflow.yaml`. Returns the JSON report below on stdout with exit 0 (`pass`), 1 (any cross-reference, tier-3, or native-slash violation), or 2 (schema invalid). Permitted skips: none — every step runs in order; a schema failure stops after Step 1 with `overall: schema_invalid`.
 
 ## Output
 

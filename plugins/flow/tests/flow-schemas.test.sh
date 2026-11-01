@@ -234,13 +234,14 @@ _flow_test_begin "all plugin trigger templates validate against trigger.schema.j
 TRIGGER_FAILURES=0
 for tt in "$REPO_ROOT"/plugins/flow/triggers/templates/*.trigger.yaml; do
   TMP=$(mktemp -t trigger-fixture.XXXXXX.yaml)
-  # Substitute placeholders with regex-conformant values. Branch and repo
-  # must avoid '/' because the trigger metadata.id pattern only permits
-  # [a-z0-9-] (the slug is built from these).
+  # Substitute placeholders with the values /flow:watch gives them. A branch
+  # name holds '/', as every flow branch does; the metadata.id pattern
+  # permits only [a-z0-9-], so a template must build its id from
+  # ${BRANCH_SLUG}, never from ${BRANCH}.
   sed -e 's/\${PR}/42/g' \
-      -e 's|\${BRANCH_SLUG}|feature-example|g' \
+      -e 's|\${BRANCH_SLUG}|feature-issue-7-example|g' \
       -e 's|\${DEFAULT_BRANCH}|main|g' \
-      -e 's|\${BRANCH}|feature-example|g' \
+      -e 's|\${BRANCH}|feature/issue-7-example|g' \
       -e 's|\${REPO}|example-example|g' \
       -e "s|\\\${NOW}|2026-05-20T14:30:00Z|g" \
       -e 's/\${ISSUE}/100/g' \

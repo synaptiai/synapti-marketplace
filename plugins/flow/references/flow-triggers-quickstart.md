@@ -4,7 +4,7 @@ A 5-minute walkthrough of `/flow:trigger` and `/flow:watch`. By the end you'll h
 
 ## Prerequisites
 
-- flow v3.0.0 installed (`claude plugins list | grep flow`)
+- flow installed (`claude plugins list | grep flow`)
 - A git repository with at least one open PR (or willingness to create a synthetic one)
 - `gh` CLI authenticated (`gh auth status` exits 0)
 - `python3` with `PyYAML` available
@@ -51,8 +51,8 @@ This does two things:
 The trigger gets validated by `Skill(trigger-policy)` before write:
 - Schema shape check
 - `policy.forbidden_actions` MUST contain both `merge` and `release` — non-negotiable
-- `recursion_policy` MUST default to deny — triggered runs can't create/modify triggers
-- `target.workflow` must resolve to an existing workflow YAML (F13 check)
+- `recursion_policy` MUST deny: triggered runs can't modify or enable triggers, and can't create them unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is true
+- `target.workflow` must resolve to an existing workflow YAML
 
 If any check fails, the trigger is rejected and you see the violation. Fix the template or use a different one.
 
@@ -70,11 +70,12 @@ kind: FlowTrigger
 metadata:
   id: pr-42-watch
   enabled: true
-type: loop_prompt
+trigger:
+  type: loop_prompt
 target:
   workflow: address-pr
   goal: pr-42-address
-  command: /flow:run trigger pr-42-watch
+  command: '/flow:address 42'
 policy:
   forbidden_actions:
     - merge
@@ -98,9 +99,9 @@ Flow **cannot** invoke `/loop` from plugin code (architectural constraint of the
 The loop runs the per-iteration instructions until the stop conditions in the prompt are met. Each iteration:
 
 1. Checks the PR's CI + review threads
-2. If review comments exist, runs `/flow:address` for the PR
+2. If CI failed or review comments exist, runs `/flow:run trigger pr-42-watch`, which checks the trigger's policy and runs its target, `/flow:address 42`, once
 3. If CI failed, diagnoses and proposes a fix
-4. Records each iteration as a `trigger-fired` artifact in the decision journal
+4. Each `/flow:run trigger` the loop runs records a `trigger-fired` artifact in the decision journal; an iteration with nothing to do records nothing
 5. Checks the stop conditions; exits cleanly when they're met
 
 The trigger YAML stays static (it's the policy contract); the loop prompt is the executable per-iteration behavior.
@@ -109,13 +110,13 @@ The trigger YAML stays static (it's the policy contract); the loop prompt is the
 
 ```text
 /flow:trigger list             # show all triggers (plugin templates + project-local)
-/flow:trigger disable pr-42-watch   # toggle metadata.enabled to false (loop stops on next iteration)
+/flow:trigger disable pr-42-watch   # toggle metadata.enabled to false (/flow:run trigger then refuses to fire it)
 /flow:trigger enable pr-42-watch    # re-enable (validates trigger-policy before flipping)
 /flow:trigger run pr-42-watch       # single-shot execution of target.command (does NOT loop)
 /flow:trigger delete pr-42-watch    # remove trigger YAML (AskUserQuestion confirmation required)
 ```
 
-To stop watch mode, either Ctrl-C the `/loop` invocation or run `/flow:trigger disable pr-42-watch` (the next iteration sees `metadata.enabled: false` and exits).
+To stop watch mode, Ctrl-C the `/loop` invocation. `/flow:trigger disable pr-42-watch` makes `/flow:run trigger pr-42-watch` refuse to fire the trigger, but the loop prompt does not check `metadata.enabled`, so the `/loop` keeps running until you stop it.
 
 ## Step 7 — Single-shot execution
 
@@ -125,12 +126,12 @@ If you don't want a loop and just want to execute the trigger's target once:
 /flow:run trigger pr-42-watch
 ```
 
-This invokes the trigger's `target.command` exactly once, with `FLOW_TRIGGERED_RUN=true` set in the env so the target knows it was trigger-fired. Trigger-policy still enforces Tier 3 deny (`merge`, `release` blocked regardless of trigger settings).
+This invokes the trigger's `target.command` exactly once. Trigger-policy still refuses a trigger whose policy allows `merge` or `release`, and the tier hook asks before any merge or release the target runs.
 
 ## Common gotchas
 
-- **Triggers describe wake-up intent; they don't guarantee background execution.** In v3.0, only `manual | hook | loop_prompt` types are active. The runner-backed types (`github_actions`, `local_cron`, `local_daemon`) are valid schema but disabled — flipping `flow.triggers.allowedTypes` to include them is a separate decision per project.
-- **Recursion deny is a default, not a suggestion.** A trigger that fires `/flow:run trigger pr-42-watch` cannot also create new triggers. Flipping `recursion_policy.triggered_runs_may_create_triggers: true` requires explicit AskUserQuestion at trigger-creation time — the trigger-policy skill refuses to enable the trigger without it.
+- **Triggers describe wake-up intent; they don't guarantee background execution.** Only `manual | hook | loop_prompt` are in the default `flow.triggers.allowedTypes`. The runner-backed types (`github_actions`, `local_cron`, `local_daemon`) are valid schema, but flow ships no runner for them — adding them to `flow.triggers.allowedTypes` is a separate decision per project.
+- **Recursion deny is a default, not a suggestion.** A trigger that fires `/flow:run trigger pr-42-watch` cannot also create new triggers. The trigger-policy skill refuses a trigger with `recursion_policy.triggered_runs_may_create_triggers: true` unless the project or user settings set `flow.triggers.allowTriggerCreationFromTriggeredRun` to `true`, and refuses `_modify_triggers` or `_enable_triggers: true` whatever the setting.
 - **maxActiveTriggers caps growth.** Default 5 active triggers per project. Hitting the cap requires `/flow:trigger disable <existing>` before creating a new one. The cascade-resolved `flow.triggers.maxActiveTriggers` setting can raise it.
 
 ## Next steps
@@ -140,4 +141,4 @@ This invokes the trigger's `target.command` exactly once, with `FLOW_TRIGGERED_R
 - [`flow-goals-quickstart.md`](flow-goals-quickstart.md) — companion walkthrough for `/flow:goal`
 - [`../schemas/v1/trigger.schema.json`](../schemas/v1/trigger.schema.json) — schema source of truth
 - [`../skills/trigger-policy/SKILL.md`](../skills/trigger-policy/SKILL.md) — safety enforcement detail
-- [`../triggers/templates/`](../triggers/templates/) — plugin-shipped templates (pr-watch, ci-failure, nightly-maintenance)
+- [`../triggers/templates/`](../triggers/templates/) — plugin-shipped templates (pr-watch, ci-failure, issue-watch, branch-watch, nightly-maintenance)

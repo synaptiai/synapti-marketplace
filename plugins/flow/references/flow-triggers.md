@@ -1,6 +1,6 @@
 # FlowTrigger — wake-up intent contracts
 
-FlowTrigger is the flow plugin's project-local replacement for "background execution" — except flow makes NO claim to actually run things in the background. Plugins cannot invoke native `/loop` or scheduled tasks from plugin code. FlowTrigger artifacts declare WHEN flow should resume work and WHAT to do, but actual execution requires a runner: the user manually invoking `/loop`, a Stop hook firing, CI invoking a workflow, or (v3.1+) an external runner like GitHub Actions or local cron.
+FlowTrigger is the flow plugin's project-local replacement for "background execution" — except flow makes NO claim to actually run things in the background. Plugins cannot invoke native `/loop` or scheduled tasks from plugin code. FlowTrigger artifacts declare WHEN flow should resume work and WHAT to do, but actual execution requires a runner: the user manually invoking `/loop`, a Stop hook firing, or CI invoking a workflow. The schema also defines `github_actions`, `local_cron` and `local_daemon` triggers, but flow ships no runner for them.
 
 ## Trigger types (in the default `allowedTypes`)
 
@@ -20,13 +20,13 @@ FlowTrigger is the flow plugin's project-local replacement for "background execu
 
 ## Critical non-features
 
-Per the v3 non-goals — explicit about what FlowTrigger does NOT do:
+What FlowTrigger does NOT do:
 
 1. **No native /loop invocation.** Flow CANNOT invoke `/loop` from plugin code. `/flow:watch` generates a loop-prompt file; the user invokes `/loop` themselves.
 2. **No exactly-once guarantees.** Triggers describe wake-up intent; flow makes no claim that a trigger fires exactly once. Use idempotent target commands.
 3. **No background execution.** Triggers don't run in the background — they document when SOMEONE (user, hook, runner) should invoke `/flow:run`.
 4. **No Tier 3 autonomy.** `merge` and `release` are absolutely forbidden in every trigger's `policy.forbidden_actions`. Non-negotiable.
-5. **No recursive trigger creation.** `recursion_policy.triggered_runs_may_create_triggers` defaults to false. Flipping requires explicit user authorization at trigger-creation time.
+5. **No recursive trigger creation by default.** `recursion_policy.triggered_runs_may_create_triggers` defaults to false, and `trigger-policy` refuses a trigger that sets it to true unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is true. The setting is read from the whole settings cascade, so a team can turn it on in the repository's `.claude/settings.flow.json`; a repository can then ship a trigger that lets its runs create triggers together with the setting that accepts it, so read a repository's triggers before enabling them. A trigger that lets its runs modify or enable triggers is always refused.
 
 ## Lifecycle
 
@@ -56,8 +56,7 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 
 .flow/triggers/                          # Project-local trigger artifacts
 ├── pr-123-watch.trigger.yaml             # Tracked — team-shared trigger
-├── ci-failure-main.trigger.yaml          # Tracked
-└── pr-456-debug.local.yaml               # GITIGNORED — per-developer
+└── ci-failure-main.trigger.yaml          # Tracked
 
 .claude/flow-loop-<id>.md                # Generated loop-prompt (NOT in flow plugin tree)
                                           # /flow:watch creates this; user invokes /loop on it
@@ -67,18 +66,18 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 
 | Key | Default | Description |
 |---|---|---|
-| `flow.triggers.enabled` | `true` | Master switch; `false` turns `/flow:trigger` and `/flow:watch` off |
+| `flow.triggers.enabled` | `true` | Master switch; `false` turns `/flow:trigger`, `/flow:watch` and `/flow:run` off and hides the triggers section of `/flow:status` |
 | `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | `github_actions`, `local_cron` and `local_daemon` are schema-valid but allowed only when added here |
-| `flow.triggers.allowAutonomousMerge` | `false` | Hard-coded non-negotiable |
-| `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Recursion default |
-| `flow.triggers.defaultConcurrency` | `skip_if_running` | When triggers fire on top of in-flight runs |
+| `flow.triggers.allowAutonomousMerge` | `false` | Read from your user settings only, never a repository's. When `true`, the `trigger-policy` skill (step 2, `bin/flow-trigger-tier3-check.sh`) accepts a trigger whose `policy.forbidden_actions` leaves out `merge` or `release`. A merge or release the target runs still asks: `/flow:merge` and `/flow:release` ask first, and the tier hook asks again |
+| `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Whether `trigger-policy` step 3 accepts a trigger whose `recursion_policy.triggered_runs_may_create_triggers` is `true`: `false` refuses it, `true` accepts it. It covers creation only; a trigger that sets `_modify_triggers` or `_enable_triggers` to `true` is refused either way. Nothing checks at run time whether a command was started by a trigger |
+| `flow.triggers.defaultConcurrency` | `skip_if_running` | The concurrency policy `/flow:run trigger` and `/flow:trigger run` apply to a trigger whose file sets no `concurrency.policy`. A trigger's own `concurrency.policy` wins, and the templates `/flow:watch` fills all set one, so this applies to triggers written by hand |
 | `flow.triggers.maxActiveTriggers` | `5` | Cap on enabled triggers per project |
 
 ## Composition with other v3 primitives
 
 - **FlowGoal** — a trigger's `target.goal` field links to an active FlowGoal. The trigger's stop_conditions usually include `goal_status == achieved`.
 - **FlowWorkflow** — a trigger's `target.workflow` field declares which workflow it expects to run (e.g., `address-pr` for a PR-watch trigger).
-- **FlowRun** — every `/flow:run trigger <id>` invocation creates a new FlowRun. Repeated triggers create repeated runs; resumability still works per-run.
+- **FlowRun** — every `/flow:run trigger <id>` invocation whose target command keeps run state creates a new FlowRun, with the trigger's id in `metadata.trigger`. The concurrency check (`bin/flow-trigger-concurrency.sh <id>`) counts a run as this trigger's in flight only when that field is the trigger's id and `state.status` is `active`. A `run.yaml` it cannot read, or that is not a valid YAML mapping, stops the check with exit 1, since it may be this trigger's run. Repeated triggers create repeated runs; resumability still works per-run.
 
 ## /flow:watch UX (proof of plugin constraint)
 
@@ -116,6 +115,8 @@ The report the `trigger-policy` skill returns, in `validate` and `enforce` mode:
 ```
 
 `bin/flow-trigger-schema-check.sh <trigger.yaml>` is the skill's step 1: it validates the trigger against `schemas/v1/trigger.schema.json` in the plugin it ships in, prints one `SCHEMA_ERROR=` line per error, and exits 0 (valid), 2 (schema errors) or 1 (the trigger or the schema could not be read, or python3, PyYAML or jsonschema is missing).
+
+`bin/flow-trigger-recursion-check.sh <trigger.yaml>` is step 3: it prints one `RECURSION_VIOLATION=<flag>` line per refused `recursion_policy` flag and exits 0 (none), 2 (violations) or 1 (the trigger or the setting could not be read, or the setting is not `true` or `false`).
 
 ## References
 

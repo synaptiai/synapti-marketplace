@@ -57,7 +57,7 @@ Orphan evidence entries (evidence with no matching criterion): {list or "none"}
 
 ## Rationale vocabulary
 
-The Rationale column uses these fixed phrases so `commands/start.md` and `/flow:status` can group failures without parsing prose. Free text follows the phrase after an em dash.
+The Rationale column uses these fixed phrases. Free text follows the phrase after an em dash.
 
 | Rationale phrase | Emitted by |
 |---|---|

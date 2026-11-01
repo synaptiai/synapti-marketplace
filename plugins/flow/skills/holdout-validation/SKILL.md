@@ -10,7 +10,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: the holdout set stays hidden; scenario IDs only, never names or descriptions. Invoked by `/flow:start` Phase 4 VERIFY step 4, `/flow:address` Phase 4 step 3, and `/flow:review` Phase 3 fan-out (twice in Path A, once in Path B) with self-review findings, an evidence bundle draft, and a file list. Returns `Holdout validation: PASS` or `FINDINGS` with P1/P2/P3 rows citing `file:line`, mapped to visible acceptance criteria, consumed by verdict-judge. Permitted skips: none; with a missing input, evaluate what is available and note the gap, halting only when no file list is given.
+Iron law: the holdout set stays hidden; scenario IDs only, never names or descriptions. Invoked by `/flow:start` Phase 4 VERIFY step 4, `/flow:address` Phase 4 step 3, `/flow:pr` Phase 3, and `/flow:review` Phase 3 fan-out (twice in Path A, once in Path B) with self-review findings, an evidence bundle draft, and a file list. Returns `Holdout validation: PASS` or `FINDINGS` with P1/P2/P3 rows citing `file:line`, mapped to visible acceptance criteria, consumed by verdict-judge. Permitted skips: none; with a missing input, evaluate what is available and note the gap, halting only when no file list is given.
 
 ## Inputs
 
