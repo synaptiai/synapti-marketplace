@@ -134,7 +134,7 @@ else
   # The journal directory every flow reader and writer uses (bin/journal-dir.sh):
   # journal.dir, where a value from the repository settings that leaves the
   # repository is refused on stderr. On a branch whose name contains issue-N
-  # the journal is issue-N.md. On any other branch it is today's session
+  # the journal is issue-N.md. On any other branch it is the session
   # journal, session-YYYY-MM-DD.md, named by the local calendar day as
   # journal-append.sh and journal-record.sh name it: a session journal holds
   # one day of work with no issue number, not one branch's, and earlier days'

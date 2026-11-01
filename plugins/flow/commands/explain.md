@@ -34,11 +34,11 @@ JOURNAL_DIR=".decisions"
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 printf '%s\n' "JOURNAL_DIR=$JOURNAL_DIR"
 # On a branch whose name contains issue-N the journal is issue-N.md, with its
-# monthly auto-log trail. On any other branch it is today's session journal,
+# monthly auto-log trail. On any other branch it is the session journal of today,
 # session-YYYY-MM-DD.md, named by the local calendar day as journal-append.sh
-# and journal-record.sh name it, with today's session trail: a session
-# journal holds one day of work with no issue number, not one branch's, and
-# earlier days' files are not loaded here.
+# and journal-record.sh name it, with the session trail of today: a session
+# journal holds one day of work with no issue number, not of one branch, and
+# files of earlier days are not loaded here.
 if [ -n "$ISSUE_NUM" ]; then
   JOURNAL_FILE="$JOURNAL_DIR/issue-$ISSUE_NUM.md"
   AUTOLOG_NAME="issue-$ISSUE_NUM.*.md"

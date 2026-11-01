@@ -286,7 +286,7 @@ else
       elif [ -f "$RUN_DIR/events.jsonl" ]; then
         ACT_COUNT=$(wc -l < "$RUN_DIR/events.jsonl" 2>/dev/null | tr -d ' ')
       fi
-      # The run's workflow (metadata.workflow), phase (state.current_phase)
+      # The workflow of the run (metadata.workflow), phase (state.current_phase)
       # and status (state.status), from run.yaml. `-` is a run.yaml or field
       # that is absent; `unreadable` a run.yaml that does not parse or is not
       # shaped as a run; `not-read` a run.yaml that is a symlink; `unknown` a

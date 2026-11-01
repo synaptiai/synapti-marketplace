@@ -91,7 +91,7 @@ printf '%s\n' "### Working Tree"
 # Read-only git only, so the section works offline. UNCOMMITTED counts every
 # `git status --porcelain` line (staged, unstaged, untracked and conflicted).
 # CONFLICTS is yes while any path is unmerged. AHEAD counts the commits on HEAD
-# that the default branch lacks: the remote's default branch (origin/HEAD) when
+# that the default branch lacks: the default branch of the remote (origin/HEAD) when
 # it is known, else a local main or master; with neither it is unknown, not 0.
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   printf '%s\n' "STATE=unavailable"

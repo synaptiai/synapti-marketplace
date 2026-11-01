@@ -59,7 +59,7 @@ esac
 printf '%s\n' "### Resolve Mode"
 # Quote parenthesized fallback per command-output-format.md rule 2.
 printf '%s\n' "RESOLVE_TARGET=${RESOLVE_TARGET:-\"(none — in-progress merge mode)\"}"
-# git rev-parse --git-path names the files in this checkout's git directory,
+# git rev-parse --git-path names the files in the git directory of this checkout,
 # which in a linked worktree is not .git (there .git is a file).
 MERGE_HEAD_PATH=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
 REBASE_MERGE_PATH=$(git rev-parse --git-path rebase-merge 2>/dev/null)
