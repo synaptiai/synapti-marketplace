@@ -113,7 +113,7 @@
       "properties": {
         "policy": {
           "enum": ["skip_if_running", "queue", "cancel_previous"],
-          "default": "skip_if_running"
+          "description": "What /flow:run does when a run this trigger started is still active. When unset, the setting flow.triggers.defaultConcurrency applies (shipped as skip_if_running)."
         }
       }
     },
@@ -124,7 +124,7 @@
     },
     "recursion_policy": {
       "type": "object",
-      "description": "By default, triggered runs may NOT create or modify triggers — prevents trigger-creates-trigger loops.",
+      "description": "By default, triggered runs may NOT create, modify or enable triggers — prevents trigger-creates-trigger loops. The trigger-policy check refuses a trigger that sets any of the three to true, except triggered_runs_may_create_triggers when the setting flow.triggers.allowTriggerCreationFromTriggeredRun is true.",
       "additionalProperties": false,
       "properties": {
         "triggered_runs_may_create_triggers": { "type": "boolean", "default": false },

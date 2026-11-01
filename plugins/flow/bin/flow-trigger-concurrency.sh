@@ -6,7 +6,9 @@
 #   flow-trigger-concurrency.sh <trigger-id>
 #
 # Run from the repository root. Reads .flow/triggers/<id>.trigger.yaml for its
-# concurrency.policy, and every .flow/runs/<run>/run.yaml for runs this
+# concurrency.policy (when the trigger sets none, the setting
+# flow.triggers.defaultConcurrency, read with cascade-resolve.sh, applies),
+# and every .flow/runs/<run>/run.yaml for runs this
 # trigger started: a run whose metadata.trigger is <id> and whose
 # state.status is active is in flight. A run that records no trigger, or
 # another trigger, is never this trigger's, whatever its workflow.
@@ -14,7 +16,8 @@
 # Stdout:
 #   CONCURRENCY_POLICY=<skip_if_running|queue|cancel_previous>
 #   POLICY_SOURCE=trigger     the trigger sets concurrency.policy
-#   POLICY_SOURCE=default     it does not; skip_if_running applies
+#   POLICY_SOURCE=setting     it does not; flow.triggers.defaultConcurrency
+#                             (shipped as skip_if_running) applies
 #   IN_FLIGHT=<run id>        one line per run in flight, oldest id first
 #
 # Never read (each is skipped, with one line on stderr): a symbolic link at
@@ -22,9 +25,10 @@
 # checkout), and a run.yaml that is not a YAML mapping.
 #
 # Exits: 0 the check ran; 1 the id is not a trigger id, the trigger is
-# missing, a symbolic link, not a regular file or not a YAML mapping, its
-# concurrency.policy is not one of the three, or python3 or PyYAML is missing
-# (one flow-trigger-concurrency line on stderr says which).
+# missing, a symbolic link, not a regular file or not a YAML mapping, the
+# policy (the trigger's or the setting's) is not one of the three, the setting
+# cannot be read, or python3 or PyYAML is missing (one flow-trigger-concurrency
+# line on stderr says which).
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -42,16 +46,28 @@ unset CDPATH
 [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
 _flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
+# The setting is read with the cascade-resolve.sh beside this script, found
+# through any symbolic links to it.
+_self="$0"
+_hops=0
+while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
+  _link=$(readlink "$_self") || break
+  case "$_link" in
+    /*) _self="$_link" ;;
+    *)  _self="$(dirname "$_self")/$_link" ;;
+  esac
+  _hops=$((_hops + 1))
+done
+SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || { printf 'flow-trigger-concurrency: cannot find its own directory\n' >&2; exit 1; }
 
-
-python3 - "${1-}" <<'PYEOF'
+python3 - "${1-}" "$SELF_DIR/cascade-resolve.sh" <<'PYEOF'
 import os, sys
 try:
     _flow_cwd = os.path.realpath(os.getcwd())
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import errno, re, stat
+import errno, re, stat, subprocess
 
 def fail(msg):
     sys.stderr.write("flow-trigger-concurrency: %s\n" % msg)
@@ -110,7 +126,14 @@ if not isinstance(trigger, dict):
 conc = trigger.get("concurrency")
 policy = conc.get("policy") if isinstance(conc, dict) else None
 if policy is None:
-    policy, source = "skip_if_running", "default"
+    # The cascade's own message, if any, goes straight to stderr.
+    r = subprocess.run([sys.argv[2], "--default", "skip_if_running", ".flow.triggers.defaultConcurrency"],
+                       stdout=subprocess.PIPE)
+    if r.returncode != 0:
+        fail("flow.triggers.defaultConcurrency could not be read (cascade-resolve.sh exited %d)" % r.returncode)
+    policy, source = r.stdout.decode("utf-8", "replace").strip(), "setting"
+    if policy not in POLICIES:
+        fail("flow.triggers.defaultConcurrency is %r, not one of %s" % (policy[:40], ", ".join(POLICIES)))
 else:
     source = "trigger"
 if policy not in POLICIES:

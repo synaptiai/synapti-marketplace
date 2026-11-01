@@ -24,6 +24,25 @@
 #   C9 the run schema refuses a run without metadata.trigger (every run not
 #      started by a trigger), or accepts a trigger id the trigger schema
 #      would refuse
+#
+# flow.triggers.defaultConcurrency (the policy for a trigger that sets none):
+#   D1 a trigger with no concurrency.policy gets skip_if_running whatever the
+#      setting says
+#   D2 the setting overrides a trigger's own concurrency.policy
+#   D3 the setting is read from the project file only, not the user's
+#   D4 a value outside the three policies is used, or reads as the default,
+#      instead of stopping the check
+#
+# flow.triggers.allowTriggerCreationFromTriggeredRun, and trigger-policy step
+# 3 (bin/flow-trigger-recursion-check.sh, run from the skill's fence):
+#   R1 with the setting false (the default) a trigger whose
+#      triggered_runs_may_create_triggers is true passes
+#   R2 with the setting true, that trigger is still refused
+#   R3 the setting also lets triggered_runs_may_modify_triggers or
+#      _enable_triggers through, which its name and description do not cover
+#   R4 a setting value that is not a boolean reads as true
+#   R5 a trigger that is a symbolic link is read
+#   R6 the skill's fence does not find the script in an installed plugin
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -199,3 +218,170 @@ assert_equal 0 "$(_schema_errors null)" "a run with metadata.trigger null valida
 assert_equal 0 "$(_schema_errors pr-42-watch)" "a run with metadata.trigger pr-42-watch validates"
 assert_equal 1 "$(_schema_errors ../outside)" "a run with metadata.trigger ../outside is refused"
 assert_equal 1 "$(_schema_errors Pr-42)" "a run with metadata.trigger Pr-42 is refused"
+
+# --- flow.triggers.defaultConcurrency ------------------------------------------
+
+_settings() {
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' "$1" > "$E2E_REPO/.claude/settings.flow.json"
+  printf 'project settings: %s\n' "$1" | _e2e_art
+}
+
+_flow_test_begin "a trigger with no concurrency.policy takes flow.triggers.defaultConcurrency (D1)"
+e2e_new run-trigger-default-shipped
+e2e_describe "the trigger sets no concurrency.policy; no setting, so the shipped default applies"
+e2e_repo main
+_trigger pr-42-watch
+e2e_run_block "$RUN_MD" RUN_CONCURRENCY_BLOCK 'trigger pr-42-watch'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "CONCURRENCY_POLICY=skip_if_running"
+e2e_expect_line "POLICY_SOURCE=setting"
+e2e_expect_clean_edges
+
+e2e_new run-trigger-default-project
+e2e_describe "the trigger sets no concurrency.policy; the project sets flow.triggers.defaultConcurrency to queue"
+e2e_repo main
+_trigger pr-42-watch
+_settings '{"flow":{"triggers":{"defaultConcurrency":"queue"}}}'
+e2e_run_block "$RUN_MD" RUN_CONCURRENCY_BLOCK 'trigger pr-42-watch'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "CONCURRENCY_POLICY=queue"
+e2e_expect_line "POLICY_SOURCE=setting"
+e2e_expect_clean_edges
+
+_flow_test_begin "the user's flow.triggers.defaultConcurrency applies too (D3)"
+e2e_new run-trigger-default-user
+e2e_describe "the trigger sets no concurrency.policy; the user settings set cancel_previous"
+e2e_repo main
+_trigger pr-42-watch
+e2e_user_settings '{"flow":{"triggers":{"defaultConcurrency":"cancel_previous"}}}'
+e2e_run_block "$RUN_MD" RUN_CONCURRENCY_BLOCK 'trigger pr-42-watch'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "CONCURRENCY_POLICY=cancel_previous"
+e2e_expect_clean_edges
+
+_flow_test_begin "the trigger's own concurrency.policy wins over the setting (D2)"
+e2e_new run-trigger-default-overridden
+e2e_describe "the trigger sets cancel_previous; the project sets defaultConcurrency to queue"
+e2e_repo main
+_trigger pr-42-watch cancel_previous
+_settings '{"flow":{"triggers":{"defaultConcurrency":"queue"}}}'
+e2e_run_block "$RUN_MD" RUN_CONCURRENCY_BLOCK 'trigger pr-42-watch'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "CONCURRENCY_POLICY=cancel_previous"
+e2e_expect_line "POLICY_SOURCE=trigger"
+e2e_expect_clean_edges
+
+_flow_test_begin "a defaultConcurrency outside the three policies stops the check (D4)"
+e2e_new run-trigger-default-bogus
+e2e_describe "the trigger sets no concurrency.policy; the project sets defaultConcurrency to run_anyway"
+e2e_repo main
+_trigger pr-42-watch
+_settings '{"flow":{"triggers":{"defaultConcurrency":"run_anyway"}}}'
+e2e_run_block "$RUN_MD" RUN_CONCURRENCY_BLOCK 'trigger pr-42-watch'
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_no_out "CONCURRENCY_POLICY="
+e2e_expect_err "flow.triggers.defaultConcurrency"
+e2e_expect_clean_edges
+
+# --- trigger-policy step 3: recursion_policy and its setting -------------------
+
+RECURSION=bin/flow-trigger-recursion-check.sh
+
+# _recursive_trigger <file> <create> <modify> <enable> — a trigger whose
+# recursion_policy sets the three flags; "unset" leaves a flag out.
+_recursive_trigger() {
+  {
+    printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowTrigger\n'
+    printf 'metadata:\n  id: rec\n  enabled: true\n  created_at: "2026-10-30T10:00:00Z"\n'
+    printf 'trigger:\n  type: manual\ntarget:\n  command: "/flow:status"\n'
+    printf 'policy:\n  forbidden_actions: [merge, release]\n'
+    printf 'recursion_policy:\n'
+    [ "$2" = unset ] || printf '  triggered_runs_may_create_triggers: %s\n' "$2"
+    [ "$3" = unset ] || printf '  triggered_runs_may_modify_triggers: %s\n' "$3"
+    [ "$4" = unset ] || printf '  triggered_runs_may_enable_triggers: %s\n' "$4"
+  } > "$E2E_REPO/$1"
+  printf 'trigger %s: create=%s modify=%s enable=%s\n' "$1" "$2" "$3" "$4" | _e2e_art
+}
+
+_flow_test_begin "with the setting false (the default) a trigger may not let its runs create triggers (R1)"
+e2e_new recursion-create-default
+e2e_describe "triggered_runs_may_create_triggers: true; no setting"
+e2e_repo main
+_recursive_trigger t.trigger.yaml true unset unset
+e2e_run_bin "$RECURSION" t.trigger.yaml
+e2e_expect_equal 2 "$E2E_RC" "the exit status"
+e2e_expect_line "RECURSION_VIOLATION=triggered_runs_may_create_triggers"
+e2e_expect_clean_edges
+
+_flow_test_begin "with the setting true a trigger may let its runs create triggers (R2)"
+e2e_new recursion-create-allowed
+e2e_describe "triggered_runs_may_create_triggers: true; the project sets allowTriggerCreationFromTriggeredRun true"
+e2e_repo main
+_recursive_trigger t.trigger.yaml true false unset
+_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":true}}}'
+e2e_run_bin "$RECURSION" t.trigger.yaml
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_no_out "RECURSION_VIOLATION="
+e2e_expect_clean_edges
+
+_flow_test_begin "the setting does not cover modify or enable (R3)"
+e2e_new recursion-modify-enable
+e2e_describe "all three flags true; the project sets allowTriggerCreationFromTriggeredRun true"
+e2e_repo main
+_recursive_trigger t.trigger.yaml true true true
+_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":true}}}'
+e2e_run_bin "$RECURSION" t.trigger.yaml
+e2e_expect_equal 2 "$E2E_RC" "the exit status"
+e2e_expect_line "RECURSION_VIOLATION=triggered_runs_may_modify_triggers"
+e2e_expect_line "RECURSION_VIOLATION=triggered_runs_may_enable_triggers"
+e2e_expect_no_line "RECURSION_VIOLATION=triggered_runs_may_create_triggers"
+e2e_expect_clean_edges
+
+e2e_new recursion-none
+e2e_describe "all three flags false or unset; no setting"
+e2e_repo main
+_recursive_trigger t.trigger.yaml false unset false
+e2e_run_bin "$RECURSION" t.trigger.yaml
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_no_out "RECURSION_VIOLATION="
+e2e_expect_clean_edges
+
+_flow_test_begin "a setting that is not a boolean stops the check (R4)"
+e2e_new recursion-setting-string
+e2e_describe "triggered_runs_may_create_triggers: true; the project sets allowTriggerCreationFromTriggeredRun to the string yes"
+e2e_repo main
+_recursive_trigger t.trigger.yaml true unset unset
+_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":"yes"}}}'
+e2e_run_bin "$RECURSION" t.trigger.yaml
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_no_out "RECURSION_VIOLATION="
+e2e_expect_err "flow.triggers.allowTriggerCreationFromTriggeredRun"
+e2e_expect_clean_edges
+
+_flow_test_begin "a trigger that is a symbolic link is not read (R5)"
+e2e_new recursion-symlink
+e2e_describe "the trigger is a symbolic link to a trigger outside the repository"
+e2e_repo main
+_recursive_trigger t.trigger.yaml false false false
+mv "$E2E_REPO/t.trigger.yaml" "$E2E_DIR/outside.trigger.yaml"
+ln -s "$E2E_DIR/outside.trigger.yaml" "$E2E_REPO/t.trigger.yaml"
+e2e_run_bin "$RECURSION" t.trigger.yaml
+e2e_expect_equal 1 "$E2E_RC" "the exit status"
+e2e_expect_err "symbolic link"
+e2e_expect_clean_edges
+
+_flow_test_begin "trigger-policy step 3's fence runs the check from an installed plugin (R6)"
+e2e_new recursion-skill-fence
+e2e_describe "the step 3 fence of skills/trigger-policy/SKILL.md, run with CLAUDE_PLUGIN_ROOT set, on a trigger whose runs may create triggers"
+e2e_repo main
+_recursive_trigger t.trigger.yaml true unset unset
+# The fence is indented under its list item: take the one that runs the
+# recursion check out and dedent it.
+awk '/^   ```bash$/{f=1; buf=""; next} f&&/^   ```$/{ if (buf ~ /flow-trigger-recursion-check/) { printf "%s", buf; exit } f=0; next } f{sub(/^   /,""); buf = buf $0 "\n"}' \
+  "$E2E_PLUGIN_DIR/skills/trigger-policy/SKILL.md" > "$E2E_DIR/fence.sh.raw"
+e2e_expect_equal yes "$(grep -q 'bin/flow-trigger-recursion-check.sh' "$E2E_DIR/fence.sh.raw" && echo yes || echo no)" "whether the step 3 fence was extracted"
+_e2e_run_code "skills/trigger-policy/SKILL.md (step 3 fence)" "" "TRIGGER_YAML=t.trigger.yaml"
+e2e_expect_equal 2 "$E2E_RC" "the exit status"
+e2e_expect_line "RECURSION_VIOLATION=triggered_runs_may_create_triggers"
+e2e_expect_clean_edges

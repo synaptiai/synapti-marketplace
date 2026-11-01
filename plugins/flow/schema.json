@@ -730,7 +730,7 @@
             "allowTriggerCreationFromTriggeredRun": {
               "type": "boolean",
               "default": false,
-              "description": "Not read by any command, hook or script; changing this value has no effect. Each trigger's own recursion_policy decides whether a run it starts may create, modify or enable triggers, and the trigger-policy check reports any of those set to true as a violation."
+              "description": "Whether the trigger-policy check accepts a trigger whose recursion_policy.triggered_runs_may_create_triggers is true. False (the default) refuses such a trigger; true accepts it. It covers creation only: a trigger that sets triggered_runs_may_modify_triggers or triggered_runs_may_enable_triggers to true is refused either way. The check runs when a trigger is created, enabled or run; nothing checks at run time whether a triggered command creates a trigger."
             },
             "defaultConcurrency": {
               "enum": [
@@ -739,7 +739,7 @@
                 "cancel_previous"
               ],
               "default": "skip_if_running",
-              "description": "Not read by any command, hook or script; changing this value has no effect. Each trigger sets its own concurrency.policy."
+              "description": "The concurrency policy for a trigger whose file sets no concurrency.policy: what /flow:run trigger and /flow:trigger run do when a run that trigger started is still active. skip_if_running stops with a notice, queue records a journal artifact, cancel_previous marks the active runs cancelled before starting. A trigger's own concurrency.policy wins; the templates /flow:watch fills all set one."
             },
             "maxActiveTriggers": {
               "type": "integer",

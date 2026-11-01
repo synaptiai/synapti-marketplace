@@ -46,7 +46,7 @@ fi
 1. Read `.flow/triggers/<id>.trigger.yaml`. Error if not found.
 2. Check `metadata.enabled: true`. Error if disabled.
 3. Invoke `Skill(trigger-policy)` in `enforce` mode. Abort on violation (Tier 3 deny, recursion deny, etc.).
-4. Run the concurrency check below. It prints the policy (`CONCURRENCY_POLICY=`, the trigger's `concurrency.policy`, or `skip_if_running` when the trigger sets none) and one `IN_FLIGHT=<run id>` line per run of this trigger in flight: a FlowRun whose `metadata.trigger` is this trigger's id and whose `state.status` is `active`. A run that records no trigger, or another trigger, is never in flight for this one, whatever its workflow. A run under a symlinked `.flow`, `.flow/runs` or run directory, or whose `run.yaml` is a symlink, is not read and counts as absent. A non-zero exit means the check could not run (its message is on stderr): stop. Then apply the policy:
+4. Run the concurrency check below. It prints the policy (`CONCURRENCY_POLICY=`: the trigger's `concurrency.policy`, or the setting `flow.triggers.defaultConcurrency`, shipped as `skip_if_running`, when the trigger sets none) and one `IN_FLIGHT=<run id>` line per run of this trigger in flight: a FlowRun whose `metadata.trigger` is this trigger's id and whose `state.status` is `active`. A run that records no trigger, or another trigger, is never in flight for this one, whatever its workflow. A run under a symlinked `.flow`, `.flow/runs` or run directory, or whose `run.yaml` is a symlink, is not read and counts as absent. A non-zero exit means the check could not run (its message is on stderr): stop. Then apply the policy:
    - `skip_if_running` — when any run is in flight, exit 0 with a notice naming it.
    - `queue` — queue the run (logs a journal artifact only; nothing holds the run for later execution).
    - `cancel_previous` — transition each in-flight run to `cancelled` (`run-state-management` step 4) before starting.
@@ -66,7 +66,7 @@ case "$RUN_ARGS" in *" "*) TRIGGER_ID=${RUN_ARGS#* } ;; esac
 
 ## Recursion enforcement
 
-Recursion is checked when the trigger is validated, not while the target runs. `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` default to `false`, and `trigger-policy` (step 3 above) rejects a trigger that sets any of them to `true`. No command, hook or script detects at run time that a command was started by a trigger, so nothing stops the target command from creating, enabling or modifying a trigger; do not do so while running a trigger's target.
+Recursion is checked when the trigger is validated, not while the target runs. `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` default to `false`. `trigger-policy` (step 3 above) rejects a trigger that sets `_modify_triggers` or `_enable_triggers` to `true`, and one that sets `_create_triggers` to `true` unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is `true`. No command, hook or script detects at run time that a command was started by a trigger, so nothing stops the target command from creating, enabling or modifying a trigger; do not do so while running a trigger's target.
 
 The target command's actions keep their tiers: the `tier-gate.sh` hook applies to every Bash command, so push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate` and `tiers.issueAssign`, and merge, release and pushing or deleting a tag always ask. In `claude -p` an ask is a refusal.
 

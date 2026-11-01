@@ -26,7 +26,7 @@ What FlowTrigger does NOT do:
 2. **No exactly-once guarantees.** Triggers describe wake-up intent; flow makes no claim that a trigger fires exactly once. Use idempotent target commands.
 3. **No background execution.** Triggers don't run in the background — they document when SOMEONE (user, hook, runner) should invoke `/flow:run`.
 4. **No Tier 3 autonomy.** `merge` and `release` are absolutely forbidden in every trigger's `policy.forbidden_actions`. Non-negotiable.
-5. **No recursive trigger creation.** `recursion_policy.triggered_runs_may_create_triggers` defaults to false. Flipping requires explicit user authorization at trigger-creation time.
+5. **No recursive trigger creation by default.** `recursion_policy.triggered_runs_may_create_triggers` defaults to false, and `trigger-policy` refuses a trigger that sets it to true unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is true. A trigger that lets its runs modify or enable triggers is always refused.
 
 ## Lifecycle
 
@@ -69,8 +69,8 @@ plugins/flow/triggers/templates/         # Plugin-shipped templates
 | `flow.triggers.enabled` | `true` | Master switch; `false` turns `/flow:trigger`, `/flow:watch` and `/flow:run` off and hides the triggers section of `/flow:status` |
 | `flow.triggers.allowedTypes` | `[manual, hook, loop_prompt]` | `github_actions`, `local_cron` and `local_daemon` are schema-valid but allowed only when added here |
 | `flow.triggers.allowAutonomousMerge` | `false` | Not read by any command, hook or script; setting it to `true` changes nothing. The `trigger-policy` skill (step 2) refuses every trigger whose `policy.forbidden_actions` does not list both `merge` and `release` |
-| `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Not read by any command, hook or script. Each trigger's own `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` (default `false` in the trigger schema) decide this; `trigger-policy` step 3 rejects a trigger that sets any of them to `true`. Nothing checks at run time whether a command was started by a trigger |
-| `flow.triggers.defaultConcurrency` | `skip_if_running` | Not read by any command, hook or script. Each trigger sets its own `concurrency.policy`, which defaults to `skip_if_running` in the trigger schema; `/flow:run trigger` and `/flow:trigger run` read that field |
+| `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | Whether `trigger-policy` step 3 accepts a trigger whose `recursion_policy.triggered_runs_may_create_triggers` is `true`: `false` refuses it, `true` accepts it. It covers creation only; a trigger that sets `_modify_triggers` or `_enable_triggers` to `true` is refused either way. Nothing checks at run time whether a command was started by a trigger |
+| `flow.triggers.defaultConcurrency` | `skip_if_running` | The concurrency policy `/flow:run trigger` and `/flow:trigger run` apply to a trigger whose file sets no `concurrency.policy`. A trigger's own `concurrency.policy` wins, and the templates `/flow:watch` fills all set one, so this applies to triggers written by hand |
 | `flow.triggers.maxActiveTriggers` | `5` | Cap on enabled triggers per project |
 
 ## Composition with other v3 primitives
@@ -115,6 +115,8 @@ The report the `trigger-policy` skill returns, in `validate` and `enforce` mode:
 ```
 
 `bin/flow-trigger-schema-check.sh <trigger.yaml>` is the skill's step 1: it validates the trigger against `schemas/v1/trigger.schema.json` in the plugin it ships in, prints one `SCHEMA_ERROR=` line per error, and exits 0 (valid), 2 (schema errors) or 1 (the trigger or the schema could not be read, or python3, PyYAML or jsonschema is missing).
+
+`bin/flow-trigger-recursion-check.sh <trigger.yaml>` is step 3: it prints one `RECURSION_VIOLATION=<flag>` line per refused `recursion_policy` flag and exits 0 (none), 2 (violations) or 1 (the trigger or the setting could not be read, or the setting is not `true` or `false`).
 
 ## References
 
