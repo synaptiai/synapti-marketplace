@@ -4,7 +4,7 @@ A Claude Code plugin that replaces command-driven GitHub workflow automation wit
 
 ## Flow Runtime Layer
 
-Flow keeps a **runtime layer** at `.flow/` on top of the skill + command framework. Its primitives give the plugin durable goals, inspectable workflows, declarative triggers, and resumable execution:
+Flow keeps a **runtime layer** in the runtime directory, `flow.runtime.stateDir` (default `.flow`, a relative path inside the repository; in this README `.flow/` stands for it), on top of the skill + command framework. Its primitives give the plugin durable goals, inspectable workflows, declarative triggers, and resumable execution:
 
 - **FlowGoal** — `.flow/goals/<id>.goal.yaml`, durable completion contracts (`/flow:goal status | create | inspect | evaluate | pause | resume | clear | history`).
 - **FlowWorkflow** — `plugins/flow/workflows/*.workflow.yaml`, machine-readable process contracts for every `/flow:*` command (`/flow:workflow list | inspect | validate | graph`).
@@ -297,6 +297,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-trigger-recursion-check.sh — refuses a trigger whose runs may modify or enable triggers, or create them unless flow.triggers.allowTriggerCreationFromTriggeredRun is true
   ├── flow-watch-create.sh  — writes an issue-watch or branch-watch trigger and its loop prompt for /flow:watch
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
+  ├── flow-runtime-dir.sh   — prints the runtime directory: flow.runtime.stateDir (default .flow), held inside the repository with no symlink on the way, or .flow with one warning
   ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink (exit 2), or says the check could not run (exit 3); needs python3 but not PyYAML
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
   Decision journal

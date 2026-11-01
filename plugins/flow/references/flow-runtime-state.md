@@ -1,6 +1,6 @@
 # Flow runtime state — the `.flow/` directory
 
-The flow plugin's runtime layer stores project-local execution state under `.flow/`. This document describes what lives there, what's tracked vs gitignored, and how the layer composes with the existing decision journal at `.decisions/`.
+The flow plugin's runtime layer stores project-local execution state in the runtime directory: `flow.runtime.stateDir`, default `.flow`, a path relative to the repository top. Every reader and writer takes it from `bin/flow-runtime-dir.sh` (Python callers from `runtime_dir()` in `bin/_repo_dir.py`). A value that is absolute, starts with `~`, has a `..` component, or does not end inside the repository with no symlink on the way prints one warning naming the setting and `.flow` is used. In this document and the other references, `.flow/` stands for the runtime directory. It is not the per-user state directory (`FLOW_STATE_DIR`, default `~/.claude/flow-state`). This document describes what lives there, what's tracked vs gitignored, and how the layer composes with the existing decision journal at `.decisions/`.
 
 ## Directory layout
 
