@@ -179,6 +179,7 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `visualVerification.screenshotDir` | `.screenshots` | [`visual-verification-output.md`](visual-verification-output.md) (agent instruction) |
 | `duplication.enabled`, `minLines`, `minTokens`, `excludePaths` | `true`, `5`, `20`, test, vendor, build, journal and `.flow` paths | `bin/flow-clone-scan.sh`, run by `/flow:pr` and `/flow:review` |
 | `flow.runtime.enabled` | `true` | every command that creates a FlowRun, `hooks/scripts/session-end-state.sh` |
+| `flow.runtime.runRetentionDays` | `30` | `hooks/scripts/session-end-state.sh`: removes runs that ended (completed or cancelled) and whose `run.yaml` was last written more than this many days ago |
 | `flow.goals.enabled` | `true` | `/flow:goal`, `/flow:start`, `/flow:pr`, `/flow:merge`, `/flow:status`, `/flow:learn` |
 | `flow.goals.goalCreation` | `auto` | `/flow:start`, `/flow:pr`, `/flow:merge`, `/flow:setup` |
 | `flow.goals.requireGoalForStart` | not set (deprecated) | read only to map onto `goalCreation` (`bin/flow-migrate-settings.sh`, `/flow:start`) |
@@ -193,7 +194,7 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `flow.triggers.maxActiveTriggers` | `5` | `trigger-policy` skill |
 | `replyStyle.enabled`, `constructions`, `extraPatterns` | `false`, not set, not set | `hooks/scripts/reply-style-check.sh` |
 
-Settings that nothing reads (setting them changes nothing): `closedLoop.enabled`, `closedLoop.requireRuntimeVerification`, `visualVerification.enabled`, `flow.runtime.stateDir` (the runtime directory is always `.flow`), `flow.runtime.runRetentionDays`, `flow.triggers.allowAutonomousMerge`, `flow.triggers.allowTriggerCreationFromTriggeredRun`, `flow.triggers.defaultConcurrency`.
+Settings that nothing reads (setting them changes nothing): `closedLoop.enabled`, `closedLoop.requireRuntimeVerification`, `visualVerification.enabled`, `flow.runtime.stateDir` (the runtime directory is always `.flow`), `flow.triggers.allowAutonomousMerge`, `flow.triggers.allowTriggerCreationFromTriggeredRun`, `flow.triggers.defaultConcurrency`.
 
 ## Quality Gates
 
@@ -377,4 +378,4 @@ Reviewers will see the change in the PR diff. Anyone can override with their own
 
 ## Hook Override
 
-Hook scripts always run. These settings change what a hook does: `tiers.*` (`tier-gate.sh` and the `git`/`gh` wrappers), `testing.taskCompletionGate` (`verify-task-completion.sh`), `testing.qualityCommandPatterns` (`record-quality-run.sh`), `minimalScope` (`ask-issue-create.sh`), `flow.goals.stopHookEnforcement`, `flow.goals.failAfterStuckTurns` and `flow.goals.executeVerificationCommands` (the Stop hook scripts), `flow.runtime.enabled` (`session-end-state.sh`), `learning.enabled`, `learning.sources` and `learning.transcriptDir` (`session-end-learn.sh`), `replyStyle.*` (`reply-style-check.sh`), and `systemOne.uses` for the `quality.tests-ran`, `guard.planted-instructions`, `goal.judge` and `goal.warn-evidence` sites (`record-quality-run.sh`, `s1-screen-text.sh`, the Stop hook scripts). To change anything else, edit the script in `plugins/flow/hooks/scripts/`.
+Hook scripts always run. These settings change what a hook does: `tiers.*` (`tier-gate.sh` and the `git`/`gh` wrappers), `testing.taskCompletionGate` (`verify-task-completion.sh`), `testing.qualityCommandPatterns` (`record-quality-run.sh`), `minimalScope` (`ask-issue-create.sh`), `flow.goals.stopHookEnforcement`, `flow.goals.failAfterStuckTurns` and `flow.goals.executeVerificationCommands` (the Stop hook scripts), `flow.runtime.enabled` and `flow.runtime.runRetentionDays` (`session-end-state.sh`), `learning.enabled`, `learning.sources` and `learning.transcriptDir` (`session-end-learn.sh`), `replyStyle.*` (`reply-style-check.sh`), and `systemOne.uses` for the `quality.tests-ran`, `guard.planted-instructions`, `goal.judge` and `goal.warn-evidence` sites (`record-quality-run.sh`, `s1-screen-text.sh`, the Stop hook scripts). To change anything else, edit the script in `plugins/flow/hooks/scripts/`.
