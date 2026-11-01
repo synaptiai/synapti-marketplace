@@ -32,10 +32,10 @@
 # Exits: 0 the check ran; 1 the id is not a trigger id, the trigger is
 # missing, a symbolic link, not a regular file or not a YAML mapping, the
 # policy (the trigger's or the setting's) is not one of the three, the setting
-# cannot be read, a run.yaml cannot be read, is not valid YAML or is not a
-# YAML mapping (it may be this trigger's active run, so the check cannot say
-# what is in flight), or python3 or PyYAML is missing (one
-# flow-trigger-concurrency line on stderr says which).
+# cannot be read, <runtime dir>/runs cannot be listed, a run.yaml cannot be
+# read, is not valid YAML or is not a YAML mapping (it may be this trigger's
+# active run, so the check cannot say what is in flight), or python3 or
+# PyYAML is missing (one flow-trigger-concurrency line on stderr says which).
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -166,7 +166,11 @@ runs = RT + "/runs"
 if link_on_way(runs) is not None:
     warn("%s is a symbolic link; no run under it is read" % link_on_way(runs))
 elif os.path.isdir(runs):
-    for name in sorted(os.listdir(runs)):
+    try:
+        names = sorted(os.listdir(runs))
+    except OSError as e:
+        fail("cannot list %s: %s" % (runs, e.strerror))
+    for name in names:
         rdir = os.path.join(runs, name)
         ryaml = os.path.join(rdir, "run.yaml")
         if is_link(rdir):

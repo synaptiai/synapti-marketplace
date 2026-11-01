@@ -21,6 +21,8 @@
 #      skipped, so the trigger's active run in it never counts as in flight
 #      and skip_if_running starts a second run; or it stops the check with a
 #      traceback instead of one flow-trigger-concurrency line
+#   C10 an unreadable runs directory prints a traceback, or reads as "no run
+#      in flight"
 #   C7 a trigger id with '/' or '..' reads a file outside .flow/triggers
 #   C8 a missing trigger reads as "nothing in flight" rather than an error
 #   C9 the run schema refuses a run without metadata.trigger (every run not
@@ -189,6 +191,25 @@ for broken in not-yaml not-mapping unreadable; do
   e2e_expect_err_lacks "Traceback"
   e2e_expect_clean_edges
 done
+
+_flow_test_begin "an unreadable runs directory stops the check with one line (C10)"
+if [ "$(id -u)" -eq 0 ]; then
+  _flow_assert_pass "SKIP: run as root, which lists a directory whatever its mode"
+else
+  e2e_new run-trigger-runs-unreadable
+  e2e_describe ".flow/runs cannot be listed (mode 000); the trigger's active run is inside"
+  e2e_repo main
+  _trigger pr-42-watch skip_if_running
+  _run 2026-10-30T100000Z-pr-42 address-pr active pr-42-watch
+  chmod 000 "$E2E_REPO/.flow/runs"
+  e2e_run_block "$RUN_MD" RUN_CONCURRENCY_BLOCK 'trigger pr-42-watch'
+  chmod 755 "$E2E_REPO/.flow/runs"
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_no_out "CONCURRENCY_POLICY="
+  e2e_expect_err "flow-trigger-concurrency: cannot list"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_clean_edges
+fi
 
 _flow_test_begin "a trigger id that is not an id, or names no trigger, is an error (C7, C8)"
 e2e_new run-trigger-bad-id
