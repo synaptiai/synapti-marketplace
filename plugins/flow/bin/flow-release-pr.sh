@@ -5,8 +5,9 @@
 # file, and push the branch. Nothing is pushed to the default branch.
 #
 # It stops before creating anything when the release branch starts with + or
-# -, already exists in this clone, or a version file it would bump has
-# uncommitted changes of its own. When the bump, the commit or the push fails, it puts the repository back
+# -, already exists in this clone, the version script's plan fails or names
+# no file to bump (its output is printed), or a version file it would bump
+# has uncommitted changes of its own. When the bump, the commit or the push fails, it puts the repository back
 # as it found it: the version files restored, the branch or commit it started
 # on checked out again, the release branch deleted, and the changelog edit and
 # anything staged before kept as they were. PR_CLEANUP says what it did or
@@ -72,15 +73,28 @@ fi
 # The files the bump writes, from a plan with the same arguments. None may
 # hold a change of its own: the bump commit would carry it, and a failure
 # below restores these files from the last commit.
+# A plan that fails, or names no file to bump, stops the run here: with no
+# file named, none could be checked for changes of its own.
+PLAN_RC=0
 if [ -n "${PLUGIN:-}" ] && [ -n "${MARKET_VERSION:-}" ]; then
-  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN" --market-to "$MARKET_VERSION")
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN" --market-to "$MARKET_VERSION") || PLAN_RC=$?
 elif [ -n "${PLUGIN:-}" ]; then
-  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN")
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION" --plugin "$PLUGIN") || PLAN_RC=$?
 else
-  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION")
+  PLAN_OUT=$("$VERSIONS" --plan --to "$VERSION") || PLAN_RC=$?
 fi
 # The script names only paths without spaces or quotes, one per line.
 VERSION_PATHS=$(printf '%s\n' "$PLAN_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
+if [ "$PLAN_RC" -ne 0 ] || [ -z "$VERSION_PATHS" ]; then
+  [ -n "$PLAN_OUT" ] && printf '%s\n' "$PLAN_OUT"
+  printf '%s\n' "PR_STATE=blocked"
+  if [ "$PLAN_RC" -ne 0 ]; then
+    printf '%s\n' "PR_ERROR=\"the version files could not be planned: flow-release-versions.sh --plan exited $PLAN_RC; see its output above\""
+  else
+    printf '%s\n' "PR_ERROR=\"the version files could not be planned: flow-release-versions.sh --plan names no file to bump; see its output above\""
+  fi
+  exit 1
+fi
 DIRTY=""
 while IFS= read -r _p; do
   [ -n "$_p" ] || continue

@@ -100,6 +100,9 @@
 #      working tree matches the index) and is left out of the bump commit
 #   P11 a RELEASE_BRANCH starting with + or - is created and pushed: git push
 #      reads +<branch> as a forced push of <branch>, and -<branch> as an option
+#   P12 the plan that names the version files fails, or names none, and the
+#      run goes on with no file checked for changes of its own and nothing
+#      said about the plan
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
@@ -1264,6 +1267,39 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_file_has package.json '"test": "make test"'
   e2e_expect_file_has package.json '"version": "1.2.3"'
 done
+
+_flow_test_begin "Phase 4 pr: a plan that fails or names no version file stops the run before the branch (P12)"
+# The version script is replaced: its plan fails (or names no file) while its
+# write bumps package.json, as a real write would, so a run that ignores the
+# plan goes on to commit and push.
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+for PLAN in fails no-bump-line; do
+  e2e_new "release-pr-plan-$PLAN-$E2E_FENCE_SHELLS"
+  e2e_describe "the version script's --plan $PLAN; its --write bumps package.json to 1.3.0; block under $E2E_FENCE_SHELLS"
+  _released_npm
+  case "$PLAN" in
+    fails) PLAN_CODE='printf "%s\n" "VERSIONS_STATE=refused" "REFUSED=plan broke"; exit 1' ;;
+    no-bump-line) PLAN_CODE='printf "%s\n" "VERSIONS_STATE=planned"; exit 0' ;;
+  esac
+  e2e_plugin_copy bin/flow-release-versions.sh '#!/bin/sh
+case " $* " in
+  *" --plan "*) '"$PLAN_CODE"' ;;
+  *" --write "*)
+    sed "s/\"version\": \"1.2.3\"/\"version\": \"1.3.0\"/" package.json > package.json.new && mv package.json.new package.json
+    printf "%s\n" "VERSION_FILE=bump path=package.json current=1.2.3 new=1.3.0" "VERSIONS_STATE=written" ;;
+esac'
+  _pr_block
+  e2e_expect_equal 1 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=blocked"
+  e2e_expect_out "the version files could not be planned"
+  e2e_expect_line "VERSIONS_STATE=$( [ "$PLAN" = fails ] && echo refused || echo planned )"
+  e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+  e2e_expect_equal "" "$(_git branch --list chore/release-1.3.0)" "the release branch (never created)"
+  e2e_expect_equal "refs/heads/main" "$(_git ls-remote --heads origin | cut -f2)" "origin's branches (only main; nothing pushed)"
+  e2e_expect_file_has package.json '"version": "1.2.3"'
+done
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
 
 _flow_test_begin "Phase 4 tag: an annotated tag on the merge commit, not pushed by the block (T1, T2)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do
