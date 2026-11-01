@@ -51,7 +51,7 @@ This does two things:
 The trigger gets validated by `Skill(trigger-policy)` before write:
 - Schema shape check
 - `policy.forbidden_actions` MUST contain both `merge` and `release` — non-negotiable
-- `recursion_policy` MUST deny: triggered runs can't modify or enable triggers, and can't create them unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is true
+- `recursion_policy` MUST deny: triggered runs can't modify or enable triggers, and can't create them unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is true in your user settings
 - `target.workflow` must resolve to an existing workflow YAML
 
 If any check fails, the trigger is rejected and you see the violation. Fix the template or use a different one.
@@ -131,7 +131,7 @@ This invokes the trigger's `target.command` exactly once. Trigger-policy still r
 ## Common gotchas
 
 - **Triggers describe wake-up intent; they don't guarantee background execution.** Only `manual | hook | loop_prompt` are in the default `flow.triggers.allowedTypes`. The runner-backed types (`github_actions`, `local_cron`, `local_daemon`) are valid schema, but flow ships no runner for them — adding them to `flow.triggers.allowedTypes` is a separate decision per project.
-- **Recursion deny is a default, not a suggestion.** A trigger that fires `/flow:run trigger pr-42-watch` cannot also create new triggers. The trigger-policy skill refuses a trigger with `recursion_policy.triggered_runs_may_create_triggers: true` unless the project or user settings set `flow.triggers.allowTriggerCreationFromTriggeredRun` to `true`, and refuses `_modify_triggers` or `_enable_triggers: true` whatever the setting.
+- **Recursion deny is a default, not a suggestion.** A trigger that fires `/flow:run trigger pr-42-watch` cannot also create new triggers. The trigger-policy skill refuses a trigger with `recursion_policy.triggered_runs_may_create_triggers: true` unless your user settings set `flow.triggers.allowTriggerCreationFromTriggeredRun` to `true` (a repository's own settings cannot), and refuses `_modify_triggers` or `_enable_triggers: true` whatever the setting.
 - **maxActiveTriggers caps growth.** Default 5 active triggers per project. Hitting the cap requires `/flow:trigger disable <existing>` before creating a new one. The cascade-resolved `flow.triggers.maxActiveTriggers` setting can raise it.
 
 ## Next steps

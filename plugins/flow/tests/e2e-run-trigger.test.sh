@@ -47,6 +47,9 @@
 #   R4 a setting value that is not a boolean reads as true
 #   R5 a trigger that is a symbolic link is read
 #   R6 the skill's fence does not find the script in an installed plugin
+#   R7 a repository's own settings turn the setting on, so a repository can
+#      relax its own recursion check (the tier-3 check reads the user's
+#      settings only, and this one must too)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -356,21 +359,35 @@ e2e_expect_clean_edges
 
 _flow_test_begin "with the setting true a trigger may let its runs create triggers (R2)"
 e2e_new recursion-create-allowed
-e2e_describe "triggered_runs_may_create_triggers: true; the project sets allowTriggerCreationFromTriggeredRun true"
+e2e_describe "triggered_runs_may_create_triggers: true; the user's settings set allowTriggerCreationFromTriggeredRun true"
 e2e_repo main
 _recursive_trigger t.trigger.yaml true false unset
-_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":true}}}'
+e2e_user_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":true}}}'
 e2e_run_bin "$RECURSION" t.trigger.yaml
 e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_no_out "RECURSION_VIOLATION="
 e2e_expect_clean_edges
 
+_flow_test_begin "the repository's own settings cannot turn the setting on (R7)"
+for f in settings.flow.json settings.flow.local.json; do
+  e2e_new "recursion-repo-$f"
+  e2e_describe "triggered_runs_may_create_triggers: true; the repository's .claude/$f sets allowTriggerCreationFromTriggeredRun true"
+  e2e_repo main
+  _recursive_trigger t.trigger.yaml true unset unset
+  mkdir -p "$E2E_REPO/.claude"
+  printf '%s\n' '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":true}}}' > "$E2E_REPO/.claude/$f"
+  e2e_run_bin "$RECURSION" t.trigger.yaml
+  e2e_expect_equal 2 "$E2E_RC" "the exit status"
+  e2e_expect_line "RECURSION_VIOLATION=triggered_runs_may_create_triggers"
+  e2e_expect_clean_edges
+done
+
 _flow_test_begin "the setting does not cover modify or enable (R3)"
 e2e_new recursion-modify-enable
-e2e_describe "all three flags true; the project sets allowTriggerCreationFromTriggeredRun true"
+e2e_describe "all three flags true; the user's settings set allowTriggerCreationFromTriggeredRun true"
 e2e_repo main
 _recursive_trigger t.trigger.yaml true true true
-_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":true}}}'
+e2e_user_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":true}}}'
 e2e_run_bin "$RECURSION" t.trigger.yaml
 e2e_expect_equal 2 "$E2E_RC" "the exit status"
 e2e_expect_line "RECURSION_VIOLATION=triggered_runs_may_modify_triggers"
@@ -389,10 +406,10 @@ e2e_expect_clean_edges
 
 _flow_test_begin "a setting that is not a boolean stops the check (R4)"
 e2e_new recursion-setting-string
-e2e_describe "triggered_runs_may_create_triggers: true; the project sets allowTriggerCreationFromTriggeredRun to the string yes"
+e2e_describe "triggered_runs_may_create_triggers: true; the user's settings set allowTriggerCreationFromTriggeredRun to the string yes"
 e2e_repo main
 _recursive_trigger t.trigger.yaml true unset unset
-_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":"yes"}}}'
+e2e_user_settings '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":"yes"}}}'
 e2e_run_bin "$RECURSION" t.trigger.yaml
 e2e_expect_equal 1 "$E2E_RC" "the exit status"
 e2e_expect_no_out "RECURSION_VIOLATION="

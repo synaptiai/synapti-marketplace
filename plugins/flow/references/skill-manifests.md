@@ -70,7 +70,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | specification-capture | dispatched | 574 | Capture the four specification elements (non-goals, failure modes, interface contracts, risk map) for an... |
 | tdd-patterns | dispatched | 576 | Guide test-driven development through the mandatory Red-Green-Refactor cycle: a test is RED only when it... |
 | team-coordination | dispatched · reference-only | 589 | Coordinate agent teams for adversarial review (paired skeptic/verifier per facet, disposition-only challe... |
-| trigger-policy | dispatched | 596 | Enforce FlowTrigger safety rules — no autonomous merge, no recursive trigger creation, max active trigger... |
+| trigger-policy | dispatched | 600 | Enforce FlowTrigger safety rules — no autonomous merge, no recursive trigger creation, max active trigger... |
 | visual-verification | dispatched | 592 | Verify UI-facing changes by running a screenshot-analyze-verify loop across configured viewports, with a... |
 | workflow-validation | dispatched | 587 | Validate a FlowWorkflow YAML at `plugins/flow/workflows/<id>.workflow.yaml` against `schemas/v1/workflow.... |
 <!-- END GENERATED: skills -->

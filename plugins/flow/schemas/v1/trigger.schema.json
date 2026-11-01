@@ -124,7 +124,7 @@
     },
     "recursion_policy": {
       "type": "object",
-      "description": "By default, triggered runs may NOT create, modify or enable triggers — prevents trigger-creates-trigger loops. The trigger-policy check refuses a trigger that sets any of the three to true, except triggered_runs_may_create_triggers when the setting flow.triggers.allowTriggerCreationFromTriggeredRun is true.",
+      "description": "By default, triggered runs may NOT create, modify or enable triggers — prevents trigger-creates-trigger loops. The trigger-policy check refuses a trigger that sets any of the three to true, except triggered_runs_may_create_triggers when the setting flow.triggers.allowTriggerCreationFromTriggeredRun is true in the user's settings.",
       "additionalProperties": false,
       "properties": {
         "triggered_runs_may_create_triggers": { "type": "boolean", "default": false },

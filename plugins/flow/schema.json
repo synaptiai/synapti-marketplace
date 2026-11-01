@@ -730,7 +730,7 @@
             "allowTriggerCreationFromTriggeredRun": {
               "type": "boolean",
               "default": false,
-              "description": "Whether the trigger-policy check accepts a trigger whose recursion_policy.triggered_runs_may_create_triggers is true. False (the default) refuses such a trigger; true accepts it. It covers creation only: a trigger that sets triggered_runs_may_modify_triggers or triggered_runs_may_enable_triggers to true is refused either way. The check runs when a trigger is created, enabled or run; nothing checks at run time whether a triggered command creates a trigger."
+              "description": "Whether the trigger-policy check accepts a trigger whose recursion_policy.triggered_runs_may_create_triggers is true. False (the default) refuses such a trigger; true accepts it. It covers creation only: a trigger that sets triggered_runs_may_modify_triggers or triggered_runs_may_enable_triggers to true is refused either way. Read from the user's settings only: a repository's own settings cannot turn it on (read with --no-repo-settings). The check runs when a trigger is created, enabled or run; nothing checks at run time whether a triggered command creates a trigger."
             },
             "defaultConcurrency": {
               "enum": [

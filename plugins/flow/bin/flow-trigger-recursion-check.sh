@@ -9,11 +9,13 @@
 # three flags, each false when unset:
 #   triggered_runs_may_create_triggers  refused unless the setting
 #                                       flow.triggers.allowTriggerCreationFromTriggeredRun
-#                                       is true (read with cascade-resolve.sh;
-#                                       shipped false)
+#                                       is true (shipped false)
 #   triggered_runs_may_modify_triggers  always refused
 #   triggered_runs_may_enable_triggers  always refused
-# Any value other than false or unset counts as set.
+# Any value other than false or unset counts as set. The setting is read from
+# the user's settings and the plugin default only (cascade-resolve.sh
+# --no-repo-settings): a repository's own settings cannot relax this check,
+# as they cannot relax the tier-3 check.
 #
 # Stdout: one RECURSION_VIOLATION=<flag> line per refused flag.
 # Exits: 0 no violation; 2 violations; 1 when the check could not run: the
@@ -98,7 +100,8 @@ rp = doc.get("recursion_policy")
 rp = rp if isinstance(rp, dict) else {}
 
 # The cascade's own message, if any, goes straight to stderr.
-r = subprocess.run([sys.argv[2], "--default", "false", ".flow.triggers.allowTriggerCreationFromTriggeredRun"],
+r = subprocess.run([sys.argv[2], "--no-repo-settings", "--default", "false",
+                    ".flow.triggers.allowTriggerCreationFromTriggeredRun"],
                    stdout=subprocess.PIPE)
 if r.returncode != 0:
     fail("flow.triggers.allowTriggerCreationFromTriggeredRun could not be read (cascade-resolve.sh exited %d)" % r.returncode)
