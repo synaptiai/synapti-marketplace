@@ -133,7 +133,7 @@ Dump the workflow's frontmatter + phase structure:
 ```bash
 # $ARGUMENTS is "<subcommand> <id>"; the id is the second word, and it must
 # be a workflow id before it is put in a path.
-ID=$(printf '%s\n' "$ARGUMENTS" | awk '{print $2}')
+ID=$(printf '%s\n' "$ARGUMENTS" | awk '{print $(2)}')
 if ! printf '%s\n' "$ID" | grep -qE '^[a-z0-9][a-z0-9-]{0,63}$'; then
   printf '%s\n' "'$ID' is not a workflow id: give one of the ids /flow:workflow list prints" >&2
   exit 1
@@ -190,7 +190,7 @@ _flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("im
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 # $ARGUMENTS is "<subcommand> <id>"; the id is the second word, and it must
 # be a workflow id before it is put in a path.
-ID=$(printf '%s\n' "$ARGUMENTS" | awk '{print $2}')
+ID=$(printf '%s\n' "$ARGUMENTS" | awk '{print $(2)}')
 if ! printf '%s\n' "$ID" | grep -qE '^[a-z0-9][a-z0-9-]{0,63}$'; then
   printf '%s\n' "'$ID' is not a workflow id: give one of the ids /flow:workflow list prints" >&2
   exit 1

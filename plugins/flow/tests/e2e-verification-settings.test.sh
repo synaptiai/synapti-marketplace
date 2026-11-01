@@ -99,3 +99,16 @@ _run_pr_block
 e2e_expect_line "CLOSED_LOOP=off"
 e2e_expect_line "RUNTIME_VERIFICATION=optional"
 e2e_expect_line "VISUAL_VERIFICATION=off"
+
+# Claude Code replaces a bare $N in a command block with argument N. The
+# block's helper must read its own parameter, not the second argument of
+# /flow:start (V1 through argument substitution).
+_flow_test_begin "/flow:start verification settings: the block reads its settings when the command has arguments (V1)"
+e2e_new verification-with-arguments
+e2e_describe "all three settings false; the block run as /flow:start 42 7 runs it"
+e2e_repo feature/issue-7-verify
+_settings '{"closedLoop":{"enabled":false,"requireRuntimeVerification":false},"visualVerification":{"enabled":false}}'
+e2e_run_fence "$START_MD" "$MARKER" '42 7'
+e2e_expect_line "CLOSED_LOOP=off"
+e2e_expect_line "RUNTIME_VERIFICATION=optional"
+e2e_expect_line "VISUAL_VERIFICATION=off"

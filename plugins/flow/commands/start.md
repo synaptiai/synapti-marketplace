@@ -934,7 +934,7 @@ If failures: fix and re-run. The iteration ceiling is a safety net against true 
 ```bash
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
 # Only the boolean false turns a check off; any other value keeps it on.
-_off() { [ "$("$FLOW_ROOT/bin/cascade-resolve.sh" --default true "$1" 2>/dev/null)" = "false" ]; }
+_off() { [ "$("$FLOW_ROOT/bin/cascade-resolve.sh" --default true "${1}" 2>/dev/null)" = "false" ]; }
 if _off '.closedLoop.enabled'; then printf '%s\n' "CLOSED_LOOP=off"; else printf '%s\n' "CLOSED_LOOP=on"; fi
 if _off '.closedLoop.requireRuntimeVerification'; then printf '%s\n' "RUNTIME_VERIFICATION=optional"; else printf '%s\n' "RUNTIME_VERIFICATION=required"; fi
 if _off '.visualVerification.enabled'; then printf '%s\n' "VISUAL_VERIFICATION=off"; else printf '%s\n' "VISUAL_VERIFICATION=on"; fi
