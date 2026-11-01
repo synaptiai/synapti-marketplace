@@ -171,7 +171,9 @@ if [ "$BUMP_RC" -ne 0 ] || ! printf '%s\n' "$BUMP_OUT" | grep -qx 'VERSIONS_STAT
 fi
 COMMIT_FILES=$(printf '%s\n' "$BUMP_OUT" | sed -n 's/^VERSION_FILE=bump path=\([^ ]*\) .*/\1/p' | sort -u)
 if [ -n "${CHANGELOG_FILE:-}" ]; then
-  if git diff --quiet -- "$CHANGELOG_FILE" 2>/dev/null && ! git ls-files --others --exclude-standard -- "$CHANGELOG_FILE" | grep -q .; then
+  # Compared with the last commit, not the index: a changelog edit the user
+  # already staged is a change too.
+  if git diff --quiet HEAD -- "$CHANGELOG_FILE" 2>/dev/null && ! git ls-files --others --exclude-standard -- "$CHANGELOG_FILE" | grep -q .; then
     printf '%s\n' "PR_WARN=\"$CHANGELOG_FILE has no change; the release pull request carries no changelog entry\""
   else
     COMMIT_FILES=$(printf '%s\n%s\n' "$COMMIT_FILES" "$CHANGELOG_FILE")

@@ -94,6 +94,8 @@
 #      ends on the default branch instead of where it started
 #   P9 a failed run unstages a changelog the user had staged before it, or
 #      leaves the release's version of it staged in place of the user's
+#   P10 a changelog edit the user already staged reads as "no change" (the
+#      working tree matches the index) and is left out of the bump commit
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
@@ -1111,9 +1113,9 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_out "git push"
 done
 
-# _released_with_changelog <commit|push> — the npm package released as
+# _released_with_changelog <commit|push|none> — the npm package released as
 # v1.2.3 with a committed CHANGELOG.md, then made to fail at that step: a
-# pre-commit hook that fails, or origin unreachable.
+# pre-commit hook that fails, or origin unreachable; none fails nothing.
 _released_with_changelog() {
   e2e_repo main
   _npm_fixture
@@ -1129,6 +1131,22 @@ _released_with_changelog() {
     push) _git remote set-url origin "$E2E_DIR/missing.git" ;;
   esac
 }
+
+_flow_test_begin "Phase 4 pr: a changelog edit already staged is committed with the bump (P10)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  e2e_new "release-pr-staged-changelog-$E2E_FENCE_SHELLS"
+  e2e_describe "npm package released as v1.2.3 with a committed CHANGELOG.md; the 1.3.0 entry written and staged, nothing unstaged; block under $E2E_FENCE_SHELLS"
+  _released_with_changelog none
+  printf '# Changelog\n\n## 1.3.0\n- new\n' > "$E2E_REPO/CHANGELOG.md"
+  _git add CHANGELOG.md
+  _pr_block CHANGELOG_FILE=CHANGELOG.md
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_line "PR_STATE=pushed"
+  e2e_expect_no_out "PR_WARN="
+  e2e_expect_equal "CHANGELOG.md package.json" "$(_head_files)" "the files in the bump commit"
+  e2e_expect_equal "" "$(_status)" "the working tree"
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
 
 _flow_test_begin "Phase 4 pr: a failed run returns to what was checked out, and keeps a changelog staged before (P8, P9)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do
