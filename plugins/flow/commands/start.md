@@ -924,12 +924,27 @@ $TYPECHECK_CMD
 
 If failures: fix and re-run. The iteration ceiling is a safety net against true infinite loops, not a budget — approaching it is a signal to re-check understanding, not to escalate. Only halt for genuine non-convergence per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence.
 
+**Verification settings** — run this block once, before the build-and-run step. Each line it prints decides one check below:
+
+```bash
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Only the boolean false turns a check off; any other value keeps it on.
+_off() { [ "$("$FLOW_ROOT/bin/cascade-resolve.sh" --default true "$1" 2>/dev/null)" = "false" ]; }
+if _off '.closedLoop.enabled'; then printf '%s\n' "CLOSED_LOOP=off"; else printf '%s\n' "CLOSED_LOOP=on"; fi
+if _off '.closedLoop.requireRuntimeVerification'; then printf '%s\n' "RUNTIME_VERIFICATION=optional"; else printf '%s\n' "RUNTIME_VERIFICATION=required"; fi
+if _off '.visualVerification.enabled'; then printf '%s\n' "VISUAL_VERIFICATION=off"; else printf '%s\n' "VISUAL_VERIFICATION=on"; fi
+```
+
+- `CLOSED_LOOP=off` (`closedLoop.enabled` is false): run each build-and-run step and each runtime check once. On a failure, do not fix and retry: stop and ask the user with `AskUserQuestion` whether to fix it now or to continue with the failure recorded in the PR body.
+- `RUNTIME_VERIFICATION=optional` (`closedLoop.requireRuntimeVerification` is false): runtime verification in Phase 4 step 2 may be skipped without an escalation; record it as `skipped: closedLoop.requireRuntimeVerification is false`.
+- `VISUAL_VERIFICATION=off` (`visualVerification.enabled` is false): do not invoke `Skill(visual-verification)`; record visual verification as `SKIP` with the reason `visualVerification.enabled is false`.
+
 **Build-and-run verification** (before proceeding to Phase 4):
 
 1. **Build the project** → if build fails, apply debugging-patterns: read errors, fix, rebuild (up to `closedLoop.maxBuildIterations`)
 2. **Start dev server** (if applicable) → if won't start, read logs, fix, retry (up to `closedLoop.maxServerRetries`)
 3. **Smoke test** → hit key endpoints or run the CLI with sample input
-4. If any step fails → enter debug-fix-retest loop. Do NOT proceed to Phase 4 until code builds and runs.
+4. If any step fails → enter debug-fix-retest loop (with `CLOSED_LOOP=off`, ask the user instead). Do NOT proceed to Phase 4 until code builds and runs or the user chose to continue.
 
 Skipping the build-and-run step is ONLY permitted if the change falls into one of the three enumerated whitelist categories defined in the `runtime-verification` skill: `markdown-only`, `config-only`, or `dependency-bump-only`. Any other skip requires a Proactive-Autonomy escalation — see the skill for the required six-field structure.
 
@@ -940,9 +955,9 @@ Prove everything works with fix-forward:
 1. **Run full quality suite** (parallel Bash calls for lint, test, typecheck)
 2. **Runtime verification** (MANDATORY — not conditional on skill availability):
 
-   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks. Its contract (loaded above) owns the skip whitelist — only `markdown-only`, `config-only`, `dependency-bump-only`, each with its required evidence — and any other skip needs an approved six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md).
+   Invoke `Skill(runtime-verification)` for build, dev-server, smoke, E2E, and LSP-diagnostics checks, unless the verification settings block printed `RUNTIME_VERIFICATION=optional` and you skip it (record the skip). Its contract (loaded above) owns the skip whitelist — only `markdown-only`, `config-only`, `dependency-bump-only`, each with its required evidence — and any other skip needs an approved six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md).
 
-   When the diff is UI-relevant (UI file extensions OR acceptance criteria with UI keywords — see the visual-verification skill for the exact detection rules), invoke `Skill(visual-verification)` in parallel, passing it the **full text** of each acceptance criterion and each risk-map row whose Area names a UI state, verbatim. The skill derives interaction scenarios from those words; a summary loses them, and it runs in its own context so it has no other way to see them. The two skills coordinate via the dev server URL: if `runtime-verification` cannot start the dev server, `visual-verification` returns SKIP with that reason and the completion gate treats the dev-server failure as the primary finding.
+   When the diff is UI-relevant (UI file extensions OR acceptance criteria with UI keywords — see the visual-verification skill for the exact detection rules) and the block printed `VISUAL_VERIFICATION=on`, invoke `Skill(visual-verification)` in parallel, passing it the **full text** of each acceptance criterion and each risk-map row whose Area names a UI state, verbatim. The skill derives interaction scenarios from those words; a summary loses them, and it runs in its own context so it has no other way to see them. The two skills coordinate via the dev server URL: if `runtime-verification` cannot start the dev server, `visual-verification` returns SKIP with that reason and the completion gate treats the dev-server failure as the primary finding.
 3. **Self-review with fix-forward** — dispatch Agent(code-reviewer):
    ```
    Agent(code-reviewer):
@@ -1090,12 +1105,12 @@ Prove everything works with fix-forward:
    The visual-verification skill owns task creation, browser-tool cascade, screenshot-analyze-verify loop, responsive checks, and result vocabulary. Do not re-implement those steps inline — delegate via `Skill(visual-verification)` per `skills/visual-verification/SKILL.md`. Read its Output Format section to know what to expect in the consolidated output.
 9. **Completion gate**: ALL of:
    - All quality checks pass
-   - Runtime verification passed (or skipped under one of the three enumerated whitelist categories in the `runtime-verification` skill: `markdown-only`, `config-only`, `dependency-bump-only`)
+   - Runtime verification passed (or skipped under one of the three enumerated whitelist categories in the `runtime-verification` skill: `markdown-only`, `config-only`, `dependency-bump-only`, or with `RUNTIME_VERIFICATION=optional`)
    - No unresolved P1 findings
    - Holdout validation: PASS or P3-only (no unresolved P1/P2 conflicts)
    - All tasks completed
    - Verdict: all criteria PASS or user-approved (when `verdict.enabled`)
-   - Visual verification: no FAIL or BLOCKED results (see escalation below)
+   - Visual verification: no FAIL or BLOCKED results (see escalation below); `SKIP` when `VISUAL_VERIFICATION=off`
 
    **Visual verification escalation**: If any visual verification task has result containing "BLOCKED", use `AskUserQuestion`:
    > Visual verification is required (`requireVisualVerification: true`) but no browser tools are available.
