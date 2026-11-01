@@ -660,3 +660,99 @@ def ensure_inside_repo(dir_path):
     walked = _walk_checked(dir_path)
     if walked.outside_rule or not walked.inside:
         raise RepoDirRefused(f"{os.fspath(dir_path)} is outside the repository")
+
+
+# ---------------------------------------------------------------------------
+# The runtime directory: where flow keeps its goals, runs, triggers, watch
+# state, workflow overrides and review exceptions. flow.runtime.stateDir in the
+# settings cascade, default .flow. Not the per-user state directory
+# (_state_dir(), FLOW_STATE_DIR), which is a different thing.
+
+RUNTIME_DIR_DEFAULT = ".flow"
+RUNTIME_DIR_SETTING = "flow.runtime.stateDir"
+
+
+def runtime_dir_warning(reason):
+    """The one stderr line for a refused flow.runtime.stateDir: the setting
+    and the reason, never where the value leads."""
+    reason = "".join(" " if (ord(c) < 32 or ord(c) == 127) else c for c in reason)
+    return (f"flow-runtime-dir: WARN: refusing {RUNTIME_DIR_SETTING}: {reason}; "
+            f"using {RUNTIME_DIR_DEFAULT}")
+
+
+def check_runtime_dir(value):
+    """(directory, None) for a usable flow.runtime.stateDir, or
+    (RUNTIME_DIR_DEFAULT, reason) for one that is refused.
+
+    Usable: a relative path, with no `..` component, not starting with `/`,
+    `\\`, `~` or a drive, that names a directory below the repository top
+    (not the top itself), reached with no symlink and nothing but
+    directories on the way (ensure_inside_repo()). It is taken from the
+    repository top. The directory need not exist yet.
+
+    The directory is printed normalized: no `.` component, no doubled or
+    trailing separator, `/`-separated; a name starting with `-` is written
+    as ./<name>, so no command reading it takes it for an option. An empty
+    value is the default. bin/flow-runtime-dir.sh prints what this returns.
+    """
+    if value is None or value == "":
+        return RUNTIME_DIR_DEFAULT, None
+    if any(ord(c) < 32 or ord(c) == 127 for c in value):
+        return RUNTIME_DIR_DEFAULT, "it holds a control character"
+    if value.startswith("~"):
+        return RUNTIME_DIR_DEFAULT, "it starts with ~; use a path relative to the repository top"
+    if value.startswith("/") or value.startswith("\\") or ntpath.splitdrive(value)[0]:
+        return RUNTIME_DIR_DEFAULT, "it is an absolute path; use a path relative to the repository top"
+    # `..` is looked for in the value as written: a normalized path has lost
+    # it (a/../b is b), but the kernel follows `a` first.
+    names = [n for n in value.replace("\\", "/").split("/") if n and n != "."]
+    if ".." in names:
+        return RUNTIME_DIR_DEFAULT, "it has a .. component"
+    if not names:
+        return RUNTIME_DIR_DEFAULT, "it names the repository top itself"
+    rel = "/".join(names)
+    try:
+        top = _repo_top(os.path.realpath(os.getcwd()))
+        ensure_inside_repo(os.path.join(top, *names))
+    except RepoDirRefused as e:
+        reason = e.reason
+        if reason.endswith("is outside the repository"):
+            reason = "it is outside the repository"
+        return RUNTIME_DIR_DEFAULT, reason
+    except JournalAtomicError as e:
+        return RUNTIME_DIR_DEFAULT, f"it could not be checked ({e.reason})"
+    except OSError as e:
+        return RUNTIME_DIR_DEFAULT, f"it could not be checked ({e.strerror or e})"
+    if rel.startswith("-"):
+        rel = "./" + rel
+    return rel, None
+
+
+_RUNTIME_DIR = []
+
+
+def runtime_dir():
+    """The runtime directory, as bin/flow-runtime-dir.sh prints it: the
+    flow.runtime.stateDir the settings cascade gives (cascade-resolve.sh),
+    checked by check_runtime_dir(), relative to the repository top. A refused
+    value prints runtime_dir_warning() on stderr and gives .flow. Asked once
+    per process."""
+    if not _RUNTIME_DIR:
+        import subprocess
+        helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cascade-resolve.sh")
+        value = RUNTIME_DIR_DEFAULT
+        try:
+            out = subprocess.run(
+                [_bash(), helper, "--default", RUNTIME_DIR_DEFAULT, ".flow.runtime.stateDir // empty"],
+                stdout=subprocess.PIPE, timeout=30).stdout
+            value = os.fsdecode(out).rstrip("\r\n") or RUNTIME_DIR_DEFAULT
+        except (OSError, subprocess.SubprocessError):
+            value = RUNTIME_DIR_DEFAULT
+        if value == RUNTIME_DIR_DEFAULT:
+            answer = value
+        else:
+            answer, reason = check_runtime_dir(value)
+            if reason is not None:
+                sys.stderr.write(runtime_dir_warning(reason) + "\n")
+        _RUNTIME_DIR.append(answer)
+    return _RUNTIME_DIR[0]
