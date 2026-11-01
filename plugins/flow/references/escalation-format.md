@@ -19,7 +19,7 @@ Do NOT escalate when ANY of these apply:
 - A reasonable default exists and the cost of asking exceeds the cost of being wrong.
 - The agent is asking permission for an already-authorized action ("can I commit?" — yes, that's Tier 1).
 - **The decision is about how to dispose of a code-review finding (P1/P2/P3 triage).** Finding triage is NEVER a valid escalation trigger — findings are work, not decisions. The default action for every finding is to fix it in this PR (see `skills/llm-operator-principles/SKILL.md`). If you find yourself drafting a Situation/Tried/Options block about a P1/P2/P3, stop and fix the finding instead.
-- **The agent is approaching but has not exceeded an iteration ceiling** (`fixForwardMaxIterations`, `reviewCycleLimit`, `qualityCheckMaxIterations`). Ceilings are safety nets against true infinite loops, not budgets — approaching one is a signal to re-check understanding, not to escalate the remaining work.
+- **The agent is approaching but has not exceeded an iteration ceiling** (`fixForwardMaxIterations`, `reviewCycleLimit`, `timeouts.qualityCheckMaxIterations`). Ceilings are safety nets against true infinite loops, not budgets — approaching one is a signal to re-check understanding, not to escalate the remaining work.
 
 The Iron Law: **resolve what can be resolved locally, escalate only when there is a real decision to make**. An agent that escalates too eagerly trains the user to ignore escalations.
 

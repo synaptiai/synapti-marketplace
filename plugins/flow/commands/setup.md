@@ -100,7 +100,7 @@ Flow settings follow the standard Claude Code cascade — `local > project > use
 
 Write `.claude/settings.flow.json` with:
 
-- Quality commands discovered from tech stack (`qualityCheckMaxIterations`, `closedLoop.*`, etc.)
+- Quality commands discovered from tech stack (`timeouts.qualityCheckMaxIterations`, `closedLoop.*`, etc.)
 - `conventions.branchPatterns` and `conventions.commitTypes` matching existing repository conventions
 - `agentTeams: false` (paired-reviewer mode opt-in; users enable per their preference, also requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env var)
 - `merge.markerTrust.allowedAssociations` at the secure default `["OWNER","MEMBER","COLLABORATOR"]`

@@ -82,7 +82,7 @@ fi
 RUNTIME_ENABLED=$("$CASCADE" --default "true" '.flow.runtime.enabled' 2>/dev/null)
 if [ "$RUNTIME_ENABLED" != "true" ]; then
   printf '%s\n' "FLOW_RUN_STATE=skip"
-  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true"
 else
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-debug"
   # The goal id must match the FlowGoal metadata.id pattern

@@ -126,7 +126,7 @@ If you don't want a loop and just want to execute the trigger's target once:
 /flow:run trigger pr-42-watch
 ```
 
-This invokes the trigger's `target.command` exactly once, with `FLOW_TRIGGERED_RUN=true` set in the env so the target knows it was trigger-fired. Trigger-policy still enforces Tier 3 deny (`merge`, `release` blocked regardless of trigger settings).
+This invokes the trigger's `target.command` exactly once. Trigger-policy still refuses a trigger whose policy allows `merge` or `release`, and the tier hook asks before any merge or release the target runs.
 
 ## Common gotchas
 

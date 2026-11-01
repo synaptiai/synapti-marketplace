@@ -492,7 +492,7 @@ case "$ARG1" in
 esac
 if [ "$RUNTIME_ENABLED" != "true" ]; then
   printf '%s\n' "FLOW_RUN_STATE=skip"
-  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true (v2 mode)"
+  printf '%s\n' "FLOW_RUN_REASON=flow.runtime.enabled is not true"
 else
   SLUG="${ISSUE_NUM:-nonum}"
   RUN_ID="$(date -u +%Y-%m-%dT%H%M%SZ)-issue-${SLUG}"
@@ -912,7 +912,7 @@ true
 
 **Parallel task detection**: If tasks have no overlapping files and agent teams are enabled, suggest parallel execution via agent team.
 
-**Quality loop** (bounded by `qualityCheckMaxIterations`):
+**Quality loop** (bounded by `timeouts.qualityCheckMaxIterations`):
 
 ```bash
 # Run quality commands discovered in Phase 1 (parallel)
