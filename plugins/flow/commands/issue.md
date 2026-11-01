@@ -32,7 +32,7 @@ Gather context before formulating the issue.
 # `references/command-output-format.md`.
 
 printf '%s\n' "### Repo Context"
-REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null) || REPO=""
 if [ -z "$REPO" ]; then
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "ERROR=cannot resolve repo (gh auth or non-repo CWD?)"
@@ -108,13 +108,30 @@ Select labels based on issue content. Common mappings:
 
 TaskUpdate label discovery to completed.
 
-**Milestone check:** each block runs in its own shell, so `REPO` from Phase 1 is not set here; put the `REPO=` value Phase 1 printed in place of `$REPO`.
+**Milestone check:**
 
 ```bash
-gh api repos/$REPO/milestones --jq '.[] | "\(.number): \(.title)"'
+# Each block runs in its own shell, so the repository is resolved here; a
+# milestone request is never sent without one. A failing gh prints GitHub's
+# error body on stdout, so its exit status decides, not the output.
+printf '%s\n' "### Milestones"
+REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || REPO=""
+if [ -z "$REPO" ]; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "ERROR=cannot resolve the repository (gh auth or non-repo CWD?); milestones were not checked"
+elif ! MILESTONES=$(gh api "repos/$REPO/milestones" --jq '.[] | "MILESTONE=\(.number): \(.title)"' 2>/dev/null); then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "ERROR=could not list the milestones of $REPO"
+elif [ -z "$MILESTONES" ]; then
+  printf '%s\n' "STATE=empty"
+else
+  printf '%s\n' "STATE=ok"
+  printf '%s\n' "$MILESTONES"
+fi
+true
 ```
 
-Offer milestone assignment if milestones exist.
+Offer milestone assignment when the block prints `STATE=ok` (one `MILESTONE=<number>: <title>` line each). On `STATE=unavailable`, say the milestone check did not run and create the issue without one.
 
 TaskUpdate milestone check to completed.
 

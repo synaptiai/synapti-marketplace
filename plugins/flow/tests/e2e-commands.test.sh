@@ -57,6 +57,12 @@
 #   G3 two active goals on the current branch are not reported as such
 #   G4 an unreadable or refused goal stops being reported once the branch
 #      decides which goal is shown
+#
+# issue.md, the milestone check
+#   M1 the block reads REPO from an earlier fence, so gh is asked for
+#      repos//milestones
+#   M2 a repository that cannot be resolved still sends a milestone request,
+#      or prints nothing instead of saying the check did not run
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -567,4 +573,43 @@ e2e_run_fence "$GOAL_MD" "$GOAL_SCAN_MARK"
 e2e_expect_line "STATE=unavailable"
 e2e_expect_no_line "STATE=none"
 e2e_expect_out "GOAL_UNREADABLE=.flow/goals/b-broken.goal.yaml"
+e2e_expect_clean_edges
+
+# --- issue.md: the milestone check --------------------------------------------
+
+ISSUE_MD="$E2E_PLUGIN_DIR/commands/issue.md"
+MILESTONE_MARK='/milestones'
+
+_flow_test_begin "/flow:issue milestone check: the block finds the repository itself (M1)"
+e2e_new issue-milestones
+e2e_describe "gh names the repository acme/widgets, which has one milestone"
+e2e_repo feature/e2e
+e2e_gh_fixture repo '{"nameWithOwner":"acme/widgets"}'
+e2e_gh_fixture milestones-acme_widgets '[{"number":3,"title":"v2 launch"}]'
+e2e_run_fence "$ISSUE_MD" "$MILESTONE_MARK"
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "STATE=ok"
+e2e_expect_line "MILESTONE=3: v2 launch"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:issue milestone check: a repository with no milestones is empty (M1)"
+e2e_new issue-milestones-empty
+e2e_describe "gh names the repository acme/widgets, which has no milestones"
+e2e_repo feature/e2e
+e2e_gh_fixture repo '{"nameWithOwner":"acme/widgets"}'
+e2e_gh_fixture milestones-acme_widgets '[]'
+e2e_run_fence "$ISSUE_MD" "$MILESTONE_MARK"
+e2e_expect_line "STATE=empty"
+e2e_expect_no_out "MILESTONE="
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:issue milestone check: a repository that cannot be resolved is refused before any request (M2)"
+e2e_new issue-milestones-no-repo
+e2e_describe "gh repo view fails (HTTP 502)"
+e2e_repo feature/e2e
+e2e_gh_fail repo
+e2e_run_fence "$ISSUE_MD" "$MILESTONE_MARK"
+e2e_expect_line "STATE=unavailable"
+e2e_expect_out "cannot resolve the repository"
+e2e_expect_no_out "MILESTONE="
 e2e_expect_clean_edges

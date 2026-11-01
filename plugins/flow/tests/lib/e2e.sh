@@ -187,6 +187,9 @@ case "$args" in
   # Bare /flow's lists of your open issues and pull requests.
   "issue list --assignee @me "*) f=assigned-issues ;;
   "pr list --author @me "*) f=authored-prs ;;
+  # /flow:issue's milestone list: milestones-<owner>_<repo>, so a call made
+  # with no repository (repos//milestones) has no fixture.
+  "api repos/"*"/milestones") n=${args#api repos/}; f=milestones-$(printf '%s' "${n%/milestones}" | tr / _) ;;
   # /flow:release asks whether a tag has a GitHub release: release-<tag>.
   "api repos/"*"/releases/tags/"*) f=release-${args##*/releases/tags/} ;;
   # and creates one: release-create-<tag>, the release's JSON.
@@ -341,8 +344,8 @@ e2e_judge_says() {
 # merged-prs-<head>-<base> (the pull requests merged from <head> into <base>),
 # compare-<base>...<head> (two commits compared on GitHub), prs-all-<head>-<base>
 # (the pull requests from <head> into <base> in any state), assigned-issues and
-# authored-prs (bare /flow's lists of your open issues and pull requests).
-# e2e_gh_fail <name> makes that
+# authored-prs (bare /flow's lists of your open issues and pull requests),
+# milestones-<owner>_<repo> (a repository's milestones). e2e_gh_fail <name> makes that
 # call exit 1 with an HTTP error, as real gh does.
 e2e_gh_fixture() { printf '%s\n' "$2" > "$E2E_GH/$1.json"; }
 e2e_gh_fail() { : > "$E2E_GH/$1.fail"; }
