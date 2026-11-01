@@ -202,8 +202,7 @@ REASON=${GOAL_PICK_ERR#degenerate state — }" ;;
       GOAL_SCAN="STATE=unavailable
 REASON=flow-active-goal.sh exited $GOAL_PICK_EXIT${GOAL_PICK_ERR:+: $GOAL_PICK_ERR}, so which goal is active on this branch is unknown" ;;
   esac
-  [ -n "$GOAL_UNREADABLE_LINES" ] && GOAL_SCAN="$GOAL_UNREADABLE_LINES
-$GOAL_SCAN"
+  [ -n "$GOAL_UNREADABLE_LINES" ] && GOAL_SCAN=$(printf '%s\n%s' "$GOAL_UNREADABLE_LINES" "$GOAL_SCAN")
 fi
 printf '%s\n' "$GOAL_SCAN"
 printf '%s\n' "BRANCH=${GOAL_BRANCH:-\"(unknown — detached HEAD or not a repository)\"}"
