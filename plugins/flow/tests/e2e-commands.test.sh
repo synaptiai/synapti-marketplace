@@ -38,6 +38,16 @@
 #   P3 a setting that could not be read (cascade-resolve.sh exits non-zero)
 #      is reported as false, or the command goes on, instead of saying it
 #      could not be read and stopping (watch.md, resume.md and goal.md too)
+#
+# flow.md, the bare /flow state block
+#   B1 the uncommitted, commits-ahead and conflict lines the suggestions key
+#      on are not printed, so the agent guesses them
+#   B2 an untracked file is not counted as uncommitted, or a conflicted file
+#      is not reported as a conflict
+#   B3 commits ahead are counted against a local main when the remote's
+#      default branch (origin/HEAD) is known, or printed as 0 when no default
+#      branch can be found
+#   B4 outside a git repository the block prints counts it could not take
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -389,4 +399,97 @@ e2e_repo feature/e2e
 e2e_run_fence "$E2E_PLUGIN_DIR/commands/workflow.md" 'cat "$WF_PATH"' 'inspect ../../etc/passwd'
 e2e_expect_equal 1 "$E2E_RC" "the exit status"
 e2e_expect_err "not a workflow id"
+e2e_expect_clean_edges
+
+# _scratch_git <command...> — run a git setup step in the scenario's scratch
+# repository ($E2E_REPO), where the harness's git refuses to run anywhere else.
+_scratch_git() {
+  ( _e2e_git_env; cd "$E2E_REPO" && "$@" ) >/dev/null 2>&1 ||
+    _flow_assert_fail "$E2E_NAME: setup step failed: $*"
+}
+# _scratch_git_may_fail <command...> — the same, for a step that is expected to
+# exit non-zero (a merge that stops on a conflict).
+_scratch_git_may_fail() {
+  ( _e2e_git_env; cd "$E2E_REPO" && "$@" ) >/dev/null 2>&1
+  return 0
+}
+
+# --- flow.md: the bare /flow state block --------------------------------------
+
+FLOW_MD="$E2E_PLUGIN_DIR/commands/flow.md"
+FLOW_STATE_MARK='ASSIGNED_JSON='
+
+# _no_lists — gh answers bare /flow's two lists with nothing.
+_no_lists() {
+  e2e_gh_fixture assigned-issues '[]'
+  e2e_gh_fixture authored-prs '[]'
+}
+
+_flow_test_begin "bare /flow: uncommitted changes and commits ahead of main are printed (B1, B2)"
+e2e_new flow-bare-dirty-ahead
+e2e_describe "feature/e2e two commits ahead of a local main (no remote), one modified tracked file and one untracked file"
+e2e_repo feature/e2e
+_scratch_git git branch -f main HEAD
+_scratch_git sh -c 'printf one > a.txt && git add a.txt && git commit -qm one && printf two > b.txt && git add b.txt && git commit -qm two'
+printf 'changed\n' > "$E2E_REPO/a.txt"
+printf 'new\n' > "$E2E_REPO/notes.txt"
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "BRANCH=feature/e2e"
+e2e_expect_line "UNCOMMITTED=2"
+e2e_expect_line "CONFLICTS=no"
+e2e_expect_line "DEFAULT_BRANCH=main"
+e2e_expect_line "AHEAD=2"
+e2e_expect_clean_edges
+
+_flow_test_begin "bare /flow: a merge that stopped on a conflict is reported (B1, B2)"
+e2e_new flow-bare-conflict
+e2e_describe "main and feature/e2e each change README.md; main is merged into feature/e2e and stops on the conflict"
+e2e_repo feature/e2e
+_scratch_git git branch -f main HEAD
+_scratch_git sh -c 'printf "feature\n" > README.md && git commit -qam feature && git checkout -q main && printf "main\n" > README.md && git commit -qam main && git checkout -q feature/e2e'
+_scratch_git_may_fail git merge -q main
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "CONFLICTS=yes"
+e2e_expect_line "UNCOMMITTED=1"
+e2e_expect_line "AHEAD=1"
+e2e_expect_clean_edges
+
+_flow_test_begin "bare /flow: commits ahead are counted against the remote's default branch when it is known (B3)"
+e2e_new flow-bare-origin-head
+e2e_describe "origin/HEAD names origin/main, which is at the first of feature/e2e's two commits; a local main stays at the root commit"
+e2e_repo feature/e2e
+_scratch_git git branch -f main HEAD
+_scratch_git sh -c 'printf one > a.txt && git add a.txt && git commit -qm one && git update-ref refs/remotes/origin/main HEAD && git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main && printf two > b.txt && git add b.txt && git commit -qm two'
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "DEFAULT_BRANCH=origin/main"
+e2e_expect_line "AHEAD=1"
+e2e_expect_line "UNCOMMITTED=0"
+e2e_expect_clean_edges
+
+_flow_test_begin "bare /flow: with no default branch to compare against, commits ahead are unknown, not 0 (B3)"
+e2e_new flow-bare-no-default
+e2e_describe "the only branch is feature/e2e: the root commit's branch is renamed away and there is no remote"
+e2e_repo feature/e2e
+_scratch_git sh -c 'for b in main master; do if git show-ref --verify --quiet "refs/heads/$b"; then git branch -q -m "$b" old-root; fi; done'
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "DEFAULT_BRANCH=unknown"
+e2e_expect_line "AHEAD=unknown"
+e2e_expect_no_line "AHEAD=0"
+e2e_expect_clean_edges
+
+_flow_test_begin "bare /flow: outside a git repository the working-tree section says so (B4)"
+e2e_new flow-bare-not-a-repo
+e2e_describe "the block runs in a directory that is not in a git repository"
+E2E_REPO="$E2E_DIR/plain"
+mkdir -p "$E2E_REPO"
+_no_lists
+e2e_run_fence "$FLOW_MD" "$FLOW_STATE_MARK"
+e2e_expect_line "STATE=unavailable"
+e2e_expect_line "REASON=not in a git repository"
+e2e_expect_no_out "UNCOMMITTED="
+e2e_expect_no_out "AHEAD="
 e2e_expect_clean_edges

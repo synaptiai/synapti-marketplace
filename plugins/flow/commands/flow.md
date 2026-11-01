@@ -87,6 +87,42 @@ printf '%s\n' "### Branch"
 printf '%s\n' "BRANCH=$(git branch --show-current 2>/dev/null)"
 
 printf '%s\n' ""
+printf '%s\n' "### Working Tree"
+# Read-only git only, so the section works offline. UNCOMMITTED counts every
+# `git status --porcelain` line (staged, unstaged, untracked and conflicted).
+# CONFLICTS is yes while any path is unmerged. AHEAD counts the commits on HEAD
+# that the default branch lacks: the remote's default branch (origin/HEAD) when
+# it is known, else a local main or master; with neither it is unknown, not 0.
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  printf '%s\n' "STATE=unavailable"
+  printf '%s\n' "REASON=not in a git repository"
+else
+  if PORCELAIN=$(git status --porcelain 2>/dev/null); then
+    UNCOMMITTED=$(printf '%s' "$PORCELAIN" | grep -c '^' 2>/dev/null)
+    [ -z "$UNCOMMITTED" ] && UNCOMMITTED=0
+  else
+    UNCOMMITTED=unknown
+  fi
+  printf '%s\n' "UNCOMMITTED=$UNCOMMITTED"
+  if UNMERGED=$(git diff --name-only --diff-filter=U 2>/dev/null); then
+    if [ -n "$UNMERGED" ]; then CONFLICTS=yes; else CONFLICTS=no; fi
+  else
+    CONFLICTS=unknown
+  fi
+  printf '%s\n' "CONFLICTS=$CONFLICTS"
+  DEFAULT_REF=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+  if [ -z "$DEFAULT_REF" ]; then
+    if git show-ref --verify --quiet refs/heads/main; then DEFAULT_REF=main
+    elif git show-ref --verify --quiet refs/heads/master; then DEFAULT_REF=master
+    fi
+  fi
+  AHEAD=""
+  [ -n "$DEFAULT_REF" ] && AHEAD=$(git rev-list --count "$DEFAULT_REF..HEAD" 2>/dev/null)
+  printf '%s\n' "DEFAULT_BRANCH=${DEFAULT_REF:-unknown}"
+  printf '%s\n' "AHEAD=${AHEAD:-unknown}"
+fi
+
+printf '%s\n' ""
 printf '%s\n' "### Assigned Issues"
 # Capture gh exit code separately: gh success with no records returns `[]` exit 0;
 # gh failure (auth, network, non-repo CWD) returns "" with non-zero exit and jq
@@ -127,12 +163,14 @@ fi
 true
 ```
 
-3. Suggest next action based on state. The block above prints only the branch, your assigned issues and your open pull requests. Before choosing among the feature-branch suggestions, read the rest with read-only commands: `git status --porcelain` (uncommitted changes, and `UU`/`AA`/`DU` lines for conflicts) and `git rev-list --count <default branch>..HEAD` (commits ahead).
-   - On default branch with no open PRs → "Try `/flow:start <issue>`"
-   - On feature branch with uncommitted changes → "Try `/flow:commit`"
-   - On feature branch with commits ahead → "Try `/flow:pr`"
-   - On feature branch with merge conflicts → "Try `/flow:resolve`"
-   - With open PRs needing review → "Try `/flow:review <pr>`"
+3. Suggest the next action from the lines the block printed. The first rule that matches wins:
+   - `CONFLICTS=yes` → "Try `/flow:resolve`"
+   - On a feature branch (`BRANCH` is neither the branch named by `DEFAULT_BRANCH`, without an `origin/` prefix, nor empty) with `UNCOMMITTED` above 0 → "Try `/flow:commit`"
+   - On a feature branch with `AHEAD` above 0 → "Try `/flow:pr`"
+   - On the default branch with `AUTHORED_COUNT=0` → "Try `/flow:start <issue>`", naming an `ISSUE=` number when there is one
+   - With open pull requests of yours (`PR=` lines) → "Try `/flow:review <pr>`"
+
+   When the Working Tree section prints `STATE=unavailable`, or a value is `unknown`, skip the rules that need it and say which state could not be read.
 
 ## Natural Language Fallback
 
