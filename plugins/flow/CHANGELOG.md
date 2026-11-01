@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.13.0 (2026-11-01)
 
 flow's documentation describes the plugin as it behaves at this release: an
 audit of every command, skill, agent, reference, template, the READMEs, the
