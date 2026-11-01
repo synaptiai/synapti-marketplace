@@ -63,6 +63,13 @@
 #      repos//milestones
 #   M2 a repository that cannot be resolved still sends a milestone request,
 #      or prints nothing instead of saying the check did not run
+#
+# resolve.md, the conflict check and the completion step
+#   C1 in a linked worktree (.git is a file) a merge or rebase in progress is
+#      reported as inactive
+#   C2 in a linked worktree the completion step does nothing, so the merge is
+#      never committed
+#   C3 an ordinary checkout with no merge in progress reads as active
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -612,4 +619,76 @@ e2e_run_fence "$ISSUE_MD" "$MILESTONE_MARK"
 e2e_expect_line "STATE=unavailable"
 e2e_expect_out "cannot resolve the repository"
 e2e_expect_no_out "MILESTONE="
+e2e_expect_clean_edges
+
+# --- resolve.md: the conflict check and the completion step in a worktree ------
+
+RESOLVE_MD="$E2E_PLUGIN_DIR/commands/resolve.md"
+RESOLVE_CHECK_MARK='CONFLICT_STATE=active'
+RESOLVE_DONE_MARK='git rebase --continue'
+
+# _conflict_branches — feature/e2e and other each change README.md from the
+# root commit; the main checkout stays on feature/e2e.
+_conflict_branches() {
+  _scratch_git sh -c 'printf "feature\n" > README.md && git commit -qam feature && git checkout -q -b other HEAD~1 && printf "other\n" > README.md && git commit -qam other && git checkout -q feature/e2e'
+}
+# _linked_worktree — a linked worktree at $E2E_DIR/wt on a new branch wt-e2e
+# from feature/e2e; E2E_REPO then names it, so the code runs there.
+_linked_worktree() {
+  _scratch_git git worktree add -q -b wt-e2e "$E2E_DIR/wt" feature/e2e
+  E2E_REPO="$E2E_DIR/wt"
+  [ -f "$E2E_REPO/.git" ] || _flow_assert_fail "$E2E_NAME: $E2E_REPO/.git is not a file, so this is not a linked worktree"
+}
+
+_flow_test_begin "/flow:resolve: a merge in progress in a linked worktree is active (C1)"
+e2e_new resolve-worktree-merge
+e2e_describe "a linked worktree on wt-e2e (from feature/e2e) merges other, which stops on a conflict in README.md"
+e2e_repo feature/e2e
+_conflict_branches
+_linked_worktree
+_scratch_git_may_fail git merge -q other
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_CHECK_MARK"
+e2e_expect_line "CONFLICT_STATE=active"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:resolve: a rebase in progress in a linked worktree is active (C1)"
+e2e_new resolve-worktree-rebase
+e2e_describe "a linked worktree on wt-e2e (from feature/e2e) rebases onto other, which stops on a conflict in README.md"
+e2e_repo feature/e2e
+_conflict_branches
+_linked_worktree
+_scratch_git_may_fail git rebase -q other
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_CHECK_MARK"
+e2e_expect_line "CONFLICT_STATE=active"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:resolve: the completion step commits a resolved merge in a linked worktree (C2)"
+e2e_new resolve-worktree-complete
+e2e_describe "a linked worktree merges other, stops on README.md, which is then resolved and staged; the completion step runs"
+e2e_repo feature/e2e
+_conflict_branches
+_linked_worktree
+_scratch_git_may_fail git merge -q other
+_scratch_git sh -c 'printf "resolved\n" > README.md && git add README.md'
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_DONE_MARK"
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_equal 2 "$( ( _e2e_git_env; cd "$E2E_REPO" && git rev-list --parents -n 1 HEAD ) | awk '{print NF - 1}')" "the number of parents of the worktree's HEAD commit"
+e2e_expect_equal no "$( ( _e2e_git_env; cd "$E2E_REPO" && git rev-parse -q --verify MERGE_HEAD >/dev/null ) && echo yes || echo no)" "whether a merge is still in progress"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:resolve: an ordinary checkout reads active during a merge, and inactive with none (C3)"
+e2e_new resolve-checkout-merge
+e2e_describe "the main checkout on feature/e2e merges other, which stops on a conflict"
+e2e_repo feature/e2e
+_conflict_branches
+_scratch_git_may_fail git merge -q other
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_CHECK_MARK"
+e2e_expect_line "CONFLICT_STATE=active"
+e2e_expect_clean_edges
+
+e2e_new resolve-checkout-clean
+e2e_describe "the main checkout on feature/e2e with no merge or rebase in progress"
+e2e_repo feature/e2e
+e2e_run_fence "$RESOLVE_MD" "$RESOLVE_CHECK_MARK"
+e2e_expect_line "CONFLICT_STATE=inactive"
 e2e_expect_clean_edges

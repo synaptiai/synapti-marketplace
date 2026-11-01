@@ -59,9 +59,14 @@ esac
 printf '%s\n' "### Resolve Mode"
 # Quote parenthesized fallback per command-output-format.md rule 2.
 printf '%s\n' "RESOLVE_TARGET=${RESOLVE_TARGET:-\"(none — in-progress merge mode)\"}"
-# These paths assume .git is a directory. In a linked worktree .git is a file,
-# so this prints CONFLICT_STATE=inactive even during a merge or rebase.
-if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+# git rev-parse --git-path names the files in this checkout's git directory,
+# which in a linked worktree is not .git (there .git is a file).
+MERGE_HEAD_PATH=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
+REBASE_MERGE_PATH=$(git rev-parse --git-path rebase-merge 2>/dev/null)
+REBASE_APPLY_PATH=$(git rev-parse --git-path rebase-apply 2>/dev/null)
+if { [ -n "$MERGE_HEAD_PATH" ] && [ -f "$MERGE_HEAD_PATH" ]; } ||
+   { [ -n "$REBASE_MERGE_PATH" ] && [ -d "$REBASE_MERGE_PATH" ]; } ||
+   { [ -n "$REBASE_APPLY_PATH" ] && [ -d "$REBASE_APPLY_PATH" ]; }; then
   printf '%s\n' "CONFLICT_STATE=active"
 else
   printf '%s\n' "CONFLICT_STATE=inactive"
@@ -70,7 +75,7 @@ fi
 true
 ```
 
-- `CONFLICT_STATE` is read from `.git/MERGE_HEAD` and `.git/rebase-*`, which exist only when `.git` is a directory. In a linked worktree it reports `inactive` during a merge or rebase; check with `git status` (an "unmerged paths" section, or "rebase in progress") before concluding there is nothing to resolve. The completion step in Phase 4 has the same limit: in a worktree, finish with `git commit --no-edit` or `git rebase --continue` yourself.
+- `CONFLICT_STATE` is `active` while a merge (`MERGE_HEAD`) or rebase (`rebase-merge`, `rebase-apply`) is in progress in this checkout's git directory, found with `git rev-parse --git-path`, so it holds in a linked worktree too.
 - If mode is PR: verify `gh auth status` succeeds
 - Warn if there are uncommitted changes (`git status --porcelain` is non-empty and no active conflict)
 
@@ -239,11 +244,16 @@ If any markers found, go back to Phase 3 for those files.
 ### 2. Complete Merge/Rebase
 
 ```bash
-# Complete the merge or rebase
-if [ -f .git/MERGE_HEAD ]; then
-  git commit --no-edit
-elif [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
-  git rebase --continue
+# Complete the merge or rebase. git rev-parse --git-path finds this checkout's
+# git directory, which in a linked worktree is not .git.
+MERGE_HEAD_PATH=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)
+REBASE_MERGE_PATH=$(git rev-parse --git-path rebase-merge 2>/dev/null)
+REBASE_APPLY_PATH=$(git rev-parse --git-path rebase-apply 2>/dev/null)
+if [ -n "$MERGE_HEAD_PATH" ] && [ -f "$MERGE_HEAD_PATH" ]; then
+  git commit -q --no-edit
+elif { [ -n "$REBASE_MERGE_PATH" ] && [ -d "$REBASE_MERGE_PATH" ]; } ||
+     { [ -n "$REBASE_APPLY_PATH" ] && [ -d "$REBASE_APPLY_PATH" ]; }; then
+  GIT_EDITOR=true git rebase --continue
 fi
 ```
 
