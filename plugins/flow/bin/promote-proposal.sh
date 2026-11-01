@@ -30,8 +30,16 @@
 #   words, <=600 body words
 # - Target `plugins/flow/skills/learned/<name>/SKILL.md` MUST NOT already exist
 #
+# Tiers: the push follows tiers.push and the draft PR tiers.prCreate, both read
+# in the flow checkout. When either is confirm the script stops before that
+# step, with the promotion committed on its branch (and pushed, when only
+# tiers.prCreate is confirm), and prints the command(s) to run on their own
+# so the tier hook can ask: the push, then `gh pr create` with the rendered
+# PR body file.
+#
 # Exits:
-#   0 — promotion succeeded (or dry-run completed without errors)
+#   0 — promotion succeeded, stopped at a confirm tier with the commands
+#       printed, or dry-run completed without errors
 #   1 — validation failed (proposal malformed, refused to overwrite, etc.)
 #   2 — infrastructure error (file not found, no flow checkout to promote into,
 #       an unreadable checkout, gh failure)
@@ -670,6 +678,24 @@ if [ -d "$TARGET_DIR" ] && [ -n "$(ls -A "$TARGET_DIR" 2>/dev/null)" ]; then
   exit 1
 fi
 
+# tiers.push and tiers.prCreate, read in the flow checkout: git push and gh pr
+# create run there, and flow's git and gh wrappers read the tier where the
+# command runs. Under confirm the wrapper refuses a call the tier hook did not
+# ask about, and the hook never sees a call made inside this script, so a
+# confirm step is left for the user to run as its own command. A setting that
+# cannot be read counts as journal, as it does for the wrapper.
+_pp_tier() {
+  local value
+  if value=$(cd "$REPO_ROOT" && "$(dirname "$FLOW_BIN_LIB")/cascade-resolve.sh" --default journal ".tiers.$1"); then
+    printf '%s' "$value"
+  else
+    echo "promote-proposal.sh: tiers.$1 could not be read (see above); treating it as journal" >&2
+    printf 'journal'
+  fi
+}
+PUSH_TIER=$(_pp_tier push)
+PR_CREATE_TIER=$(_pp_tier prCreate)
+
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "DRY-RUN: validation passed for '$PROPOSAL_NAME'"
   # Name the repository and how it was chosen. A dry run whose output does not
@@ -710,7 +736,13 @@ if [ "$DRY_RUN" -eq 1 ]; then
   _dr_clean
 
   echo "DRY-RUN: would create branch feature/learn-promote-$PROPOSAL_NAME"
-  echo "DRY-RUN: would commit + push + open draft PR"
+  if [ "$PUSH_TIER" = confirm ]; then
+    echo "DRY-RUN: tiers.push is confirm: would commit, then stop and print the push and draft PR commands to run"
+  elif [ "$PR_CREATE_TIER" = confirm ]; then
+    echo "DRY-RUN: tiers.prCreate is confirm: would commit and push, then stop and print the draft PR command to run"
+  else
+    echo "DRY-RUN: would commit + push + open draft PR"
+  fi
   exit 0
 fi
 
@@ -862,10 +894,9 @@ COMMIT_DATE=$(date -u +%Y-%m-%d)
   printf 'where it can still be edited before merge.\n'
 } | git commit --cleanup=whitespace -F -
 
-git push -u origin "$BRANCH"
-BRANCH_PUSHED=1
-
-# Render the PR body via a temp file. Heredoc-inside-$() with both backticks
+# Render the PR body via a temp file, before the push: a confirm tier stops the
+# run before the push or the pull request, and the command it prints for the
+# pull request needs the body. Heredoc-inside-$() with both backticks
 # and apostrophes triggered bash parser ambiguity in earlier iterations; the
 # temp-file approach (with sed substitution for placeholders) is unambiguous
 # and matches gh's recommended `--body-file` pattern for multi-line bodies.
@@ -933,8 +964,39 @@ if [ -s "$EVIDENCE_FILE" ]; then
   } >> "$TMP_BODY"
 fi
 
+PR_TITLE="feat(flow): promote learned skill — $PROPOSAL_NAME"
+# _pp_sq <text> — the text in single quotes, safe to paste into a shell.
+_pp_sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+PUSH_CMD="git -C $(_pp_sq "$REPO_ROOT") push -u origin $BRANCH"
+PR_CMD="cd $(_pp_sq "$REPO_ROOT") && gh pr create --draft --head $BRANCH --title $(_pp_sq "$PR_TITLE") --body-file $(_pp_sq "$TMP_BODY")"
+# _pp_stop <reason> <command>... — leave the committed branch checked out and
+# the PR body on disk (the trap removes neither on exit 0), print the commands
+# to run, each on its own, and end the run.
+_pp_stop() {
+  local reason="$1"
+  shift
+  echo "promote-proposal.sh: $reason"
+  echo "promote-proposal.sh: run each of these as its own command, so flow asks before it runs:"
+  printf '  %s\n' "$@"
+  echo "promote-proposal.sh: the PR body is in $TMP_BODY"
+  TMP_BODY=""
+  exit 0
+}
+
+if [ "$PUSH_TIER" = confirm ]; then
+  _pp_stop "tiers.push is confirm, so the promotion is committed on $BRANCH in $REPO_ROOT but not pushed, and no PR is open." \
+    "$PUSH_CMD" "$PR_CMD"
+fi
+
+git push -u origin "$BRANCH"
+BRANCH_PUSHED=1
+
+if [ "$PR_CREATE_TIER" = confirm ]; then
+  _pp_stop "tiers.prCreate is confirm, so $BRANCH is pushed but no PR is open." "$PR_CMD"
+fi
+
 gh pr create --draft \
-  --title "feat(flow): promote learned skill — $PROPOSAL_NAME" \
+  --title "$PR_TITLE" \
   --body-file "$TMP_BODY"
 
 echo "OK: draft PR created — review and mark ready when satisfied"
