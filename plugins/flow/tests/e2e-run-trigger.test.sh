@@ -47,9 +47,10 @@
 #   R4 a setting value that is not a boolean reads as true
 #   R5 a trigger that is a symbolic link is read
 #   R6 the skill's fence does not find the script in an installed plugin
-#   R7 a repository's own settings turn the setting on, so a repository can
-#      relax its own recursion check (the tier-3 check reads the user's
-#      settings only, and this one must too)
+#   R7 the setting is read from the user's settings only, so a team cannot
+#      turn it on for everyone in the repository's .claude/settings.flow.json
+#      (it is read from the whole settings cascade, unlike
+#      allowAutonomousMerge, which only the user's settings can turn on)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -368,7 +369,7 @@ e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_no_out "RECURSION_VIOLATION="
 e2e_expect_clean_edges
 
-_flow_test_begin "the repository's own settings cannot turn the setting on (R7)"
+_flow_test_begin "the repository's own settings turn the setting on (R7)"
 for f in settings.flow.json settings.flow.local.json; do
   e2e_new "recursion-repo-$f"
   e2e_describe "triggered_runs_may_create_triggers: true; the repository's .claude/$f sets allowTriggerCreationFromTriggeredRun true"
@@ -377,8 +378,8 @@ for f in settings.flow.json settings.flow.local.json; do
   mkdir -p "$E2E_REPO/.claude"
   printf '%s\n' '{"flow":{"triggers":{"allowTriggerCreationFromTriggeredRun":true}}}' > "$E2E_REPO/.claude/$f"
   e2e_run_bin "$RECURSION" t.trigger.yaml
-  e2e_expect_equal 2 "$E2E_RC" "the exit status"
-  e2e_expect_line "RECURSION_VIOLATION=triggered_runs_may_create_triggers"
+  e2e_expect_equal 0 "$E2E_RC" "the exit status"
+  e2e_expect_no_out "RECURSION_VIOLATION="
   e2e_expect_clean_edges
 done
 

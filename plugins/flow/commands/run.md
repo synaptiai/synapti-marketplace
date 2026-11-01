@@ -68,7 +68,7 @@ case "$RUN_ARGS" in *" "*) TRIGGER_ID=${RUN_ARGS#* } ;; esac
 
 ## Recursion enforcement
 
-Recursion is checked when the trigger is validated, not while the target runs. `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` default to `false`. `trigger-policy` (step 3 above) rejects a trigger that sets `_modify_triggers` or `_enable_triggers` to `true`, and one that sets `_create_triggers` to `true` unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is `true` in your user settings. No command, hook or script detects at run time that a command was started by a trigger, so nothing stops the target command from creating, enabling or modifying a trigger; do not do so while running a trigger's target.
+Recursion is checked when the trigger is validated, not while the target runs. `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` default to `false`. `trigger-policy` (step 3 above) rejects a trigger that sets `_modify_triggers` or `_enable_triggers` to `true`, and one that sets `_create_triggers` to `true` unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is `true`. No command, hook or script detects at run time that a command was started by a trigger, so nothing stops the target command from creating, enabling or modifying a trigger; do not do so while running a trigger's target.
 
 The target command's actions keep their tiers: the `tier-gate.sh` hook applies to every Bash command, so push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate` and `tiers.issueAssign`, and merge, release and pushing or deleting a tag always ask. In `claude -p` an ask is a refusal.
 

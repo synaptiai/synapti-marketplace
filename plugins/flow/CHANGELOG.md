@@ -31,8 +31,9 @@ and no script reads.
   `/flow:merge`, `/flow:release` and the tier hook still ask.
   `bin/flow-trigger-tier3-check.sh` runs that check.
 - `flow.triggers.defaultConcurrency` is the concurrency policy of a trigger
-  that sets none, and `flow.triggers.allowTriggerCreationFromTriggeredRun`,
-  read from your user settings only, lets a trigger's runs create triggers.
+  that sets none, and `flow.triggers.allowTriggerCreationFromTriggeredRun`
+  lets a trigger's runs create triggers; a repository's own settings can turn
+  it on.
   A triggered run records its trigger id (`metadata.trigger`), and the
   in-flight check matches on it. The in-flight check stops when it cannot
   read the runs directory or a run's `run.yaml`, so an unreadable run is
