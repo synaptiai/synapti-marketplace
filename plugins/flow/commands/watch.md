@@ -74,6 +74,13 @@ Create a PR-watch trigger that monitors PR #N's CI + review state.
 
 Create a CI-failure trigger that fires on CI status changes for the current branch.
 
+1. Read the template `ci-failure.trigger.yaml` in the `TEMPLATE_DIR` the pre-flight printed.
+2. Substitute `${BRANCH}` → the current branch (`git branch --show-current`; refuse a detached HEAD), `${BRANCH_SLUG}` → the branch name lowercased, each run of characters other than `a-z` and `0-9` replaced by one `-`, leading and trailing `-` removed, and cut to 53 characters (the trigger id `ci-failure-<slug>` must match `^[a-z0-9][a-z0-9-]{0,63}$`), `${REPO}` → from `gh repo view`, `${NOW}` → current ISO timestamp.
+3. Write to `.flow/triggers/ci-failure-<slug>.trigger.yaml`. Do not overwrite an existing file.
+4. Invoke `Skill(trigger-policy)` in `validate` mode. Abort on violation.
+5. Generate `.claude/flow-loop-ci-failure-<slug>.md` with the watch-mode prompt.
+6. Print the manual invocation instructions.
+
 ### `/flow:watch issue <N>`
 
 Create an issue-watch trigger that follows issue #N, read-only on GitHub. Each iteration reads the issue; when its comments, labels, assignees or state changed since the last iteration, it writes a summary to the issue's decision journal and prints it; when the issue is assigned to you and has no branch, it suggests `/flow:start N`. It stops when the issue is closed.

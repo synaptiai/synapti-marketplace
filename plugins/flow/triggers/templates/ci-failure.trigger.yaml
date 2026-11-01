@@ -1,13 +1,14 @@
 # Template: CI failure trigger
 #
 # Fires when CI fails on a branch. Diagnoses the failure and (when safe)
-# applies a fix. Substituted variables: ${BRANCH}, ${REPO}, ${NOW}.
+# applies a fix. Substituted variables: ${BRANCH}, ${BRANCH_SLUG} (the branch
+# name made into an id), ${REPO}, ${NOW}.
 
 apiVersion: flow.synapti.ai/v1
 kind: FlowTrigger
 
 metadata:
-  id: ci-failure-${BRANCH}
+  id: ci-failure-${BRANCH_SLUG}
   name: 'CI failure watch on ${BRANCH}'
   enabled: true
   created_at: '${NOW}'
