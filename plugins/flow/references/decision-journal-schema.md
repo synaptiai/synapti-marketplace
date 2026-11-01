@@ -7,7 +7,7 @@ Reference for the journal file format used by flow's audit trail and learning lo
 | Pattern | When Used |
 |---------|-----------|
 | `issue-{N}.md` | Branch matches `issue-{N}` pattern |
-| `session-{YYYY-MM-DD}.md` | No issue number in branch name, or a goal with no linked issue. Dated by the local calendar day. Written by `bin/journal-record.sh --session` and `bin/journal-append.sh --session` |
+| `session-{YYYY-MM-DD}.md` | No issue number in branch name, or a goal with no linked issue. Dated by the local calendar day, so one file holds a day of such work from every branch. Written by `bin/journal-record.sh --session` and `bin/journal-append.sh --session`: the `/flow:design` and `/flow:brainstorm` decision sections and their manifest artifacts, the `/flow:pr` goal-gate override, and goals with no issue. `/flow:pr` and `/flow:explain` on a branch with no issue number read today's file only |
 
 Journal files are stored in the journal directory (default: `.decisions/`, configurable via `journal.dir` setting).
 

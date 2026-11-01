@@ -131,7 +131,7 @@ Skill(specification-capture):
   - Invocation reason: design
 ```
 
-If `$ISSUE_NUM` is empty (design is exploratory, not tied to an issue), skip this step — there is no journal to write to. The design discussion proceeds without a frozen fence; the user is responsible for capturing the spec when the design lands in an issue.
+If `$ISSUE_NUM` is empty (design is exploratory, not tied to an issue), skip this step: the specification section is written to an issue journal, and there is no issue. The design discussion proceeds without a frozen fence; the user is responsible for capturing the spec when the design lands in an issue.
 
 After the skill returns, surface the non-goals and interface contracts in the design discussion explicitly: every architecture decision must be reasoned against these constraints. A design that violates a captured non-goal is a scope mismatch, not a candidate.
 
@@ -209,13 +209,15 @@ TaskUpdate("Coupling and convention review", status: "completed")
 TaskUpdate("Design decision", status: "in_progress")
 
 1. Use the AskUserQuestion tool with contextual options to ask: "Recommended design: {approach}. {rationale}. Approve?"
-2. **Log decision** to the decision journal when the branch name contains `issue-N` (the block below writes `issue-N.md`). On any other branch it writes nothing, and the manifest emit below writes nothing either; say in the summary that the decision was not journaled.
+2. **Log decision** to the decision journal. On a branch whose name contains `issue-N` the block below writes `issue-N.md`; on any other branch it writes today's session journal, `<journal dir>/session-YYYY-MM-DD.md` (dated by the local calendar day), and the manifest emit below records to the same file.
 
 ```bash
 BRANCH=$(git branch --show-current)
-ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+')
-if [ -n "$ISSUE_NUM" ]; then
-  cat << 'ENTRY' | "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-append.sh" --issue "$ISSUE_NUM" -
+ISSUE_NUM=$(printf '%s\n' "$BRANCH" | grep -oE 'issue-[0-9]+' | head -1 | grep -oE '[0-9]+')
+# The issue journal on an issue branch, today's session journal otherwise.
+JOURNAL_SCOPE=--session
+[ -n "$ISSUE_NUM" ] && JOURNAL_SCOPE=--issue
+cat << 'ENTRY' | "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-append.sh" "$JOURNAL_SCOPE" ${ISSUE_NUM:+"$ISSUE_NUM"} -
 ## Design Decision: {title}
 **Date**: {YYYY-MM-DD} | **Category**: architecture
 **Decision**: {what was decided}
@@ -226,21 +228,25 @@ if [ -n "$ISSUE_NUM" ]; then
 **Failure modes**: {how it fails and what happens then}
 **Consequences**: {what changes, new constraints}
 ENTRY
-fi
 ```
 
    If the helper exits non-zero, report the failure and **skip the manifest emit below** — recording the artifact would leave the journal asserting a design decision its body does not contain, which is worse than a missing record.
 
-   **Manifest emit** — append the design-decision artifact to the journal manifest alongside the freeform `## Design Decision` section. Each block runs in its own shell, so `ISSUE_NUM` from the block above is not set here: set `ISSUE_NUM` to the same number and `DECISION_TITLE` to the decision's title at the top of the block before running it.
+   **Manifest emit** — append the design-decision artifact to the journal manifest alongside the freeform `## Design Decision` section. Each block runs in its own shell, so set `DECISION_TITLE` to the decision's title at the top of the block before running it. The block finds the journal from the branch name itself, as the block above does.
 
    ```bash
-   if [ -n "$ISSUE_NUM" ]; then
-     "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
-       --issue $ISSUE_NUM \
-       --type design-decision \
-       --metadata decision="$DECISION_TITLE" \
-       --metadata category=architecture
-   fi
+   # DESIGN_MANIFEST_BLOCK_BEGIN
+   # Self-contained: re-derive the journal from the branch, as the block above
+   # does, so the artifact goes to the file that holds the section.
+   ISSUE_NUM=$(git branch --show-current 2>/dev/null | grep -oE 'issue-[0-9]+' | head -1 | grep -oE '[0-9]+')
+   JOURNAL_SCOPE=--session
+   [ -n "$ISSUE_NUM" ] && JOURNAL_SCOPE=--issue
+   "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
+     "$JOURNAL_SCOPE" ${ISSUE_NUM:+"$ISSUE_NUM"} \
+     --type design-decision \
+     --metadata decision="$DECISION_TITLE" \
+     --metadata category=architecture
+   # DESIGN_MANIFEST_BLOCK_END
    ```
 
 3. TaskUpdate("Design decision", status: "completed")

@@ -133,19 +133,27 @@ else
   printf '%s\n' "### Decision Journal"
   # The journal directory every flow reader and writer uses (bin/journal-dir.sh):
   # journal.dir, where a value from the repository settings that leaves the
-  # repository is refused on stderr. Only the issue journal (issue-N.md) is
-  # read: on a branch whose name has no issue number this section reports
-  # STATE=empty even when a session-YYYY-MM-DD.md journal exists.
+  # repository is refused on stderr. On a branch whose name contains issue-N
+  # the journal is issue-N.md. On any other branch it is today's session
+  # journal, session-YYYY-MM-DD.md, named by the local calendar day as
+  # journal-append.sh and journal-record.sh name it: a session journal holds
+  # one day of work with no issue number, not one branch's, and earlier days'
+  # files are not loaded here.
   FLOW_JD_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-dir.sh"
   JOURNAL_DIR=".decisions"
   [ -x "$FLOW_JD_HELPER" ] && JOURNAL_DIR=$("$FLOW_JD_HELPER")
   [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-  if [ -n "$ISSUE_NUM" ] && [ -f "$JOURNAL_DIR/issue-$ISSUE_NUM.md" ]; then
-    printf '%s\n' "JOURNAL_FILE=$JOURNAL_DIR/issue-$ISSUE_NUM.md"
-    printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_DIR/issue-$ISSUE_NUM.md" | tr -d ' ')"
+  if [ -n "$ISSUE_NUM" ]; then
+    JOURNAL_FILE="$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+  else
+    JOURNAL_FILE="$JOURNAL_DIR/session-$(date +%Y-%m-%d).md"
+  fi
+  if [ -f "$JOURNAL_FILE" ]; then
+    printf '%s\n' "JOURNAL_FILE=$JOURNAL_FILE"
+    printf '%s\n' "JOURNAL_BYTES=$(wc -c < "$JOURNAL_FILE" | tr -d ' ')"
     printf '%s\n' ""
     printf '%s\n' "#### Journal contents"
-    cat "$JOURNAL_DIR/issue-$ISSUE_NUM.md"
+    cat "$JOURNAL_FILE"
   else
     printf '%s\n' "STATE=empty"
   fi
@@ -263,6 +271,7 @@ true
 If either `### Branch Context` or `### Branch Delta` reports `STATE=blocked`, stop: show the `ERROR=` line and do not continue to Phase 2. A `### Branch Delta` that reports `STATE=unavailable` could not count the commits ahead; fetch the default branch (`git fetch origin <default>:<default>`) and run `/flow:pr` again, or confirm with `git log` that the branch has commits of its own before going on.
 If uncommitted changes exist, offer to run `/flow:commit` first.
 If PR already exists, offer to update instead.
+On a branch with no issue number, `### Decision Journal` holds today's session journal (`session-YYYY-MM-DD.md`, dated by the local calendar day). A session journal holds a day of work with no issue number from every such branch, so take only this branch's entries into the PR body; earlier days are not loaded, so if the branch's commits began on an earlier day, read that day's session journal with `Read` too.
 
 ## Phase 2: PLAN
 
