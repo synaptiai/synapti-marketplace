@@ -198,8 +198,9 @@ e2e_expect_err "pr-99-watch"
 e2e_expect_clean_edges
 
 _flow_test_begin "the run schema: metadata.trigger is optional and holds a trigger id (C9)"
-_schema_errors() {
-  python3 - "$RUN_SCHEMA" "$1" <<'PY'
+if python3 -c 'import jsonschema' >/dev/null 2>&1; then
+  _schema_errors() {
+    python3 - "$RUN_SCHEMA" "$1" <<'PY'
 import json, sys, jsonschema
 schema = json.load(open(sys.argv[1], encoding="utf-8"))
 run = {"apiVersion": "flow.synapti.ai/v1", "kind": "FlowRun",
@@ -212,12 +213,15 @@ if sys.argv[2] != "absent":
 v = jsonschema.validators.validator_for(schema)(schema)
 print(len(list(v.iter_errors(run))))
 PY
-}
-assert_equal 0 "$(_schema_errors absent)" "a run with no metadata.trigger validates"
-assert_equal 0 "$(_schema_errors null)" "a run with metadata.trigger null validates"
-assert_equal 0 "$(_schema_errors pr-42-watch)" "a run with metadata.trigger pr-42-watch validates"
-assert_equal 1 "$(_schema_errors ../outside)" "a run with metadata.trigger ../outside is refused"
-assert_equal 1 "$(_schema_errors Pr-42)" "a run with metadata.trigger Pr-42 is refused"
+  }
+  assert_equal 0 "$(_schema_errors absent)" "a run with no metadata.trigger validates"
+  assert_equal 0 "$(_schema_errors null)" "a run with metadata.trigger null validates"
+  assert_equal 0 "$(_schema_errors pr-42-watch)" "a run with metadata.trigger pr-42-watch validates"
+  assert_equal 1 "$(_schema_errors ../outside)" "a run with metadata.trigger ../outside is refused"
+  assert_equal 1 "$(_schema_errors Pr-42)" "a run with metadata.trigger Pr-42 is refused"
+else
+  _flow_assert_pass "SKIP: jsonschema not installed"
+fi
 
 # --- flow.triggers.defaultConcurrency ------------------------------------------
 

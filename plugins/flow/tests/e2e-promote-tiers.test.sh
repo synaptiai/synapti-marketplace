@@ -58,7 +58,8 @@ _flow_checkout() {
     printf 'flow checkout settings: %s\n' "$1" | _e2e_art
   fi
   ( _e2e_git_env; cd "$E2E_REPO" \
-      && git init -q -b main \
+      && git init -q \
+      && git symbolic-ref HEAD refs/heads/main \
       && git config user.email e2e@example.invalid \
       && git config user.name e2e \
       && git config commit.gpgsign false \
