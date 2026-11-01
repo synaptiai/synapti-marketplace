@@ -391,7 +391,7 @@ When operating as part of an agent team:
 
 ## Review exceptions annotate, never suppress
 
-A project may ship `.flow/review-exceptions.md` — rules its team has already rejected a finding
+A project may ship `<runtime dir>/review-exceptions.md` (its runtime directory, `flow.runtime.stateDir`, default `.flow`) — rules its team has already rejected a finding
 over. Other reviewers are told not to raise a finding that matches one. You are not.
 
 A security finding that matches an exception is reported exactly as any other, with two additions:

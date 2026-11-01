@@ -188,7 +188,7 @@ else
   # REVIEW_EXCEPTIONS_BLOCK_BEGIN
   # The Phase 4 re-review fan-out is told to hand these rows to every reviewer.
   # Without this block that instruction has no source, and the most available
-  # repair for an agent is reading .flow/review-exceptions.md out of the working
+  # repair for an agent is reading <runtime dir>/review-exceptions.md out of the working
   # tree — which after the checkout below is the pull request head, the
   # self-granted exemption the whole design refuses.
   FLOW_RX_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-review-exceptions.sh"
@@ -352,7 +352,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`address-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → categorize → resolve → verify`. Address is **FlowRun-only — it creates NO FlowGoal**: the PR's own review-thread state (resolved comments, re-request status, cycle history) is the durable record of feedback resolution, so there is no separate acceptance-criteria contract to evaluate.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`address-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → categorize → resolve → verify`. Address is **FlowRun-only — it creates NO FlowGoal**: the PR's own review-thread state (resolved comments, re-request status, cycle history) is the durable record of feedback resolution, so there is no separate acceptance-criteria contract to evaluate.
 
 ### System One checks (optional)
 
@@ -381,7 +381,7 @@ fi
 true
 ```
 
-**Still-applies check** — only when the block above printed `S1_STILL_APPLIES=on` or `S1_STILL_APPLIES=shadow`. It runs after the FlowRun is created, so its records go to the run's directory, and the state it sent for each comment (the comment body, its diff hunk and up to 81 lines of the code around it) is kept at `.flow/runs/<RUN_ID>/system-one-state/<COMMENT_ID>.json`. A comment whose lines a later commit changed (GitHub marks it outdated, and its line is nowhere in the file now) is still asked about: the state holds its diff hunk, the code now around its original line number, and `original_lines_present: false`. A comment on a file that no longer exists is not asked about (`REASON=file-missing`). It covers inline review comments that start a thread, the `INLINE_COMMENT=` rows of Phase 1; a reply in a thread (the block prints `REASON=reply` for it), review summaries and conversation comments get the Explore check as written. Run the block below once per inline comment, with `PR_NUM`, `COMMENT_ID` (the `id=` of the row), and `RUN_ID` when `FLOW_RUN_STATE=create`.
+**Still-applies check** — only when the block above printed `S1_STILL_APPLIES=on` or `S1_STILL_APPLIES=shadow`. It runs after the FlowRun is created, so its records go to the run's directory, and the state it sent for each comment (the comment body, its diff hunk and up to 81 lines of the code around it) is kept at `<runtime dir>/runs/<RUN_ID>/system-one-state/<COMMENT_ID>.json` (`<runtime dir>` is the runtime directory `bin/flow-runtime-dir.sh` prints (`flow.runtime.stateDir`, default `.flow`)). A comment whose lines a later commit changed (GitHub marks it outdated, and its line is nowhere in the file now) is still asked about: the state holds its diff hunk, the code now around its original line number, and `original_lines_present: false`. A comment on a file that no longer exists is not asked about (`REASON=file-missing`). It covers inline review comments that start a thread, the `INLINE_COMMENT=` rows of Phase 1; a reply in a thread (the block prints `REASON=reply` for it), review summaries and conversation comments get the Explore check as written. Run the block below once per inline comment, with `PR_NUM`, `COMMENT_ID` (the `id=` of the row), and `RUN_ID` when `FLOW_RUN_STATE=create`.
 
 - **`S1_STILL_APPLIES=on`**: run the block for every inline comment, then act on what it printed:
   - `STILL_APPLIES=applies` — the comment applies. It goes to Phase 2 as an item to fix, as when Explore finds that it applies, and gets no Explore check.
@@ -467,8 +467,13 @@ case "$SA_RC:$SA_REASON" in
   *) SA_SENT=0 ;;
 esac
 SA_TOP=$(git rev-parse --show-toplevel 2>/dev/null)
-if [ "$SA_SENT" = 1 ] && [ -n "${RUN_ID:-}" ] && [ -n "$SA_TOP" ] && [ -d "$SA_TOP/.flow/runs/$RUN_ID" ]; then
-  SA_KEEP="$SA_TOP/.flow/runs/$RUN_ID/system-one-state"
+# The run is under the runtime directory (flow.runtime.stateDir, default
+# .flow), named from the top.
+SA_RT=""
+[ -n "$SA_TOP" ] && SA_RT=$(cd "$SA_TOP" && "$FLOW_ROOT/bin/flow-runtime-dir.sh")
+[ -n "$SA_RT" ] || SA_RT=".flow"
+if [ "$SA_SENT" = 1 ] && [ -n "${RUN_ID:-}" ] && [ -n "$SA_TOP" ] && [ -d "$SA_TOP/$SA_RT/runs/$RUN_ID" ]; then
+  SA_KEEP="$SA_TOP/$SA_RT/runs/$RUN_ID/system-one-state"
   SA_DEST="$SA_KEEP/$COMMENT_ID.json"
   SA_PART=""
   if "$FLOW_ROOT/bin/flow-mkdir.sh" -- "$SA_KEEP" 2>/dev/null \

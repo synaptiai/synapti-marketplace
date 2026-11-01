@@ -487,7 +487,7 @@ else
       *)
         # The helper says why on stderr, which the call above discards. Its first
         # line is asked for again here, so the reason names what was refused (a
-        # symlinked .flow, say) and not only the exit status.
+        # symlinked runtime directory, say) and not only the exit status.
         GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
         GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
         printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
@@ -562,7 +562,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`merge-pr`, goal=`null` — the merge reads the linked FlowGoal for the gate below but the run itself is not goal-owned), initial phase `preflight`. Phase order: `preflight → verify → confirm → merge`. Write a FlowActivity at each boundary (verify, confirm, merge). The confirm boundary is the user's answer to Phase 3's question: write the confirm activity when the user confirms, and the merge activity after the merge command returns.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`merge-pr`, goal=`null` — the merge reads the linked FlowGoal for the gate below but the run itself is not goal-owned), initial phase `preflight`. Phase order: `preflight → verify → confirm → merge`. Write a FlowActivity at each boundary (verify, confirm, merge). The confirm boundary is the user's answer to Phase 3's question: write the confirm activity when the user confirms, and the merge activity after the merge command returns.
 
 **Linked-run completion check** (workflow phase `verify`, before Phase 3's question): before allowing merge, verify that every FlowRun linked to this PR's branch (the `start-issue` run and any `address-pr` / `review-pr` runs) has reached `state.status: completed`. If any linked run is still `active`, refuse the merge — this is Tier 3, so there is **no override** beyond the standard merge confirmation. Surface the still-active run id and point to `/flow:resume`.
 
@@ -863,7 +863,7 @@ Suggest: `/flow:release {type}` if this completes a milestone.
 |---|---|---|
 | Read PR status / reviews / comments / threads | 1 | Autonomous |
 | Finding-ledger gate check (parses `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE`) | 1 | Autonomous; blocks on failure |
-| FlowGoal gate check (on by default; off when `flow.goals.enabled` is `false` or `goalCreation` is `off`; reads `.flow/goals/*.goal.yaml`) | 1 | Autonomous; blocks on `lifecycle.status != achieved` |
+| FlowGoal gate check (on by default; off when `flow.goals.enabled` is `false` or `goalCreation` is `off`; reads `<runtime dir>/goals/*.goal.yaml`, `<runtime dir>` being `flow.runtime.stateDir`, default `.flow`) | 1 | Autonomous; blocks on `lifecycle.status != achieved` |
 | Stale-approval check | 1 | Autonomous; warns on stale |
 | Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Runs after the user accepts the escalation; otherwise blocked. No tier setting covers the skill call itself; any push it makes follows `tiers.push` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |
 | `gh pr merge` | 3 | **Confirm** — asks via `AskUserQuestion` before the command runs; the `tier-gate.sh` permission prompt asks again when it runs (`tiers.merge`, floor `confirm`) |

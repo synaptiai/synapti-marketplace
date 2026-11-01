@@ -1,12 +1,12 @@
 ---
-description: "Manage FlowTrigger artifacts at .flow/triggers/. Subcommands: list, inspect <id>, enable <id>, disable <id>, run <id>, delete <id>. Triggers describe wake-up intent; they do NOT guarantee background execution."
+description: "Manage FlowTrigger artifacts in the runtime directory's triggers/ (.flow/triggers/ by default). Subcommands: list, inspect <id>, enable <id>, disable <id>, run <id>, delete <id>. Triggers describe wake-up intent; they do NOT guarantee background execution."
 argument-hint: "<subcommand> [id]"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill
 ---
 
 # /flow:trigger — FlowTrigger management
 
-Flow cannot invoke native `/loop`, scheduled tasks, or any external runner from plugin code. FlowTrigger artifacts at `.flow/triggers/<id>.trigger.yaml` describe **wake-up intent** — they declare when flow SHOULD resume work and what command to invoke, but actual execution requires manual user invocation (trigger types manual, hook, loop_prompt). The schema also defines github_actions and local_cron, but no runner for them ships and `flow.triggers.allowedTypes` excludes them by default.
+Flow cannot invoke native `/loop`, scheduled tasks, or any external runner from plugin code. FlowTrigger artifacts at `<runtime dir>/triggers/<id>.trigger.yaml` (`<runtime dir>` is the runtime directory the pre-flight block prints as `RUNTIME_DIR=`: `flow.runtime.stateDir`, default `.flow`) describe **wake-up intent** — they declare when flow SHOULD resume work and what command to invoke, but actual execution requires manual user invocation (trigger types manual, hook, loop_prompt). The schema also defines github_actions and local_cron, but no runner for them ships and `flow.triggers.allowedTypes` excludes them by default.
 
 ## Required Skills
 
@@ -41,11 +41,16 @@ if [ "$ENABLED" != "true" ]; then
   exit 0
 fi
 
-# Never through a symlink: a repository can commit .flow as a link to a
-# directory outside the checkout, where the trigger would then be written.
+# Triggers are under the runtime directory, flow.runtime.stateDir (default
+# .flow), printed as RUNTIME_DIR. Never through a symlink: a repository can
+# commit that directory as a link to a directory outside the checkout, where
+# the trigger would then be written.
 # Exit 1 is that refusal; exit 3 is a check that could not run (python3
 # missing), which is not a symlink: say which, and create nothing.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" -- .flow/triggers || { [ $? -eq 3 ] && exit 3; exit 1; }
+RT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+printf '%s\n' "RUNTIME_DIR=$RT"
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" -- "$RT/triggers" || { [ $? -eq 3 ] && exit 3; exit 1; }
 ```
 
 ## Subcommands
@@ -101,7 +106,7 @@ Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 3 — irreversib
 
 | Action | Tier | Behavior |
 |---|---|---|
-| `/flow:trigger list` / `inspect <id>` — read `.flow/triggers/` | 1 | Autonomous, read-only |
+| `/flow:trigger list` / `inspect <id>` — read `<runtime dir>/triggers/` | 1 | Autonomous, read-only |
 | `/flow:trigger enable <id>` / `disable <id>` — toggle `metadata.enabled` after validation | 1 | Autonomous, local file write — `Skill(trigger-policy)` validates before write; atomic via `_journal_atomic.py` |
 | `/flow:trigger run <id>` — single-shot execution of target | 1 | Autonomous, as `/flow:run trigger <id>`; the target command's own actions keep their tiers (push, PR creation, issue creation and issue assignment follow `tiers.*`; merge, release and pushing or deleting a tag always ask), and `trigger-policy` refuses a trigger that does not forbid merge and release |
 | `/flow:trigger delete <id>` — irreversible removal of trigger YAML | 3 | **Confirm** via AskUserQuestion (deletes a possibly-enabled trigger) |

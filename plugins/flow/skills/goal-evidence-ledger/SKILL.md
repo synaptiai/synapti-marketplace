@@ -21,10 +21,10 @@ Iron law: no AC transitions to `pass` without a FlowEvidence sidecar whose `prov
 
 ## Outputs
 
-1. `.flow/runs/<run-id>/evidence/<evidence-id>.evidence.yaml` (schema `plugins/flow/schemas/v1/evidence.schema.json`).
-2. `.flow/runs/<run-id>/evidence/<evidence-id>.txt` — raw stdout/stderr when captured, beside the sidecar. Both files are named from the id lower-cased, with any character other than a-z, 0-9, `_` and `-` made `-`; an id is at most 200 characters.
+1. `<runtime dir>/runs/<run-id>/evidence/<evidence-id>.evidence.yaml` (`<runtime dir>`: what `bin/flow-runtime-dir.sh` prints) (schema `plugins/flow/schemas/v1/evidence.schema.json`).
+2. `<runtime dir>/runs/<run-id>/evidence/<evidence-id>.txt` — raw stdout/stderr when captured, beside the sidecar. Both files are named from the id lower-cased, with any character other than a-z, 0-9, `_` and `-` made `-`; an id is at most 200 characters.
 3. An `evidence-captured` journal artifact.
-4. One line appended to `.flow/runs/<run-id>/events.jsonl`.
+4. One line appended to `<runtime dir>/runs/<run-id>/events.jsonl`.
 
 ## Workflow
 
@@ -80,7 +80,7 @@ With no linked issue, pass `--session` in place of `--issue {N}`.
 
 ### Step 5: Link
 
-The caller updates the AC in `.flow/goals/<id>.goal.yaml`: `status: evidence_collected`, `evidence_ref: .flow/runs/<run-id>/evidence/<evidence-id>.evidence.yaml`, `last_evaluated_at: <now>`.
+The caller updates the AC in `<runtime dir>/goals/<id>.goal.yaml`: `status: evidence_collected`, `evidence_ref: <runtime dir>/runs/<run-id>/evidence/<evidence-id>.evidence.yaml`, `last_evaluated_at: <now>`.
 
 ## Rules
 

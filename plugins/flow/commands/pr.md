@@ -251,7 +251,7 @@ else
         *)
           # The helper says why on stderr, which the call above discards. Its first
           # line is asked for again here, so the reason names what was refused (a
-          # symlinked .flow, say) and not only the exit status.
+          # symlinked runtime directory, say) and not only the exit status.
           GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
           GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
           printf '%s\n' "STATE=unavailable"
@@ -652,7 +652,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    ```markdown
    ## FlowGoal Status
 
-   - **Goal**: `<GOAL_ID>` (from `.flow/goals/<id>.goal.yaml`)
+   - **Goal**: `<GOAL_ID>` (from `<runtime dir>/goals/<id>.goal.yaml`; `<runtime dir>` is `flow.runtime.stateDir`, default `.flow`)
    - **Lifecycle**: `<status>` (not yet `achieved`)
    - **Note**: `/flow:merge` will block until this goal is `achieved` or the user explicitly overrides.
    ```

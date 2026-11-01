@@ -99,7 +99,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`debug`, goal=`$GOAL_LINK` — the debug FlowGoal created in Phase 3 below), initial phase `preflight`. Phase order: `preflight → reproduce → diagnose → fix → verify`. Write a FlowActivity at each boundary.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`debug`, goal=`$GOAL_LINK` — the debug FlowGoal created in Phase 3 below), initial phase `preflight`. Phase order: `preflight → reproduce → diagnose → fix → verify`. Write a FlowActivity at each boundary.
 
 **Parallel searches:**
 

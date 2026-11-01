@@ -71,14 +71,18 @@ Also ignore `.claude/*.lock` — `flow-migrate-settings.sh` (and other writers) 
 
 Also ignore the auto-log trail, `<journal.dir>/auto-log/`. The PostToolUse hooks write a breadcrumb there after every edit and commit; it is local scratch, not journal content, and an unignored directory would leave the working tree permanently dirty. The hooks also drop a self-ignoring `.gitignore` inside that directory, so this line is belt-and-braces rather than the only defense — but a project should not depend on a hook having run to keep its own tree clean.
 
-Also ignore `.flow/watch/`, where `/flow:watch issue <N>` keeps the issue snapshot of each loop iteration. It is local state; `/flow:watch` also writes a `.gitignore` of `*` inside it.
+Also ignore `<runtime dir>/watch/` (the runtime directory, `flow.runtime.stateDir`, default `.flow`, as `bin/flow-runtime-dir.sh` resolves it), where `/flow:watch issue <N>` keeps the issue snapshot of each loop iteration. It is local state; `/flow:watch` also writes a `.gitignore` of `*` inside it.
 
 ```bash
 JOURNAL_DIR=".decisions"
 RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
 [ -x "$RESOLVER" ] && JOURNAL_DIR=$("${RESOLVER%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' '.flow/watch/' "$JOURNAL_DIR/auto-log/"; do
+RUNTIME_DIR=".flow"
+[ -x "$RESOLVER" ] && RUNTIME_DIR=$("${RESOLVER%/cascade-resolve.sh}/flow-runtime-dir.sh")
+RUNTIME_DIR=${RUNTIME_DIR#./}
+[ -n "$RUNTIME_DIR" ] || RUNTIME_DIR=".flow"
+for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$RUNTIME_DIR/watch/" "$JOURNAL_DIR/auto-log/"; do
   if [ -f .gitignore ]; then
     grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
   else

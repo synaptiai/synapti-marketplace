@@ -9,7 +9,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no contract element invented: every specification element is lifted from the journal or escalated. Invoked by `/flow:start` (Phase 1, after the Spec Validation Gate), `/flow:goal create`, and `/flow:debug` (after the confirmed hypothesis) with a goal id, scope, source, and invocation reason (`start | goal-create | review | address | debug`). Returns the written goal path, in `draft`; the caller then invokes `goal-lifecycle` for `draft → active`, which records the `goal-created` journal artifact. Permitted skips: `review` and `address` invocations skip the specification block (they inherit the issue's capture). Nothing else may be skipped.
+Iron law: no goal file without an evaluator binding, and no contract element invented: every specification element is lifted from the journal or escalated. Invoked by `/flow:start` (Phase 1, after the Spec Validation Gate), `/flow:goal create`, and `/flow:debug` (after the confirmed hypothesis) with a goal id, scope, source, and invocation reason (`start | goal-create | review | address | debug`). Returns the written goal path, in `draft`; the caller then invokes `goal-lifecycle` for `draft → active`, which records the `goal-created` journal artifact. Permitted skips: `review` and `address` invocations skip the specification block (they inherit the issue's capture). Nothing else may be skipped.
 
 ## Inputs
 
@@ -20,7 +20,7 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 
 ## Outputs
 
-`.flow/goals/<id>.goal.yaml` conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated). This skill writes no journal artifact: `goal-lifecycle` records `goal-created` on `draft → active`, in the session journal when the goal has no linked issue.
+`<runtime dir>/goals/<id>.goal.yaml` (`<runtime dir>`: what `bin/flow-runtime-dir.sh` prints) conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated). This skill writes no journal artifact: `goal-lifecycle` records `goal-created` on `draft → active`, in the session journal when the goal has no linked issue.
 
 ## Workflow
 
@@ -37,4 +37,4 @@ Iron law: no `.flow/goals/<id>.goal.yaml` without an evaluator binding, and no c
 
 ## Trust
 
-`bin/flow-goal-record.sh --create` also records the goal in the per-user trust ledger (`bin/flow-goal-trust.sh record`). The Stop hook runs a goal's verification commands only when the goal is trusted or `flow.goals.executeVerificationCommands` is true; a goal that arrived with a checkout is not trusted. Editing a `verification_command` by hand untrusts the goal until you run `bin/flow-goal-trust.sh record --goal-file .flow/goals/<id>.goal.yaml`. Full YAML example, settings and the trust ledger: `references/flow-goals.md`.
+`bin/flow-goal-record.sh --create` also records the goal in the per-user trust ledger (`bin/flow-goal-trust.sh record`). The Stop hook runs a goal's verification commands only when the goal is trusted or `flow.goals.executeVerificationCommands` is true; a goal that arrived with a checkout is not trusted. Editing a `verification_command` by hand untrusts the goal until you run `bin/flow-goal-trust.sh record --goal-file <runtime dir>/goals/<id>.goal.yaml`. Full YAML example, settings and the trust ledger: `references/flow-goals.md`.

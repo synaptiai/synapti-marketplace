@@ -351,9 +351,14 @@ esac
 
 if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_ID="issue-$ISSUE_NUM"
-  GOAL_PATH=".flow/goals/${GOAL_ID}.goal.yaml"
-  # No goal is read through a symlink. A repository can commit .flow or
-  # .flow/goals, or the goal file, as a symlink to something outside the
+  # Goals are under the runtime directory, flow.runtime.stateDir (default
+  # .flow), printed as RUNTIME_DIR.
+  RT=$("${CASCADE%/cascade-resolve.sh}/flow-runtime-dir.sh") || RT=""
+  [ -n "$RT" ] || RT=".flow"
+  printf '%s\n' "RUNTIME_DIR=$RT"
+  GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"
+  # No goal is read through a symlink. A repository can commit that directory
+  # or its goals, or the goal file, as a symlink to something outside the
   # checkout, and a goal read there belongs to the target of the link: it is not
   # resumed, and the goal is treated as absent. flow-mkdir.sh --check is the
   # rule every flow writer applies below the repository. A check that cannot
@@ -362,7 +367,7 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_READ_ERR=""
   GOAL_UNCHECKED=""
   GOAL_READ_RC=0
-  GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_READ_RC=$?
+  GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check -- "$RT/goals" 2>&1) || GOAL_READ_RC=$?
   GOAL_DIR_OUT=${GOAL_DIR_OUT#flow-mkdir.sh: }
   # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
   GOAL_DIR_OUT=${GOAL_DIR_OUT%$'\r'}
@@ -433,7 +438,7 @@ Dispatch based on `FLOW_GOAL_STATE`:
   In both create paths the visibility echo is gated on the post-write verify.
 - **`exists`** — non-terminal goal already on disk; print `FlowGoal already exists: <GOAL_PATH> (status: $GOAL_STATUS) — resuming. Use /flow:goal inspect <GOAL_ID> to review.`
 - **`terminal`** — goal is `achieved|failed|cancelled` and immutable. Refuse to resume; surface a six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md): _Situation_: terminal goal at `<GOAL_PATH>`. _Tried_: detected `lifecycle.status=<GOAL_STATUS>`. _Options_: (1) Use `/flow:goal clear <GOAL_ID>` then re-run `/flow:start`, (2) Pick a new goal id, (3) Abort. _Recommendation_: Option 1 if the original goal is stale. _Blocking_: yes. _Risk_: mutating a terminal goal corrupts the audit trail.
-- **`blocked`** — a check the block needs could not run (cascade-resolve unavailable, or the `.flow/goals` symlink check could not run because python3 is missing); surface `FLOW_GOAL_ERROR` and halt Phase 1. It is not a symlink and not an absent goal.
+- **`blocked`** — a check the block needs could not run (cascade-resolve unavailable, or the `<runtime dir>/goals` symlink check could not run because python3 is missing); surface `FLOW_GOAL_ERROR` and halt Phase 1. It is not a symlink and not an absent goal.
 - **`skip`** — proceed without creating a goal.
 
 For `FLOW_GOAL_STATE=create`:
@@ -508,7 +513,7 @@ true
 
 Dispatch on `FLOW_RUN_STATE`: **`skip`** — proceed without a FlowRun. **`blocked`** — `cascade-resolve.sh` was unavailable; surface the `FLOW_RUN_ERROR` line to the user and halt Phase 1 rather than silently proceeding without a run (same posture as `FLOW_GOAL_STATE=blocked`). **`create`** — proceed as below.
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`start-issue`, goal=`$GOAL_LINK` — the FlowGoal created above, or `null` when goal creation was skipped), initial phase `preflight`. Because `/flow:start` is issue-scoped, also emit the `workflow-run` artifact to the issue journal (`journal-record.sh` resolves its directory):
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`start-issue`, goal=`$GOAL_LINK` — the FlowGoal created above, or `null` when goal creation was skipped), initial phase `preflight`. Because `/flow:start` is issue-scoped, also emit the `workflow-run` artifact to the issue journal (`journal-record.sh` resolves its directory):
 
 ```bash
 # Self-contained: re-derive the issue from $ARGUMENTS (the entry !-block's vars

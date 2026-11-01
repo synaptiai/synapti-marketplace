@@ -112,7 +112,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`release`, goal=`null` — a release is not goal-bound), initial phase `preflight`. The release is not issue-scoped, so the `workflow-run` journal artifact is best-effort: emit it only if a single issue can be inferred from the included PRs; otherwise the `run.yaml` is the durable record. A release takes two runs of `/flow:release`, matching `workflows/release.workflow.yaml`: phase order `preflight → bump → release_pr` on the first run, which opens the release pull request, and `preflight → tag` on the second, after that pull request is merged.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`release`, goal=`null` — a release is not goal-bound), initial phase `preflight`. The release is not issue-scoped, so the `workflow-run` journal artifact is best-effort: emit it only if a single issue can be inferred from the included PRs; otherwise the `run.yaml` is the durable record. A release takes two runs of `/flow:release`, matching `workflows/release.workflow.yaml`: phase order `preflight → bump → release_pr` on the first run, which opens the release pull request, and `preflight → tag` on the second, after that pull request is merged.
 
 ## Phase 2: Release State and Version
 

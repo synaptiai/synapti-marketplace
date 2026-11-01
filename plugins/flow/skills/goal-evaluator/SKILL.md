@@ -13,8 +13,8 @@ Iron law: deterministic checks beat LLM judgment: run every `verification_comman
 
 ## Inputs
 
-1. **Goal id**: `.flow/goals/<id>.goal.yaml` with status `active` (or resumable `waiting_for_user`, `waiting_for_ci`, `blocked`). Never read through a symlink: when `bin/flow-mkdir.sh --check .flow/goals` refuses, or the goal file is a symlink, there is no goal to evaluate — it belongs to the link's target.
-2. **Run id**: for `.flow/runs/<run-id>/evidence/`; defaults to the goal's `scope.run_id`.
+1. **Goal id**: `<runtime dir>/goals/<id>.goal.yaml` (`<runtime dir>`: `bin/flow-runtime-dir.sh` output) with status `active` (or resumable `waiting_for_user`, `waiting_for_ci`, `blocked`). Never read through a symlink: when `bin/flow-mkdir.sh --check <runtime dir>/goals` refuses, or the goal file is a symlink, it belongs to the link's target.
+2. **Run id**: for `<runtime dir>/runs/<run-id>/evidence/`; defaults to the goal's `scope.run_id`.
 3. **Trigger**: `manual | command`.
 
 ## Outputs

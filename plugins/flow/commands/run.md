@@ -43,10 +43,12 @@ fi
 
 ## Subcommand: `/flow:run trigger <id>`
 
-1. Read `.flow/triggers/<id>.trigger.yaml`. Error if not found.
+`<runtime dir>` is the runtime directory `bin/flow-runtime-dir.sh` prints (`flow.runtime.stateDir`, default `.flow`).
+
+1. Read `<runtime dir>/triggers/<id>.trigger.yaml`. Error if not found.
 2. Check `metadata.enabled: true`. Error if disabled.
 3. Invoke `Skill(trigger-policy)` in `enforce` mode. Abort on violation (Tier 3 deny, recursion deny, etc.).
-4. Run the concurrency check below. It prints the policy (`CONCURRENCY_POLICY=`: the trigger's `concurrency.policy`, or the setting `flow.triggers.defaultConcurrency`, shipped as `skip_if_running`, when the trigger sets none) and one `IN_FLIGHT=<run id>` line per run of this trigger in flight: a FlowRun whose `metadata.trigger` is this trigger's id and whose `state.status` is `active`. A run that records no trigger, or another trigger, is never in flight for this one, whatever its workflow. A run under a symlinked `.flow`, `.flow/runs` or run directory, or whose `run.yaml` is a symlink, is not read and counts as absent. A non-zero exit means the check could not run (its message is on stderr): stop. Then apply the policy:
+4. Run the concurrency check below. It prints the policy (`CONCURRENCY_POLICY=`: the trigger's `concurrency.policy`, or the setting `flow.triggers.defaultConcurrency`, shipped as `skip_if_running`, when the trigger sets none) and one `IN_FLIGHT=<run id>` line per run of this trigger in flight: a FlowRun whose `metadata.trigger` is this trigger's id and whose `state.status` is `active`. A run that records no trigger, or another trigger, is never in flight for this one, whatever its workflow. A run under a symlinked `<runtime dir>`, `<runtime dir>/runs` or run directory, or whose `run.yaml` is a symlink, is not read and counts as absent. A non-zero exit means the check could not run (its message is on stderr): stop. Then apply the policy:
    - `skip_if_running` — when any run is in flight, exit 0 with a notice naming it.
    - `queue` — queue the run (logs a journal artifact only; nothing holds the run for later execution).
    - `cancel_previous` — transition each in-flight run to `cancelled` (`run-state-management` step 4) before starting.
@@ -86,8 +88,8 @@ The target command's actions keep their tiers: the `tier-gate.sh` hook applies t
 
 | Action | Tier | Behavior |
 |---|---|---|
-| Read `.flow/triggers/<id>.trigger.yaml` and validate via `Skill(trigger-policy)` | 1 | Autonomous, read-only |
-| Concurrency check against `.flow/runs/` for in-flight runs of this trigger | 1 | Autonomous, read-only |
+| Read `<runtime dir>/triggers/<id>.trigger.yaml` and validate via `Skill(trigger-policy)` | 1 | Autonomous, read-only |
+| Concurrency check against `<runtime dir>/runs/` for in-flight runs of this trigger | 1 | Autonomous, read-only |
 | Invoke `target.command` (the trigger's nominated next-action) and append the `trigger-fired` journal artifact | 1 | Autonomous, local file write. The target's own actions keep their tiers: push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate` and `tiers.issueAssign` (default `journal`: run and write one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks); merge, release and pushing or deleting a tag always ask. `trigger-policy` also refuses a trigger whose `forbidden_actions` does not list `merge` and `release`. |
 | Cancel previous in-flight runs (when `concurrency.policy: cancel_previous`) | 1 | Autonomous, local file write — transitions other runs to `cancelled` |
 

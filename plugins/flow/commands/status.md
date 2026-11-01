@@ -195,7 +195,7 @@ else
       *)
         # The helper says why on stderr, which the call above discards. Its first
         # line is asked for again here, so the reason names what was refused (a
-        # symlinked .flow, say) and not only the exit status.
+        # symlinked runtime directory, say) and not only the exit status.
         GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
         GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
         printf '%s\n' "STATE=unavailable"
@@ -205,21 +205,33 @@ else
   fi
 fi
 
+# Section: Runtime Directory — where the runs and triggers below are read:
+# flow.runtime.stateDir, default .flow (bin/flow-runtime-dir.sh).
+printf '%s\n' ""
+printf '%s\n' "### Runtime Directory"
+RT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+printf '%s\n' "RUNTIME_DIR=$RT"
+
 # Section: Recent Runs (last 3 by modification time)
-# The .flow/runs/ directory holds FlowActivity ledgers per workflow invocation.
-# Surface the latest 3 so the user can see what is happening in flight.
+# The runs directory under the runtime directory holds FlowActivity ledgers
+# per workflow invocation. Surface the latest 3 so the user can see what is
+# happening in flight.
 printf '%s\n' ""
 printf '%s\n' "### Recent Runs"
 # RECENT_RUNS_BLOCK_BEGIN
-# No run is read through a symlink: .flow, .flow/runs or a run directory a
-# repository commits as one belongs to the target of the link. A refused run
+# No run is read through a symlink: the runtime directory, its runs or a run
+# directory a repository commits as one belongs to the target of the link. A refused run
 # is left out as absent, with a note on stderr. flow-mkdir.sh --check is the
 # rule every flow writer applies below the repository. A check that cannot
 # run (exit 3: python3 missing) is neither: which runs can be read is then
 # unknown, and the section says so.
 RUNS_MKDIR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh"
+# The runtime directory the section above resolved, or resolved here.
+[ -n "${RT:-}" ] || RT=$("${RUNS_MKDIR%/flow-mkdir.sh}/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
 RUNS_RC=0
-RUNS_ERR=$("$RUNS_MKDIR" --check -- .flow/runs 2>&1) || RUNS_RC=$?
+RUNS_ERR=$("$RUNS_MKDIR" --check -- "$RT/runs" 2>&1) || RUNS_RC=$?
 RUNS_ERR=${RUNS_ERR#flow-mkdir.sh: }
 # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
 RUNS_ERR=${RUNS_ERR%$'\r'}
@@ -227,16 +239,16 @@ RUNS_ERR=${RUNS_ERR%$'\r'}
 if [ "$RUNS_RC" -ne 0 ] && [ "$RUNS_RC" -ne 2 ]; then
   printf '%s\n' "STATE=unavailable"
   printf '%s\n' "REASON=$(printf '%s' "$RUNS_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' '), so which runs can be read is unknown"
-elif [ "$RUNS_RC" -eq 2 ] || [ ! -d ".flow/runs" ]; then
+elif [ "$RUNS_RC" -eq 2 ] || [ ! -d "$RT/runs" ]; then
   printf '%s\n' "STATE=empty"
 else
   # Most-recent-first by mtime. The reverse is done with awk, not tac, which
   # macOS lacks without coreutils.
   # A run directory that is a symlink is left out before the three most recent
   # are taken, so it does not take the place of a run that can be read.
-  RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | while IFS= read -r run; do
-      if [ -L ".flow/runs/$run" ]; then
-        printf '%s\n' "refusing — .flow/runs/$run is a symlink; runs are not read through it" >&2
+  RECENT_RUNS=$(ls -1tr "$RT/runs/" 2>/dev/null | while IFS= read -r run; do
+      if [ -L "$RT/runs/$run" ]; then
+        printf '%s\n' "refusing — $RT/runs/$run is a symlink; runs are not read through it" >&2
         continue
       fi
       printf '%s\n' "$run"
@@ -247,7 +259,7 @@ else
     printf '%s\n' "STATE=ok"
     printf '%s\n' "$RECENT_RUNS" | while read -r run; do
       [ -z "$run" ] && continue
-      RUN_DIR=".flow/runs/$run"
+      RUN_DIR="$RT/runs/$run"
       [ -d "$RUN_DIR" ] || continue
       # Surface the run last verdict if available.
       # A verdict file jq cannot read is not a run that recorded no verdict:
@@ -336,21 +348,23 @@ fi
 # RECENT_RUNS_BLOCK_END
 
 # Section: Active Triggers (gated behind flow.triggers.enabled, on by default)
-# Surface registered triggers under .flow/triggers/*.trigger.yaml so the user
+# Surface registered triggers under <runtime dir>/triggers/*.trigger.yaml so the user
 # can see what is wired to fire automatically. A project whose settings turn
 # the flag off emits STATE=disabled.
 printf '%s\n' ""
 printf '%s\n' "### Active Triggers"
 # TRIGGERS_BLOCK_BEGIN
 TRIG_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+[ -n "${RT:-}" ] || RT=$("${TRIG_HELPER%/cascade-resolve.sh}/flow-runtime-dir.sh" 2>/dev/null) || RT=""
+[ -n "$RT" ] || RT=".flow"
 TRIGGERS_ENABLED="true"
 [ -x "$TRIG_HELPER" ] && TRIGGERS_ENABLED=$("$TRIG_HELPER" --default "true" '.flow.triggers.enabled' 2>/dev/null)
 if [ "$TRIGGERS_ENABLED" != "true" ]; then
   printf '%s\n' "STATE=disabled"
-elif [ ! -d ".flow/triggers" ]; then
+elif [ ! -d "$RT/triggers" ]; then
   printf '%s\n' "STATE=empty"
 else
-  TRIGGER_FILES=$(ls -1 .flow/triggers/*.trigger.yaml 2>/dev/null)
+  TRIGGER_FILES=$(ls -1 "$RT"/triggers/*.trigger.yaml 2>/dev/null)
   if [ -z "$TRIGGER_FILES" ]; then
     printf '%s\n' "STATE=empty"
   elif command -v python3 >/dev/null 2>&1 && python3 -c "import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; import yaml" >/dev/null 2>&1; then
@@ -638,6 +652,8 @@ The complete verbose dashboard (every section):
 |------|-----------|-----|
 | `{GOAL_ID}` | `{GOAL_LIFECYCLE}` | {summary: e.g., "3/5 pass, 1 evidence_collected, 1 pending"} |
 
+{Render `RUNTIME_DIR` only when it is not `.flow`: "Runtime directory: `{RUNTIME_DIR}`".}
+
 ### Recent Runs
 {When STATE=empty: render "No FlowRuns yet."}
 {When STATE=ok: render a table of the most recent 3 runs}
@@ -685,7 +701,9 @@ A single machine-readable JSON object for tooling/debugging — no prose, no tab
 
 ### `--evidence`
 
-Per-AC evidence listing for the active goal (debugging the verdict path). One row per AC from `flow-active-goal.sh --ac-summary`, with the evidence sidecar path under `.flow/runs/<id>/evidence/`:
+`<runtime dir>` is the runtime directory the Runtime Directory section prints as `RUNTIME_DIR=` (`flow.runtime.stateDir`, default `.flow`).
+
+Per-AC evidence listing for the active goal (debugging the verdict path). One row per AC from `flow-active-goal.sh --ac-summary`, with the evidence sidecar path under `<runtime dir>/runs/<id>/evidence/`:
 
 ```markdown
 ## Goal Evidence — {GOAL_ID}
@@ -743,8 +761,8 @@ Edge cases (driven by `LEDGER_STATE=`, NOT by silence):
 | Read `.decisions/` journal directory | 1 | Autonomous, read-only |
 | Read `~/.claude/flow-learn-pending` flag | 1 | Autonomous, read-only |
 | Findings-ledger aggregation across open PRs (`gh api` paginated) | 1 | Autonomous, read-only |
-| Read `.flow/goals/*.goal.yaml` for active goal + ACs | 1 | Autonomous, read-only |
-| Read `.flow/runs/*/` for recent run summaries | 1 | Autonomous, read-only |
+| Read `<runtime dir>/goals/*.goal.yaml` for active goal + ACs | 1 | Autonomous, read-only |
+| Read `<runtime dir>/runs/*/` for recent run summaries | 1 | Autonomous, read-only |
 | Render status tables | 1 | Autonomous, output-only |
 
 `/flow:status` makes **zero mutations**. It cannot create branches, commit files, push, post comments, create issues, or change settings. Every action is a read; every output is a render.

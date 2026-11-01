@@ -1,12 +1,12 @@
 ---
-description: "Inspect and validate FlowWorkflow YAMLs in the plugin's workflows/ directory and .flow/workflows/. Subcommands: list, inspect <id>, validate <id>, graph <id>."
+description: "Inspect and validate FlowWorkflow YAMLs in the plugin's workflows/ directory and the runtime directory's workflows/ (.flow/workflows/ by default). Subcommands: list, inspect <id>, validate <id>, graph <id>."
 argument-hint: "<subcommand> [id]"
 allowed-tools: Bash, Read, Skill
 ---
 
 # /flow:workflow — FlowWorkflow inspection and validation
 
-Seven `/flow:*` commands have a machine-readable process contract under the plugin root's `workflows/<id>.workflow.yaml`: `/flow:start` (start-issue), `/flow:review` (review-pr), `/flow:address` (address-pr), `/flow:merge` (merge-pr), `/flow:release` (release), `/flow:debug` (debug) and `/flow:design` (design). A project can override one at `.flow/workflows/<id>.workflow.yaml`. This command lets you list available workflows, inspect their phase structure, validate their integrity, and render a textual graph.
+Seven `/flow:*` commands have a machine-readable process contract under the plugin root's `workflows/<id>.workflow.yaml`: `/flow:start` (start-issue), `/flow:review` (review-pr), `/flow:address` (address-pr), `/flow:merge` (merge-pr), `/flow:release` (release), `/flow:debug` (debug) and `/flow:design` (design). A project can override one at `<runtime dir>/workflows/<id>.workflow.yaml` (`<runtime dir>` is the runtime directory `bin/flow-runtime-dir.sh` prints (`flow.runtime.stateDir`, default `.flow`)). This command lets you list available workflows, inspect their phase structure, validate their integrity, and render a textual graph.
 
 The command markdown remains Claude's execution manual; this YAML is the inspectable contract that CI can validate.
 
@@ -112,10 +112,12 @@ PYEOF
   fi
 done
 
-if [ -d .flow/workflows ]; then
+RT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+if [ -d "$RT/workflows" ]; then
   printf '\n'
-  printf '%s\n' "Project-local overrides:"
-  for f in .flow/workflows/*.workflow.yaml; do
+  printf '%s\n' "Project-local overrides ($RT/workflows):"
+  for f in "$RT"/workflows/*.workflow.yaml; do
     [ -f "$f" ] || continue
     ID=$(basename "$f" .workflow.yaml)
     printf '%s\n' "  $ID (overrides plugin default)"
@@ -137,7 +139,9 @@ if ! printf '%s\n' "$ID" | grep -qE '^[a-z0-9][a-z0-9-]{0,63}$'; then
   exit 1
 fi
 WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/workflows/${ID}.workflow.yaml"
-[ -f ".flow/workflows/${ID}.workflow.yaml" ] && WF_PATH=".flow/workflows/${ID}.workflow.yaml"
+RT=$("${WF_PATH%/workflows/*}/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+[ -f "$RT/workflows/${ID}.workflow.yaml" ] && WF_PATH="$RT/workflows/${ID}.workflow.yaml"
 
 if [ ! -f "$WF_PATH" ]; then
   printf '%s\n' "Workflow not found: $ID" >&2
@@ -192,7 +196,9 @@ if ! printf '%s\n' "$ID" | grep -qE '^[a-z0-9][a-z0-9-]{0,63}$'; then
   exit 1
 fi
 WF_PATH="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/workflows/${ID}.workflow.yaml"
-[ -f ".flow/workflows/${ID}.workflow.yaml" ] && WF_PATH=".flow/workflows/${ID}.workflow.yaml"
+RT=$("${WF_PATH%/workflows/*}/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+[ -f "$RT/workflows/${ID}.workflow.yaml" ] && WF_PATH="$RT/workflows/${ID}.workflow.yaml"
 
 python3 - "$WF_PATH" <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
@@ -251,12 +257,12 @@ PYEOF
 | `/flow:workflow validate <id>` — invoke `Skill(workflow-validation)`; emit JSON report | 1 | Autonomous, read-only — no writes; the skill produces a diagnostic report |
 | `/flow:workflow graph <id>` — render textual DAG of phases/activities | 1 | Autonomous, output-only |
 
-`/flow:workflow` is entirely read-only. It cannot create, modify, or delete workflow YAMLs; the schema and project-local override files are the only sources of truth. To author a new workflow, edit `.flow/workflows/<id>.workflow.yaml` directly.
+`/flow:workflow` is entirely read-only. It cannot create, modify, or delete workflow YAMLs; the schema and project-local override files are the only sources of truth. To author a new workflow, edit `<runtime dir>/workflows/<id>.workflow.yaml` directly.
 
 ## Architectural notes
 
 - **Workflows are data, not code.** They describe the structure of the `/flow:*` commands; the commands themselves remain Claude's execution manuals. Changing a workflow YAML changes the contract validation but does NOT change command behavior.
-- **Project-local overrides** under `.flow/workflows/` are committed by default (per the gitignore policy in `references/flow-runtime-state.md`). Teams that want truly local overrides can rename to `*.local.workflow.yaml` and add to their personal gitignore.
+- **Project-local overrides** under `<runtime dir>/workflows/` are committed by default (per the gitignore policy in `references/flow-runtime-state.md`). Teams that want truly local overrides can rename to `*.local.workflow.yaml` and add to their personal gitignore.
 - **No native-slash dependencies allowed.** `/flow:workflow validate` rejects workflows that reference `/goal`, `/loop`, `/schedule`, or `/routine` as invoked commands, because a plugin cannot invoke a native slash command.
 
 ## Critical references

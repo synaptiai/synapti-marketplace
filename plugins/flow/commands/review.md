@@ -161,7 +161,12 @@ else
     *)
       # LINKED is all digits by the case above, so the path below carries no
       # value that could reshape the jq filter or the request it goes into.
-      FLOW_GOAL_PATH=".flow/goals/issue-$LINKED.goal.yaml"
+      # Goals are under the runtime directory (flow.runtime.stateDir, default
+      # .flow), named from the top as the pull request's file list names them.
+      FLOW_GOAL_RT=$("${LINKED_HELPER%/flow-pr-linked-issue.sh}/flow-runtime-dir.sh") || FLOW_GOAL_RT=""
+      FLOW_GOAL_RT=${FLOW_GOAL_RT#./}
+      [ -n "$FLOW_GOAL_RT" ] || FLOW_GOAL_RT=".flow"
+      FLOW_GOAL_PATH="$FLOW_GOAL_RT/goals/issue-$LINKED.goal.yaml"
       printf '%s\n' "GOAL_PATH=$FLOW_GOAL_PATH"
       # Whether this pull request changes the goal it is reviewed against.
       # The goal is trusted because it is tracked and a weakening shows up
@@ -783,7 +788,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`review-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → fan_out → consolidate → report`. Review is **FlowRun-only — it creates NO FlowGoal**: a review session is bounded by the PR under review, and the PR's own review-thread state (the posted review comment plus its FLOW_REVIEW_CYCLE marker) is the durable record of what the review found. The `run.yaml` captures the workflow's resumability state; there is no separate goal contract to satisfy.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `run.yaml` in the `RUN_DIR` its block prints (workflow=`review-pr`, goal=`null`), initial phase `preflight`. Phase order: `preflight → fan_out → consolidate → report`. Review is **FlowRun-only — it creates NO FlowGoal**: a review session is bounded by the PR under review, and the PR's own review-thread state (the posted review comment plus its FLOW_REVIEW_CYCLE marker) is the durable record of what the review found. The `run.yaml` captures the workflow's resumability state; there is no separate goal contract to satisfy.
 
 ## Phase 2: PLAN
 

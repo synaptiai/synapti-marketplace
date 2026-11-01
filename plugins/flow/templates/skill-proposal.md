@@ -3,7 +3,7 @@ name: "{proposal-name}"
 description: "[flow-learned] {one-line description of the knowledge this skill captures}"
 # skill | enforcement | exception. Omitted means skill, so every proposal
 # written before this key existed still promotes. `exception` promotes to a row
-# in .flow/review-exceptions.md rather than to a learned skill, and needs only
+# in <runtime dir>/review-exceptions.md rather than to a learned skill, and needs only
 # the Pattern Detected, Evidence and Exception row sections below.
 type: skill
 source-sessions:
@@ -115,7 +115,7 @@ the frontmatter for the same reason and published alongside this section.}
 
 *Exception proposals only — delete this section for a skill or enforcement proposal.*
 
-One table row for `.flow/review-exceptions.md`, in its column order:
+One table row for `<runtime dir>/review-exceptions.md` (`<runtime dir>` is the runtime directory `bin/flow-runtime-dir.sh` prints (`flow.runtime.stateDir`, default `.flow`)), in its column order:
 
 ```
 | {rule, as a reviewer would need to read it} | {path glob the rule is scoped to} | {why the team rejected the finding} | {issue or PR references} |

@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Agent
 
 # /flow:goal — FlowGoal lifecycle management
 
-Project-local replacement for the session-only Claude Code `/goal` built-in. Flow cannot invoke `/goal` from plugin code — instead this command writes durable `.flow/goals/<id>.goal.yaml` artifacts that the Stop hook (`flow-goal-stop.sh`), evaluator, and `/flow:status` all read.
+Project-local replacement for the session-only Claude Code `/goal` built-in. Flow cannot invoke `/goal` from plugin code — instead this command writes durable `<runtime dir>/goals/<id>.goal.yaml` artifacts (`<runtime dir>` is the runtime directory, `flow.runtime.stateDir`, default `.flow`, which the scan block below prints as `RUNTIME_DIR=`) that the Stop hook (`flow-goal-stop.sh`), evaluator, and `/flow:status` all read.
 
 ## Required Skills
 
@@ -81,14 +81,18 @@ if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH
 # disk. Every file that failed to read is named on its own line, and the scan
 # then says it does not know rather than answering "none".
 #
-# No goal is read through a symlink. A repository can commit .flow or
-# .flow/goals, or a goal file, as a symlink to something outside the checkout,
+# Goals are under the runtime directory, flow.runtime.stateDir (default
+# .flow), printed as RUNTIME_DIR. No goal is read through a symlink. A
+# repository can commit that directory or its goals, or a goal file, as a
+# symlink to something outside the checkout,
 # and a goal read through it belongs to the target of the link. ensure_repo_dir() in
 # bin/_journal_atomic.py is the rule every flow writer applies: a refused
 # directory is said on stderr and the scan answers STATE=none, and a goal file
 # that is a symlink is named as not read.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
-GOAL_SCAN=$(python3 - "$FLOW_ROOT/bin" <<'PYEOF'
+RT=$("$FLOW_ROOT/bin/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+GOAL_SCAN=$(python3 - "$FLOW_ROOT/bin" "$RT" <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -103,8 +107,9 @@ import yaml
 from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
 
 READ_NOTE = "goals are not read through it"
+GOALS_DIR = os.path.join(sys.argv[2], "goals")
 try:
-    ensure_repo_dir(".flow/goals")
+    ensure_repo_dir(GOALS_DIR)
 except RepoDirRefused as exc:
     print("%s; %s" % (exc.summary, READ_NOTE), file=sys.stderr)
     print("STATE=none")
@@ -123,7 +128,7 @@ def one_line(v):
 
 active_count = 0
 unreadable = []
-for path in sorted(glob.glob('.flow/goals/*.goal.yaml')):
+for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
     if os.path.islink(path):
         unreadable.append("GOAL_UNREADABLE=%s — it is a symlink; %s" % (path, READ_NOTE))
         continue
@@ -178,11 +183,11 @@ GOAL_BRANCH=$(git branch --show-current 2>/dev/null)
 if [ "$(printf '%s\n' "$GOAL_SCAN" | sed -n 's/^STATE=//p')" = "ok" ]; then
   ACTIVE_COUNT=$(printf '%s\n' "$GOAL_SCAN" | sed -n 's/^ACTIVE_COUNT=//p')
   GOAL_UNREADABLE_LINES=$(printf '%s\n' "$GOAL_SCAN" | grep '^GOAL_UNREADABLE=')
-  ACTIVE_GOAL=$("$FLOW_ROOT/bin/flow-active-goal.sh" --branch-strict --path 2>/dev/null); GOAL_PICK_EXIT=$?
+  ACTIVE_GOAL=$("$FLOW_ROOT/bin/flow-active-goal.sh" --branch-strict --path --runtime-dir "$RT" 2>/dev/null); GOAL_PICK_EXIT=$?
   GOAL_PICK_ERR=""
   if [ "$GOAL_PICK_EXIT" -ne 0 ] && [ "$GOAL_PICK_EXIT" -ne 1 ]; then
     # The helper says why on stderr; its first line is asked for again here.
-    GOAL_PICK_ERR=$({ "$FLOW_ROOT/bin/flow-active-goal.sh" --branch-strict --path >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+    GOAL_PICK_ERR=$({ "$FLOW_ROOT/bin/flow-active-goal.sh" --branch-strict --path --runtime-dir "$RT" >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
     GOAL_PICK_ERR=${GOAL_PICK_ERR#flow-active-goal.sh: }
   fi
   case "$GOAL_PICK_EXIT" in
@@ -206,6 +211,7 @@ REASON=flow-active-goal.sh exited $GOAL_PICK_EXIT${GOAL_PICK_ERR:+: $GOAL_PICK_E
 fi
 printf '%s\n' "$GOAL_SCAN"
 printf '%s\n' "BRANCH=${GOAL_BRANCH:-\"(unknown — detached HEAD or not a repository)\"}"
+printf '%s\n' "RUNTIME_DIR=$RT"
 # GOAL_SCAN_BLOCK_END
 ```
 
@@ -229,13 +235,13 @@ Acceptance criteria:
 
 Last evaluation:   <last_evaluation.at> — <last_evaluation.result>
 Reason:            <last_evaluation.reason>
-Delta:             <made_progress | unchanged | regressed>  (from .flow/runs/<run-id>/last-verdict.json — see references/flow-goals.md § Verdict delta semantics)
+Delta:             <made_progress | unchanged | regressed>  (from <runtime dir>/runs/<run-id>/last-verdict.json — see references/flow-goals.md § Verdict delta semantics)
 
 Stop hook mode:    <stopHookEnforcement value>
 Next safe action:  /flow:goal evaluate <id>
 ```
 
-No subcommand reads a goal through a symlink. The scan above refuses a symlinked `.flow` or `.flow/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check .flow/goals`, then no goal file that is a symlink). Run files are read the same way: the delta in `status` and the events in `inspect` come from `.flow/runs/<run-id>/` only when `bin/flow-mkdir.sh --check .flow/runs/<run-id>` passes and neither `last-verdict.json` nor `events.jsonl` is itself a symlink; otherwise say the run file is not read through a symlink and show none. A repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
+No subcommand reads a goal through a symlink. The scan above refuses a symlinked `<runtime dir>` or `<runtime dir>/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check <runtime dir>/goals`, then no goal file that is a symlink). Run files are read the same way: the delta in `status` and the events in `inspect` come from `<runtime dir>/runs/<run-id>/` only when `bin/flow-mkdir.sh --check <runtime dir>/runs/<run-id>` passes and neither `last-verdict.json` nor `events.jsonl` is itself a symlink; otherwise say the run file is not read through a symlink and show none. A repository can commit `<runtime dir>` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
 
 ### `/flow:goal create <kind> [id]`
 
@@ -250,16 +256,16 @@ Examples:
 
 Workflow:
 1. Resolve `<id>` from `<kind>` + branch state.
-2. Pre-flight check: refuse if `.flow/goals/<id>.goal.yaml` already exists with non-terminal status.
+2. Pre-flight check: refuse if `<runtime dir>/goals/<id>.goal.yaml` already exists with non-terminal status.
 3. Invoke `Skill(goal-contract-capture)` with the inputs documented in its SKILL.md.
 4. After the skill writes the YAML, transition `lifecycle: draft → active` via `Skill(goal-lifecycle)`.
-5. Print: `Created .flow/goals/<id>.goal.yaml (status: active).`
+5. Print: `Created <runtime dir>/goals/<id>.goal.yaml (status: active).`
 
 ### `/flow:goal inspect <id>`
 
 Read-only deep dump:
 - Print the goal's full YAML frontmatter
-- Print the last 3 entries from `.flow/runs/<run-id>/events.jsonl` filtered to events about this goal
+- Print the last 3 entries from `<runtime dir>/runs/<run-id>/events.jsonl` filtered to events about this goal
 - Print the transition log (lifecycle history) from the linked journal artifacts
 
 ### `/flow:goal evaluate <id>`
@@ -359,13 +365,13 @@ Transition `{waiting_for_user, waiting_for_ci, blocked} → active` via `Skill(g
 
 ### `/flow:goal clear <id>`
 
-Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `.flow/goals/` as audit trail; status is terminal.
+Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `<runtime dir>/goals/` as audit trail; status is terminal.
 
 Confirmation via AskUserQuestion is mandatory (Tier 3 action: cancels potentially in-flight work).
 
 ### `/flow:goal history`
 
-List all `.flow/goals/*.goal.yaml` files with one line per goal:
+List all `<runtime dir>/goals/*.goal.yaml` files with one line per goal:
 
 ```
 <id>  <status>  <outcome (truncated)>  <created_at>
@@ -377,7 +383,7 @@ Filter via flag:
 
 ## Stop hook interaction
 
-This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `.flow/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no goal has `status: active`.
+This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `<runtime dir>/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no goal has `status: active`.
 
 When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates the active goal after every turn, with throttling and budget enforcement: it runs the deterministic checks and, when criteria without a command remain, runs the same judge `/flow:goal evaluate` runs, through the same helper. It cannot ask, so it never writes `achieved`; run `/flow:goal evaluate <id>` to finalize.
 
@@ -398,7 +404,7 @@ When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates t
 | `/flow:goal` (default) / `status` — read goal yaml, render summary | 1 | Autonomous, read-only |
 | `/flow:goal inspect <id>` — full YAML + events + transition log | 1 | Autonomous, read-only |
 | `/flow:goal history` — list all goals with filters | 1 | Autonomous, read-only |
-| `/flow:goal create <kind>` — invoke `Skill(goal-contract-capture)`, write `.flow/goals/<id>.goal.yaml`, transition draft→active | 1 | Autonomous, local file writes (the goal YAML, the lifecycle transition and its `goal-created` journal artifact) |
+| `/flow:goal create <kind>` — invoke `Skill(goal-contract-capture)`, write `<runtime dir>/goals/<id>.goal.yaml`, transition draft→active | 1 | Autonomous, local file writes (the goal YAML, the lifecycle transition and its `goal-created` journal artifact) |
 | `/flow:goal evaluate <id>` — non-terminal verdict — invoke `Skill(goal-evaluator)`, persist verdict, update lifecycle | 1 | Autonomous |
 | `/flow:goal evaluate <id>` — terminal verdict (`achieved` / `failed`) | 3 | **Confirm** via AskUserQuestion (see "Terminal-transition Tier 3 confirmation" above) |
 | `/flow:goal pause <id>` — active → waiting_for_user | 1 | Autonomous; reason via AskUserQuestion if not `--reason` |

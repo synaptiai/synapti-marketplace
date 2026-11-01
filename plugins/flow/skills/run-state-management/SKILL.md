@@ -10,7 +10,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: no phase transition without an activity write — `state.completed_activities[]` is the source of truth for `/flow:resume`, and a missing activity makes resume skip ahead and lose work. Invoked when `FLOW_RUN_STATE=create` (gated by `flow.runtime.enabled`) by `/flow:start`, `/flow:debug`, `/flow:address`, `/flow:review`, `/flow:merge`, `/flow:release` at command entry (create), at every phase boundary (activity), and at completion (terminal transition); `/flow:pr` appends activities to the active `start-issue` run; `/flow:resume` reads its output. Returns `.flow/runs/<id>/run.yaml`, `activities/<NNN>-<name>.yaml`, `events.jsonl`, and a `workflow-run` journal artifact. Permitted skips: only when `flow.runtime.enabled` is `false`, or when step 1 refuses the run directory because `.flow`, `.flow/runs` or the run directory is a symlink — then nothing under `.flow/` is written.
+Iron law: no phase transition without an activity write — `state.completed_activities[]` is the source of truth for `/flow:resume`, and a missing activity makes resume skip ahead and lose work. Invoked when `FLOW_RUN_STATE=create` (gated by `flow.runtime.enabled`) by `/flow:start`, `/flow:debug`, `/flow:address`, `/flow:review`, `/flow:merge`, `/flow:release` at command entry (create), at every phase boundary (activity), and at completion (terminal transition); `/flow:pr` appends activities to the active `start-issue` run; `/flow:resume` reads its output. Returns `RUN_DIR/run.yaml` (`RUN_DIR` from step 1), `activities/<NNN>-<name>.yaml`, `events.jsonl`, and a `workflow-run` journal artifact. Permitted skips: only when `flow.runtime.enabled` is `false`, or when step 1 refuses the run directory (a symlink on the way) — then nothing is written.
 
 ## Inputs
 
@@ -34,10 +34,13 @@ The invoking command MUST pass:
 case "${RUN_ID:-}" in
   ''|.|..|*/*|*..*) printf '%s\n' "ERROR: RUN_ID must be a run id without '/' or '..', got '${RUN_ID:-}'" >&2; exit 1 ;;
 esac
-# Never through a symlink: a repository can commit .flow or .flow/runs as a
-# link to a directory outside the checkout, where run.yaml would be written.
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-mkdir.sh" -- ".flow/runs/$RUN_ID" || { [ $? -eq 3 ] && exit 3; exit 1; }
-printf '%s\n' "RUN_DIR=.flow/runs/$RUN_ID"
+# Never through a symlink: the repository may commit one to elsewhere.
+FLOW_BIN="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin"
+RT=$("$FLOW_BIN/flow-runtime-dir.sh") || RT=""
+[ -n "$RT" ] || RT=".flow"
+printf '%s\n' "RUNTIME_DIR=$RT"
+"$FLOW_BIN/flow-mkdir.sh" -- "$RT/runs/$RUN_ID" || { [ $? -eq 3 ] && exit 3; exit 1; }
+printf '%s\n' "RUN_DIR=$RT/runs/$RUN_ID"
 # RUN_DIR_CREATE_BLOCK_END
 ```
 

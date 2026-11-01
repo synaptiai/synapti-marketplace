@@ -141,7 +141,7 @@ Return one JSON object of this shape:
     {
       "criterion_id": "AC1",
       "status": "pass | fail | incomplete",
-      "evidence_ref": ".flow/runs/.../evidence/...",
+      "evidence_ref": "<runtime dir>/runs/.../evidence/...",
       "limitations": ["..."]
     }
   ],

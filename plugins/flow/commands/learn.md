@@ -121,9 +121,11 @@ GOALS_ENABLED="false"
 if [ "$GOALS_ENABLED" != "true" ]; then
   printf '%s\n' "STATE=disabled"
 else
-  # No goal is read through a symlink. A repository can commit .flow or
-  # .flow/goals, or a goal file, as a symlink to something outside the
-  # checkout, and a goal read there belongs to the target of the link.
+  # Goals and runs are under the runtime directory, flow.runtime.stateDir
+  # (default .flow), printed as RUNTIME_DIR. No goal is read through a
+  # symlink. A repository can commit that directory or its goals, or a goal
+  # file, as a symlink to something outside the checkout, and a goal read
+  # there belongs to the target of the link.
   # flow-mkdir.sh --check is the rule every flow writer applies below the
   # repository; a refusal is said on stderr and no goal file is listed. A
   # check that cannot run (exit 3: python3 missing) is not a refusal and not
@@ -131,15 +133,18 @@ else
   GOAL_FILES=0
   GOAL_LIST=""
   LEARN_UNCHECKED=""
+  RT=$("${HELPER%/cascade-resolve.sh}/flow-runtime-dir.sh") || RT=""
+  [ -n "$RT" ] || RT=".flow"
+  printf '%s\n' "RUNTIME_DIR=$RT"
   GOAL_DIR_RC=0
-  GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/goals 2>&1) || GOAL_DIR_RC=$?
+  GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- "$RT/goals" 2>&1) || GOAL_DIR_RC=$?
   GOAL_DIR_ERR=${GOAL_DIR_ERR#flow-mkdir.sh: }
   # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
   GOAL_DIR_ERR=${GOAL_DIR_ERR%$'\r'}
   if [ "$GOAL_DIR_RC" -eq 0 ]; then
-    if [ -d ".flow/goals" ]; then
-      GOAL_LIST=$(find .flow/goals -maxdepth 1 -name '*.goal.yaml' ! -type l 2>/dev/null | LC_ALL=C sort)
-      find .flow/goals -maxdepth 1 -name '*.goal.yaml' -type l 2>/dev/null | LC_ALL=C sort |
+    if [ -d "$RT/goals" ]; then
+      GOAL_LIST=$(find "$RT/goals" -maxdepth 1 -name '*.goal.yaml' ! -type l 2>/dev/null | LC_ALL=C sort)
+      find "$RT/goals" -maxdepth 1 -name '*.goal.yaml' -type l 2>/dev/null | LC_ALL=C sort |
         while IFS= read -r GOAL_LINK; do
           printf 'refusing — %s is a symlink; goals are not read through it\n' "$GOAL_LINK" >&2
         done
@@ -150,26 +155,26 @@ else
     LEARN_UNCHECKED=$(printf '%s' "$GOAL_DIR_ERR" | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
   fi
   [ -n "$GOAL_LIST" ] && GOAL_FILES=$(printf '%s\n' "$GOAL_LIST" | wc -l | tr -d ' ')
-  # No run is read through a symlink either: .flow, .flow/runs or a run
-  # directory committed as one belongs to the target of the link. A refused
+  # No run is read through a symlink either: the runtime directory, its runs
+  # or a run directory committed as one belongs to the target of the link. A refused
   # run is left out, with a note on stderr.
   RUN_FILES=0
   RUN_LIST=""
   VERDICT_LIST=""
   RUN_DIR_RC=0
-  RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- .flow/runs 2>&1) || RUN_DIR_RC=$?
+  RUN_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- "$RT/runs" 2>&1) || RUN_DIR_RC=$?
   RUN_DIR_ERR=${RUN_DIR_ERR#flow-mkdir.sh: }
   RUN_DIR_ERR=${RUN_DIR_ERR%$'\r'}
   if [ "$RUN_DIR_RC" -eq 0 ]; then
-    if [ -d ".flow/runs" ]; then
-      find .flow/runs -mindepth 1 -maxdepth 1 -type l 2>/dev/null | LC_ALL=C sort |
+    if [ -d "$RT/runs" ]; then
+      find "$RT/runs" -mindepth 1 -maxdepth 1 -type l 2>/dev/null | LC_ALL=C sort |
         while IFS= read -r RUN_LINK; do
           printf 'refusing — %s is a symlink; runs are not read through it\n' "$RUN_LINK" >&2
         done
-      RUN_LIST=$(find .flow/runs -name "events.jsonl" ! -type l 2>/dev/null | LC_ALL=C sort)
+      RUN_LIST=$(find "$RT/runs" -name "events.jsonl" ! -type l 2>/dev/null | LC_ALL=C sort)
       # The last verdict of each run, for the stuck-detection pattern, listed the same
       # way: never one that is a symlink.
-      VERDICT_LIST=$(find .flow/runs -name "last-verdict.json" ! -type l 2>/dev/null | LC_ALL=C sort)
+      VERDICT_LIST=$(find "$RT/runs" -name "last-verdict.json" ! -type l 2>/dev/null | LC_ALL=C sort)
     fi
   elif [ "$RUN_DIR_RC" -eq 2 ]; then
     printf '%s; runs are not read through it\n' "${RUN_DIR_ERR%"; nothing is written under it"}" >&2
@@ -529,7 +534,9 @@ Analyze journal entries for:
 
 ### Goal Failure Patterns (v3, when `flow.goals.enabled: true`)
 
-Parse the `GOAL_FILE=`, `RUN_EVENTS=` and `RUN_VERDICT=` files the block lists (`.flow/goals/*.goal.yaml`, `.flow/runs/*/events.jsonl`, `.flow/runs/*/last-verdict.json`, none read through a symlink) to detect goal-level patterns the journal alone can't see:
+`<runtime dir>` is the runtime directory the context block prints as `RUNTIME_DIR=` (`flow.runtime.stateDir`, default `.flow`).
+
+Parse the `GOAL_FILE=`, `RUN_EVENTS=` and `RUN_VERDICT=` files the block lists (`<runtime dir>/goals/*.goal.yaml`, `<runtime dir>/runs/*/events.jsonl`, `<runtime dir>/runs/*/last-verdict.json`, none read through a symlink) to detect goal-level patterns the journal alone can't see:
 
 - **Recurring failed ACs**: same `verification_command` failing across 3+ goals → the command may be wrong, flaky, or testing the wrong thing. Pattern qualifies when the same command string appears in `objective.acceptance_criteria[].verification_command` of ≥3 goals AND the corresponding AC `last_result` shows non-zero exit on each.
 - **Stuck-detection hits**: count of `delta == "unchanged"` runs across recent verdicts. A goal that hit `failAfterStuckTurns` is parseable from the `RUN_VERDICT=` files the block lists (never a `last-verdict.json` that is a symlink) + a final `lifecycle.status: failed` with a `last_evaluation.reason` starting `stuck_no_progress`. Pattern: 2+ goals failing this way → either ACs are too coarse, or the executor needs different scaffolding.
@@ -629,7 +636,7 @@ cannot read.
 **Exception proposals** (from the Dismissal patterns category) use the `-exception` suffix and carry
 only `## Pattern Detected`, `## Evidence` and `## Exception row`. The other sections are skill-shaped
 and say nothing about a rule. The body of `## Exception row` is one table row for
-`.flow/review-exceptions.md`:
+`<runtime dir>/review-exceptions.md`:
 
 ```
 | {the rule, as a reviewer needs to read it} | {path glob it is scoped to} | {why the team rejected the finding} | {the pull requests it was dismissed on} |
@@ -638,7 +645,7 @@ and say nothing about a rule. The body of `## Exception row` is one table row fo
 The glob comes from where the dismissals actually happened — the `location` field of the clustered
 artifacts, narrowed to the directory they share. A rule scoped wider than the evidence supports is a
 rule that will suppress findings nobody dismissed. Promotion appends the row; it never writes a
-skill, and `/flow:learn` never writes `.flow/review-exceptions.md` itself.
+skill, and `/flow:learn` never writes `<runtime dir>/review-exceptions.md` itself.
 
 ## Phase 5: Display Summary
 
@@ -716,7 +723,7 @@ The two states are different findings. One says the evidence was read and was em
 | Action | Tier | Behavior |
 |---|---|---|
 | Read decision journal | 1 | Autonomous, read-only |
-| Read `.flow/goals/*.goal.yaml` + `.flow/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
+| Read `<runtime dir>/goals/*.goal.yaml` + `<runtime dir>/runs/*/events.jsonl` (v3) | 1 | Autonomous, read-only |
 | Read session transcripts under `<config>/projects/<slug>/` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) via `bin/flow-mine-corrections.sh` | 1 | Autonomous, read-only, user-scoped files (outside repo); gated by `learning.sources` |
 | Pattern detection across journal entries + goal/run events + transcript corrections | 1 | Autonomous |
 | Ask System One about each transcript correction candidate (site `learn.correction`), and record the Phase 2 verdict on each one asked | 1 | Off by default; only your user settings can set it to `shadow` or `on`. With provider `typesafe` the user turn as typed (up to 600 characters) and the first 300 characters of the assistant's last message before it go to TypeSafe's hosted API, with nothing removed, so a key typed into the turn goes with it; with `custom`, or `imajev` at an address that is not on your machine, they go to the server at `baseUrl`; with `imajev` at its default local address nothing leaves the machine. Records and verdicts go to the per-user state directory |

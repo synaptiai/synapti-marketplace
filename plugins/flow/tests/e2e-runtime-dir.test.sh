@@ -246,3 +246,73 @@ e2e_expect_equal 0 "$E2E_RC" "the exit status"
 e2e_expect_file_has "$RT/runs/active-run/events.jsonl" session_end
 e2e_expect_equal removed "$([ -e "$E2E_REPO/$RT/runs/old-run" ] && echo kept || echo removed)" "the completed run 40 days old"
 _no_default_dir
+
+# --- command and skill blocks (D8) -------------------------------------------
+
+_flow_test_begin "run-state-management: the run directory is created under the runtime directory (D8)"
+e2e_new runtime-dir-run-create
+e2e_describe "flow.runtime.stateDir build/flow-runtime; the skill's run directory block for run r-1"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+e2e_run_block RUN_ID=r-1 skills/run-state-management/SKILL.md RUN_DIR_CREATE_BLOCK
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "RUNTIME_DIR=$RT"
+e2e_expect_line "RUN_DIR=$RT/runs/r-1"
+e2e_expect_equal yes "$([ -d "$E2E_REPO/$RT/runs/r-1" ] && echo yes || echo no)" "$RT/runs/r-1 exists"
+_no_default_dir
+
+_flow_test_begin "/flow:watch pre-flight creates the triggers folder under the runtime directory (D8)"
+e2e_new runtime-dir-watch-preflight
+e2e_describe "flow.runtime.stateDir build/flow-runtime; the /flow:watch pre-flight block"
+e2e_repo feature/issue-7-watch
+_state_dir "\"$RT\""
+e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/watch.md" '"$RT/triggers"'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_line "RUNTIME_DIR=$RT"
+e2e_expect_equal yes "$([ -d "$E2E_REPO/$RT/triggers" ] && echo yes || echo no)" "$RT/triggers exists"
+_no_default_dir
+
+_flow_test_begin "/flow:status: recent runs and triggers are read from the runtime directory (D8)"
+e2e_new runtime-dir-status
+e2e_describe "flow.runtime.stateDir build/flow-runtime; one run and one trigger under it"
+e2e_repo feature/issue-7-watch
+_state_dir "\"$RT\""
+mkdir -p "$E2E_REPO/$RT/runs/r-1" "$E2E_REPO/$RT/triggers"
+printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowRun\nmetadata:\n  id: r-1\n  workflow: start-issue\nstate:\n  status: active\n' > "$E2E_REPO/$RT/runs/r-1/run.yaml"
+e2e_run_bin bin/flow-watch-create.sh --kind issue --repo o/r --now 2026-01-01T00:00:00Z --issue 7
+e2e_run_block commands/status.md RECENT_RUNS_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_out "r-1"
+e2e_run_block commands/status.md TRIGGERS_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_out "issue-7-watch"
+_no_default_dir
+
+_flow_test_begin "/flow:resume and /flow:goal read runs and goals from the runtime directory (D8)"
+e2e_new runtime-dir-resume-goal
+e2e_describe "flow.runtime.stateDir build/flow-runtime; an active run and the active goal issue-42 under it"
+e2e_repo feature/issue-42-search-fix
+_state_dir "\"$RT\""
+mkdir -p "$E2E_REPO/$RT/runs/r-1"
+printf 'apiVersion: flow.synapti.ai/v1\nkind: FlowRun\nmetadata:\n  id: r-1\n  workflow: start-issue\nstate:\n  status: active\n' > "$E2E_REPO/$RT/runs/r-1/run.yaml"
+_goal_at "$RT"
+e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/resume.md" 'No FlowRuns exist'
+e2e_expect_line "RUNTIME_DIR=$RT"
+e2e_expect_no_out "No FlowRuns exist"
+e2e_run_block commands/resume.md RESUME_SCAN_BLOCK
+e2e_expect_line "RUN_ID=r-1"
+e2e_run_block commands/goal.md GOAL_SCAN_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_line "ACTIVE_GOAL=$RT/goals/issue-42.goal.yaml"
+e2e_expect_line "RUNTIME_DIR=$RT"
+_no_default_dir
+
+_flow_test_begin "/flow:setup ignores the watch folder of the runtime directory (D8)"
+e2e_new runtime-dir-setup-ignore
+e2e_describe "flow.runtime.stateDir build/flow-runtime; the /flow:setup ignore block"
+e2e_repo feature/issue-7-watch
+_state_dir "\"$RT\""
+e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" 'for IGNORE in'
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_file_has .gitignore "$RT/watch/"
+e2e_expect_file_lacks .gitignore ".flow/watch/"

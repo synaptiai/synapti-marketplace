@@ -140,7 +140,7 @@ When invoked as a parallel sub-agent:
 
 ## Review exceptions annotate a security finding, never suppress it
 
-A project may ship `.flow/review-exceptions.md` — rules its team has already rejected a finding
+A project may ship `<runtime dir>/review-exceptions.md` (its runtime directory, `flow.runtime.stateDir`, default `.flow`) — rules its team has already rejected a finding
 over — and the dispatch that sends you here hands you those rows.
 
 They do not apply to a security finding. Injection, authorization, secrets, credential handling and
