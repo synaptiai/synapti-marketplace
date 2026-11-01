@@ -4,9 +4,9 @@
 # flow-release-versions.sh, commit only the bumped files and the changelog
 # file, and push the branch. Nothing is pushed to the default branch.
 #
-# It stops before creating anything when the release branch already exists in
-# this clone or a version file it would bump has uncommitted changes of its
-# own. When the bump, the commit or the push fails, it puts the repository back
+# It stops before creating anything when the release branch starts with + or
+# -, already exists in this clone, or a version file it would bump has
+# uncommitted changes of its own. When the bump, the commit or the push fails, it puts the repository back
 # as it found it: the version files restored, the branch or commit it started
 # on checked out again, the release branch deleted, and the changelog edit and
 # anything staged before kept as they were. PR_CLEANUP says what it did or
@@ -43,6 +43,14 @@ if [ -z "${RELEASE_BRANCH:-}" ] || [ -z "${DEFAULT_BRANCH:-}" ] || [ -z "${VERSI
   printf '%s\n' "PR_ERROR=\"set RELEASE_BRANCH, DEFAULT_BRANCH and VERSION from Phase 2\""
   exit 1
 fi
+# git push reads a first + as a forced push and a first - as an option, and
+# git check-ref-format --branch accepts a name that starts with +.
+case "$RELEASE_BRANCH" in
+  [+-]*)
+    printf '%s\n' "PR_STATE=blocked"
+    printf '%s\n' "PR_ERROR=\"the release branch $RELEASE_BRANCH starts with + or -, which git push reads as a forced push or an option; change conventions.branchPatterns.release\""
+    exit 1 ;;
+esac
 if [ -n "${PLUGIN:-}" ] && [ -n "${MARKET_VERSION:-}" ]; then
   PR_TITLE="chore(release): $PLUGIN $VERSION, marketplace $MARKET_VERSION"
 elif [ -n "${PLUGIN:-}" ]; then
@@ -209,7 +217,8 @@ if [ "$PUSH_TIER" = confirm ]; then
   printf '%s\n' "PR_NEXT=\"tiers.push is confirm: push the branch as its own command, git push -u origin $RELEASE_BRANCH, then open the pull request\""
   exit 0
 fi
-if ! git push -q -u origin "$RELEASE_BRANCH"; then
+# A full refspec: the branch name is never read as anything but a branch.
+if ! git push -q -u origin "refs/heads/$RELEASE_BRANCH:refs/heads/$RELEASE_BRANCH"; then
   _flow_undo
   printf '%s\n' "PR_STATE=blocked"
   printf '%s\n' "PR_ERROR=\"git push of $RELEASE_BRANCH failed, so the bump commit was undone; check that origin is reachable, then run /flow:release again\""

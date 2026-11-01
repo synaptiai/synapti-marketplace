@@ -57,6 +57,8 @@
 #      release", and the run re-creates one
 #   S10 the release branch name is built from a version or a branch pattern
 #      that does not make a valid branch name
+#   S15 a branch pattern starting with + (which git check-ref-format --branch
+#      accepts) gives a release branch that git push reads as a forced push
 #   S11 a tag whose only release is a draft counts as having no release
 #      (GitHub's lookup by tag name returns published releases only), so the
 #      run creates a second release beside the draft
@@ -96,6 +98,8 @@
 #      leaves the release's version of it staged in place of the user's
 #   P10 a changelog edit the user already staged reads as "no change" (the
 #      working tree matches the index) and is left out of the bump commit
+#   P11 a RELEASE_BRANCH starting with + or - is created and pushed: git push
+#      reads +<branch> as a forced push of <branch>, and -<branch> as an option
 #   T1 the tag is lightweight, or on a commit other than TAG_COMMIT
 #   T2 a commit that is not on the default branch, or an existing tag, is
 #      tagged anyway
@@ -893,6 +897,20 @@ e2e_expect_no_out "RELEASE_BRANCH="
 e2e_expect_no_out "RELEASE_RUN="
 e2e_expect_clean_edges
 
+for PATTERN in '+release/{version}' '-release/{version}'; do
+  e2e_new "release-plan-pattern-$(printf '%s' "$PATTERN" | cut -c1 | tr '+-' 'pm')"
+  e2e_describe "conventions.branchPatterns.release set to '$PATTERN' (S15)"
+  _released_marketplace
+  mkdir -p "$E2E_REPO/.claude"
+  printf '{"conventions":{"branchPatterns":{"release":"%s"}}}\n' "$PATTERN" > "$E2E_REPO/.claude/settings.flow.json"
+  e2e_run_block "$RELEASE_MD" RELEASE_PLAN_BLOCK 'minor beta'
+  e2e_expect_line "STATE=blocked"
+  e2e_expect_out "starts with + or -"
+  e2e_expect_no_out "RELEASE_BRANCH="
+  e2e_expect_no_out "RELEASE_RUN="
+  e2e_expect_clean_edges
+done
+
 e2e_new release-plan-bad-next-version
 e2e_describe "a version script that answers with a next version holding a slash"
 _released_marketplace
@@ -1203,6 +1221,33 @@ for E2E_FENCE_SHELLS in $ALL_SHELLS; do
   e2e_expect_equal "fixtures" "$(_git log -1 --format=%s chore/release-1.3.0)" "the existing branch (untouched)"
   e2e_expect_equal "" "$(_status)" "the working tree"
 done
+
+_flow_test_begin "Phase 4 pr: a release branch starting with + or - is refused before anything is created (P11)"
+for E2E_FENCE_SHELLS in $ALL_SHELLS; do
+  for BR in +chore/release-1.3.0 -chore/release-1.3.0; do
+    e2e_new "release-pr-branch-$(printf '%s' "$BR" | cut -c1 | tr '+-' 'pm')-$E2E_FENCE_SHELLS"
+    e2e_describe "RELEASE_BRANCH=$BR; origin has chore/release-1.3.0 with a commit of its own, and this clone a diverged local chore/release-1.3.0; block under $E2E_FENCE_SHELLS"
+    _released_npm
+    # A push of +chore/release-1.3.0 force-pushes the local chore/release-1.3.0
+    # over origin's.
+    _git switch -q -c chore/release-1.3.0
+    _git commit -q --allow-empty -m "origin's own"
+    _git push -q origin chore/release-1.3.0
+    ORIGIN_RELEASE=$(_git rev-parse HEAD)
+    _git reset -q --hard main
+    _git commit -q --allow-empty -m "local, diverged"
+    _git switch -q main
+    e2e_run_block "RELEASE_BRANCH=$BR" DEFAULT_BRANCH=main VERSION=1.3.0 TAG_PREFIX=v "$RELEASE_MD" RELEASE_PR_BLOCK
+    e2e_expect_equal 1 "$E2E_RC" "the exit status"
+    e2e_expect_line "PR_STATE=blocked"
+    e2e_expect_out "starts with + or -"
+    e2e_expect_equal "main" "$(_git branch --show-current)" "the branch afterwards"
+    e2e_expect_equal 0 "$(_git for-each-ref --format='%(refname:short)' refs/heads/ | grep -c '^[+-]')" "local branches named with a leading + or - (none created)"
+    e2e_expect_equal "$ORIGIN_RELEASE" "$(_git ls-remote origin refs/heads/chore/release-1.3.0 | cut -f1)" "origin's chore/release-1.3.0 (not overwritten)"
+    e2e_expect_file_has package.json '"version": "1.2.3"'
+  done
+done
+E2E_FENCE_SHELLS="$ALL_SHELLS"
 
 _flow_test_begin "Phase 4 pr: a version file with changes of its own stops the run before anything is written (P7)"
 for E2E_FENCE_SHELLS in $ALL_SHELLS; do

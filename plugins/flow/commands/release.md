@@ -128,7 +128,7 @@ The block below works out which run this is, from the state of the repository an
 
 The run stops with `STATE=blocked` when the current version's tag is in this clone but not on origin (a tag push that did not finish): `LOCAL_TAG` names it. Show the user both ways forward: push it with `git push origin <tag>`, after which the next run publishes it, or delete it with `git tag -d <tag>`. It stops the same way when a release branch is left in this clone from an earlier run with no pull request: `LOCAL_BRANCH` names it, to be pushed with `git push -u origin <branch>` and given its pull request with `gh pr create --base <default branch> --head <branch>`, or deleted with `git branch -D <branch>`. It stops the same way when GitHub has only a draft release for the tag, whether the tag is already on origin or is the one this run would create (`RELEASE_RUN=tag` or `untagged`; a draft can name a tag that does not exist yet): `DRAFT_RELEASE` names the tag, to be published with `gh release edit <tag> --draft=false` or deleted with `gh release delete <tag>` (flow's tier hook asks before either runs); deleting the draft keeps any tag, so the next run creates the release. `STATE=unavailable` means origin or GitHub did not answer, and the run cannot tell what is released.
 
-The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`).
+The version files are the repository's own (`package.json`, `pyproject.toml`, `Cargo.toml`, `.claude-plugin/plugin.json`) or, with a plugin named, that plugin's `plugin.json`, its entry in `.claude-plugin/marketplace.json`, and the marketplace's `metadata.version`. Every file is listed as `bump` (current and new version) or `skip` (with the reason: a file flow does not edit, such as `setup.py`, a lockfile, or a dynamic version). The tag is `TAG_PREFIX` + `TAG_VERSION`: the marketplace version in a marketplace, the version otherwise. The release branch is `conventions.branchPatterns.release` with `{version}` replaced by `TAG_VERSION` (default `chore/release-{version}`). The run stops with `STATE=blocked` when that is not a valid branch name, or when it starts with `+` or `-`, which `git push` would read as a forced push or an option.
 
 ```!
 # Output: `###`-headed sections + KEY=value per
@@ -365,6 +365,11 @@ else
     elif [ -z "$LOOKUP_VERSION" ]; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"the next version cannot be worked out; see REFUSED\""
+    elif case "$RELEASE_BRANCH" in [+-]*) true ;; *) false ;; esac; then
+      # A push reads a first + as a force and a first - as an option, and
+      # check-ref-format accepts a name that starts with +.
+      printf '%s\n' "STATE=blocked"
+      printf '%s\n' "ERROR=\"conventions.branchPatterns.release, with {version} replaced, starts with + or -, which a push reads as a force or an option\""
     elif ! git check-ref-format --branch "$RELEASE_BRANCH" >/dev/null 2>&1; then
       printf '%s\n' "STATE=blocked"
       printf '%s\n' "ERROR=\"conventions.branchPatterns.release, with {version} replaced, is not a valid branch name\""
