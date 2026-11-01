@@ -1,5 +1,5 @@
 ---
-description: "Universal workflow entry point. Use /flow <verb> <target> for skill-driven GitHub development. Verbs: start, commit, pr, review, address, merge, resolve, release, status, learn, setup, explain, debug, design, brainstorm, issue."
+description: "Universal workflow entry point. Use /flow <verb> <target> for skill-driven GitHub development. Verbs: start, commit, pr, review, address, merge, resolve, release, status, learn, setup, explain, debug, design, brainstorm, issue, goal, resume, run, trigger, watch, workflow."
 argument-hint: <verb> [target]
 allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreate, TaskList, TaskUpdate, TaskGet, Grep, Glob
 ---
@@ -26,23 +26,56 @@ Parse `$ARGUMENTS` to extract verb and target:
 
 ### Examples
 
-- `/flow:start 42` → Skill: flow:start, args: "42"
-- `/flow:commit` → Skill: flow:commit
-- `/flow:pr` → Skill: flow:pr
-- `/flow:review 15` → Skill: flow:review, args: "15"
-- `/flow:merge 15` → Skill: flow:merge, args: "15"
-- `/flow:resolve 15` → Skill: flow:resolve, args: "15"
-- `/flow:release patch` → Skill: flow:release, args: "patch"
-- `/flow:debug "TypeError in auth module"` → Skill: flow:debug, args: "TypeError in auth module"
-- `/flow:design 42` → Skill: flow:design, args: "42"
-- `/flow:brainstorm "caching strategy"` → Skill: flow:brainstorm, args: "caching strategy"
-- `/flow:issue "password reset fails for SSO users"` → Skill: flow:issue, args: "password reset fails for SSO users"
+- `/flow start 42` → Skill: flow:start, args: "42"
+- `/flow commit` → Skill: flow:commit
+- `/flow pr` → Skill: flow:pr
+- `/flow review 15` → Skill: flow:review, args: "15"
+- `/flow merge 15` → Skill: flow:merge, args: "15"
+- `/flow resolve 15` → Skill: flow:resolve, args: "15"
+- `/flow release patch` → Skill: flow:release, args: "patch"
+- `/flow debug "TypeError in auth module"` → Skill: flow:debug, args: "TypeError in auth module"
+- `/flow design 42` → Skill: flow:design, args: "42"
+- `/flow brainstorm "caching strategy"` → Skill: flow:brainstorm, args: "caching strategy"
+- `/flow issue "password reset fails for SSO users"` → Skill: flow:issue, args: "password reset fails for SSO users"
+- `/flow goal status` → Skill: flow:goal, args: "status"
+- `/flow resume` → Skill: flow:resume
+- `/flow run trigger pr-15-watch` → Skill: flow:run, args: "trigger pr-15-watch"
+- `/flow trigger list` → Skill: flow:trigger, args: "list"
+- `/flow watch pr 15` → Skill: flow:watch, args: "pr 15"
+- `/flow workflow list` → Skill: flow:workflow, args: "list"
+
+### Verbs
+
+| Verb | What it does |
+|------|--------------|
+| `start` | Start work on a GitHub issue: assign it, create the branch, break the acceptance criteria into tasks, implement |
+| `commit` | Classify changes and create atomic conventional commits |
+| `pr` | Review the branch and create a pull request |
+| `review` | Review a pull request |
+| `address` | Address review feedback on a pull request |
+| `merge` | Merge an approved pull request, after confirmation |
+| `resolve` | Resolve merge conflicts on the branch or for a pull request |
+| `release` | Create a release in two runs: a release pull request, then the tag and GitHub release after it is merged |
+| `status` | Read-only overview of issues, pull requests, branch and journal |
+| `learn` | Find recurring patterns in the journal and transcripts and write skill proposals |
+| `setup` | Initialize flow for a repository |
+| `explain` | Answer questions about decisions made on the branch |
+| `debug` | Root-cause analysis of a failure |
+| `design` | Design or review architecture |
+| `brainstorm` | Compare approaches before implementing |
+| `issue` | Create a well-crafted GitHub issue |
+| `goal` | Create, inspect, evaluate, pause, resume or clear a FlowGoal |
+| `resume` | Show where an interrupted FlowRun stopped and the next safe action |
+| `run` | Run a FlowTrigger's target once |
+| `trigger` | List, inspect, enable, disable, run or delete FlowTriggers |
+| `watch` | Create a watch trigger (pr, ci, issue, branch) and, for loops, the `/loop` prompt |
+| `workflow` | List, inspect, validate or graph FlowWorkflow YAMLs |
 
 ## Bare `/flow` (No Arguments)
 
 When invoked without arguments, show help and current status:
 
-1. Display available verbs with one-line descriptions
+1. Display the verbs with their one-line descriptions from the **Verbs** table above
 2. Quick state queries (read-only):
 
 ```!
@@ -94,7 +127,7 @@ fi
 true
 ```
 
-3. Suggest next action based on state:
+3. Suggest next action based on state. The block above prints only the branch, your assigned issues and your open pull requests. Before choosing among the feature-branch suggestions, read the rest with read-only commands: `git status --porcelain` (uncommitted changes, and `UU`/`AA`/`DU` lines for conflicts) and `git rev-list --count <default branch>..HEAD` (commits ahead).
    - On default branch with no open PRs → "Try `/flow:start <issue>`"
    - On feature branch with uncommitted changes → "Try `/flow:commit`"
    - On feature branch with commits ahead → "Try `/flow:pr`"

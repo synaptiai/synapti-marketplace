@@ -1,5 +1,5 @@
 ---
-description: "Manage FlowGoal completion contracts — create, inspect, evaluate, pause/resume/clear, history. Use when starting a goal-driven task, when checking active-goal state, or when finalizing the verdict after evidence is collected. Captures acceptance criteria with verification commands, runs deterministic checks, and dispatches the goal-evaluator-judge for fuzzy criteria."
+description: "Manage FlowGoal completion contracts — create, inspect, evaluate, pause/resume/clear, history. Use when starting a goal-driven task, when checking active-goal state, or when finalizing the verdict after evidence is collected. Captures acceptance criteria with verification commands, runs deterministic checks, and runs the goal judge (bin/flow-judge.sh, the claude CLI with no tools) for fuzzy criteria."
 argument-hint: "[subcommand] [args]"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, Skill, Agent
 ---
@@ -57,7 +57,7 @@ STOP_MODE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh
 
 ### `/flow:goal` — default (no arguments)
 
-Equivalent to `/flow:goal status`. Shows the active goal for the current branch/PR.
+Equivalent to `/flow:goal status`. Shows an active goal: the scan below reads every goal file and reports the first one, in filename order, whose `lifecycle.status` is `active`. It does not filter by branch, so with active goals on several branches it can show one that belongs to another branch; `/flow:goal history --status active` lists them all.
 
 ### `/flow:goal status`
 
@@ -305,7 +305,7 @@ For **non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `wait
 
 Print the resulting verdict + per-AC table. If lifecycle transitioned to `achieved`, print celebration. If `failed`, print the failing AC + suggested next action.
 
-**When any AC has `last_result.reason: not_executed`** (the Stop hook's deterministic-checks runner skipped the command because `flow.goals.executeVerificationCommands` defaults to `false`), append this hint to the printed output:
+**When the deterministic-check report lists any AC under `not_executed`** (the deterministic-checks runner skipped its command because the goal is not trusted and `flow.goals.executeVerificationCommands` defaults to `false`; the goal file itself does not record this), append this hint to the printed output:
 
 > Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to let the Stop hook auto-run each AC's `verification_command` during evaluator-loop and deterministic-check passes. This setting governs the Stop hook path (`hooks/scripts/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` always executes verification commands when present, so the hint applies only to ACs whose last evaluation came from a Stop hook pass.
 
@@ -348,7 +348,7 @@ When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates t
 - `plugins/flow/skills/goal-contract-capture/SKILL.md` — contract authoring
 - `plugins/flow/skills/goal-evaluator/SKILL.md` — evaluation loop
 - `plugins/flow/skills/goal-lifecycle/SKILL.md` — state transitions
-- `plugins/flow/agents/goal-evaluator-judge.md` — independent judge agent
+- `plugins/flow/agents/goal-evaluator-judge.md` — the goal judge's instructions (its body is the system prompt `bin/flow-judge.sh --judge goal` gives the claude CLI)
 - `plugins/flow/references/flow-goals.md` — user-facing FlowGoal model doc
 - `plugins/flow/references/stop-hook-goal-enforcement.md` — Stop hook architecture
 - `plugins/flow/schemas/v1/goal.schema.json` — the schema goals validate against
@@ -360,7 +360,7 @@ When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates t
 | `/flow:goal` (default) / `status` — read goal yaml, render summary | 1 | Autonomous, read-only |
 | `/flow:goal inspect <id>` — full YAML + events + transition log | 1 | Autonomous, read-only |
 | `/flow:goal history` — list all goals with filters | 1 | Autonomous, read-only |
-| `/flow:goal create <kind>` — invoke `Skill(goal-contract-capture)`, write `.flow/goals/<id>.goal.yaml`, transition draft→active | 2 | Journal-and-proceed (writes a goal artifact + lifecycle transition) |
+| `/flow:goal create <kind>` — invoke `Skill(goal-contract-capture)`, write `.flow/goals/<id>.goal.yaml`, transition draft→active | 1 | Autonomous, local file writes (the goal YAML, the lifecycle transition and its `goal-created` journal artifact) |
 | `/flow:goal evaluate <id>` — non-terminal verdict — invoke `Skill(goal-evaluator)`, persist verdict, update lifecycle | 1 | Autonomous |
 | `/flow:goal evaluate <id>` — terminal verdict (`achieved` / `failed`) | 3 | **Confirm** via AskUserQuestion (see "Terminal-transition Tier 3 confirmation" above) |
 | `/flow:goal pause <id>` — active → waiting_for_user | 1 | Autonomous; reason via AskUserQuestion if not `--reason` |

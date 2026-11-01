@@ -378,6 +378,6 @@ If the user explicitly wants to act on the resume rather than just inspect, offe
 | Read linked `.flow/goals/<id>.goal.yaml` for goal context | 1 | Autonomous, read-only |
 | Read last N lines of `events.jsonl` for recent activity | 1 | Autonomous, read-only |
 | Format and print resume report | 1 | Autonomous, output-only |
-| Optional AskUserQuestion offering the suggested next command | 2 | Asks only if the user explicitly wants to act; outcome is the user's choice to invoke the next command (`/flow:resume` itself never auto-executes) |
+| Optional AskUserQuestion offering the suggested next command | n/a | Asks only if the user explicitly wants to act; outcome is the user's choice to invoke the next command (`/flow:resume` itself never auto-executes) |
 
 `/flow:resume` is purely informational. It cannot modify run state, transition lifecycles, or invoke workflow phases — those happen only when the user explicitly invokes the suggested next command.

@@ -158,10 +158,10 @@ else
 fi
 # LEARN_PENDING_END
 
-# Section: FlowGoal State (v3, gated behind flow.goals.enabled)
+# Section: FlowGoal State (gated behind flow.goals.enabled, true by default)
 # When goals are enabled, surface the active FlowGoal lifecycle + per-AC
-# pass/fail so the user sees what the Stop hook is watching. v2 projects
-# (flag false/unset) emit STATE=disabled and the section renders as "(v3 not enabled)".
+# pass/fail so the user sees what the Stop hook is watching. A project whose
+# settings set the flag to false emits STATE=disabled.
 printf '%s\n' ""
 printf '%s\n' "### FlowGoal State"
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -230,11 +230,8 @@ if [ "$RUNS_RC" -ne 0 ] && [ "$RUNS_RC" -ne 2 ]; then
 elif [ "$RUNS_RC" -eq 2 ] || [ ! -d ".flow/runs" ]; then
   printf '%s\n' "STATE=empty"
 else
-  # Most-recent-first sort by mtime:
-  # the previous `... | tac 2>/dev/null || ... | tail -3` fallback silently
-  # produced oldest-first when tac was missing (macOS without coreutils).
-  # Use awk-based reverse instead — portable POSIX and matches the
-  # documented "most-recent-first" contract.
+  # Most-recent-first by mtime. The reverse is done with awk, not tac, which
+  # macOS lacks without coreutils.
   # A run directory that is a symlink is left out before the three most recent
   # are taken, so it does not take the place of a run that can be read.
   RECENT_RUNS=$(ls -1tr .flow/runs/ 2>/dev/null | while IFS= read -r run; do
@@ -526,7 +523,7 @@ State values: `unavailable` (gh API failed) | `no_open_prs` (user has no open PR
 
 ## Display
 
-Render according to `STATUS_MODE` (from the **Mode** block). All modes draw from the same gathered state; they differ only in shape. The v3 sections stay gated on `flow.goals.enabled` / `flow.triggers.enabled` — when disabled, render the `(… v3 not enabled …)` line in every mode. If `STATUS_MODE_NOTE` was emitted, print it as a one-line note above the output.
+Render according to `STATUS_MODE` (from the **Mode** block). All modes draw from the same gathered state; they differ only in shape. The FlowGoal State and Active Triggers sections are gated on `flow.goals.enabled` and `flow.triggers.enabled` (both true by default) — when a section reports `STATE=disabled`, render its turned-off line (shown under `--full`) in every mode. If `STATUS_MODE_NOTE` was emitted, print it as a one-line note above the output.
 
 ### `compact` (default)
 
@@ -537,12 +534,12 @@ A five-line operational dashboard — the fastest read of "where am I, and what'
 
 - **Active work**: {issue/PR in flight, or "none"}
 - **Goal**: {GOAL_ID} {lifecycle} — {verifiable}/{total} ACs verified  (or "none (no active goal on this branch)", or the ⚠ degenerate / needs-attention marker when 0 verifiable ACs)
-- **Workflow**: {latest run workflow} @ {current_phase} ({latest activity}, or "no active run")
+- **Latest run**: {run id} — verdict {verdict}, {activities} activities (from the first `RUN=` line, the most recent; or "no runs")
 - **Evidence**: {Findings Ledger one-liner — P1/P2/P3 per Render Rules}
 - **Next safe action**: {from Suggestions Logic}
 ```
 
-When `flow.goals.enabled` is false, the Goal / Workflow / Evidence lines render `(v3 not enabled)` instead.
+When the FlowGoal State section reports `STATE=disabled`, the Goal line renders `FlowGoals turned off (flow.goals.enabled is false)` instead. The Recent Runs block prints only each run's id, verdict and activity count; it does not read the run's workflow, phase or status, so do not show them.
 
 ### `--full`
 
@@ -623,13 +620,13 @@ A single machine-readable JSON object for tooling/debugging — no prose, no tab
 {
   "branch": "{branch}",
   "goal": {"id": "{GOAL_ID}", "lifecycle": "{status}", "acs": {"total": N, "verifiable": M}},
-  "run": {"id": "{RUN_ID}", "workflow": "{workflow}", "phase": "{current_phase}", "status": "{status}"},
+  "run": {"id": "{RUN_ID}", "verdict": "{verdict}", "activities": N},
   "findings": {"p1": N, "p2": N, "p3": N},
   "next_action": "{suggestion}"
 }
 ```
 
-Emit `"goal": null` and/or `"run": null` when none is active. When `flow.goals.enabled` is false, emit `"v3_enabled": false` and set `goal`/`run` to `null`.
+`run` is the most recent `RUN=` line. Emit `"goal": null` when no goal is active and `"run": null` when there is no run. When the FlowGoal State section reports `STATE=disabled`, emit `"v3_enabled": false` and set `goal` to `null`.
 
 ### `--evidence`
 
@@ -642,7 +639,7 @@ Per-AC evidence listing for the active goal (debugging the verdict path). One ro
 | {id} | {status} | {evidence_ref} | {last_result} |
 ```
 
-When no active goal exists: render `No active goal on this branch.` (or `(v3 not enabled)` when `flow.goals.enabled` is false).
+When no active goal exists: render `No active goal on this branch.` (or `FlowGoals turned off (flow.goals.enabled is false)` when the section reports `STATE=disabled`).
 
 ## Render Rules — Findings Ledger
 
@@ -679,7 +676,7 @@ Edge cases (driven by `LEDGER_STATE=`, NOT by silence):
 | Has PR with review comments | "`/flow:address {pr-number}`" |
 | Has PR approved | "`/flow:merge {pr-number}`" |
 | PRs awaiting review | "`/flow:review {first-pr-number}`" |
-| Active FlowGoal with `lifecycle != achieved` | "`/flow:goal evaluate {GOAL_ID}`" (precedes `/flow:pr` and `/flow:merge` suggestions when v3 is enabled) |
+| Active FlowGoal with `lifecycle != achieved` | "`/flow:goal evaluate {GOAL_ID}`" (precedes `/flow:pr` and `/flow:merge` suggestions when `flow.goals.enabled` is true) |
 | Learning pending | "`/flow:learn`" |
 
 ## Tier Classification
@@ -691,8 +688,8 @@ Edge cases (driven by `LEDGER_STATE=`, NOT by silence):
 | Read `.decisions/` journal directory | 1 | Autonomous, read-only |
 | Read `~/.claude/flow-learn-pending` flag | 1 | Autonomous, read-only |
 | Findings-ledger aggregation across open PRs (`gh api` paginated) | 1 | Autonomous, read-only |
-| Read `.flow/goals/*.goal.yaml` for active goal + ACs (v3) | 1 | Autonomous, read-only |
-| Read `.flow/runs/*/` for recent run summaries (v3) | 1 | Autonomous, read-only |
+| Read `.flow/goals/*.goal.yaml` for active goal + ACs | 1 | Autonomous, read-only |
+| Read `.flow/runs/*/` for recent run summaries | 1 | Autonomous, read-only |
 | Render status tables | 1 | Autonomous, output-only |
 
 `/flow:status` makes **zero mutations**. It cannot create branches, commit files, push, post comments, create issues, or change settings. Every action is a read; every output is a render.

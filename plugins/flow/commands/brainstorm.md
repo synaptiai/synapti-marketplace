@@ -186,9 +186,9 @@ TaskUpdate("Compare trade-offs", status: "completed")
 
 TaskUpdate("Select approach", status: "in_progress")
 
-Use the AskUserQuestion tool with contextual options to ask: "I recommend Approach {N} because {rationale}. Which approach would you like to go with?"
+1. Use the AskUserQuestion tool with contextual options to ask: "I recommend Approach {N} because {rationale}. Which approach would you like to go with?"
 
-2. **Log decision** to decision journal if on a feature branch:
+2. **Log decision** to the decision journal when the branch name contains `issue-N` (the block below writes `issue-N.md`). On any other branch it writes nothing, and the manifest emit below writes nothing either; say in the summary that the decision was not journaled.
 
 ```bash
 BRANCH=$(git branch --show-current)
@@ -206,7 +206,7 @@ fi
 
    If the helper exits non-zero, report the failure and **skip the manifest emit below** — recording the artifact would leave the journal asserting a chosen approach its body does not contain, which is worse than a missing record.
 
-   **Manifest emit** — append the brainstorm-decision artifact to the journal manifest alongside the freeform `## Brainstorm Decision` section:
+   **Manifest emit** — append the brainstorm-decision artifact to the journal manifest alongside the freeform `## Brainstorm Decision` section. Each block runs in its own shell, so `ISSUE_NUM` from the block above is not set here: set `ISSUE_NUM` to the same number, `TOPIC` to the topic, `CHOSEN_APPROACH` to the chosen approach and `N_OPTIONS` to the number of approaches considered at the top of the block before running it.
 
    ```bash
    if [ -n "$ISSUE_NUM" ]; then

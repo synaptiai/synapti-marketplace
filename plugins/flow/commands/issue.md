@@ -108,7 +108,7 @@ Select labels based on issue content. Common mappings:
 
 TaskUpdate label discovery to completed.
 
-**Milestone check:**
+**Milestone check:** each block runs in its own shell, so `REPO` from Phase 1 is not set here; put the `REPO=` value Phase 1 printed in place of `$REPO`.
 
 ```bash
 gh api repos/$REPO/milestones --jq '.[] | "\(.number): \(.title)"'
@@ -146,7 +146,7 @@ TaskUpdate compose issue to in_progress.
 
 TaskUpdate compose issue to completed.
 
-**Create the issue** (Tier 2: journal-and-proceed):
+**Create the issue** (Tier 2: follows `tiers.issueCreate`, default `journal`; while a FlowGoal is active on the branch and `minimalScope` is false, flow asks first):
 
 ```bash
 gh issue create --title "{title}" --body "{body}" --label "{labels}" [--milestone "{milestone}"]
@@ -195,4 +195,4 @@ Present next steps:
 |--------|------|----------|
 | Codebase search | 1 | Autonomous |
 | Duplicate search | 1 | Autonomous (read-only) |
-| Issue creation | 2 | Journal-and-proceed |
+| Issue creation | 2 | Follows `tiers.issueCreate` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks). While a FlowGoal is active on the branch and `minimalScope` is false, `ask-issue-create.sh` also asks first. |

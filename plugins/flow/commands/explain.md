@@ -118,6 +118,8 @@ For each question:
 
 ## No Context Case
 
+Phase 1 loads only the issue journal (`issue-N.md`, with its auto-log trail), and only when the branch name contains `issue-N`. On any other branch it reports `STATE=empty` even when a `session-YYYY-MM-DD.md` journal exists in the journal directory; read that file with `Read` if the user asks about such a branch.
+
 If no decision journal or no branch context:
 - "No decision context available for the current branch."
 - Offer to explain based on diff analysis alone
@@ -127,7 +129,7 @@ If no decision journal or no branch context:
 
 | Action | Tier | Behavior |
 |---|---|---|
-| Read decision journal / commits / PR history | 1 | Autonomous, read-only |
+| Read decision journal / issue / branch diff | 1 | Autonomous, read-only |
 | `AskUserQuestion` (clarify scope) | n/a | User-driven |
 
 `/flow:explain` is read-only. It never modifies files, never pushes, never creates issues or PRs. The only user-facing surface is the Q&A response.

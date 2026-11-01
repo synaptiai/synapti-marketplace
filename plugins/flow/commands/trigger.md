@@ -66,13 +66,7 @@ Before enabling: invoke `Skill(trigger-policy)` in `validate` mode. Refuse to en
 
 ### `/flow:trigger run <id>`
 
-Execute the target command ONCE. Does NOT schedule future execution. Sequence:
-
-1. Invoke `Skill(trigger-policy)` in `enforce` mode. Abort on policy violation.
-2. Check `concurrency.policy` — if `skip_if_running` and a prior run is in flight, exit 0 with a notice.
-3. Set the env var `FLOW_TRIGGERED_RUN=true` so the target command knows it was trigger-fired (recursion_policy applies).
-4. Invoke `target.command` (e.g., `/flow:run trigger pr-123-watch` which itself delegates to the trigger's workflow).
-5. Append a `trigger-fired` artifact to the linked decision journal.
+Execute the target command ONCE. Does NOT schedule future execution. Run it exactly as `/flow:run trigger <id>` does (`commands/run.md`): validate the trigger with `Skill(trigger-policy)` in `enforce` mode and abort on a violation, apply `concurrency.policy`, invoke the trigger's `target.command` (for a PR watch, `/flow:address <N>`), and append a `trigger-fired` artifact to the linked decision journal.
 
 ### `/flow:trigger delete <id>`
 
@@ -81,7 +75,7 @@ Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 3 — irreversib
 ## Architectural notes
 
 - **No native /loop invocation.** This is the canonical project-local replacement.
-- **Recursion deny by default.** `recursion_policy.triggered_runs_may_create_triggers: false` is the default; flipping to true requires explicit AskUserQuestion.
+- **Recursion denied.** `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` default to `false`, and `trigger-policy` rejects a trigger that sets any of them to `true`. Nothing checks at run time whether a triggered command creates, enables or modifies a trigger.
 - **Tier 3 forbidden.** `policy.forbidden_actions` MUST include both `merge` and `release`. The `trigger-policy` skill rejects triggers that don't.
 
 ## Critical references
@@ -98,6 +92,6 @@ Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 3 — irreversib
 | Action | Tier | Behavior |
 |---|---|---|
 | `/flow:trigger list` / `inspect <id>` — read `.flow/triggers/` | 1 | Autonomous, read-only |
-| `/flow:trigger enable <id>` / `disable <id>` — toggle `metadata.enabled` after validation | 2 | Journal-and-proceed — `Skill(trigger-policy)` validates before write; atomic via `_journal_atomic.py` |
-| `/flow:trigger run <id>` — single-shot execution of target | 2 | Journal-and-proceed — delegates to `/flow:run trigger <id>`; tier3-forbidden actions remain blocked by `trigger-policy` |
+| `/flow:trigger enable <id>` / `disable <id>` — toggle `metadata.enabled` after validation | 1 | Autonomous, local file write — `Skill(trigger-policy)` validates before write; atomic via `_journal_atomic.py` |
+| `/flow:trigger run <id>` — single-shot execution of target | 1 | Autonomous, as `/flow:run trigger <id>`; the target command's own actions keep their tiers (push, PR creation, issue creation and issue assignment follow `tiers.*`; merge, release and pushing or deleting a tag always ask), and `trigger-policy` refuses a trigger that does not forbid merge and release |
 | `/flow:trigger delete <id>` — irreversible removal of trigger YAML | 3 | **Confirm** via AskUserQuestion (deletes a possibly-enabled trigger) |

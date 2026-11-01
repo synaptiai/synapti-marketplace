@@ -1,12 +1,12 @@
 ---
-description: "Inspect and validate FlowWorkflow YAMLs at plugins/flow/workflows/. Subcommands: list, inspect <id>, validate <id>, graph <id>."
+description: "Inspect and validate FlowWorkflow YAMLs in the plugin's workflows/ directory and .flow/workflows/. Subcommands: list, inspect <id>, validate <id>, graph <id>."
 argument-hint: "<subcommand> [id]"
 allowed-tools: Bash, Read, Skill
 ---
 
 # /flow:workflow — FlowWorkflow inspection and validation
 
-Each `/flow:*` command has a machine-readable process contract at `plugins/flow/workflows/<id>.workflow.yaml` (and optionally a project-local override at `.flow/workflows/<id>.workflow.yaml`). This command lets you list available workflows, inspect their phase structure, validate their integrity, and render a textual graph.
+Seven `/flow:*` commands have a machine-readable process contract under the plugin root's `workflows/<id>.workflow.yaml`: `/flow:start` (start-issue), `/flow:review` (review-pr), `/flow:address` (address-pr), `/flow:merge` (merge-pr), `/flow:release` (release), `/flow:debug` (debug) and `/flow:design` (design). A project can override one at `.flow/workflows/<id>.workflow.yaml`. This command lets you list available workflows, inspect their phase structure, validate their integrity, and render a textual graph.
 
 The command markdown remains Claude's execution manual; this YAML is the inspectable contract that CI can validate.
 
@@ -245,7 +245,7 @@ PYEOF
 
 - **Workflows are data, not code.** They describe the structure of the `/flow:*` commands; the commands themselves remain Claude's execution manuals. Changing a workflow YAML changes the contract validation but does NOT change command behavior.
 - **Project-local overrides** under `.flow/workflows/` are committed by default (per the gitignore policy in `references/flow-runtime-state.md`). Teams that want truly local overrides can rename to `*.local.workflow.yaml` and add to their personal gitignore.
-- **No native-slash dependencies allowed.** `/flow:workflow validate` rejects workflows that reference `/goal`, `/loop`, `/schedule`, or `/routine` as invoked commands. This is non-negotiable per the v3 non-goals.
+- **No native-slash dependencies allowed.** `/flow:workflow validate` rejects workflows that reference `/goal`, `/loop`, `/schedule`, or `/routine` as invoked commands, because a plugin cannot invoke a native slash command.
 
 ## Critical references
 

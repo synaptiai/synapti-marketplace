@@ -59,6 +59,8 @@ esac
 printf '%s\n' "### Resolve Mode"
 # Quote parenthesized fallback per command-output-format.md rule 2.
 printf '%s\n' "RESOLVE_TARGET=${RESOLVE_TARGET:-\"(none — in-progress merge mode)\"}"
+# These paths assume .git is a directory. In a linked worktree .git is a file,
+# so this prints CONFLICT_STATE=inactive even during a merge or rebase.
 if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
   printf '%s\n' "CONFLICT_STATE=active"
 else
@@ -68,6 +70,7 @@ fi
 true
 ```
 
+- `CONFLICT_STATE` is read from `.git/MERGE_HEAD` and `.git/rebase-*`, which exist only when `.git` is a directory. In a linked worktree it reports `inactive` during a merge or rebase; check with `git status` (an "unmerged paths" section, or "rebase in progress") before concluding there is nothing to resolve. The completion step in Phase 4 has the same limit: in a worktree, finish with `git commit --no-edit` or `git rebase --continue` yourself.
 - If mode is PR: verify `gh auth status` succeeds
 - Warn if there are uncommitted changes (`git status --porcelain` is non-empty and no active conflict)
 
@@ -137,10 +140,9 @@ true
 # `references/command-output-format.md`.
 
 printf '%s\n' "### Hunks Per Conflicted File"
-# Capture into a var so the loop runs in the parent shell (no subshell pipe).
-# Previous form `git diff … | while … done; [ "$ANY" = "0" ] && …` ran the
-# loop in a subshell so `ANY=1` never propagated and `STATE=empty` ALWAYS
-# fired even when HUNKS records were just emitted (contradictory output).
+# Capture into a var so the loop runs in the parent shell, not a pipe
+# subshell: ANY_EXISTING set inside the loop must still be set after it, or
+# STATE=empty would print beside HUNKS records.
 CONFLICTED_LIST=$(git diff --name-only --diff-filter=U 2>/dev/null)
 ANY_EXISTING=0
 if [ -n "$CONFLICTED_LIST" ]; then
@@ -277,6 +279,6 @@ Quality: lint PASS | tests PASS | typecheck PASS
 |--------|------|----------|
 | Conflict analysis | 1 | Autonomous |
 | Trivial resolution | 1 | Autonomous |
-| Semantic/structural resolution | 2 | Journal + show rationale |
-| Delete-modify decisions | 2 | Journal + AskUserQuestion |
+| Semantic/structural resolution | 1 | Autonomous, local file edit; show the rationale and ask (Phase 2) before applying |
+| Delete-modify decisions | n/a | User-driven decision via AskUserQuestion; the resolution is a local file edit |
 | Post-resolution commit | 1 | Autonomous |

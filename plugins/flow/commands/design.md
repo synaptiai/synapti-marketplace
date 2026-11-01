@@ -208,8 +208,8 @@ TaskUpdate("Coupling and convention review", status: "completed")
 
 TaskUpdate("Design decision", status: "in_progress")
 
-Use the AskUserQuestion tool with contextual options to ask: "Recommended design: {approach}. {rationale}. Approve?"
-2. **Log decision** to decision journal if on a feature branch:
+1. Use the AskUserQuestion tool with contextual options to ask: "Recommended design: {approach}. {rationale}. Approve?"
+2. **Log decision** to the decision journal when the branch name contains `issue-N` (the block below writes `issue-N.md`). On any other branch it writes nothing, and the manifest emit below writes nothing either; say in the summary that the decision was not journaled.
 
 ```bash
 BRANCH=$(git branch --show-current)
@@ -227,7 +227,7 @@ fi
 
    If the helper exits non-zero, report the failure and **skip the manifest emit below** — recording the artifact would leave the journal asserting a design decision its body does not contain, which is worse than a missing record.
 
-   **Manifest emit** — append the design-decision artifact to the journal manifest alongside the freeform `## Design Decision` section:
+   **Manifest emit** — append the design-decision artifact to the journal manifest alongside the freeform `## Design Decision` section. Each block runs in its own shell, so `ISSUE_NUM` from the block above is not set here: set `ISSUE_NUM` to the same number and `DECISION_TITLE` to the decision's title at the top of the block before running it.
 
    ```bash
    if [ -n "$ISSUE_NUM" ]; then

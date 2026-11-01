@@ -113,7 +113,7 @@ fi
 # Section: FlowRun Events + FlowGoals (v3)
 # Gated behind flow.goals.enabled — when v3 is enabled, surface the goal
 # YAMLs + run-event ledgers so the Phase 2 Goal Failure Patterns can detect
-# recurring failed ACs, stuck-detection hits, and not_executed warnings.
+# recurring failed ACs, stuck-detection hits, and ACs never verified.
 printf '%s\n' ""
 printf '%s\n' "### FlowRun Events"
 GOALS_ENABLED="false"
@@ -337,11 +337,10 @@ fi
 printf '%s\n' ""
 printf '%s\n' "### Dismissal Artifacts"
 # DISMISSAL_ARTIFACTS_BLOCK_BEGIN
-# Findings the team rejected. `review.md` has written `dropped-finding`
-# artifacts since it was added, with a comment saying it does so "so /flow:learn
-# can detect repeated drop reasons across cycles" — and nothing here read them.
-# This is the first category that reads the journal manifest rather than the
-# freeform body.
+# Findings the team rejected. `review.md` and `pr.md` write `dropped-finding`
+# artifacts and `address.md` writes `finding-dismissed` artifacts to the
+# journal manifest; this block reads that manifest rather than the freeform
+# body.
 #
 # The two types are different records and both matter: `dropped-finding` says a
 # finding did not survive the review machinery, `finding-dismissed` says a human
@@ -457,7 +456,7 @@ for _name in _entries:
     except ManifestError as exc:
         # A manifest nobody could read is not a project with no dismissals.
         # Counting it as zero would hide the evidence this category exists to
-        # find, which is the whole failure mode being fixed here. A journal with
+        # find. A journal with
         # no frontmatter at all is NOT this case — read_artifacts returns [] for
         # it, because the writer prepends a manifest on the first write and a
         # file without one has had nothing recorded in it.
@@ -533,9 +532,10 @@ Analyze journal entries for:
 Parse the `GOAL_FILE=`, `RUN_EVENTS=` and `RUN_VERDICT=` files the block lists (`.flow/goals/*.goal.yaml`, `.flow/runs/*/events.jsonl`, `.flow/runs/*/last-verdict.json`, none read through a symlink) to detect goal-level patterns the journal alone can't see:
 
 - **Recurring failed ACs**: same `verification_command` failing across 3+ goals → the command may be wrong, flaky, or testing the wrong thing. Pattern qualifies when the same command string appears in `objective.acceptance_criteria[].verification_command` of ≥3 goals AND the corresponding AC `last_result` shows non-zero exit on each.
-- **Stuck-detection hits**: count of `delta == "unchanged"` runs across recent verdicts. A goal that hit `failAfterStuckTurns` is parseable from the `RUN_VERDICT=` files the block lists (never a `last-verdict.json` that is a symlink) + a final `lifecycle.status: failed` with `last_evaluation.reason: stuck_no_progress`. Pattern: 2+ goals failing this way → either ACs are too coarse, or the executor needs different scaffolding.
-- **`not_executed` ACs**: across goals, count ACs whose `last_result.reason` includes `not_executed`. If the user has `executeVerificationCommands: false` but goals consistently fail to capture deterministic evidence, suggest flipping the flag.
-- **Path-boundary violations**: `events.jsonl` entries with `type: path-boundary-violation` indicate goals whose `allowed_paths` was too narrow OR the executor strayed from scope. Recurring violations of the same path glob → either the glob is too tight, or the workflow's natural scope exceeds the goal's contract.
+- **Stuck-detection hits**: count of `delta == "unchanged"` runs across recent verdicts. A goal that hit `failAfterStuckTurns` is parseable from the `RUN_VERDICT=` files the block lists (never a `last-verdict.json` that is a symlink) + a final `lifecycle.status: failed` with a `last_evaluation.reason` starting `stuck_no_progress`. Pattern: 2+ goals failing this way → either ACs are too coarse, or the executor needs different scaffolding.
+- **ACs never verified**: across goals, count ACs that have a `verification_command` but whose `status` is still `pending` and whose `evidence_ref` is empty. The goal file does not record why a command did not run (the Stop hook's `not_executed` list is in its report, not in the goal), so if the user has `flow.goals.executeVerificationCommands: false` and such ACs recur, suggest turning the flag on.
+
+Path-boundary violations (files changed outside a goal's `constraints.allowed_paths`) are not in the files Phase 1 lists: the Stop hook reports them in its message and writes no event for them, so this phase cannot count them.
 
 Pattern qualifies for proposal generation under the same rules as decision patterns: ≥2 occurrences + evidence citations (goal id + AC id + run id + event timestamp).
 
@@ -559,7 +559,7 @@ Source: the `### Transcript Corrections` table from Phase 1, when `TRANSCRIPT_ST
    ```
 2. **Cluster by what the user asked for**, not by wording. "I opened it and it is empty", "the file has nothing in it", and "why is the output blank?" are one cluster: *verify the output exists before reporting done*. Name every cluster as the behaviour the user wanted.
 3. **Threshold.** A cluster qualifies only with ≥3 verified instances across ≥2 distinct sessions (`Session` column). Repeats inside one session show one bad session, not a habit.
-4. **Cross-reference existing skills.** For each qualifying cluster, search for the rule with 2–3 phrasings: `grep -ril '<key phrase>' plugins/flow/skills` (use the plugin root from Phase 1 when not running inside this repo). Label the cluster `rule exists in <skill>` when a skill already states the behaviour, otherwise `no rule`.
+4. **Cross-reference existing skills.** For each qualifying cluster, search for the rule with 2–3 phrasings: `grep -ril '<key phrase>' plugins/flow/skills` (outside the flow repository, search the installed plugin's `skills/` directory instead, found as `references/plugin-root-resolution.md` describes). Label the cluster `rule exists in <skill>` when a skill already states the behaviour, otherwise `no rule`.
 5. Record per cluster: name, verified instance count, session count, cited lines (`transcript_path:line_no`), and the label. These feed Phase 3 and the Phase 5 table.
 
 ### Dismissal patterns
@@ -655,10 +655,11 @@ skill, and `/flow:learn` never writes `.flow/review-exceptions.md` itself.
 | # | Proposal | Type | Path |
 |---|----------|------|------|
 | 1 | {skill name} | skill \| enforcement \| exception | {proposal file path} |
+```
 
 ### Promotion Workflow
 
-To promote a proposal to an active skill, use the canonical helper. `{PROPOSAL_DIR}` is the directory Phase 1 printed as `PROPOSAL_DIR=`:
+After the summary, tell the user how to promote a proposal. To promote a proposal to an active skill, use the canonical helper. `{PROPOSAL_DIR}` is the directory Phase 1 printed as `PROPOSAL_DIR=`:
 
 ```bash
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/promote-proposal.sh" \
@@ -672,7 +673,7 @@ The script:
 4. Writes `plugins/flow/skills/learned/{name}/SKILL.md`, rewriting `status: proposal` -> `status: promoted` with today's date and removing `## Pattern Detected`, `## Evidence`, `## Enforcement point`, `## Promotion Checklist` and the `source-sessions` / `evidence-count` / `proposed` frontmatter — those argue for promotion or name the project the pattern was mined in, while the installed file is read by an agent about to act. All of it is published in the pull request body, where it can still be edited before merge. It then refuses the promotion unless the result is skill-shaped: `## Contract` first, at most 120 contract words and 600 body words.
 5. Creates a feature branch `feature/learn-promote-{name}`, commits, pushes, and opens a **draft** PR for human review
 
-The PR is **always draft** — `bin/promote-proposal.sh` is Tier 2 (journal-and-proceed) and never marks the PR ready or merges it. A human reviewer must mark the PR ready and merge it explicitly. This prevents `/flow:learn` from autonomously reshaping Claude's behavior without explicit consent.
+The PR is **always draft** — `bin/promote-proposal.sh` never marks the PR ready or merges it. Its push and draft PR are Tier 2 and follow `tiers.push` and `tiers.prCreate` (default `journal`: they run and write one breadcrumb to the git-ignored auto-log trail; `autonomous` runs). The script runs `git push` and `gh pr create` itself, so flow's `git` and `gh` wrappers check them, not the tier hook: when `tiers.push` is `confirm`, the wrapper refuses the push because the hook never asked about it, the script fails, returns to the branch it started on and deletes its local promotion branch, and nothing is pushed. When only `tiers.prCreate` is `confirm`, the branch is pushed, no pull request is opened, and the script prints the command that deletes the pushed branch. A human reviewer must mark the PR ready and merge it explicitly. This prevents `/flow:learn` from autonomously reshaping Claude's behavior without explicit consent.
 
 Use `--dry-run` to validate a proposal without filesystem effects:
 
@@ -683,7 +684,6 @@ Use `--dry-run` to validate a proposal without filesystem effects:
 ```
 
 The dry-run reports validation results and the planned filesystem/git actions without executing them. It also runs the real transform against a throwaway copy, so it catches a proposal that would not promote to a well-formed skill, and prints the material the pull request would publish — the last point at which you can decide something mined from another project should not go public.
-```
 
 ## Phase 6: Clear Pending
 
@@ -700,7 +700,7 @@ esac
 ## No Entries Case
 
 If no journal entries found:
-- "No decision journal entries found. Journal entries are created automatically during `/flow:start`, `/flow:commit`, and `/flow:address` workflows."
+- "No decision journal entries found. Journal entries are written by `/flow:start`, `/flow:address`, `/flow:review`, `/flow:pr`, `/flow:design` and `/flow:brainstorm`."
 - Suggest running a workflow first.
 
 State the transcript half plainly, because it is the half that carries the behavioural signal and the half that fails silently.
@@ -723,4 +723,4 @@ The two states are different findings. One says the evidence was read and was em
 | Write skill proposals to `learning.proposalDir` (default `~/.claude/flow-proposals/`) | 1 | Autonomous, user-scoped files (outside repo) |
 | Clear `~/.claude/flow-learn-pending` flag | 1 | Autonomous |
 
-Promotion of a proposal to an active skill (`plugins/flow/skills/learned/`) is **separate** and is owned by `bin/promote-proposal.sh`, which opens a draft PR (Tier 2 — never auto-merges). Learning analysis itself is Tier 1; promotion is Tier 2.
+Promotion of a proposal to an active skill (`plugins/flow/skills/learned/`) is **separate** and is owned by `bin/promote-proposal.sh`, which opens a draft PR and never merges it. Learning analysis itself is Tier 1. Promotion's push and PR creation are Tier 2 and follow `tiers.push` and `tiers.prCreate` (default `journal`: run and write one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` makes the script fail, as described under Promotion Workflow).

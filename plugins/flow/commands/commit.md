@@ -320,7 +320,7 @@ true
 For each commit group:
 
 1. **Generate commit message** following conventional format:
-   - Type: inferred from changes (feat, fix, refactor, test, docs, chore, improve)
+   - Type: inferred from changes, one of `conventions.commitTypes` (default: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert, improve)
    - For Boy Scout cleanup changes, use `improve(<scope>): <summary>`
    - Scope: top-level directory or module
    - Subject: imperative, describes what and why
@@ -332,7 +332,7 @@ For each commit group:
    git commit -m "<type>(<scope>): <subject>"
    ```
 
-3. **Verify** — the PostToolUse hook logs the commit to the decision journal.
+3. **Verify** — the `log-commits.sh` PostToolUse hook writes a breadcrumb for the commit to the git-ignored auto-log trail (`<journal dir>/auto-log/`); it does not write to the decision journal.
 
 ## Phase 5: SUMMARY
 

@@ -58,8 +58,8 @@ else
   printf '%s\n' ""
   printf '%s\n' "### Branch Delta"
   printf '%s\n' "COMMITS_AHEAD=$(git rev-list --count "$DEFAULT_BRANCH"..HEAD 2>/dev/null || printf '%s\n' "0")"
-  # Cache the porcelain count once — previously invoked twice in adjacent
-  # lines (count + gate on the UNCOMMITTED_LINE listing).
+  # The porcelain count is read once and used for both the count and the
+  # gate on the UNCOMMITTED_LINE listing.
   UNCOMMITTED_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
   printf '%s\n' "UNCOMMITTED_COUNT=$UNCOMMITTED_COUNT"
   [ "$UNCOMMITTED_COUNT" != "0" ] && git status --short 2>/dev/null | head -20 | sed 's/^/UNCOMMITTED_LINE=/'
@@ -113,7 +113,9 @@ else
   printf '%s\n' "### Decision Journal"
   # The journal directory every flow reader and writer uses (bin/journal-dir.sh):
   # journal.dir, where a value from the repository settings that leaves the
-  # repository is refused on stderr.
+  # repository is refused on stderr. Only the issue journal (issue-N.md) is
+  # read: on a branch whose name has no issue number this section reports
+  # STATE=empty even when a session-YYYY-MM-DD.md journal exists.
   FLOW_JD_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-dir.sh"
   JOURNAL_DIR=".decisions"
   [ -x "$FLOW_JD_HELPER" ] && JOURNAL_DIR=$("$FLOW_JD_HELPER")
@@ -164,11 +166,11 @@ else
   fi
   # REVIEW_EXCEPTIONS_BLOCK_END
 
-  # Section: FlowGoal State (v3) — gate on goal existence.
+  # Section: FlowGoal State — gate on goal existence.
   # Surface the active goal lifecycle so Phase 4 can gate PR creation on goal
   # achievement WHEN a goal exists; a branch with no goal is not blocked. The
-  # gate is disabled when flow.goals.enabled is false or goalCreation is off,
-  # preserving the v2 (requireGoalForStart:false) UX.
+  # gate is disabled when flow.goals.enabled is false or goalCreation is off
+  # (or the legacy requireGoalForStart is false), and then no PR is gated.
   printf '%s\n' ""
   printf '%s\n' "### FlowGoal State"
   HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -275,8 +277,6 @@ git diff "$DEFAULT_BRANCH"...HEAD
 
 **Parallel Agent dispatch** — 5 agents and skill in a single message (parity with `/flow:review` Path B):
 
-```
-
 **Review exceptions apply to every dispatch below.** Hand each reviewer the `EXCEPTION=` rows from the Phase 1 `### Review Exceptions` section verbatim, with this rule:
 
 > Do not raise a finding that matches a listed exception. An exception matches only when the file you are reporting on matches its `Scope (path glob)` — the glob is what bounds a rule to the paths the team named, so a rule never applies outside them. Within that scope, judge the `Rule` text against your finding. If you raise the finding anyway, label it `exception-override` and say in one line why this case is not what the team meant.
@@ -289,6 +289,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
 
 **Duplication is `code-reviewer`'s Step 4**, gated by `duplication.enabled`: `bin/flow-clone-scan.sh` against `origin/$DEFAULT_BRANCH`, one `DUP-` finding per pair this branch introduced, located on the added side and naming the block it duplicates. A scan that reported `STATE=unavailable` goes into the PR body with its reason and its install command rather than being passed over.
 
+```
 Agent(code-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for code quality,
    logic correctness, edge cases, and security. Return P1/P2/P3 findings
@@ -570,10 +571,10 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    - P3 findings → fix in-PR, including cosmetic P3 in untouched files (an `improve:` commit). Do NOT add a section to the PR body that lists findings instead of fixing them.
 7. **If P1 or P2 findings that are not escalated**: Fix them, re-run review. An escalated finding keeps its priority but stays listed in the PR body and does not send the flow back here.
 
-7a. **FlowGoal gate (v3, opt-in)** — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
+7a. **FlowGoal gate** (on by default; off when `flow.goals.enabled` is false or `flow.goals.goalCreation` is `off`) — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
 
    - **Option 1 (Recommended): Run `/flow:goal evaluate <id>` first** — produces a verdict that may transition the goal to `achieved`. If the verdict is `achieved`, return here and proceed with PR creation.
-   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal:
+   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal. The block below records it only when the branch name names an issue (`issue-N`); on any other branch nothing is recorded, so say in the PR body that the override was not journaled:
 
      ```bash
      # Self-contained: the Phase 1 !-block's vars do not persist into this
@@ -616,7 +617,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    |------|----------|--------|------------|
    ```
    Note: screenshots are local files; for remote visibility, mention "verified locally"
-9. **Push** (Tier 2: journal-and-proceed). First sweep any trailing decision-journal
+9. **Push** (Tier 2: follows `tiers.push`; with the default `journal` it runs and writes one breadcrumb to the git-ignored auto-log trail, `autonomous` runs, `confirm` asks first). First sweep any trailing decision-journal
    churn into a `chore(decisions):` commit so the working tree is clean for the PR — the
    deliberate writers (the decision sections `design.md` and `brainstorm.md` emit, the
    specification section `specification-capture` writes) append to the tracked journal as
@@ -628,7 +629,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/commit-journal-churn.sh" 2>/dev/null || true
    git push -u origin HEAD
    ```
-10. **Create PR** (Tier 2):
+10. **Create PR** (Tier 2: follows `tiers.prCreate`, with the same three values as `tiers.push`):
     ```bash
     gh pr create --title "$TITLE" --body "$BODY"
     ```
@@ -807,12 +808,12 @@ Display PR URL and next steps.
 | Action | Tier | Behavior |
 |---|---|---|
 | Pre-flight checks (branch, commits, PR existence) | 1 | Autonomous; blocks on failure |
-| Phase 1 FlowGoal State section (v3 opt-in) | 1 | Autonomous read; sets GATE=pass\|block sentinel |
+| Phase 1 FlowGoal State section (on by default) | 1 | Autonomous read; sets GATE=pass\|block sentinel |
 | Multi-agent review fan-out (5 reviewers + holdout-validation) | 1 | Autonomous; Tasks tracked |
 | `Agent(integration-verifier)` runtime + visual verification | 1 | Autonomous |
 | File edits (fix-forward for P1/P2 findings) | 1 | Autonomous |
 | Commits (`fix:` from fix-forward) | 1 | Autonomous, logged by hook |
-| FlowGoal gate AskUserQuestion (Phase 4 step 7a, fires only when GATE=block) | 2 | Asks via `AskUserQuestion`; outcome (proceed/cancel) journaled |
-| `git push -u origin <branch>` | 2 | Journal-and-proceed |
-| `gh pr create` | 2 | Journal-and-proceed |
-| Visual-verification BLOCKED escalation (when `requireVisualVerification: true`) | 2 | Asks via `AskUserQuestion`; outcome journaled |
+| FlowGoal gate AskUserQuestion (Phase 4 step 7a, fires only when GATE=block) | n/a | Asks via `AskUserQuestion`; an override is journaled when the branch names an issue |
+| `git push -u origin HEAD` | 2 | Follows `tiers.push` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks) |
+| `gh pr create` | 2 | Follows `tiers.prCreate` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks) |
+| Visual-verification BLOCKED escalation (when `requireVisualVerification: true`) | n/a | Asks via `AskUserQuestion`; the outcome goes in the PR body |
