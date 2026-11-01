@@ -13,7 +13,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 - `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `code-review-methodology` — 6-facet review, finding synthesis, adversarial protocol
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
-- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries
 
 ```!
 # Inline the Required Skills above so their rules are in context before the
@@ -752,11 +752,13 @@ fi
 true
 ```
 
+Set `CYCLE_NUMBER`, this review's cycle, to `REVIEW_CYCLE_COUNT` + 1 from the block above (1 on a first review). Every later step that records or posts a cycle uses it. When that section printed `STATE=unavailable`, the earlier cycles are unknown: say so in the review rather than numbering this one 1.
+
 If previous cycles exist, build a **Previous Feedback Status** table and cross-reference each finding's location against `git -C "$REVIEW_TREE" diff --text --no-ext-diff --no-textconv <previous head>..HEAD` to verify resolution.
 
-### FlowRun (v3 runtime)
+### FlowRun
 
-A review is a long-running workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+A review is a long-running workflow, so it gets a durable FlowRun. Runs are written unless `flow.runtime.enabled` is `false` (default `true`); when it is `false` the block prints `FLOW_RUN_STATE=skip` and no run is written.
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
@@ -2332,9 +2334,9 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
 |---|---|---|
 | Check out your own pull request (`gh pr checkout`), or fetch someone else's into a worktree under the temporary directory | 1 | Autonomous |
 | Read PR diff / files / previous reviews | 1 | Autonomous, read-only |
-| Multi-agent dispatch (Path B: 5 agents + holdout) or paired-reviewer dispatch (Path A: 12 invocations + 10 challenge) | 1 | Autonomous; Tasks tracked |
+| Multi-agent dispatch (Path B: 5 agents + holdout, 4 agents on someone else's pull request) or paired-reviewer dispatch (Path A: 12 invocations, 10 on someone else's pull request, plus up to 10 challenge prompts, 8 without the test-runner facet) | 1 | Autonomous; Tasks tracked |
 | Holdout validation (skill, parallel) | 1 | Autonomous |
-| Self-review fix-forward (when reviewing own PR) | 1 | File edits + commits autonomous; push is Tier 2 |
-| `gh pr review --comment / --request-changes / --approve` | 2 | Journal-and-proceed |
-| `gh pr comment` (self-review `FLOW_RESOLUTION_CYCLE` marker) | 2 | Journal-and-proceed |
-| Follow-up issue creation (cosmetic P3 in untouched files, external PR review only) | 2 | Journal-and-proceed |
+| Self-review fix-forward (when reviewing own PR) | 1 | File edits + commits autonomous; push is Tier 2 and follows `tiers.push` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |
+| `gh pr review --comment / --request-changes / --approve` | 2 | Runs without asking; no tier setting covers it |
+| `gh pr comment` (self-review `FLOW_RESOLUTION_CYCLE` marker) | 2 | Runs without asking; no tier setting covers it |
+| Follow-up issue creation (cosmetic P3 in untouched files, external PR review only) | 2 | Follows `tiers.issueCreate` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |

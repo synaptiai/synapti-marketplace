@@ -12,7 +12,7 @@ Tier 3 operation — **always requires human confirmation**, even in autonomous 
 
 - `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `merge-and-release` — prerequisite verification, merge execution
-- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries
 
 ```!
 # Inline the Required Skills above so their rules are in context before the
@@ -425,9 +425,9 @@ fi  # /if [ -z "$PR_NUM" ]
 true
 ```
 
-### FlowGoal Gate (v3)
+### FlowGoal Gate
 
-Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**: when an active goal exists for this branch it must have reached `lifecycle.status == achieved` to merge; when **no** active goal exists the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off` — preserving the v2 `requireGoalForStart: false` UX (no merge gating).
+Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**: when an active goal exists for this branch it must have reached `lifecycle.status == achieved` to merge; when **no** active goal exists the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
 
 ```!
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -474,9 +474,8 @@ else
       1)
         # No active goal on this branch — gate not applicable: the gate keys
         # on goal existence. A PR without a FlowGoal is not blocked; the PR
-        # own review state remains the durable record. This intentionally
-        # replaces the prior fail-closed so default installs (goalCreation:auto)
-        # do not start blocking goal-less merges.
+        # own review state remains the durable record, so default installs
+        # (goalCreation:auto) do not block goal-less merges.
         printf '%s\n' "FLOW_GOAL_GATE_STATE=ok"
         printf '%s\n' "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
         ;;
@@ -529,9 +528,9 @@ This gate enforces the "no incomplete shipments" hard boundary.
 
 Do NOT proceed to Phase 2. Exit here.
 
-### FlowRun (v3 runtime)
+### FlowRun
 
-`/flow:merge` runs the `merge-pr` workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+`/flow:merge` runs the `merge-pr` workflow, so it gets a durable FlowRun. Runs are written unless `flow.runtime.enabled` is `false` (default `true`); when it is `false` the block prints `FLOW_RUN_STATE=skip` and no run is written.
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
@@ -565,7 +564,7 @@ true
 
 When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`merge-pr`, goal=`null` — the merge reads the linked FlowGoal for the gate below but the run itself is not goal-owned), initial phase `preflight`. Phase order: `preflight → verify → confirm → merge`. Write a FlowActivity at each boundary (verify, confirm, merge). The confirm boundary is the user's answer to Phase 3's question: write the confirm activity when the user confirms, and the merge activity after the merge command returns.
 
-**Linked-run completion check** (Phase 2 / verify): before allowing merge, verify that every FlowRun linked to this PR's branch (the `start-issue` run and any `address-pr` / `review-pr` runs) has reached `state.status: completed`. If any linked run is still `active`, refuse the merge — this is Tier 3, so there is **no override** beyond the standard merge confirmation. Surface the still-active run id and point to `/flow:resume`.
+**Linked-run completion check** (workflow phase `verify`, before Phase 3's question): before allowing merge, verify that every FlowRun linked to this PR's branch (the `start-issue` run and any `address-pr` / `review-pr` runs) has reached `state.status: completed`. If any linked run is still `active`, refuse the merge — this is Tier 3, so there is **no override** beyond the standard merge confirmation. Surface the still-active run id and point to `/flow:resume`.
 
 ### Merge Settings
 
@@ -864,9 +863,9 @@ Suggest: `/flow:release {type}` if this completes a milestone.
 |---|---|---|
 | Read PR status / reviews / comments / threads | 1 | Autonomous |
 | Finding-ledger gate check (parses `FLOW_REVIEW_CYCLE` / `FLOW_RESOLUTION_CYCLE`) | 1 | Autonomous; blocks on failure |
-| FlowGoal gate check (v3 opt-in; reads `.flow/goals/*.goal.yaml`) | 1 | Autonomous; blocks on `lifecycle.status != achieved` |
+| FlowGoal gate check (on by default; off when `flow.goals.enabled` is `false` or `goalCreation` is `off`; reads `.flow/goals/*.goal.yaml`) | 1 | Autonomous; blocks on `lifecycle.status != achieved` |
 | Stale-approval check | 1 | Autonomous; warns on stale |
-| Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Journal-and-proceed if user accepts; otherwise blocked |
+| Conflict-resolution escalation (`Skill(flow:resolve)` invocation) | 2 | Runs after the user accepts the escalation; otherwise blocked. No tier setting covers the skill call itself; any push it makes follows `tiers.push` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |
 | `gh pr merge` | 3 | **Confirm** — asks via `AskUserQuestion` before the command runs; the `tier-gate.sh` permission prompt asks again when it runs (`tiers.merge`, floor `confirm`) |
 | Branch deletion (per `merge.deleteBranch` setting, default `true`) | 3 | **Confirm** — named in the merge question; `--delete-branch` is part of the merge command the hook's prompt shows |
 | `git checkout <default-branch> && git pull` (post-merge cleanup) | 1 | Autonomous |

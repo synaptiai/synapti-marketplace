@@ -17,7 +17,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 - `tdd-patterns` — test-first for fixes, test quality standards
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 4)
 - `goal-evidence-ledger` — evidence sidecars attached to the FlowRun for each resolved finding
-- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries
 
 ```!
 # Inline the Required Skills above so their rules are in context before the
@@ -32,7 +32,7 @@ true
 
 ## References
 
-- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 3's out-of-scope-finding escalation, Phase 4's review-cycle-limit escalation, and any Proactive-Autonomy escalation surfaced during feedback resolution
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 4's genuine non-convergence escalation (step 4), Phase 4's review-cycle-limit escalation (step 12), and any other Proactive-Autonomy escalation surfaced during feedback resolution
 - [`references/finding-schema.md`](../references/finding-schema.md) — canonical row shape every reviewer agent dispatched in the Phase 4 re-review fan-out emits
 
 ## Phase 1: EXPLORE
@@ -65,8 +65,7 @@ else
   # call below. Without the pin each call resolves against whatever repository
   # gh picks for the invoking shell, and a wrong answer does not look wrong: it
   # is the same TITLE=/REVIEW_COUNT= shape either way. In a workspace holding
-  # sibling checkouts that is how a preflight reported zero reviews on a pull
-  # request that had three.
+  # sibling checkouts it can report zero reviews on a pull request that has some.
   #
   # The cross-check parses `git remote get-url origin` independently rather than
   # reading `gh repo view` twice — two readings of one source can never disagree.
@@ -238,9 +237,9 @@ else
   for SETTINGS_PATH in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$USER_SETTINGS"; do
     [ -f "$SETTINGS_PATH" ] || continue
     # `.merge...`, not `.flow.merge...`: commands/merge.md and
-    # references/gate-configuration.md both use the top-level key, and reading a
-    # different one meant a team that widened trust had every real CONTRIBUTOR
-    # marker read as untrusted here while the merge gate accepted it.
+    # references/gate-configuration.md both use the top-level key, and this
+    # block must read the same key, or a team that widened trust would have its
+    # markers read as untrusted here while the merge gate accepts them.
     CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>&1); CONF_JQ=$?
     if [ "$CONF_JQ" -ne 0 ]; then
       # merge.md warns and falls through here rather than failing silently: a
@@ -326,9 +325,9 @@ When the System One block below printed `S1_STILL_APPLIES=on`, hold this check: 
 
 **Skill(capability-discovery)**: Discover quality commands for verification.
 
-### FlowRun (v3 runtime)
+### FlowRun
 
-Addressing review feedback is a long-running workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+Addressing review feedback is a long-running workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); when it is not `true` the block prints `FLOW_RUN_STATE=skip` and the wiring is a no-op.
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
@@ -826,8 +825,8 @@ done
 # to the wrong record, which is the failure the `0*` arm exists to stop.
 case "$PR_NUM" in ''|0*|*[!0-9]*) printf '%s\n' "FINDING_DISMISSED=skipped (PR_NUM must be a positive integer with no leading zero)" >&2; exit 1 ;; esac
 case "$CYCLE_NUMBER" in ''|*[!0-9]*) printf '%s\n' "FINDING_DISMISSED=skipped (CYCLE_NUMBER is not a number)" >&2; exit 1 ;; esac
-# The id ends up in the DISPUTED:[...] array that the Phase 5 emitter builds
-# from this artifact, and the consumers in references/finding-ledger-parser.md
+# The id ends up in the DISPUTED:[...] array that DISPUTED_ARRAY_BLOCK (Phase 4
+# step 9) builds from this artifact, and the consumers in references/finding-ledger-parser.md
 # split that array on `,` and `]`. A `]` truncates the
 # `grep -o 'DISPUTED:\[[^]]*\]'` they extract with, silently dropping the rest
 # of the array; a comma splits one id into two for the `,`-delimited containment
@@ -900,8 +899,8 @@ printf '%s\n' "FINDING_DISMISSED=recorded finding_id=$FINDING_ID issue=$ISSUE re
 true
 ```
 
-A failure here is reported and does not fail the run — the same posture the trust-ledger note in
-`pr.md` takes. The reply in the thread is what the reviewer sees; the artifact is what
+A failure here is reported and does not fail the run, as in the dropped-finding record blocks in
+`review.md`. The reply in the thread is what the reviewer sees; the artifact is what
 `/flow:learn` reads.
 
 For **Out-of-scope** items — finding triage is NEVER a valid escalation trigger; the default action for every finding is fix in this PR:
@@ -919,7 +918,7 @@ P1 or P2 findings in untouched files must be addressed in-PR (expand scope with 
    - Title: concise, solution-agnostic description
    - Body: Context, Current State (file:line), Objective, Acceptance Criteria
    - Labels: from repo label set
-   - Issue creation is Tier 2 (journal-and-proceed)
+   - Issue creation is Tier 2 and follows `tiers.issueCreate` (default `journal`: it runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks)
    ```bash
    gh issue create --title "{title}" --body "{body}" --label "{labels}"
    ```
@@ -933,8 +932,7 @@ Even in minimal-scope mode, P1 and P2 findings in untouched files are always fix
 Post the inline replies (step 8) and the resolution comment (step 9) every cycle: a push without them leaves the reviewer unable to see what was addressed. Re-request review only after the resolution comment is posted and its task is marked completed.
 
 1. **Quality commands** (parallel): lint, test, typecheck
-2. **Comprehensive self-review** of ALL files touched on the branch — parallel agent dispatch matching `/flow:pr` Phase 3 fan-out so fix commits don't slip convention/test/error-handling regressions past automated re-review:
-   ```
+2. **Comprehensive self-review** of ALL files touched on the branch — parallel agent dispatch matching `/flow:pr` Phase 3 fan-out so fix commits don't slip convention/test/error-handling regressions past automated re-review.
 
 **Review exceptions apply to every dispatch below.** Hand each reviewer the `EXCEPTION=` rows from the Phase 1 `### Review Exceptions` section verbatim, with this rule:
 
@@ -948,8 +946,11 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
 
 **Duplication is re-checked with everything else.** `code-reviewer`'s Step 4 runs `bin/flow-clone-scan.sh` over the fix commits as well, because a surgical fix is exactly where a block gets copied instead of shared. A `DUP-` finding raised on a fix commit is resolved in the same pass; `STATE=unavailable` is reported once in the resolution comment.
 
+In the dispatches below, `$BASE_BRANCH` is the `BASE_BRANCH=` value from Phase 1's `### PR Details` section.
+
+   ```
    Agent(code-reviewer):
-     "Review the fix commits since the last review against $DEFAULT_BRANCH.
+     "Review the fix commits since the last review against $BASE_BRANCH.
       Check for: logic errors, security issues, missing edge cases.
       Return P1/P2/P3 findings with file:line."
 
@@ -964,7 +965,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
       Return structured results table."
 
    Agent(security-reviewer):
-     "Review the fix commits since the last review against $DEFAULT_BRANCH
+     "Review the fix commits since the last review against $BASE_BRANCH
       for OWASP Top 10, secrets, auth/authz, input validation, and dependency
       vulnerabilities. Return P1/P2/P3 findings with file:line."
 
@@ -1003,7 +1004,7 @@ When the section reported `STATE=none` there are no exceptions and this paragrap
    - **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
 5. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
 6. **Change classification** — verify no out-of-context changes introduced
-7. **Push** (Tier 2: journal-and-proceed):
+7. **Push** (Tier 2, follows `tiers.push`; default `journal`: it runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks):
    ```bash
    git push
    ```
@@ -1130,9 +1131,9 @@ fi
 # DISPUTED_REASON_CODE is emitted HERE and nowhere else. Step 9 branches on it
 # rather than on REASON, whose text carries journal-derived and settings-derived
 # values on most other paths: a journal that put the phrase "closes no issue"
-# into a field reached the branch that posts an empty array, erasing a dismissal
-# recorded in an earlier cycle. This line is built from nothing but the case arm
-# it sits in.
+# into a field would otherwise reach the branch that posts an empty array,
+# erasing a dismissal recorded in an earlier cycle. This line is built from
+# nothing but the case arm it sits in.
 case "${ISSUE:-}" in
   '')
     printf '%s\n' "DISPUTED_STATE=unavailable"
@@ -1244,12 +1245,11 @@ except Exception as exc:
     # snippet quoting it verbatim, and this REASON is printed and reported
     # onward, so only the exception CLASS goes out. A bare `except Exception` is
     # deliberate: the alternative is enumerating what a hostile manifest can
-    # raise, and the previous attempt at that list missed three. The whole loop
-    # is inside it, not just the read, because the per-row helpers evaluate
-    # file-derived values too. The 5000-digit pr field that first made this
-    # necessary is no longer an example: pr_matches now catches its ValueError
-    # and raises ManifestError, so it lands on the branch above with a reason
-    # that names the field.
+    # raise, and such a list is easy to leave incomplete. The whole loop is
+    # inside it, not just the read, because the per-row helpers evaluate
+    # file-derived values too. A pr field too long to convert is not one of
+    # these: pr_matches catches its ValueError and raises ManifestError, so it
+    # lands on the branch above with a reason that names the field.
     bail("the journal manifest could not be read (%s); its text is not echoed here, "
          "because a file that is not a manifest may hold anything" % type(exc).__name__)
 
@@ -1322,10 +1322,10 @@ true
    # as unpinned, which is the failure this pinning exists to prevent.
    REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
    [ -n "$REPO" ] || { printf '%s\n' "ERROR: cannot resolve the repository; refusing to act on an unattributable pull request" >&2; exit 1; }
-   # Both values are re-checked here. commands/review.md's emitter validates them
-   # and this one did not: `gh pr comment ""` is not an error to gh, it falls back
-   # to inferring the pull request from the branch, so an unset PR_NUM posts the
-   # comment on whichever pull request happens to be checked out.
+   # Both values are checked here, as commands/review.md's emitter checks them:
+   # `gh pr comment ""` is not an error to gh, it falls back to inferring the
+   # pull request from the branch, so an unset PR_NUM would post the comment on
+   # whichever pull request happens to be checked out.
    [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to post a resolution marker" >&2; exit 1; }
    case "${CYCLE_NUMBER:-}" in
      ''|0*|*[!0-9]*) printf '%s\n' "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post a resolution marker" >&2; exit 1 ;;
@@ -1333,10 +1333,8 @@ true
    # $BODY is composed prose, and templates/resolution-comment.md invites
    # verbatim reviewer text into it. The merge gate greps the arrays out of the
    # whole comment and unions every rendering, so a second `RESOLVED:[` anywhere
-   # in that quoted text adds ids nobody resolved. commands/review.md refuses
-   # such a body; this emitter did not, and the two are the same emitter wearing
-   # different hats — a rule enforced in one is a rule the other routes around.
-   # Both now call the same script.
+   # in that quoted text adds ids nobody resolved. This emitter and the one in
+   # commands/review.md refuse such a body through the same script.
    "$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-check-resolution-body.sh" \
      --cycle "$CYCLE_NUMBER" <<<"$BODY" || exit 1
    gh pr comment "$PR_NUM" --repo "$REPO" --body "$BODY"; RES_EXIT=$?
@@ -1428,8 +1426,9 @@ With `S1_STILL_APPLIES=on`, the summary also lists each comment found already ad
 | Read PR comments / inline reviews | 1 | Autonomous |
 | File edits (fix per feedback item) | 1 | Autonomous |
 | Commits (`fix:` and `improve:` Boy Scout) | 1 | Autonomous, logged by hook |
-| Push | 2 | Journal-and-proceed |
-| Post resolution comment | 2 | Journal-and-proceed |
-| Inline replies to review comments | 2 | Journal-and-proceed |
-| Re-request review | 2 | Journal-and-proceed |
-| Follow-up issue creation (cosmetic P3 in untouched files only) | 2 | Journal-and-proceed |
+| Push | 2 | Follows `tiers.push` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks) |
+| Post resolution comment | 2 | Runs without asking; no tier setting, no breadcrumb |
+| Inline replies to review comments | 2 | Runs without asking; no tier setting, no breadcrumb |
+| Update PR body (review cycle history) | 2 | Runs without asking; no tier setting, no breadcrumb |
+| Re-request review | 2 | Runs without asking; no tier setting, no breadcrumb |
+| Follow-up issue creation (cosmetic P3 in untouched files, `minimalScope` only) | 2 | Follows `tiers.issueCreate` (default `journal`; `confirm` asks) |

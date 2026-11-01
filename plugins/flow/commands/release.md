@@ -6,14 +6,14 @@ allowed-tools: Bash, Read, AskUserQuestion
 
 # Create Release v$ARGUMENTS
 
-Tier 3 operation — **always requires human confirmation**, even in autonomous mode. The version bump reaches the default branch only through a release pull request. Before the tag is created and pushed, and before a GitHub release is created, this command asks you with AskUserQuestion. flow's tier hook then asks again when the tag push or the release command runs; it is a second check, and it also covers a tag push or release typed outside flow. You may see two prompts for one release, and nothing is published until you accept both.
+Tier 3 operation — **always requires human confirmation**, even in autonomous mode. The version bump reaches the default branch only through a release pull request. Before the tag is created and pushed, and before a GitHub release is created, this command asks you with AskUserQuestion. flow's tier hook then asks again when the tag push or the release command runs; it is a second check, and it also covers a tag push or release typed outside flow. You may see two prompts for one release, and nothing is published until you accept both. The first run, which opens the release pull request, also gets one tier-hook prompt at the release branch push: the block names the branch as a variable, so the hook cannot tell it from a tag push and asks, whatever `tiers.push` says.
 
 Arguments: the bump type (`patch`, `minor` or `major`) and, in a plugin marketplace, the name of the plugin to release and optionally the marketplace's bump type (`/flow:release minor flow`).
 
 ## Required Skills
 
 - `merge-and-release` — version calculation, changelog generation
-- `run-state-management` — FlowRun/FlowActivity records at phase boundaries (v3 runtime)
+- `run-state-management` — FlowRun/FlowActivity records at phase boundaries
 
 ```!
 # Inline the Required Skills above so their rules are in context before the
@@ -85,9 +85,9 @@ fi
 true
 ```
 
-### FlowRun (v3 runtime)
+### FlowRun
 
-A release is a long-running workflow, so it gets a durable FlowRun. Runs are gated by `flow.runtime.enabled` (default `true`); v2 projects that opted out see `FLOW_RUN_STATE=skip` and the wiring is a no-op.
+A release is a long-running workflow, so it gets a durable FlowRun. Runs are written unless `flow.runtime.enabled` is `false` (default `true`); when it is `false` the block prints `FLOW_RUN_STATE=skip` and no run is written.
 
 ```!
 # FLOW_RUN_BLOCK_BEGIN
@@ -112,7 +112,7 @@ fi
 true
 ```
 
-When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`release`, goal=`null` — a release is not goal-bound; it verifies the goals of *included* PRs in Phase 4), initial phase `preflight`. The release is not issue-scoped, so the `workflow-run` journal artifact is best-effort: emit it only if a single issue can be inferred from the included PRs; otherwise the `run.yaml` is the durable record. A release takes two runs of `/flow:release`, matching `workflows/release.workflow.yaml`: phase order `preflight → bump → release_pr` on the first run, which opens the release pull request, and `preflight → tag` on the second, after that pull request is merged.
+When `FLOW_RUN_STATE=create`, invoke `Skill(run-state-management)` to create `.flow/runs/$RUN_ID/run.yaml` (workflow=`release`, goal=`null` — a release is not goal-bound), initial phase `preflight`. The release is not issue-scoped, so the `workflow-run` journal artifact is best-effort: emit it only if a single issue can be inferred from the included PRs; otherwise the `run.yaml` is the durable record. A release takes two runs of `/flow:release`, matching `workflows/release.workflow.yaml`: phase order `preflight → bump → release_pr` on the first run, which opens the release pull request, and `preflight → tag` on the second, after that pull request is merged.
 
 ## Phase 2: Release State and Version
 
@@ -477,7 +477,7 @@ On `RELEASE_RUN=pr`, when the repository keeps a changelog file (the plugin's `C
 
 ## Phase 4: Show the Assessment and Act
 
-Show the assessment as text. The release pull request run continues without a question; the tag and publish runs ask with AskUserQuestion after the preview, in their sections below.
+Show the assessment as text. The release pull request run continues without an AskUserQuestion (the tier hook still asks once, at the branch push); the tag and publish runs ask with AskUserQuestion after the preview, in their sections below.
 
 ```markdown
 ## Release Preview
@@ -756,8 +756,8 @@ Display the pull request or release URL and a summary that lists every version f
 | Calculate next version, plan the version-file bump | 1 | Autonomous, read-only |
 | Generate changelog from PR titles | 1 | Autonomous |
 | Create the release branch, write the bump and changelog, commit | 1 | Autonomous, local |
-| `git push -u origin <release branch>` | 2 | Per `tiers.push` |
-| `gh pr create` (the release pull request) | 2 | Per `tiers.prCreate` |
+| `git push -u origin <release branch>` | 2 | Follows `tiers.push` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) when the branch is written literally. The release pull request block names it as `"$RELEASE_BRANCH"`, which the tier hook cannot tell from a tag, so there it asks as for a tag push, whatever `tiers.push` says |
+| `gh pr create` (the release pull request) | 2 | Follows `tiers.prCreate` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |
 | `git tag -a <tag> <merge commit>` | 1 | Autonomous, local; it runs in the tag block, so only after the user confirms the release question |
 | `git push origin <tag>` | 3 | **Confirm** — asks via `AskUserQuestion` before the tag block runs; the tier hook asks again when it runs |
 | `gh release create <tag> --verify-tag` | 3 | **Confirm** — asked with the tag push, in the same question and the same hook prompt; with the tag already on origin (`RELEASE_RUN=publish`), asks via `AskUserQuestion` for the release alone, and the tier hook asks again because the block names the tag as `"$TAG"`, which it cannot read; that prompt is wanted, since the tag may have been pushed outside flow |
