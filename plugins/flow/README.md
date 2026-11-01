@@ -295,6 +295,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-trigger-concurrency.sh — a trigger's concurrency policy and its runs in flight, for /flow:run trigger and /flow:trigger run
   ├── flow-trigger-tier3-check.sh — refuses a trigger that does not forbid merge and release, unless the user's flow.triggers.allowAutonomousMerge is true
   ├── flow-trigger-recursion-check.sh — refuses a trigger whose runs may modify or enable triggers, or create them unless the user's flow.triggers.allowTriggerCreationFromTriggeredRun is true
+  ├── _flow_trigger_read.py — reads a trigger or a run.yaml for the three checks above: never through a symbolic link, a regular file holding a YAML mapping only
   ├── flow-watch-create.sh  — writes an issue-watch or branch-watch trigger and its loop prompt for /flow:watch
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
   ├── flow-runtime-dir.sh   — prints the runtime directory: flow.runtime.stateDir (default .flow), held inside the repository with no symlink on the way, or .flow with one warning

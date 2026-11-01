@@ -53,8 +53,9 @@ unset CDPATH
 [ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
 _flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
-# The setting is read with the cascade-resolve.sh beside this script, found
-# through any symbolic links to it.
+# The setting is read with the cascade-resolve.sh beside this script, and the
+# trigger and runs with _flow_trigger_read.py beside it, found through any
+# symbolic links to it.
 _self="$0"
 _hops=0
 while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
@@ -70,14 +71,14 @@ SELF_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || { printf 'flow-t
 RT=$("${BASH:-bash}" "$SELF_DIR/flow-runtime-dir.sh") || RT=""
 [ -n "$RT" ] || { printf 'flow-trigger-concurrency: the runtime directory could not be resolved\n' >&2; exit 1; }
 
-python3 - "${1-}" "$SELF_DIR/cascade-resolve.sh" "$RT" <<'PYEOF'
+python3 - "${1-}" "$SELF_DIR/cascade-resolve.sh" "$RT" "$SELF_DIR" <<'PYEOF'
 import os, sys
 try:
     _flow_cwd = os.path.realpath(os.getcwd())
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import errno, re, stat, subprocess
+import re, stat, subprocess
 
 def fail(msg):
     sys.stderr.write("flow-trigger-concurrency: %s\n" % msg)
@@ -87,9 +88,15 @@ def warn(msg):
     sys.stderr.write("flow-trigger-concurrency: %s\n" % msg)
 
 try:
-    import yaml
+    import yaml  # noqa: F401  (read_yaml_mapping parses with it)
 except ImportError:
     fail("PyYAML is required (pip install pyyaml)")
+# The reading is shared with the other trigger checks: bin/_flow_trigger_read.py.
+sys.path.insert(0, sys.argv[4])
+try:
+    from _flow_trigger_read import ReadError, read_yaml_mapping
+except ImportError:
+    fail("cannot load _flow_trigger_read.py from %s" % sys.argv[4])
 
 POLICIES = ("skip_if_running", "queue", "cancel_previous")
 tid = sys.argv[1]
@@ -97,18 +104,6 @@ tid = sys.argv[1]
 # <runtime dir>/triggers.
 if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", tid):
     fail("%r is not a trigger id (lower-case letters, digits and '-')" % tid[:80])
-
-def read_regular(path):
-    # O_NOFOLLOW refuses a link at the open itself; O_NONBLOCK opens a FIFO in
-    # the file's place at once, and fstat refuses it.
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    if not nofollow and os.path.islink(path):
-        raise OSError(errno.ELOOP, "symbolic link")
-    fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
-    with os.fdopen(fd, "rb") as f:
-        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
-            raise OSError(errno.EINVAL, "not a regular file")
-        return f.read().decode("utf-8")
 
 def is_link(path):
     try:
@@ -132,18 +127,20 @@ tpath = os.path.join(RT, "triggers", tid + ".trigger.yaml")
 d = link_on_way(RT + "/triggers")
 if d is not None:
     fail("%s is a symbolic link; the trigger is not read" % d)
+
+def read_error(e, path):
+    # The message for a file read_yaml_mapping would not, or could not, return.
+    return {"link": "%s is a symbolic link; it is not read" % path,
+            "not-regular": "cannot read %s: not a regular file" % path,
+            "not-yaml": "%s is not valid YAML" % path,
+            "not-mapping": "%s is not a YAML mapping" % path}.get(e.kind, "cannot read %s: %s" % (path, e.reason))
+
 try:
-    trigger = yaml.safe_load(read_regular(tpath))
-except OSError as e:
-    if e.errno == errno.ENOENT:
+    trigger = read_yaml_mapping(tpath)
+except ReadError as e:
+    if e.kind == "missing":
         fail("no trigger %s (looked for %s)" % (tid, tpath))
-    if e.errno == errno.ELOOP:
-        fail("%s is a symbolic link; it is not read" % tpath)
-    fail("cannot read %s: %s" % (tpath, e.strerror))
-except (yaml.YAMLError, UnicodeDecodeError):
-    fail("%s is not valid YAML" % tpath)
-if not isinstance(trigger, dict):
-    fail("%s is not a YAML mapping" % tpath)
+    fail(read_error(e, tpath))
 
 conc = trigger.get("concurrency")
 policy = conc.get("policy") if isinstance(conc, dict) else None
@@ -179,19 +176,15 @@ elif os.path.isdir(runs):
         if not os.path.isdir(rdir):
             continue
         try:
-            run = yaml.safe_load(read_regular(ryaml))
-        except OSError as e:
-            if e.errno == errno.ENOENT:
+            run = read_yaml_mapping(ryaml)
+        except ReadError as e:
+            if e.kind == "missing":
                 continue
-            if e.errno == errno.ELOOP:
-                warn("%s is a symbolic link; it is not read" % ryaml)
+            if e.kind == "link":
+                warn(read_error(e, ryaml))
                 continue
             # It may be this trigger's active run: the check cannot answer.
-            fail("cannot read %s: %s" % (ryaml, e.strerror))
-        except (yaml.YAMLError, UnicodeDecodeError):
-            fail("%s is not valid YAML" % ryaml)
-        if not isinstance(run, dict):
-            fail("%s is not a YAML mapping" % ryaml)
+            fail(read_error(e, ryaml))
         meta = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
         state = run.get("state") if isinstance(run.get("state"), dict) else {}
         if meta.get("trigger") == tid and state.get("status") == "active":
