@@ -1,5 +1,7 @@
 # shellcheck shell=bash
-# End-to-end: /flow:pr's Phase 1 pre-flight on the branch delta.
+# End-to-end: /flow:pr's Phase 1 pre-flight on the branch delta, and the
+# record /flow:pr writes when the user overrides the FlowGoal gate (Phase 4
+# step 7a, Option 2).
 #
 # Each scenario runs the shipped fence from commands/pr.md in a scratch
 # repository, under zsh (when installed) and bash, with gh answering from
@@ -18,6 +20,13 @@
 #      that may well have commits; it must be reported as unavailable
 #   P4 an existing open PR for the branch blocks instead of being listed
 #      for the "offer to update" step
+#
+# Goal-gate override record (Phase 4 step 7a)
+#   G1 on a branch with no issue number nothing is recorded
+#   G2 the record lacks escalation_field, the field the schema row for
+#      escalation-resolved requires, or names a field outside the six
+#   G3 on an issue branch the record goes to the session journal instead of
+#      issue-<N>.md
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -31,6 +40,9 @@ if ! python3 -c "import yaml" >/dev/null 2>&1; then
   return 0
 fi
 
+# One record per shell the block runs under.
+RUNS=$(set -- $E2E_FENCE_SHELLS; printf '%s' "$#")
+
 _want() {
   case ",${FLOW_E2E_SCENARIOS:-}," in
     ",,") return 0 ;;
@@ -41,6 +53,7 @@ _want() {
 
 PR_MD="$E2E_PLUGIN_DIR/commands/pr.md"
 PR_PHASE1='### Branch Delta'
+PR_OVERRIDE='PR_GOAL_OVERRIDE_BLOCK'
 
 # _section <heading> — the lines of one ### section of the fence's output.
 _section() {
@@ -116,5 +129,54 @@ if _want pr-existing-pr; then
   e2e_expect_line "EXISTING_PR_COUNT=1"
   e2e_expect_line "EXISTING_PR=number=7 url=https://github.com/o/r/pull/7"
   e2e_expect_no_line "STATE=blocked"
+  e2e_expect_clean_edges
+fi
+
+# _manifest_of <file under the repo> — the escalation-resolved artifacts in a
+# journal's manifest: the manifest key, how many there are, and the distinct
+# escalation_field, gate and outcome values among them. The block runs once
+# under each shell in E2E_FENCE_SHELLS, so each run adds one.
+_manifest_of() {
+  python3 - "$E2E_REPO/$1" <<'PY'
+import sys, yaml
+t = open(sys.argv[1]).read()
+m = yaml.safe_load(t.split("---\n")[1])
+key = "issue=%s" % m["issue"] if "issue" in m else "session=%s" % m.get("session")
+arts = [a for a in m["artifacts"] if a["type"] == "escalation-resolved"]
+vals = lambda k: ",".join(sorted({str(a.get(k)) for a in arts}))
+print("%s count=%d field=%s gate=%s outcome=%s" % (key, len(arts),
+      vals("escalation_field"), vals("gate"), vals("outcome")))
+PY
+}
+
+if _want pr-override-session; then
+  _flow_test_begin "pr-override-session"
+  e2e_new pr-override-session
+  e2e_describe "the goal-gate override on branch feature/tidy, which names no issue: recorded in today's session journal with escalation_field=blocking (G1, G2)"
+  _pr_repo feature/tidy 1
+  DAY_BEFORE=$(date +%Y-%m-%d)
+  e2e_run_block commands/pr.md "$PR_OVERRIDE"
+  DAY_AFTER=$(date +%Y-%m-%d)
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  SJ=""
+  for d in "$DAY_AFTER" "$DAY_BEFORE"; do
+    [ -f "$E2E_REPO/.decisions/session-$d.md" ] && { SJ=".decisions/session-$d.md"; break; }
+  done
+  e2e_expect_equal "yes" "$([ -n "$SJ" ] && echo yes || echo no)" "a session journal was written"
+  [ -n "$SJ" ] && e2e_expect_equal "session=$(basename "$SJ" .md | sed 's/^session-//') count=$RUNS field=blocking gate=flowgoal-pr outcome=user-overrode: created PR with goal not yet achieved" \
+    "$(_manifest_of "$SJ")" "the escalation-resolved artifact"
+  e2e_expect_clean_edges
+fi
+
+if _want pr-override-issue; then
+  _flow_test_begin "pr-override-issue"
+  e2e_new pr-override-issue
+  e2e_describe "the goal-gate override on branch feature/issue-42-tidy: recorded in issue-42.md with escalation_field=blocking, and no session journal (G2, G3)"
+  _pr_repo feature/issue-42-tidy 1
+  e2e_run_block commands/pr.md "$PR_OVERRIDE"
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal "issue=42 count=$RUNS field=blocking gate=flowgoal-pr outcome=user-overrode: created PR with goal not yet achieved" \
+    "$(_manifest_of .decisions/issue-42.md)" "the escalation-resolved artifact"
+  e2e_expect_equal "" "$(cd "$E2E_REPO/.decisions" && ls session-*.md 2>/dev/null)" "a session journal"
   e2e_expect_clean_edges
 fi

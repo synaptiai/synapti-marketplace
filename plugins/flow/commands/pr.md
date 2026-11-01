@@ -595,21 +595,26 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 7a. **FlowGoal gate** (on by default; off when `flow.goals.enabled` is false or `flow.goals.goalCreation` is `off`) — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
 
    - **Option 1 (Recommended): Run `/flow:goal evaluate <id>` first** — produces a verdict that may transition the goal to `achieved`. If the verdict is `achieved`, return here and proceed with PR creation.
-   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal. The block below records it only when the branch name names an issue (`issue-N`); on any other branch nothing is recorded, so say in the PR body that the override was not journaled:
+   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal with the block below: an `escalation-resolved` artifact whose `escalation_field` is `blocking`, because the user answered the escalation's Blocking? field (the gate said the incomplete goal blocks the PR, and the user chose to go on). On a branch whose name contains `issue-N` it goes to `issue-N.md`; on any other branch it goes to today's session journal, `<journal dir>/session-YYYY-MM-DD.md`:
 
      ```bash
+     # PR_GOAL_OVERRIDE_BLOCK_BEGIN
      # Self-contained: the Phase 1 !-block's vars do not persist into this
      # block's shell, so re-derive the issue from the branch and read the
      # lifecycle from the helper (same pattern as the manifest-emit block).
+     FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
      ISSUE_NUM=$(git branch --show-current 2>/dev/null | grep -oE 'issue-[0-9]+' | head -1 | sed 's/issue-//')
-     GOAL_LIFECYCLE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh" --status 2>/dev/null || printf '%s\n' "unknown")
-     if [ -n "$ISSUE_NUM" ]; then
-       "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/journal-record.sh" \
-         --issue "$ISSUE_NUM" --type escalation-resolved \
-         --metadata gate=flowgoal-pr \
-         --metadata goal_status="$GOAL_LIFECYCLE" \
-         --metadata outcome="user-overrode: created PR with goal not yet achieved"
-     fi
+     GOAL_LIFECYCLE=$("$FLOW_ROOT/bin/flow-active-goal.sh" --status 2>/dev/null || printf '%s\n' "unknown")
+     # The issue journal on an issue branch, the session journal otherwise.
+     JOURNAL_SCOPE=--session
+     [ -n "$ISSUE_NUM" ] && JOURNAL_SCOPE=--issue
+     "$FLOW_ROOT/bin/journal-record.sh" \
+       "$JOURNAL_SCOPE" ${ISSUE_NUM:+"$ISSUE_NUM"} --type escalation-resolved \
+       --metadata escalation_field=blocking \
+       --metadata outcome="user-overrode: created PR with goal not yet achieved" \
+       --metadata gate=flowgoal-pr \
+       --metadata goal_status="$GOAL_LIFECYCLE"
+     # PR_GOAL_OVERRIDE_BLOCK_END
      ```
    - **Option 3: Cancel** — exit `/flow:pr` and finish the implementation work first.
 
@@ -836,7 +841,7 @@ Display PR URL and next steps.
 | `Agent(integration-verifier)` runtime + visual verification | 1 | Autonomous |
 | File edits (fix-forward for P1/P2 findings) | 1 | Autonomous |
 | Commits (`fix:` from fix-forward) | 1 | Autonomous, logged by hook |
-| FlowGoal gate AskUserQuestion (Phase 4 step 7a, fires only when GATE=block) | n/a | Asks via `AskUserQuestion`; an override is journaled when the branch names an issue |
+| FlowGoal gate AskUserQuestion (Phase 4 step 7a, fires only when GATE=block) | n/a | Asks via `AskUserQuestion`; an override is journaled as `escalation-resolved`, in the issue journal or, on a branch with no issue number, today's session journal |
 | `git push -u origin HEAD` | 2 | Follows `tiers.push` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks) |
 | `gh pr create` | 2 | Follows `tiers.prCreate` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks) |
 | Visual-verification BLOCKED escalation (when `requireVisualVerification: true`) | n/a | Asks via `AskUserQuestion`; the outcome goes in the PR body |
