@@ -552,7 +552,7 @@ true
 ```
 
 **Strategy by cycle:**
-- **Every cycle**: fix the class, not the instance. Before committing a fix, list the other inputs of the same shape and the other callers of the same code (`findReferences`, or `git grep`), and fix them in the same commit, or fix the shared code they all go through. The resolution comment names what else each fix covers. Later cycles on #250, #251 and #307 were mostly findings about the previous cycle's partial fixes.
+- **Every cycle**: fix the class, not the instance. Before committing a fix, list the other inputs of the same shape and the other callers of the same code (`findReferences`, or `git grep`), and fix them in the same commit, or fix the shared code they all go through. The resolution comment names what else each fix covers. A fix that covers one input shape is what the next cycle finds the next shape of.
 - **Cycle 1**: targeted fixes + Boy Scout cleanup in modified files
 - **Cycle 2 and later**: targeted fixes; the self-review in Phase 4 looks only at what the fixes changed, for regressions they introduced. P3 items are fixed in one batch, which is not re-reviewed
 

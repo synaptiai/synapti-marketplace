@@ -1860,7 +1860,7 @@ fi
    - P1 findings → fix immediately
    - P2 findings → fix immediately
    - P3 findings, and findings the router listed in `NOT_COUNTED` → fix them in one batch, after the P1 and P2 fixes (the proximity test is not a deferral mechanism — P3 in touched files is fixed, not deferred). The batch never starts another review cycle.
-   - **Fix the class, not the instance.** Before committing a fix, list the other inputs of the same shape and the other callers of the same code (`findReferences`, or `git grep`), and fix them in the same commit, or fix the shared code they all go through. The resolution names what else the fix covers. Later cycles on #250, #251 and #307 were mostly findings about the previous cycle's partial fixes; this rule is aimed at that.
+   - **Fix the class, not the instance.** Before committing a fix, list the other inputs of the same shape and the other callers of the same code (`findReferences`, or `git grep`), and fix them in the same commit, or fix the shared code they all go through. The resolution names what else the fix covers. A fix that covers one input shape is what the next cycle finds the next shape of.
    - TaskCreate("Test coverage for fix-forward", "Write or update tests for each P1/P2/P3 fix applied during self-review")
    - For each fix: write or update a test that covers the fixed behavior
    - After fixes: re-review only what the P1 and P2 fixes changed, for regressions they introduced; the P3 batch is not re-reviewed. The review has converged when no counted P1 or P2 is left

@@ -17,11 +17,12 @@ quarter that a user could hit.
   the review; on your own pull request it sends the review back to step 5,
   where the finding gets a trigger or is dropped as `no-trigger`. A row of
   seven fields is refused.
-- `references/review-scope.md` says which triggers count (normal use and
-  plausible mistakes, the supported platforms, content the user does not
-  control where it reaches a decision, data loss and published text that is
-  wrong) and which do not (the user's own environment set against them, an
-  attacker who already has the account, values a producer never emits,
+- `references/review-scope.md` says which triggers count in the project under
+  review, as that project states its own users, supported platforms and trust
+  boundary (normal use and plausible mistakes, the platforms it supports,
+  input from outside its trust boundary, data loss and published text that is
+  wrong), and which do not (the operator's own environment set against them,
+  an attacker who already has the access, values a producer never emits,
   unsupported platforms, style that misleads no one), and sets priority from
   what the trigger breaks and how likely it is. The reviewers of
   `/flow:review`, `/flow:pr`, `/flow:address` and `/flow:start` get it with
