@@ -551,6 +551,8 @@ fi
 true
 ```
 
+**A fix that would change the design is not made in the cycle.** When addressing a comment would contradict the journal's `## Design` record, add a subsystem (a new module, service, command, configuration option or stored format) or add a trust boundary, run the design step (`references/design-step.md`) first, update the record, and reply to the comment with the decision it records.
+
 **Strategy by cycle:**
 - **Every cycle**: fix the class, not the instance. Before committing a fix, list the other inputs of the same shape and the other callers of the same code (`findReferences`, or `git grep`), and fix them in the same commit, or fix the shared code they all go through. The resolution comment names what else each fix covers. A fix that covers one input shape is what the next cycle finds the next shape of.
 - **Cycle 1**: targeted fixes + Boy Scout cleanup in modified files

@@ -18,7 +18,7 @@ Elements 1-3 are lists. Element 4 is a table. For `/flow:start`, every element s
 ```markdown
 ## Specification
 
-_Captured by specification-capture skill on YYYY-MM-DD. Source: {extracted-from-issue | user-confirmed | mixed}._
+_Captured by specification-capture skill on YYYY-MM-DD. Source: {extracted-from-issue | from-design | user-confirmed | mixed}._
 
 ### Non-goals
 
@@ -76,7 +76,7 @@ The skill returns this shape to the invoking command. It MUST match the journal 
 
 **Issue**: #{N}
 **Journal**: <journal dir>/issue-{N}.md
-**Source**: {extracted-from-issue | user-confirmed | mixed}
+**Source**: {extracted-from-issue | from-design | user-confirmed | mixed}
 
 ### Non-goals
 {...}
