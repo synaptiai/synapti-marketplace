@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.14.0 (2026-11-05)
 
 Review rounds end when no P1 or P2 with a realistic trigger is left (#326).
 On #251 the finding count per cycle never fell over 14 cycles, later cycles
