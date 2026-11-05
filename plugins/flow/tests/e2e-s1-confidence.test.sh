@@ -177,7 +177,7 @@ _cf_block() {
 # _cf_review_block [NAME=value ...] — the review.md block with the inputs the
 # earlier steps carry.
 _cf_review_block() {
-  _cf_block review.md CONFIDENCE_DIR="$CF_DIR" PR_NUM=7 CYCLE_NUMBER=1 REVIEW_TREE="$E2E_REPO" USE_PATH_A=0 "$@"
+  _cf_block review.md CONFIDENCE_DIR="$CF_DIR" PR_NUM=7 CYCLE_NUMBER=1 ROUTE_CYCLE=1 REVIEW_TREE="$E2E_REPO" USE_PATH_A=0 "$@"
 }
 
 # _cf_probe <command.md> — S1_REVIEW_MODES_BLOCK of that file.
@@ -201,7 +201,7 @@ _cf_route() {
     awk -v rows="$rows" '/^\{one row per consolidated finding/ { while ((getline l < rows) > 0) print l; next } { print }' \
       "$E2E_DIR/route.raw" > "$E2E_DIR/fence.sh.raw"
     E2E_FENCE_SHELLS="$sh" _e2e_run_code "commands/review.md (block FINDING_ROUTE_BLOCK)" "" REVIEW_MODE="$mode" PR_NUM=7 \
-      CYCLE_NUMBER=1 FINDING_TOTAL="$(grep -c . "$rows")" "$@"
+      CYCLE_NUMBER=1 ROUTE_CYCLE=1 FINDING_TOTAL="$(grep -c . "$rows")" "$@"
     if [ -z "$first" ]; then
       first="$sh"; first_out="$E2E_OUT"; first_err="$E2E_ERR"; first_rc="$E2E_RC"
     else
@@ -813,7 +813,7 @@ Tests, advisory audit, duplication scan: not run: someone else's pull request
 - **F2 · P2 · tests · `src/a.py:60`** — The test for line 60 asserts nothing.
   Pattern: System One: the cited code does not show this defect (p=0.03, jev-1.13.0). Confirm or refute: run the test with the assertion removed.
 BODY
-  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
+  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 ROUTE_CYCLE=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
     BODY_FILE="$E2E_DIR/body.md" REVIEW_RUN_PR_COMMANDS=no S1_DEMOTED_FILE="$CF_DIR/demoted.txt" \
     commands/review.md FINDING_POST_BLOCK
   e2e_expect_equal 0 "$E2E_RC" "exit status"
@@ -836,7 +836,7 @@ Tests, advisory audit, duplication scan: not run: someone else's pull request
 |---|---|
 | **F1 · correctness · `src/a.py:42`**<br>The loop reads past the end of items. System One: the cited code does not show this defect (p=0.03, jev-1.13.0). _(MEDIUM · unchallenged)_ | Stop the loop at len(items). |
 BODY
-  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
+  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 ROUTE_CYCLE=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
     BODY_FILE="$E2E_DIR/body-p1.md" REVIEW_RUN_PR_COMMANDS=no S1_DEMOTED_FILE="$CF_DIR/demoted.txt" \
     commands/review.md FINDING_POST_BLOCK
   e2e_expect_equal 0 "$E2E_RC" "exit status with the P1 kept"
@@ -844,7 +844,7 @@ BODY
   e2e_expect_equal "--request-changes" "$(grep -x -- '--comment\|--approve\|--request-changes' "$E2E_DIR/gh-review.log")" "the event gh received for the kept P1"
   rm -f "$E2E_DIR/gh-review.log"
   sed 's/ System One: the cited code does not show this defect (p=0.03, jev-1.13.0)\.//' "$E2E_DIR/body-p1.md" > "$E2E_DIR/body-p1-no-note.md"
-  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
+  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 ROUTE_CYCLE=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
     BODY_FILE="$E2E_DIR/body-p1-no-note.md" REVIEW_RUN_PR_COMMANDS=no S1_DEMOTED_FILE="$CF_DIR/demoted.txt" \
     commands/review.md FINDING_POST_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status with the note missing"
@@ -891,7 +891,7 @@ Tests, advisory audit, duplication scan: not run: someone else's pull request
 - **F1 · P1 · correctness · `src/a.py:42`** — The loop reads past the end of items.
   Pattern: System One: the cited code does not show this defect (p=0.03, jev-1.13.0). Confirm or refute: a test with a short list.
 BODY
-  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
+  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=1 ROUTE_CYCLE=1 FINDING_ROWS_FILE="$ROWS" FINDING_TOTAL=1 \
     BODY_FILE="$E2E_DIR/body.md" REVIEW_RUN_PR_COMMANDS=no S1_DEMOTED_FILE="$CF_DIR/missing.txt" \
     commands/review.md FINDING_POST_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "posting block exit status with a missing S1_DEMOTED_FILE"

@@ -179,7 +179,7 @@ _fc_route() {
     { print }
   ' "$FC_TMP/route-block.sh" > "$FC_TMP/route-run.sh"
   ROUTE_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE-1}" FINDING_TOTAL="${FC_ROUTE_TOTAL-$(grep -c . "$FC_TMP/rows.in")}" \
+    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE-1}" ROUTE_CYCLE="${FC_ROUTE_CYCLE-1}" FINDING_TOTAL="${FC_ROUTE_TOTAL-$(grep -c . "$FC_TMP/rows.in")}" \
     "${FC_SHELL:-bash}" "$FC_TMP/route-run.sh" 2>"$FC_TMP/route.err")
   ROUTE_CODE=$?
   ROUTE_ERR=$(cat "$FC_TMP/route.err")
@@ -194,7 +194,7 @@ _fc_post() {
   rm -f "$FC_TMP/gh.log" "$FC_TMP/gh.body"
   POST_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
-    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE:-1}" FINDING_ROWS_FILE="$FC_TMP/rows" \
+    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE:-1}" ROUTE_CYCLE="${FC_ROUTE_CYCLE:-1}" FINDING_ROWS_FILE="$FC_TMP/rows" \
     REVIEW_RUN_PR_COMMANDS="${FC_RUN_PR:-yes}" STUB_REVIEW_EXIT="${FC_REVIEW_EXIT:-0}" \
     FINDING_TOTAL="$3" BODY_FILE="$FC_TMP/body.md" "${FC_SHELL:-bash}" "$FC_TMP/post-block.sh" 2>"$FC_TMP/post.err")
   POST_CODE=$?
@@ -1185,7 +1185,7 @@ assert_equal "COUNT_TOTAL=1" "$(grep '^COUNT_TOTAL=' <<<"$POST_OUT")" "posting b
 STEP7_NOW=$(_fc_phase4_step 7)
 assert_contains 'findings_count="$COUNT_TOTAL"' "$STEP7_NOW" "manifest emit uses the printed total"
 assert_not_contains 'findings_count=$TOTAL' "$STEP7_NOW" "no unset TOTAL"
-assert_contains 'the synthesized findings minus any refuted in step 5' "$STEP7_NOW" "FINDING_TOTAL excludes refuted findings"
+assert_contains 'the synthesized findings minus every one step 5 dropped' "$STEP7_NOW" "FINDING_TOTAL excludes the findings step 5 dropped"
 
 _flow_test_begin "dropped-finding block resolves the linked issue itself and skips cleanly without one"
 mkdir -p "$FC_TMP/journal-repo2"

@@ -211,6 +211,30 @@ for empty in "" "none" "NONE" " none " "-" "—"; do
   assert_equal "APPROVE" "$(_key DECISION)" "trigger '$empty': nothing counted, so nothing to request"
 done
 
+_flow_test_begin "T1b: the phrases reviewers write for nothing are no trigger (#329 review)"
+for empty in "none named" "Trigger: none named" "trigger: None named." "n/a" "N/A" "unknown"; do
+  _route "F1|P2|correctness|src/a.sh:1|HIGH|unchallenged|code-reviewer|$empty" --mode external --pr 7 --cycle 1
+  assert_equal "F1" "$(_key NO_TRIGGER)" "trigger '$empty': listed as naming no trigger"
+  assert_equal "0" "$(_key COUNT_P2)" "trigger '$empty': not counted"
+done
+
+_flow_test_begin "T5: a security finding with no trigger stays counted at its confidence"
+for row in 'SEC-1|P1|security|src/a.sh:1|HIGH|unchallenged|security-reviewer|' 'DEP-1|P1|dependency|package.json:4|HIGH|unchallenged|security-reviewer|none named' 'X1|P2|correctness|src/a.sh:2|MEDIUM|unchallenged|security-reviewer|'; do
+  _route "$row" --mode external --pr 7 --cycle 1
+  assert_equal "" "$(_key NO_TRIGGER)" "${row%%|*}: not listed as naming no trigger"
+  assert_equal "REQUEST_CHANGES" "$(_key DECISION)" "${row%%|*}: still decides the review"
+  assert_contains "security finding" "$ERR" "${row%%|*}: the warning says why it was kept"
+done
+_route 'SEC-1|P1|security|src/a.sh:1|HIGH|unchallenged|security-reviewer|' --mode self --pr 7 --cycle 1
+assert_exit 0 "$CODE" "on your own PR a security finding with no trigger does not stop routing"
+
+_flow_test_begin "S1: a demoted P2 the cycle rule set aside is not demoted as well"
+printf 'F2\n' > "$FFR_DIR/demoted"
+_route 'F2|P2|correctness|src/a.sh:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' --mode external --pr 7 --cycle 3 --s1-demoted "$FFR_DIR/demoted"
+assert_equal "F2" "$(_key NOT_COUNTED)" "set aside by the cycle rule"
+assert_equal "" "$(_key S1_DEMOTED_APPLIED)" "not also listed as demoted"
+assert_equal "APPROVE" "$(_key DECISION)" "no demotion floor for a finding that decides nothing"
+
 _flow_test_begin "T3: a trigger that only contains the word none is a trigger"
 _route 'F1|P2|correctness|src/a.sh:1|HIGH|unchallenged|code-reviewer|none of the callers pass --cycle, so it defaults' --mode external --pr 7 --cycle 1
 assert_equal "1" "$(_key COUNT_P2)" "counted"

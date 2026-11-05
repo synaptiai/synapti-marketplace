@@ -63,8 +63,8 @@ The cycle number counts prior `FLOW_REVIEW_CYCLE` markers. From cycle 2, review 
 | Any HIGH or MEDIUM P1 | REQUEST_CHANGES |
 | Any HIGH or MEDIUM P2 | REQUEST_CHANGES |
 | HIGH or MEDIUM P3 only | COMMENT; the author fixes every P3 in-PR, never "approve with nits" |
-| None, or LOW only | APPROVE |
-| Your own pull request | COMMENT at any priority — GitHub takes no verdict from an author |
+| None, or LOW only, or set aside by the cycle rule only | APPROVE |
+| Your own pull request | COMMENT at any priority |
 
 Finding triage never triggers escalation (`skills/llm-operator-principles/SKILL.md`).
 

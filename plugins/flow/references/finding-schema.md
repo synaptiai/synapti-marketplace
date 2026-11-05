@@ -151,7 +151,7 @@ Every reviewer agent's output section uses three priority-ordered tables plus a 
 ### P1 — Critical (Blocks Merge)
 | Finding | Suggested Fix |
 |---------|---------------|
-| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. _(HIGH)_ | Use parameterized query (`$1`, `$2`). |
+| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation.<br>Trigger: a search term containing `'` → the query breaks, and `' OR 1=1 --` returns every row _(HIGH)_ | Use parameterized query (`$1`, `$2`). |
 
 ### P2 — Should Fix
 | Finding | Suggested Fix |

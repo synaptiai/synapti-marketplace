@@ -42,6 +42,19 @@ quarter that a user could hit.
   Every fix covers its class: the other inputs of the same shape and the
   other callers of the same code are fixed in the same commit.
 - `dropped-finding` takes two more reasons, `no-trigger` and `out-of-scope`.
+  Neither may drop a security finding, as a grounding-pass drop may not, and
+  an external review lists each out-of-scope drop with the rule it fell
+  under.
+- The router counts by `ROUTE_CYCLE`, this reviewer's own cycle: the number
+  of review markers this reviewer posted, plus one. Markers others posted,
+  the author's self-reviews included, are their cycles, not this one's.
+- A security finding with no trigger stays counted at its confidence, with a
+  warning. `none named`, `n/a` and `unknown` are read as no trigger. The
+  synthesis step names the trigger of a finding whose evidence is a run or a
+  fact: a failing command, a contradicted claim, an unmet criterion, a
+  broken rule.
+- The posting block refuses a body that leaves out a finding the cycle rule
+  set aside.
 
 ## 3.13.0 (2026-11-01)
 

@@ -32,6 +32,9 @@
 - {ID} ({priority}, {category}, `{file:line}`) — {problem}
 {On a Path A run with `review.challenge` on, a finding with an `S1_NOTE` line shows that note as plain text: in its cell after the issue and before the suffix, or for a LOW finding at the end of its Pattern line. Never in the suffix or the review-cycle marker.}
 
+#### Dropped as out of scope
+{Only when a finding was dropped with `REASON=out-of-scope`: one plain bullet each, `- {ID} ({priority}, {category}, `{file:line}`) — {problem}: {the review-scope rule its trigger falls under}`, so a reader can disagree with the rule rather than never see the finding. Omit the section when nothing was dropped.}
+
 #### Blast radius
 
 {Only when the diff changes a contract — an exported signature, or a file `bin/flow-contract-files.sh`

@@ -39,8 +39,11 @@
 #     unchallenged, anything else is unchallenged with a LEDGER_WARN.
 #   - agent names the reviewer that raised the finding; empty is `unknown`.
 #   - trigger is the input or condition that makes the defect happen. Empty,
-#     `none`, `-` or `—` is no trigger: the row is routed LOW, with a
-#     LEDGER_WARN, and its id is listed in NO_TRIGGER.
+#     `none`, `none named`, `n/a`, `unknown`, `-` or `—` (in any letter case,
+#     with or without a leading `Trigger:`) is no trigger: the row is routed
+#     LOW, with a LEDGER_WARN, and its id is listed in NO_TRIGGER. A security
+#     finding (as --s1-demoted defines one below) is kept at its confidence
+#     instead, with a LEDGER_WARN: no rule takes one out of the review.
 #
 # --cycle <N> is this review's cycle (a positive integer). From cycle 2 a P3
 #   row, and from cycle 3 a P2 row, goes to NOT_COUNTED whatever its
@@ -318,19 +321,28 @@ while IFS= read -r line || [ -n "$line" ]; do
 
   ROWS_READ=$((ROWS_READ + 1))
 
+  # The cycle rule comes first: a row it sets aside is not demoted or
+  # investigated either, because it no longer decides anything.
+  if { [ "$CYCLE" -ge 2 ] && [ "$f_pri" = P3 ]; } || { [ "$CYCLE" -ge 3 ] && [ "$f_pri" = P2 ]; }; then
+    NOT_COUNTED="${NOT_COUNTED:+$NOT_COUNTED,}$f_id"
+    NOT_COUNTED_PRIORITIES="${NOT_COUNTED_PRIORITIES:+$NOT_COUNTED_PRIORITIES,}$f_id:$f_pri"
+    continue
+  fi
+
+  # A security finding: a category outside the non-security list, an agent
+  # whose name contains "security", or an id starting SEC- or DEP-. Neither
+  # System One nor a missing trigger takes one out of the review.
+  is_sec=0
+  case "$(printf '%s' "$f_cat" | tr '[:upper:]' '[:lower:]')" in
+    correctness|edge-case|error-handling|performance|tests|runtime|visual|breaking-change|duplication|scope|conventions|claim-verification) ;;
+    *) is_sec=1 ;;
+  esac
+  case "$(printf '%s' "$f_agent" | tr '[:upper:]' '[:lower:]')" in *security*) is_sec=1 ;; esac
+  case "$(printf '%s' "$f_id" | tr '[:upper:]' '[:lower:]')" in sec-*|dep-*) is_sec=1 ;; esac
+
   case "$S1_DEMOTED" in
     *",$f_id,"*)
-      s1_cat=$(printf '%s' "$f_cat" | tr '[:upper:]' '[:lower:]')
-      s1_agent=$(printf '%s' "$f_agent" | tr '[:upper:]' '[:lower:]')
-      s1_lid=$(printf '%s' "$f_id" | tr '[:upper:]' '[:lower:]')
-      s1_sec=0
-      case "$s1_cat" in
-        correctness|edge-case|error-handling|performance|tests|runtime|visual|breaking-change|duplication|scope|conventions|claim-verification) ;;
-        *) s1_sec=1 ;;
-      esac
-      case "$s1_agent" in *security*) s1_sec=1 ;; esac
-      case "$s1_lid" in sec-*|dep-*) s1_sec=1 ;; esac
-      if [ "$s1_sec" = 1 ]; then
+      if [ "$is_sec" = 1 ]; then
         echo "$PROG: line $LINE_NO: '$f_id' is listed in --s1-demoted but is a security finding or has a category outside the non-security list, which System One is never asked about; nothing routed" >&2
         exit 1
       fi
@@ -344,22 +356,23 @@ while IFS= read -r line || [ -n "$line" ]; do
       ;;
   esac
 
-  # The cycle rule comes first: a row it sets aside is not investigated
-  # either, because it no longer decides anything.
-  if { [ "$CYCLE" -ge 2 ] && [ "$f_pri" = P3 ]; } || { [ "$CYCLE" -ge 3 ] && [ "$f_pri" = P2 ]; }; then
-    NOT_COUNTED="${NOT_COUNTED:+$NOT_COUNTED,}$f_id"
-    NOT_COUNTED_PRIORITIES="${NOT_COUNTED_PRIORITIES:+$NOT_COUNTED_PRIORITIES,}$f_id:$f_pri"
-    continue
-  fi
-
+  # A trigger field that says there is none: empty, a dash, or a phrase the
+  # reviewers write for nothing ("none", "none named", "n/a"), with or
+  # without a leading "Trigger:".
   trig_lower=$(printf '%s' "$f_trig" | tr '[:upper:]' '[:lower:]')
+  trig_lower=$(trim "${trig_lower#trigger:}")
+  trig_lower="${trig_lower%.}"
   case "$trig_lower" in
-    ""|none|-|—)
-      if [ "$conf" != LOW ]; then
-        echo "LEDGER_WARN: PR#$PR finding '$f_id' from $agent_shown names no trigger — routed LOW" >&2
+    ""|none|"none named"|"none given"|n/a|na|-|—|unknown)
+      if [ "$is_sec" = 1 ]; then
+        echo "LEDGER_WARN: PR#$PR security finding '$f_id' from $agent_shown names no trigger — kept at its confidence; a security finding is never routed out of the review" >&2
+      else
+        if [ "$conf" != LOW ]; then
+          echo "LEDGER_WARN: PR#$PR finding '$f_id' from $agent_shown names no trigger — routed LOW" >&2
+        fi
+        conf="LOW"
+        NO_TRIGGER="${NO_TRIGGER:+$NO_TRIGGER,}$f_id"
       fi
-      conf="LOW"
-      NO_TRIGGER="${NO_TRIGGER:+$NO_TRIGGER,}$f_id"
       ;;
   esac
 

@@ -730,6 +730,23 @@ else
     printf '%s\n' "$REVIEW_CYCLES" | jq -r '.[] | "REVIEW_CYCLE=cycle=\(.cycle) findings=\"\(.findings)\""' 2>/dev/null
   fi
 
+  # This reviewer's own cycles decide what the router counts (ROUTE_CYCLE,
+  # bin/flow-finding-route.sh --cycle). A marker someone else posted, the
+  # author's self-review included, is another reviewer's cycle: counted here
+  # it would make a first review a third and set its P2s aside.
+  printf '%s\n' ""
+  printf '%s\n' "#### This reviewer's cycles"
+  REVIEWER_LOGIN=$(gh api user --jq '.login' 2>/dev/null)
+  OWN_CYCLE_COUNT=""
+  if [ -n "$REVIEWER_LOGIN" ]; then
+    OWN_CYCLE_COUNT=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
+      | jq -s --arg me "$REVIEWER_LOGIN" '[add // [] | .[] | select(.user.login == $me and ((.body // "") | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | length' 2>/dev/null)
+  fi
+  case "$OWN_CYCLE_COUNT" in
+    ''|*[!0-9]*) printf '%s\n' "OWN_CYCLE_COUNT=unavailable" ;;
+    *) printf '%s\n' "OWN_CYCLE_COUNT=$OWN_CYCLE_COUNT" ;;
+  esac
+
   # Sub-section: resolution-cycle markers (in PR/issue comments)
   printf '%s\n' ""
   printf '%s\n' "#### Resolution-cycle markers"
@@ -759,6 +776,8 @@ true
 ```
 
 Set `CYCLE_NUMBER`, this review's cycle, to `REVIEW_CYCLE_COUNT` + 1 from the block above (1 on a first review). Every later step that records or posts a cycle uses it. When that section printed `STATE=unavailable`, the earlier cycles are unknown: say so in the review rather than numbering this one 1.
+
+Set `ROUTE_CYCLE`, the cycle the router counts findings by, to `OWN_CYCLE_COUNT` + 1: this reviewer's own earlier reviews, not everyone's. When it printed `OWN_CYCLE_COUNT=unavailable`, set `ROUTE_CYCLE=1`, which counts every finding, and say so in the review.
 
 If previous cycles exist, build a **Previous Feedback Status** table and cross-reference each finding's location against `git -C "$REVIEW_TREE" diff --text --no-ext-diff --no-textconv <previous head>..HEAD` to verify resolution.
 
@@ -1454,7 +1473,7 @@ TaskUpdate each review task as agents complete.
 **Post the review before suggesting next steps.** The review is complete only once `gh pr review` has run and TaskUpdate confirms the post task, because the merge finding-ledger gate reads the posted marker.
 
 1. **TaskList**: Confirm all review facets complete
-2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it. After the grounding pass, an optional System One step asks whether the code each P1 or P2 finding cites shows its defect (`review.confidence`) and may re-record a finding LOW; it is described after the grounding pass.
+2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; it is given a trigger here when it has none, because its evidence is a run or a fact, not a scenario: a test-runner finding names the command that failed and what it printed, a holdout-validation finding the claim and the `file:line` that contradicts it, an unmet acceptance criterion the criterion, and a convention finding the rule it breaks; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it. After the grounding pass, an optional System One step asks whether the code each P1 or P2 finding cites shows its defect (`review.confidence`) and may re-record a finding LOW; it is described after the grounding pass.
 
 **Findings that describe the same defect (System One, optional).** After the file:line merge above, synthesis can ask a System One provider (`references/system-one.md`) whether two remaining findings in one file describe the same defect (`review.dedup`). With no `S1_DEDUP=` line from the block below, which is the default, skip this step and the block after it: the finding set is the one the merge above produced. A pair is asked about only when both findings are in the same file, both cite a line or both cite the whole file, their reviewer lists differ (at least one reviewer raised one and not the other), each was raised by `code-reviewer`, `error-handler-inspector` or `integration-verifier` (or a Path A variant of one), and neither is a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category that is neither one of the non-security categories of `references/finding-schema.md` nor one of the error-handling sub-types `error-handler-inspector` may write, nor `error-handling/<sub-type>` with one of those sub-types or `edge-case` or `missing-validation`; any other `error-handling/<sub-type>`, such as `error-handling/csrf`, is a security finding). A security finding is never merged. The block below also reports the mode of `review.confidence`, whose step follows the grounding pass.
 
@@ -1642,7 +1661,7 @@ set -- --findings "$CONFIDENCE_DIR/findings.json" --tree "$REVIEW_TREE" \
 
 - `S1_CONFIDENCE=on` and a non-empty `S1_DEMOTED=`: keep the `S1_DEMOTED_FILE` path for step 7, and take it from this cycle's output only: the block prints it every time, empty when nothing was demoted, and a path from an earlier cycle names that cycle's findings, whose ids this cycle reuses. What a listed finding becomes depends on whose pull request it is (the checkout step resolved the author):
   - On someone else's pull request, a listed **P1** is not re-recorded. It keeps its priority and confidence, is counted in the review decision and written to the `FLOW_REVIEW_CYCLE` marker, and its cell shows the answer as a note, after the problem and before the `_(CONFIDENCE · disposition)_` suffix: `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, with the `P` and `MODEL` of its result line. The note never goes into a marker row, a disposition or the suffix. Step 7's router keeps such a P1 counted and lists it in `S1_KEPT_P1=`; the posting block refuses a body whose line for that finding lacks the note.
-  - Every other listed finding (a P2 on someone else's pull request, and any listed finding on your own) is re-recorded LOW, at its own priority, before step 3. It is then a LOW finding like any other: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 investigates it first. Its `Pattern:` line reads `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, so a reader can tell it from a reviewer's own LOW. On someone else's pull request step 7's routing applies these ids from `S1_DEMOTED_FILE` itself (`S1_DEMOTED_APPLIED=`), and a review whose only P1 and P2 findings were lowered this way posts as a comment, never an approval.
+  - Every other listed finding (a P2 on someone else's pull request, and any listed finding on your own) is re-recorded LOW, at its own priority, before step 3. It is then a LOW finding like any other: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 investigates it first. Its `Pattern:` line reads `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, so a reader can tell it from a reviewer's own LOW. On someone else's pull request step 7's routing applies these ids from `S1_DEMOTED_FILE` itself (`S1_DEMOTED_APPLIED=`), and a review whose only P1 and P2 findings were lowered this way posts as a comment, never an approval. A finding the router lists in `NOT_COUNTED` (the cycle rule set it aside) is not demoted: it is listed under `#### Not counted in this cycle` instead.
 - `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed, and step 7 gets no `S1_DEMOTED_FILE`.
 - Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
 
@@ -1809,7 +1828,7 @@ fi
 # categories instead left every unlisted one (csrf, ssrf, path-traversal)
 # droppable.
 case "$REASON" in
-  critic-*)
+  critic-*|no-trigger|out-of-scope)
     __sec_fac=$(printf '%s' "${FACET:-}" | tr '[:upper:]' '[:lower:]')
     __sec_id=$(printf '%s' "${FINDING_ID:-}" | tr '[:upper:]' '[:lower:]')
     __sec_cat=$(printf '%s' "${CATEGORY:-}" | tr '[:upper:]' '[:lower:]')
@@ -1821,7 +1840,7 @@ case "$REASON" in
     case "$__sec_fac" in *security*) __sec=1 ;; esac
     case "$__sec_id" in sec-*|dep-*) __sec=1 ;; esac
     if [ "$__sec" = 1 ]; then
-      printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}, ${CATEGORY:-}) is a security finding or has a category outside the non-security list, which the grounding pass never drops; refusing to record it as $REASON" >&2; exit 1
+      printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}, ${CATEGORY:-}) is a security finding or has a category outside the non-security list, which no drop by rule removes (the grounding pass, no-trigger or out-of-scope); keep it, or escalate it; refusing to record it as $REASON" >&2; exit 1
     fi ;;
 esac
 for __name in CYCLE_NUMBER PR_NUM; do
@@ -1878,7 +1897,7 @@ fi
    - Cosmetic P3 in untouched files → COMMENT asking for the fix in this PR (default mode) OR follow-up issue workflow (only when `minimalScope: true` or the PR author has explicitly invoked minimal scope)
    - P1/P2 in untouched files → REQUEST_CHANGES; author must address in-PR (finding triage is NEVER a valid escalation trigger; see `skills/llm-operator-principles/SKILL.md`)
 
-   Findings in files the PR already modifies are NEVER out-of-scope — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
+   Findings in files the PR already modifies are NEVER outside this pull request's scope (a different sense from a trigger the review scope excludes) — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
 
    **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend fixing them in this PR with an `improve:` commit in the review comment.
 
@@ -1910,21 +1929,22 @@ fi
    ```
    Cross-reference each prior finding's location against `git -C "$REVIEW_TREE" diff --text --no-ext-diff --no-textconv <previous head>..HEAD` to verify resolution. Write prior-cycle ids plainly in that table (`F1 — missing auth check`), never in the bold `**{ID} · {category} · {location}**` form a finding row uses: ids restart at `F1` each cycle, and the posting block counts that form as a rendering of this cycle's finding.
 
-   **Route the findings.** Every consolidated finding, on both paths and in both review modes, goes through `bin/flow-finding-route.sh`, which applies the decision table in `skills/code-review-methodology/SKILL.md`: HIGH and MEDIUM findings are counted at their priority, and on an external review LOW findings go to Needs investigation. Both paths write 7-field marker rows (`ID|priority|category|location|status|confidence|disposition`; Path B rows carry disposition `unchallenged`). No LOW-confidence row is written to the `FLOW_REVIEW_CYCLE` marker. Replace the placeholder line with one row per consolidated finding, `ID|PRIORITY|category|location|CONFIDENCE|disposition|agent|trigger` (write a literal `|` as `\|`; `agent` names the reviewer that raised it; `trigger` is the finding's trigger in one line, empty when the reviewer named none), and run with `CYCLE_NUMBER` set. A finding with an empty trigger is routed LOW. From cycle 2 the router sets every P3 aside, and from cycle 3 every P2, in `NOT_COUNTED`: those findings are listed in the body and decide nothing (`skills/code-review-methodology/SKILL.md` § Review cycle awareness).
+   **Route the findings.** Every consolidated finding, on both paths and in both review modes, goes through `bin/flow-finding-route.sh`, which applies the decision table in `skills/code-review-methodology/SKILL.md`: HIGH and MEDIUM findings are counted at their priority, and on an external review LOW findings go to Needs investigation. Both paths write 7-field marker rows (`ID|priority|category|location|status|confidence|disposition`; Path B rows carry disposition `unchallenged`). No LOW-confidence row is written to the `FLOW_REVIEW_CYCLE` marker. Replace the placeholder line with one row per consolidated finding, `ID|PRIORITY|category|location|CONFIDENCE|disposition|agent|trigger` (write a literal `|` as `\|`; `agent` names the reviewer that raised it; `trigger` is the finding's trigger in one line, empty when the reviewer named none), and run with `CYCLE_NUMBER` and `ROUTE_CYCLE` set. A finding with an empty trigger, or `none named`, is routed LOW, unless it is a security finding. From this reviewer's cycle 2 the router sets every P3 aside, and from cycle 3 every P2, in `NOT_COUNTED`: those findings are listed in the body and decide nothing (`skills/code-review-methodology/SKILL.md` § Review cycle awareness).
 
 ```bash
 # FINDING_ROUTE_BLOCK_BEGIN
-# REVIEW_MODE (external or self, printed by step 4), PR_NUM and CYCLE_NUMBER
-# (this review's cycle) are carried from earlier steps: each fence is its own
+# REVIEW_MODE (external or self, printed by step 4), PR_NUM, CYCLE_NUMBER
+# (this review's cycle) and ROUTE_CYCLE (this reviewer's cycle, which the
+# router counts by) are carried from earlier steps: each fence is its own
 # shell. So is S1_DEMOTED_FILE when
 # the System One step of Phase 4 printed one.
 [ -n "${REVIEW_MODE:-}" ] || { printf '%s\n' "ERROR: REVIEW_MODE is not set; refusing to route findings" >&2; exit 1; }
 [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to route findings" >&2; exit 1; }
-case "${CYCLE_NUMBER:-}" in
-  ''|0*|*[!0-9]*) printf '%s\n' "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to route findings" >&2; exit 1 ;;
+case "${ROUTE_CYCLE:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "ERROR: ROUTE_CYCLE must be a positive integer, got '${ROUTE_CYCLE:-}'; refusing to route findings" >&2; exit 1 ;;
 esac
-# FINDING_TOTAL is how many findings the synthesis produced (minus any refuted
-# in step 5). An empty rows file is only a clean review when that number is 0;
+# FINDING_TOTAL is how many findings the synthesis produced (minus every one
+# step 5 dropped). An empty rows file is only a clean review when that number is 0;
 # any other time it is a caller that lost its input, and a marker posted from
 # it would read as a review that found nothing.
 case "${FINDING_TOTAL:-}" in
@@ -1956,7 +1976,7 @@ if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ]; then
   fi
   set -- --s1-demoted "$S1_DEMOTED_FILE"
 fi
-ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --cycle "$CYCLE_NUMBER" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY "$@")
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --cycle "$ROUTE_CYCLE" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY "$@")
 ROUTE_EXIT=$?
 printf '%s\n' "$ROUTED"
 if [ "$ROUTE_EXIT" -eq 3 ]; then
@@ -1977,18 +1997,19 @@ printf '%s\n' "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed
 # FINDING_ROUTE_BLOCK_END
 ```
 
-   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block. Set `FINDING_TOTAL` (the synthesized findings minus any refuted in step 5) before running the block: it decides whether an empty rows file is a clean review or a lost input, and the block refuses rows that do not match it. On someone else's pull request, an `S1_DEMOTED_FILE` that no longer names a readable, non-empty file stops both this block and the posting block: the demotions it held are lost, and routing without them could approve a review whose only P1 or P2 System One demoted.
+   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block. Set `FINDING_TOTAL` (the synthesized findings minus every one step 5 dropped: refuted, no-trigger or out-of-scope) before running the block: it decides whether an empty rows file is a clean review or a lost input, and the block refuses rows that do not match it. On someone else's pull request, an `S1_DEMOTED_FILE` that no longer names a readable, non-empty file stops both this block and the posting block: the demotions it held are lost, and routing without them could approve a review whose only P1 or P2 System One demoted.
 
    **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2 tables and P3 bullets, each opening with the bold `{ID} · {category} · {location}` and ending with its `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` in the template's entry shape (a bullet opening with the bold `{ID} · {priority} · {category} · {location}` line, then `Pattern:` and `Confirm or refute:`; for an id in `NO_TRIGGER`, `Pattern:` says the finding names no trigger and `Confirm or refute:` names the input that would show it), and lists every `NOT_COUNTED` id under `#### Not counted in this cycle` as a plain bullet `- {ID} ({priority}, {category}, {location}) — {problem}`, never in a counted finding's bold shape; the posting block checks that each LOW id appears exactly once, in that entry shape at its routed priority, and that no line carries a LOW suffix. Write the body to a file without the marker; the posting block appends it.
 
-   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge gate reads from a review body (`FINDINGS:[` or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry at its routed priority or sits outside that section, a counted finding is missing, rendered twice, rendered in the entry shape or rendered inside that section, or any line carries a LOW suffix. The section runs from its `#### Needs investigation` heading to the next `#### ` line; a body carrying two of those headings is refused whether or not the review has LOW findings, because which one bounds the section is not readable. Two limits are deliberate: a body that opens a section with a heading the template never writes (a setext underline, an HTML heading, a `###` of another level) is not seen, and a fenced `#### ` line after the section ends it although it is not a heading — a refusal the reviewer can reword, never a silent post. Set `FINDING_TOTAL` to the synthesized findings minus any refuted in step 5:
+   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge gate reads from a review body (`FINDINGS:[` or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry at its routed priority or sits outside that section, a counted finding is missing, rendered twice, rendered in the entry shape or rendered inside that section, or any line carries a LOW suffix. The section runs from its `#### Needs investigation` heading to the next `#### ` line; a body carrying two of those headings is refused whether or not the review has LOW findings, because which one bounds the section is not readable. Two limits are deliberate: a body that opens a section with a heading the template never writes (a setext underline, an HTML heading, a `###` of another level) is not seen, and a fenced `#### ` line after the section ends it although it is not a heading — a refusal the reviewer can reword, never a silent post. Set `FINDING_TOTAL` to the synthesized findings minus every one step 5 dropped (refuted, no-trigger or out-of-scope):
 
 ```bash
 # FINDING_POST_BLOCK_BEGIN
 # Carried from earlier steps (each fence is its own shell): REVIEW_MODE and
-# PR_NUM, CYCLE_NUMBER (the review cycle), FINDING_ROWS_FILE (printed by the
+# PR_NUM, CYCLE_NUMBER (the review cycle), ROUTE_CYCLE (this reviewer's
+# cycle), FINDING_ROWS_FILE (printed by the
 # routing block), FINDING_TOTAL (the number of rows that file should hold:
-# the synthesized findings minus any refuted in step 5), BODY_FILE and
+# the synthesized findings minus every one step 5 dropped), BODY_FILE and
 # REVIEW_RUN_PR_COMMANDS (printed by the checkout step), and S1_DEMOTED_FILE
 # when the System One step of Phase 4 printed one.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
@@ -1997,6 +2018,9 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to post" >&2; exit 1; }
 case "${CYCLE_NUMBER:-}" in
   ''|0*|*[!0-9]*) printf '%s\n' "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post" >&2; exit 1 ;;
+esac
+case "${ROUTE_CYCLE:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "ERROR: ROUTE_CYCLE must be a positive integer, got '${ROUTE_CYCLE:-}'; refusing to post" >&2; exit 1 ;;
 esac
 [ -n "${FINDING_TOTAL:-}" ] || { printf '%s\n' "ERROR: FINDING_TOTAL is not set; refusing to post" >&2; exit 1; }
 [ -r "${FINDING_ROWS_FILE:-}" ] || { printf '%s\n' "ERROR: FINDING_ROWS_FILE is not readable; refusing to post" >&2; exit 1; }
@@ -2042,7 +2066,7 @@ if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ]; then
   fi
   set -- --s1-demoted "$S1_DEMOTED_FILE"
 fi
-ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --cycle "$CYCLE_NUMBER" --input "$FINDING_ROWS_FILE" --allow-empty "$@")
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --cycle "$ROUTE_CYCLE" --input "$FINDING_ROWS_FILE" --allow-empty "$@")
 ROUTE_EXIT=$?
 if [ "$ROUTE_EXIT" -eq 3 ]; then
   printf '%s\n' "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
@@ -2136,7 +2160,11 @@ if [ "$REVIEW_MODE" = "external" ]; then
   # in the shape of a counted one: it is listed plainly under its own heading.
   for ID in $(sed -n 's/^NOT_COUNTED=//p' <<<"$ROUTED" | tr ',' ' '); do
     if grep -qF "**$ID · " "$BODY_FILE"; then
-      printf '%s\n' "ERROR: $ID is not counted in cycle $CYCLE_NUMBER but the body renders it as a finding, opening **$ID · ; list it under '#### Not counted in this cycle' as - $ID (priority, category, location) — problem" >&2
+      printf '%s\n' "ERROR: $ID is not counted in this reviewer's cycle $ROUTE_CYCLE but the body renders it as a finding, opening **$ID · ; list it under '#### Not counted in this cycle' as - $ID (priority, category, location) — problem" >&2
+      exit 1
+    fi
+    if [ "$(grep -cE "^[[:space:]]*[-*+][[:space:]]+$ID [(]" "$BODY_FILE" | tr -d ' ')" != 1 ]; then
+      printf '%s\n' "ERROR: $ID is not counted in this reviewer's cycle $ROUTE_CYCLE and must be listed once under '#### Not counted in this cycle' as - $ID (priority, category, location) — problem; a finding set aside is still shown" >&2
       exit 1
     fi
   done

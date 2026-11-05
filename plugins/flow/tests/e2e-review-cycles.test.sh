@@ -26,6 +26,11 @@
 #   R5 the posting block accepts a body that shows a finding set aside in the
 #      shape of a counted one, which tells the author it still blocks
 #   R6 the routing block runs with no cycle number at all
+#   R7 the cycle the router counts by is taken from every marker on the pull
+#      request, so the author's self-reviews make a maintainer's first review
+#      a third cycle and its P2s stop counting
+#   R8 the posting block accepts a body that leaves a set-aside finding out,
+#      so it is in neither the body nor the marker
 #
 # One artifact per scenario goes to $FLOW_E2E_ARTIFACT_DIR.
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
@@ -100,7 +105,7 @@ STUB
 if _want cycle-1; then
   _flow_test_begin "cycle-1"
   _rc_setup cycle-1 "cycle 1 of someone else's pull request: P1A, P2A and P3A count; P2N names no trigger, so it is investigated and decides nothing (R1, R2)"
-  _rc_route external CYCLE_NUMBER=1
+  _rc_route external CYCLE_NUMBER=1 ROUTE_CYCLE=1
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_line "FINDINGS_HEADER=P1: 1, P2: 1, P3: 1 · Needs investigation: 1"
   e2e_expect_line "MARKER_ROWS=P1A|P1|correctness|src/route.sh:12|open|HIGH|unchallenged,P2A|P2|error-handling|src/route.sh:40|open|MEDIUM|unchallenged,P3A|P3|conventions|README.md:9|open|MEDIUM|unchallenged"
@@ -115,7 +120,7 @@ fi
 if _want cycle-2; then
   _flow_test_begin "cycle-2"
   _rc_setup cycle-2 "cycle 2 of the same findings: P3A is listed and not counted, P1A and P2A still count (R1, R3, R4)"
-  _rc_route external CYCLE_NUMBER=2
+  _rc_route external CYCLE_NUMBER=2 ROUTE_CYCLE=2
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_line "FINDINGS_HEADER=P1: 1, P2: 1, P3: 0 · Needs investigation: 1"
   e2e_expect_line "MARKER_ROWS=P1A|P1|correctness|src/route.sh:12|open|HIGH|unchallenged,P2A|P2|error-handling|src/route.sh:40|open|MEDIUM|unchallenged"
@@ -130,7 +135,7 @@ fi
 if _want cycle-3; then
   _flow_test_begin "cycle-3"
   _rc_setup cycle-3 "cycle 3 of the same findings: only P1A counts; P2A, P2N and P3A are listed and not counted, and none is investigated (R1, R3, R4)"
-  _rc_route external CYCLE_NUMBER=3
+  _rc_route external CYCLE_NUMBER=3 ROUTE_CYCLE=3
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_line "FINDINGS_HEADER=P1: 1, P2: 0, P3: 0 · Needs investigation: 0"
   e2e_expect_line "MARKER_ROWS=P1A|P1|correctness|src/route.sh:12|open|HIGH|unchallenged"
@@ -144,7 +149,7 @@ fi
 if _want own-pr-no-trigger; then
   _flow_test_begin "own-pr-no-trigger"
   _rc_setup own-pr-no-trigger "your own pull request, cycle 1: P2N names no trigger, so routing stops and sends the review back to step 5 naming it, and nothing can be posted (R2)"
-  _rc_route self CYCLE_NUMBER=1
+  _rc_route self CYCLE_NUMBER=1 ROUTE_CYCLE=1
   e2e_expect_equal 1 "$E2E_RC" "exit status"
   e2e_expect_line "NO_TRIGGER=P2N"
   e2e_expect_line "UNRESOLVED_LOW=P2N"
@@ -158,9 +163,9 @@ if _want no-cycle; then
   _rc_setup no-cycle "the routing block with no cycle number, and with cycle 0: it refuses rather than routing every cycle as the first (R6)"
   _rc_route external
   e2e_expect_equal 1 "$E2E_RC" "exit status with no cycle"
-  e2e_expect_err "CYCLE_NUMBER must be a positive integer"
+  e2e_expect_err "ROUTE_CYCLE must be a positive integer"
   e2e_expect_no_out "DECISION="
-  _rc_route external CYCLE_NUMBER=0
+  _rc_route external CYCLE_NUMBER=1 ROUTE_CYCLE=0
   e2e_expect_equal 1 "$E2E_RC" "exit status with cycle 0"
   e2e_expect_clean_edges
 fi
@@ -188,7 +193,7 @@ Tests, advisory audit, duplication scan: not run: someone else's pull request
 - P2N (P2, error-handling, `src/route.sh:51`) — names no trigger
 BODY
   e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=3 FINDING_ROWS_FILE="$E2E_DIR/rows" FINDING_TOTAL=4 \
-    BODY_FILE="$E2E_DIR/body.md" REVIEW_RUN_PR_COMMANDS=no commands/review.md FINDING_POST_BLOCK
+    BODY_FILE="$E2E_DIR/body.md" REVIEW_RUN_PR_COMMANDS=no ROUTE_CYCLE=3 commands/review.md FINDING_POST_BLOCK
   e2e_expect_equal 0 "$E2E_RC" "exit status"
   e2e_expect_line "POSTED_AS=--request-changes POST_EXIT=0"
   e2e_expect_line "COUNT_TOTAL=1"
@@ -196,9 +201,67 @@ BODY
   rm -f "$E2E_DIR/gh-review.log"
   sed 's/^- P2A (P2, error-handling, `src\/route.sh:40`)/- **P2A · error-handling · `src\/route.sh:40`**/' "$E2E_DIR/body.md" > "$E2E_DIR/body-bold.md"
   e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=3 FINDING_ROWS_FILE="$E2E_DIR/rows" FINDING_TOTAL=4 \
-    BODY_FILE="$E2E_DIR/body-bold.md" REVIEW_RUN_PR_COMMANDS=no commands/review.md FINDING_POST_BLOCK
+    BODY_FILE="$E2E_DIR/body-bold.md" REVIEW_RUN_PR_COMMANDS=no ROUTE_CYCLE=3 commands/review.md FINDING_POST_BLOCK
   e2e_expect_equal 1 "$E2E_RC" "exit status for a set-aside finding in the counted shape"
-  e2e_expect_err "P2A is not counted in cycle 3 but the body renders it as a finding"
+  e2e_expect_err "P2A is not counted in this reviewer's cycle 3 but the body renders it as a finding"
+  e2e_expect_equal "no" "$([ -e "$E2E_DIR/gh-review.log" ] && echo yes || echo no)" "gh pr review was called"
+  e2e_expect_clean_edges
+fi
+
+if _want own-cycles; then
+  _flow_test_begin "own-cycles"
+  _rc_setup own-cycles "the previous-cycles block on a pull request whose author posted two self-review markers and this reviewer one: OWN_CYCLE_COUNT counts only this reviewer's marker, so the router's cycle is 2, not 4 (R7)"
+  cat > "$E2E_GH/reviews.json" <<'JSON'
+[{"user":{"login":"author"},"body":"Self-review\n<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[F1|P2|x|a.sh:1|open|HIGH|unchallenged] -->"},
+ {"user":{"login":"author"},"body":"Self-review\n<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[] -->"},
+ {"user":{"login":"maintainer"},"body":"Review\n<!-- FLOW_REVIEW_CYCLE:3 FINDINGS:[F1|P2|x|a.sh:1|open|HIGH|unchallenged] -->"},
+ {"user":{"login":"maintainer"},"body":"Looks fine to me."}]
+JSON
+  cat > "$E2E_BIN/gh" <<'STUB'
+#!/usr/bin/env bash
+jqx=""; prev=""; paginate=0
+for a in "$@"; do [ "$prev" = --jq ] && jqx="$a"; [ "$a" = --paginate ] && paginate=1; prev="$a"; done
+case "$*" in
+  "repo view"*) echo o/r ;;
+  "api user"*) echo maintainer ;;
+  *"repos/o/r/pulls/7/reviews"*) if [ -n "$jqx" ]; then jq "$jqx" "$E2E_GH/reviews.json"; else cat "$E2E_GH/reviews.json"; fi ;;
+  *"repos/o/r/issues/7/comments"*) printf '[]\n' | jq "${jqx:-.}" ;;
+  *) printf 'unhandled: %s\n' "$*" >> "$E2E_GH/unhandled.log"; exit 99 ;;
+esac
+STUB
+  chmod +x "$E2E_BIN/gh"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/review.md" PREVIOUS_CYCLES_BLOCK_BEGIN 7
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  # The marker with an empty FINDINGS:[] is not counted by the existing
+  # global count (its capture needs one finding); this reviewer's count
+  # matches the marker itself and is not affected.
+  e2e_expect_line "REVIEW_CYCLE_COUNT=2"
+  e2e_expect_line "OWN_CYCLE_COUNT=1"
+  e2e_expect_clean_edges
+fi
+
+if _want post-omits-not-counted; then
+  _flow_test_begin "post-omits-not-counted"
+  _rc_setup post-omits-not-counted "posting cycle 3 with a body that leaves P2N out of its Not counted list: refused, nothing posted (R8)"
+  _rc_gh_stub
+  cat > "$E2E_DIR/body.md" <<'BODY'
+## Review: PR #7
+
+### Findings: P1: 1, P2: 0, P3: 0 · Needs investigation: 0
+
+### Checks not run
+Tests, advisory audit, duplication scan: not run: someone else's pull request
+
+| **P1A · correctness · `src/route.sh:12`**<br>An empty --input path reads stdin. _(HIGH · unchallenged)_ | Refuse it. |
+
+#### Not counted in this cycle
+- P2A (P2, error-handling, `src/route.sh:40`) — an unauthenticated gh reads as a clean review
+- P3A (P3, conventions, `README.md:9`) — the README spells the flag --cycel
+BODY
+  e2e_run_block REVIEW_MODE=external PR_NUM=7 CYCLE_NUMBER=3 ROUTE_CYCLE=3 FINDING_ROWS_FILE="$E2E_DIR/rows" FINDING_TOTAL=4 \
+    BODY_FILE="$E2E_DIR/body.md" REVIEW_RUN_PR_COMMANDS=no commands/review.md FINDING_POST_BLOCK
+  e2e_expect_equal 1 "$E2E_RC" "exit status"
+  e2e_expect_err "P2N is not counted in this reviewer's cycle 3 and must be listed once"
   e2e_expect_equal "no" "$([ -e "$E2E_DIR/gh-review.log" ] && echo yes || echo no)" "gh pr review was called"
   e2e_expect_clean_edges
 fi

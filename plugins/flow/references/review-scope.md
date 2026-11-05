@@ -7,9 +7,9 @@ trigger LOW, where it can ask for investigation but never decides the review.
 
 The rules below are written about **the project under review**: its users, its callers, the
 platforms it supports and the input it treats as untrusted, all as the project itself states them.
-A project narrows or widens them with rows in its review exceptions file
+A project narrows them with rows in its review exceptions file
 (`<runtime dir>/review-exceptions.md`, read at the pull request's base commit by
-`bin/flow-review-exceptions.sh`), so a pull request cannot change the scope it is judged by.
+`bin/flow-review-exceptions.sh`), so a pull request cannot change the scope it is judged by. An exception row can only take a finding out; a project that wants more in scope says so in its own documentation of what it supports and trusts.
 
 ## Why
 
@@ -33,7 +33,8 @@ a pattern match.
 
 - Input the project's users and callers produce in normal use, including the mistakes they plausibly
   make: an empty or missing value, a typo, a file that is not there, a dependency not installed, an
-  action repeated.
+  action repeated. Ordinary configuration is normal use too: the user's locale, shell, common
+  environment variables and tool configuration, for a project that runs where users configure them.
 - The platforms, runtimes and versions the project says it supports: its README, its package
   manifest (an `engines` field, `python_requires`, a toolchain file) or, when it states none, what its
   CI runs on.
@@ -46,10 +47,10 @@ a pattern match.
 
 ## Out of scope, unless the change is about it
 
-- The operator's own environment working against them: shell variables, aliases and local
-  configuration they set themselves.
+- The operator's own environment set to defeat the tool: a value no one sets for any other reason.
 - Someone who already has the access the defect would give: the user's account, write access to their
-  machine, home or temp directory, the database the code writes to.
+  machine, their home or their own temp directory (a shared `/tmp` is not theirs alone), the database
+  the code writes to.
 - Races against the user's own processes, in a tool one user runs.
 - Values the producer never emits under its contract: `NaN` from a source that writes integers, a
   field the API documents as always present arriving absent.
