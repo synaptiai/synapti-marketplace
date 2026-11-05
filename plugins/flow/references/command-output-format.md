@@ -251,7 +251,7 @@ A command's last message is what the user reads instead of the transcript, so it
 same standard as the text flow publishes (`bin/flow-description-check.sh`, issue #328):
 
 - **Done** — what changed, named by the commit, the pull request, or the file.
-- **Verified, and how** — the command that checked it and what it printed (`TOTAL pass=189 fail=0`), or the `file:line` read. "Should work" and "looks good" are not verification.
+- **Verified, and how** — the command that checked it and what it printed (the test command and its summary line, such as `42 passed, 0 failed`), or the `file:line` read. "Should work" and "looks good" are not verification.
 - **Not done, or not verified** — the step skipped and why, the criterion left open, the check that
   could not run (its `STATE=unavailable` and `REASON`).
 
