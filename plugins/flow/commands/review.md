@@ -730,12 +730,12 @@ else
     printf '%s\n' "$REVIEW_CYCLES" | jq -r '.[] | "REVIEW_CYCLE=cycle=\(.cycle) findings=\"\(.findings)\""' 2>/dev/null
   fi
 
-  # This reviewer's own cycles decide what the router counts (ROUTE_CYCLE,
-  # bin/flow-finding-route.sh --cycle). A marker someone else posted, the
-  # author's self-review included, is another reviewer's cycle: counted here
-  # it would make a first review a third and set its P2s aside.
+  # The cycles of this reviewer decide what the router counts (ROUTE_CYCLE,
+  # bin/flow-finding-route.sh --cycle). A marker someone else posted, a
+  # self-review by the author included, is a cycle of another reviewer:
+  # counted here it would make a first review a third and set its P2s aside.
   printf '%s\n' ""
-  printf '%s\n' "#### This reviewer's cycles"
+  printf '%s\n' "#### Cycles of this reviewer"
   REVIEWER_LOGIN=$(gh api user --jq '.login' 2>/dev/null)
   OWN_CYCLE_COUNT=""
   if [ -n "$REVIEWER_LOGIN" ]; then
