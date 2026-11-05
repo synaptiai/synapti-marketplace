@@ -2400,6 +2400,10 @@ printf '%s\n' "COUNT_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed 
 
 **FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): once the review comment is posted (or no-finding evidence is recorded), invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. The `workflow-run` journal artifact is best-effort — a review is PR-scoped, not issue-scoped — so emit `bin/journal-record.sh --type workflow-run` only if `bin/flow-pr-linked-issue.sh` prints an issue for the PR (the one GitHub lists it as closing, the lowest when there are several); otherwise the `run.yaml` is the durable record and no journal artifact is written. If the review failed or was cancelled before posting, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
 
+## Final reply
+
+End with what was done, what was verified and how (the command and what it printed, or the `file:line`), and what was not done or not verified. Every claim in it is one the work supports: a count is the one a command printed, "tests pass" names the run, and a step that was skipped is said to be skipped (`references/command-output-format.md` § Final reply).
+
 ## Tier Classification
 
 | Action | Tier | Behavior |

@@ -744,6 +744,39 @@ means there was no origin remote to verify against. In each case the merge
 below would have to name a repository nobody verified. Report the state and
 what the user can do about it.
 
+**Description check.** Before the assessment, check that the pull request's body
+still describes what will merge. Read `gh pr view <N> --json body,baseRefName,headRefOid`,
+run `git fetch origin "<baseRefName>" "pull/<N>/head"` so both commits are here
+whatever branch is checked out, write the body to a file made with `mktemp`,
+with the Write tool, and run the block with `DESC_FILE=<that path>`,
+`DESC_BASE=origin/<baseRefName>` and `DESC_HEAD=<headRefOid>`: the head GitHub
+will merge, not the local branch, which may be another branch or behind. On `STATE=stale`, rewrite the
+sections it names as `/flow:address` step 10 does, update the body, and run it
+again; on `STATE=unavailable`, say so in the assessment with its `REASON`.
+
+```bash
+# DESCRIPTION_CHECK_BLOCK_BEGIN
+# DESC_FILE names the description the session wrote with the Write tool.
+# DESC_BASE is the ref the change is compared against (the pull request's
+# base), with DESC_HEAD (default HEAD) the change's head; or DESC_STAGED=1
+# checks a commit message against the staged change. The text is read as
+# data by the helper, never run.
+printf '%s\n' "### Description check"
+if [ -z "${DESC_FILE:-}" ]; then
+  printf '%s\n' "STATE=unavailable" "REASON=DESC_FILE is not set"
+  exit 0
+fi
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+if [ "${DESC_STAGED:-}" = 1 ]; then
+  "$FLOW_ROOT/bin/flow-description-check.sh" --body "$DESC_FILE" --staged
+elif [ -n "${DESC_BASE:-}" ]; then
+  "$FLOW_ROOT/bin/flow-description-check.sh" --body "$DESC_FILE" --base "$DESC_BASE" --head "${DESC_HEAD:-HEAD}"
+else
+  printf '%s\n' "STATE=unavailable" "REASON=set DESC_BASE, or DESC_STAGED=1 for a commit message"
+fi
+# DESCRIPTION_CHECK_BLOCK_END
+```
+
 Show the assessment as text. Then use the AskUserQuestion tool with contextual
 options to confirm, naming what will actually run: "PR #{PR_NUMBER} in
 {OWNER/NAME} is ready to merge. Proceed with a {strategy} merge{, deleting the
@@ -856,6 +889,10 @@ fi
 The emit is conditional — most merges run cleanly without escalations, in which case skip this step. When it does fire, the manifest captures both *that* an escalation closed and *which canonical field* was the gate, enabling `/flow:learn` to detect recurring escalation patterns (e.g., the same field gating multiple merges → process or tooling improvement opportunity).
 
 Suggest: `/flow:release {type}` if this completes a milestone.
+
+## Final reply
+
+End with what was done, what was verified and how (the command and what it printed, or the `file:line`), and what was not done or not verified. Every claim in it is one the work supports: a count is the one a command printed, "tests pass" names the run, and a step that was skipped is said to be skipped (`references/command-output-format.md` § Final reply).
 
 ## Tier Classification
 

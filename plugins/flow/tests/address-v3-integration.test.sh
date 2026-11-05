@@ -1417,7 +1417,7 @@ assert_equal "$STEP9_FENCES" "$STEP9_MARKED" "every runnable fence in step 9 car
 # inside step 9. An inline-! fence is pre-executed at command load, so it is the
 # more dangerous of the two to leave unmarked, and it is the arm this test added.
 WORKNEG=$(mktemp -d -t flow-fenceneg.XXXXXX); ADDR_CLEANUP+=("$WORKNEG")
-awk '{ if ($0 ~ /^10\. \*\*Update PR body review cycle state\*\*/ && !done) {
+awk '{ if ($0 ~ /^10\. \*\*Update the PR body\*\*/ && !done) {
          print "```!"
          print "echo \"STATE=ok\""
          print "```"
@@ -1436,7 +1436,7 @@ fi
 # an opener followed by a space — or a tab, which is the form the mutated copy
 # below uses — is the same fence to the executor while an exact-shape scan misses
 # it: a one-byte bypass of the whole guard.
-awk '{ if ($0 ~ /^10\. \*\*Update PR body review cycle state\*\*/ && !done) {
+awk '{ if ($0 ~ /^10\. \*\*Update the PR body\*\*/ && !done) {
          print "```!\t"
          print "echo \"STATE=ok\""
          print "```"

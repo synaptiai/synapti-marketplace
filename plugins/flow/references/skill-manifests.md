@@ -11,7 +11,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 <!-- BEGIN GENERATED: commands (bin/flow-skill-manifests.sh) -->
 | Command | Required skills | Ambient | Contracts | Words inlined |
 |---------|-----------------|---------|-----------|---------------|
-| `/flow:address` | llm-operator-principles, feedback-resolution, change-classification, capability-discovery, tdd-patterns, holdout-validation, goal-evidence-ledger, run-state-management | 1 | 7 | 1282 |
+| `/flow:address` | llm-operator-principles, feedback-resolution, change-classification, capability-discovery, tdd-patterns, holdout-validation, goal-evidence-ledger, run-state-management | 1 | 7 | 1274 |
 | `/flow:brainstorm` | brainstorming, capability-discovery, specification-capture | 0 | 3 | 281 |
 | `/flow:commit` | llm-operator-principles, change-classification, convention-enforcement | 1 | 2 | 781 |
 | `/flow:debug` | debugging-patterns, change-classification, goal-contract-capture, goal-evaluator, goal-lifecycle, run-state-management | 0 | 6 | 609 |
@@ -22,14 +22,14 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | `/flow:issue` | issue-crafting | 0 | 1 | 108 |
 | `/flow:learn` | (none) | 0 | 0 | 0 |
 | `/flow:merge` | llm-operator-principles, merge-and-release, run-state-management | 1 | 2 | 804 |
-| `/flow:pr` | llm-operator-principles, pr-lifecycle, code-review-methodology, capability-discovery, holdout-validation, run-state-management, runtime-verification, visual-verification | 1 | 7 | 1263 |
+| `/flow:pr` | llm-operator-principles, pr-lifecycle, code-review-methodology, capability-discovery, holdout-validation, run-state-management, runtime-verification, visual-verification | 1 | 7 | 1255 |
 | `/flow:release` | merge-and-release, run-state-management | 0 | 2 | 210 |
 | `/flow:resolve` | merge-conflict-resolution, capability-discovery, debugging-patterns | 0 | 3 | 300 |
 | `/flow:resume` | run-state-management | 0 | 1 | 106 |
-| `/flow:review` | llm-operator-principles, code-review-methodology, holdout-validation, run-state-management | 1 | 3 | 857 |
+| `/flow:review` | llm-operator-principles, code-review-methodology, holdout-validation, run-state-management | 1 | 3 | 849 |
 | `/flow:run` | trigger-policy | 0 | 1 | 104 |
 | `/flow:setup` | capability-discovery | 0 | 1 | 105 |
-| `/flow:start` | llm-operator-principles, branch-and-task-management, change-classification, capability-discovery, debugging-patterns, preflight-checks, criterion-verification-map, holdout-validation, issue-crafting, specification-capture, tdd-patterns, goal-contract-capture, goal-lifecycle, run-state-management, runtime-verification, visual-verification | 1 | 15 | 2055 |
+| `/flow:start` | llm-operator-principles, branch-and-task-management, change-classification, capability-discovery, debugging-patterns, preflight-checks, criterion-verification-map, holdout-validation, issue-crafting, specification-capture, tdd-patterns, goal-contract-capture, goal-lifecycle, run-state-management, runtime-verification, visual-verification | 1 | 15 | 2047 |
 | `/flow:status` | (none) | 0 | 0 | 0 |
 | `/flow:trigger` | trigger-policy | 0 | 1 | 104 |
 | `/flow:watch` | trigger-policy | 0 | 1 | 104 |
@@ -59,11 +59,11 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | goal-evidence-ledger | dispatched | 554 | Maintain the append-only evidence ledger: `<runtime dir>/runs/<run-id>/evidence/*.evidence.yaml` sidecars... |
 | goal-lifecycle | dispatched | 544 | Enforce the FlowGoal state machine: every `lifecycle.status` transition (draft → active → {waiting_for_us... |
 | holdout-validation | dispatched | 600 | Cross-reference agent self-review claims and evidence-bundle entries against actual file state using hidd... |
-| issue-crafting | dispatched | 425 | Craft well-structured GitHub issues with solution-agnostic outcomes, duplicate detection (open and closed... |
+| issue-crafting | dispatched | 449 | Craft well-structured GitHub issues with solution-agnostic outcomes, duplicate detection (open and closed... |
 | llm-operator-principles | ambient | 594 | Frame Claude's identity as an LLM operator that does not tire, treats convergence as no counted P1 or P2... |
 | merge-and-release | dispatched · reference-only | 600 | Reference document describing merge prerequisites (approval, CI checks, mergeable, conversations resolved... |
 | merge-conflict-resolution | dispatched | 552 | Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolv... |
-| pr-lifecycle | dispatched · reference-only | 599 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
+| pr-lifecycle | dispatched · reference-only | 596 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
 | preflight-checks | dispatched · reference-only | 543 | Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue e... |
 | run-state-management | dispatched | 588 | Manage FlowRun state at `<runtime dir>/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry... |
 | runtime-verification | dispatched | 597 | Verify code works at runtime through build verification (mandatory), LSP diagnostics, ad-hoc verification... |
@@ -80,5 +80,5 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 Skill bodies are capped at 600 words and contracts at 120 (enforced by `tests/flow-load-skills.test.sh`). Agents load skills through their own `skills:` frontmatter (see `agents/*.md`), which is unaffected by this mechanism.
 
 <!-- BEGIN GENERATED: budget (bin/flow-skill-manifests.sh) -->
-The largest command load today is `/flow:start` at 2055 words; the sum across all commands is 9870.
+The largest command load today is `/flow:start` at 2047 words; the sum across all commands is 9838.
 <!-- END GENERATED: budget -->

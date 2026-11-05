@@ -648,7 +648,33 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 
    When `STATE=none` (no active FlowGoal for this branch): the gate is **not applicable** (it keys on goal existence). Proceed with PR creation silently — a goal-less PR is not blocked and needs no prompt. The PR body omits the `## FlowGoal Status` section.
 
-8. **Generate PR body** from template + findings + journal + comprehension report.
+8. **Generate PR body** from template + findings + journal + comprehension report, written from the branch as it is now: `git diff "$DEFAULT_BRANCH"...HEAD` and the journal, not the plan. Every count, test result and behaviour it states comes from a command run in this session or a `file:line` in the diff; what the issue asked for and this pull request does not do is said in the Summary.
+
+   **Check it before it is published.** Run `git fetch origin "$DEFAULT_BRANCH"`, write the body to a file made with `mktemp`, with the Write tool, and run the block with `DESC_FILE=<that path>` and `DESC_BASE=$DEFAULT_BRANCH`: a bare branch name is read as its `origin/` ref, because `/flow:start` branches from it and never updates the local one, and `COMPARED=` shows the range the counts came from. Correct or remove every `MISMATCH` and `STALE_PATH` line it prints, and run it again until it prints `STATE=ok` (or `STATE=unavailable`, which goes into the body as a note with its `REASON`). The claims a script cannot check, what the change does, go to `Skill(holdout-validation)` with the body as its `Description` input; a claim it contradicts is corrected the same way.
+
+   ```bash
+   # DESCRIPTION_CHECK_BLOCK_BEGIN
+   # DESC_FILE names the description the session wrote with the Write tool.
+   # DESC_BASE is the ref the change is compared against (the pull request's
+   # base), with DESC_HEAD (default HEAD) the change's head; or DESC_STAGED=1
+   # checks a commit message against the staged change. The text is read as
+   # data by the helper, never run.
+   printf '%s\n' "### Description check"
+   if [ -z "${DESC_FILE:-}" ]; then
+     printf '%s\n' "STATE=unavailable" "REASON=DESC_FILE is not set"
+     exit 0
+   fi
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+   if [ "${DESC_STAGED:-}" = 1 ]; then
+     "$FLOW_ROOT/bin/flow-description-check.sh" --body "$DESC_FILE" --staged
+   elif [ -n "${DESC_BASE:-}" ]; then
+     "$FLOW_ROOT/bin/flow-description-check.sh" --body "$DESC_FILE" --base "$DESC_BASE" --head "${DESC_HEAD:-HEAD}"
+   else
+     printf '%s\n' "STATE=unavailable" "REASON=set DESC_BASE, or DESC_STAGED=1 for a commit message"
+   fi
+   # DESCRIPTION_CHECK_BLOCK_END
+   ```
+
 
    If the FlowGoal gate fired and user chose Option 2 (proceed with not-yet-achieved goal), include a `## FlowGoal Status` section at the top of the body:
 
@@ -856,6 +882,10 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 The block records against the issue GitHub lists the pull request as closing, falling back to the branch name when GitHub lists none (a pull request into a branch other than the default closes nothing). If neither names an issue it says so and skips; a gh failure is an error, not a skip. PR-creation flow uses Path B (single-session 5-agent dispatch); subsequent `/flow:review` invocations may re-emit with `path=A` if paired-reviewer mode is enabled.
 
 Display PR URL and next steps.
+
+## Final reply
+
+End with what was done, what was verified and how (the command and what it printed, or the `file:line`), and what was not done or not verified. Every claim in it is one the work supports: a count is the one a command printed, "tests pass" names the run, and a step that was skipped is said to be skipped (`references/command-output-format.md` § Final reply).
 
 ## Tier Classification
 

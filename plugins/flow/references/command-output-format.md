@@ -244,3 +244,16 @@ This format is the default. Deviate only when:
 3. A downstream bash consumer parses the output (none exist today across the flow plugin; if one is added, document the contract here and at the consumer site).
 
 In all other cases, follow the rules above.
+
+## Final reply
+
+A command's last message is what the user reads instead of the transcript, so it is held to the
+same standard as the text flow publishes (`bin/flow-description-check.sh`, issue #328):
+
+- **Done** — what changed, named by the commit, the pull request, or the file.
+- **Verified, and how** — the command that checked it and what it printed (the test command and its summary line, such as `42 passed, 0 failed`), or the `file:line` read. "Should work" and "looks good" are not verification.
+- **Not done, or not verified** — the step skipped and why, the criterion left open, the check that
+  could not run (its `STATE=unavailable` and `REASON`).
+
+A number is the one a command printed in this session, never one carried over from the plan or an
+earlier cycle.

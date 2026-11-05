@@ -9,7 +9,7 @@ anchor downstream deferral. See `skills/llm-operator-principles/SKILL.md`.
 
 ## Summary
 
-{2-3 sentence description of what changed and why}
+{2-3 sentence description of what changed and why, written from the branch's final diff, not the plan. When the issue asked for something this pull request does not do, one sentence says what and why.}
 
 Closes #{issue_number}
 
@@ -98,7 +98,7 @@ Spec-free task — no acceptance criteria to verify.
 
 ## Files Changed
 
-{Grouped by top-level directory with counts:}
+{Grouped by top-level directory with counts; files at the top of the repository go in a `(root)` row:}
 
 | Area | Files | Additions | Deletions |
 |------|-------|-----------|-----------|
