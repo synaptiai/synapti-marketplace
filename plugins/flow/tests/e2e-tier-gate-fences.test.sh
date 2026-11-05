@@ -55,7 +55,7 @@ fi
 HOOK_TG=hooks/scripts/tier-gate.sh
 # <fence key>|<text the fence holds>
 TGF_EXPECT_ASK="
-commands/merge.md#1|gh pr merge
+commands/merge.md#2|gh pr merge
 commands/release.md#4|git push origin \"\$TAG\"
 commands/release.md#5|gh release create
 commands/merge.md!2|gh api graphql -f query=\"query {

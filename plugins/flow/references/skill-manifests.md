@@ -63,7 +63,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | llm-operator-principles | ambient | 590 | Frame Claude's identity as an LLM operator that does not tire, treats convergence as zero findings (not e... |
 | merge-and-release | dispatched · reference-only | 600 | Reference document describing merge prerequisites (approval, CI checks, mergeable, conversations resolved... |
 | merge-conflict-resolution | dispatched | 552 | Detect, classify (porcelain status; complexity: trivial, semantic, structural, delete-modify), and resolv... |
-| pr-lifecycle | dispatched · reference-only | 606 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
+| pr-lifecycle | dispatched · reference-only | 596 | Reference document describing PR lifecycle: pre-flight gates (4 conditions), verification gate (5 conditi... |
 | preflight-checks | dispatched · reference-only | 543 | Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue e... |
 | run-state-management | dispatched | 588 | Manage FlowRun state at `<runtime dir>/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry... |
 | runtime-verification | dispatched | 597 | Verify code works at runtime through build verification (mandatory), LSP diagnostics, ad-hoc verification... |

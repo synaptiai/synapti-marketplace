@@ -170,8 +170,12 @@ fi
 
 if _want same-block; then
   _flow_test_begin "same-block"
-  _dc_setup same-block "commands/pr.md, address.md, merge.md and commit.md carry the same DESCRIPTION_CHECK_BLOCK, compared without each line's indentation, which follows the list the block sits in (D5)"
-  _dc_block() { (cd "$E2E_ACTIVE_PLUGIN" && flow_block "commands/$1.md" DESCRIPTION_CHECK_BLOCK) | sed 's/^[[:space:]]*//' | _e2e_sha256_stdin; }
+  _dc_setup same-block "commands/pr.md, address.md, merge.md and commit.md carry the same DESCRIPTION_CHECK_BLOCK, compared without each line's indentation, which follows the list the block sits in, and without its plugin-root line, which follows where the command may run (D5)"
+  # The plugin-root line is left out: /flow:address may run on someone else's
+  # pull request, so it resolves the plugin with the install-preferring form
+  # (references/plugin-root-resolution.md), and the others with the
+  # author-context form.
+  _dc_block() { (cd "$E2E_ACTIVE_PLUGIN" && flow_block "commands/$1.md" DESCRIPTION_CHECK_BLOCK) | sed 's/^[[:space:]]*//' | grep -v '^FLOW_ROOT=' | _e2e_sha256_stdin; }
   PR_SHA=$(_dc_block pr)
   for c in address merge commit; do
     e2e_expect_equal "$PR_SHA" "$(_dc_block "$c")" "sha256 of the block in commands/$c.md"
