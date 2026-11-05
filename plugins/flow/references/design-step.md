@@ -12,13 +12,13 @@ structure is chosen once, on purpose, instead of one review finding at a time.
   it. A change with `RISK=normal` skips it; `RISK=unknown` (the check could not run) skips it too, and
   the runtime summary says the check did not run.
 - **During review and address cycles**, when a fix would change the recorded design, add a subsystem
-  (a new script, command, setting or persistent file format), or add a trust boundary (new input from
+  (a new module, service, command, configuration option or stored format), or add a trust boundary (new input from
   content the user does not control, per `references/review-scope.md`). That fix is not made inside
   the loop: the cycle stops, the design step runs, and its record is updated before the fix.
 
-Why: on #307 three review cycles traded one leak for another until a masking rule was written down,
-and on #251 cycles 9 to 14 redesigned how flow reviews other people's pull requests one finding at a
-time. Both were design decisions made inside fix loops.
+Why: when a risky change is designed inside review-fix loops, each fix settles one finding and opens
+the next, and the rule that would have ended it (an invariant, a boundary, a format) is written down
+only after several rounds. Writing it first lets the fixes follow it.
 
 ## What the agent does
 

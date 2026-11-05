@@ -551,7 +551,7 @@ fi
 true
 ```
 
-**A fix that would change the design is not made in the cycle.** When addressing a comment would contradict the journal's `## Design` record, add a subsystem (a new script, command, setting or file format) or add a trust boundary, run the design step (`references/design-step.md`) first, update the record, and reply to the comment with the decision it records.
+**A fix that would change the design is not made in the cycle.** When addressing a comment would contradict the journal's `## Design` record, add a subsystem (a new module, service, command, configuration option or stored format) or add a trust boundary, run the design step (`references/design-step.md`) first, update the record, and reply to the comment with the decision it records.
 
 **Escalating strategy by cycle:**
 - **Cycle 1**: Targeted fixes + Boy Scout cleanup in modified files
