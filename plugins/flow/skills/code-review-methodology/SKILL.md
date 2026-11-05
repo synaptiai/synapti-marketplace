@@ -10,7 +10,7 @@ agent: Explore
 
 ## Contract
 
-Iron law: verify it works before verifying it is good; never review quality on code that misses the acceptance criteria. Required by `/flow:review`, `/flow:pr`, `code-reviewer`, `security-reviewer`. Returns a P1/P2/P3 finding set (`references/finding-schema.md`), a requirements map, and APPROVE, COMMENT or REQUEST_CHANGES. Skips: Stage 2 when Stage 1 finds >3 unmet criteria; on the 3rd+ cycle, only new P1s.
+Iron law: verify it works before verifying it is good; never review quality on code that misses the acceptance criteria. Required by `/flow:review`, `/flow:pr`, `code-reviewer`, `security-reviewer`. Returns a P1/P2/P3 finding set (`references/finding-schema.md`), a requirements map, and APPROVE, COMMENT or REQUEST_CHANGES. Skips: Stage 2 when Stage 1 finds >3 unmet criteria; P3s count only in cycle 1, P2s only in cycles 1–2.
 
 ## Two-stage review
 
@@ -40,7 +40,7 @@ Stage 1 on the main thread; facets fan out in parallel:
 
 ## Confidence and signal
 
-HIGH (ran code, a test or LSP) and MEDIUM (read the code path) decide at their priority. LOW (pattern match, or a P1/P2 finding that a confident System One `review.confidence` answer says its cited code does not show; `references/code-review-methodology.md`), any priority, goes to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM. `bin/flow-finding-route.sh` applies it. Style is P3 at most; a finding with no `file:line` and no harm scenario is noise.
+HIGH (ran code, a test or LSP) and MEDIUM (read the code path) decide at their priority. LOW (pattern match, or a P1/P2 finding that a confident System One `review.confidence` answer says its cited code does not show; `references/code-review-methodology.md`), any priority, goes to Needs investigation, outside the decision and the `FLOW_REVIEW_CYCLE` marker; own-PR handling: `commands/review.md` Phase 4 step 5. Absent or invalid confidence is MEDIUM; a finding naming no trigger (`references/review-scope.md`) is LOW; `bin/flow-finding-route.sh` applies both. Style that misleads no reader and breaks no tool is not a finding.
 
 ## Boy Scout recognition
 
@@ -48,7 +48,7 @@ APPROVE `improve:` commits passing the proximity test (already-modified file, se
 
 ## Review cycle awareness
 
-The cycle number counts prior `FLOW_REVIEW_CYCLE` markers. Review the delta only, verify each claimed resolution against `git diff`, and on the 3rd+ cycle raise only new P1s (`references/review-cycle-parsing.md`).
+The cycle number counts prior `FLOW_REVIEW_CYCLE` markers. From cycle 2, review the delta only, for regressions the fixes introduced, and verify each claimed resolution against `git diff` (`references/review-cycle-parsing.md`). From cycle 2 P3s, from cycle 3 P2s, are listed, not counted, and fixed in the P3 batch, which starts no new cycle.
 
 ## Stop conditions
 
@@ -63,8 +63,8 @@ The cycle number counts prior `FLOW_REVIEW_CYCLE` markers. Review the delta only
 | Any HIGH or MEDIUM P1 | REQUEST_CHANGES |
 | Any HIGH or MEDIUM P2 | REQUEST_CHANGES |
 | HIGH or MEDIUM P3 only | COMMENT; the author fixes every P3 in-PR, never "approve with nits" |
-| None, or LOW only | APPROVE |
-| Your own pull request | COMMENT at any priority — GitHub takes no verdict from an author |
+| None, or LOW only, or set aside by the cycle rule only | APPROVE |
+| Your own pull request | COMMENT at any priority |
 
 Finding triage never triggers escalation (`skills/llm-operator-principles/SKILL.md`).
 

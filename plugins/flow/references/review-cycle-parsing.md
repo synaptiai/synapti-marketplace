@@ -46,5 +46,5 @@ If a finding was claimed resolved but the code at that location is unchanged, fl
 ## Cycle rules
 
 - Focus on the delta since the last review — findings on unchanged code from prior cycles are noise
-- On the 3rd+ cycle: only flag NEW P1 findings, note persistent P2s, suggest synchronous discussion for unresolved items
+- From the 2nd cycle, review what the fixes changed, for regressions they introduced. `bin/flow-finding-route.sh --cycle N` lists every P3 from cycle 2, and every P2 from cycle 3, under "Not counted in this cycle": they are fixed in the P3 batch and decide nothing, so from cycle 3 only a P1 counts
 - Note the convergence signal when findings shrink each cycle — this is healthy progress

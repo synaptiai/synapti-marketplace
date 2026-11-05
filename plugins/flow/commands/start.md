@@ -17,7 +17,7 @@ Skill-driven workflow from issue assignment through implementation. Follows the 
 ## Required Skills
 
 This command operates with these domain skills loaded:
-- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is no counted P1 or P2 left, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `branch-and-task-management` — branch creation, task decomposition
 - `change-classification` — change context awareness
 - `capability-discovery` — detect available quality tools
@@ -968,13 +968,17 @@ Prove everything works with fix-forward:
    Agent(code-reviewer):
      "Review the diff on this branch against $DEFAULT_BRANCH.
       Check for: logic errors, security issues, missing edge cases,
-      convention violations. Return P1/P2/P3 findings with file:line."
+      convention violations. Return P1/P2/P3 findings with file:line and a
+      trigger per finding inside references/review-scope.md; do not raise one
+      whose only trigger the scope excludes."
    ```
    **Fix-forward** (bounded by `fixForwardMaxIterations`, default 10 — safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
    - P1 findings → fix immediately; you wrote this code in this PR, so "pre-existing" is not available as a disposition
    - P2 findings → fix immediately
-   - P3 findings → fix immediately (same disposition as P1/P2 — the proximity test is not a deferral mechanism). This includes cosmetic P3 in untouched files (an `improve:` commit). Finding triage is NEVER a valid escalation trigger.
-   - After fixes: re-run quality commands, then targeted re-review on files changed by fixes
+   - P3 findings → fix in one batch after the P1 and P2 fixes (the proximity test is not a deferral mechanism). This includes cosmetic P3 in untouched files (an `improve:` commit). Finding triage is NEVER a valid escalation trigger.
+   - A finding that names no trigger is not fixed: name its trigger, or drop it.
+   - Every fix covers its class: the other inputs of the same shape and the other callers of the same code are fixed in the same commit, or the shared code they all use is.
+   - After P1 and P2 fixes: re-run quality commands, then re-review what those fixes changed, for P1 and P2 regressions only. After the P3 batch: re-run quality commands only. Converged when no P1 or P2 is left
    - Approaching the iteration ceiling without convergence is a signal to re-check understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence for the one terminal case.
 4. **Holdout validation** — invoke `holdout-validation` skill to cross-reference self-review claims against actual file state:
    ```
@@ -987,7 +991,7 @@ Prove everything works with fix-forward:
    **Blocking treatment:**
    - P1/P2 findings from holdout-validation → fix immediately before proceeding (same fix-forward loop as step 3)
    - After fixes: re-run holdout-validation to confirm the conflict is resolved
-   - P3 findings → fix in-PR as part of the same convergence loop, cosmetic P3 in untouched files included. Do NOT list a finding in the PR body instead of fixing it.
+   - P3 findings → fix in-PR in the P3 batch, cosmetic P3 in untouched files included; the batch does not restart the loop. Do NOT list a finding in the PR body instead of fixing it.
    - Only proceed to step 5 when holdout-validation returns PASS or no fixable findings remain
 
    The holdout-validation output is passed to the verdict-judge in step 6 as a required input.

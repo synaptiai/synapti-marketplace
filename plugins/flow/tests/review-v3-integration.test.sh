@@ -1167,7 +1167,7 @@ RG_CYC_OUT=$(cd "$RG_CYC_DIR" && PATH="$RG_CYC_DIR/stub:$PATH" REPO=o/r PR_NUM=7
 assert_equal "2" "$(printf '%s\n' "$RG_CYC_OUT" | grep -c '^STATE=empty')" \
   "a pull request with no markers is still empty"
 assert_not_contains "STATE=unavailable" "$RG_CYC_OUT" "and not reported as unreadable"
-assert_equal "2" "$(printf '%s\n' "$RG_CYC_OUT" | grep -c 'CYCLE_COUNT=0')" "with a zero count"
+assert_equal "2" "$(printf '%s\n' "$RG_CYC_OUT" | grep -cE '^(REVIEW|RESOLUTION)_CYCLE_COUNT=0$')" "with a zero count"
 
 # A gh that succeeds with a real marker: the count is reported, not zero.
 cat > "$RG_CYC_DIR/stub/gh" <<'STUB'

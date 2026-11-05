@@ -310,20 +310,21 @@ if _want challenge-on-route-unchanged; then
   _ch_findings "${CELLS[@]}"
   _ch_run
   # The rows the session writes, one per finding: id, priority, category and
-  # location from the finding set, confidence and disposition from the line.
+  # location from the finding set, confidence and disposition from the line,
+  # and the finding's trigger (issue #326), the same in both.
   : > "$E2E_DIR/rows.s1"
   : > "$E2E_DIR/rows.plain"
   for cell in V1:P1:correctness:10:code-reviewer-skeptic R1:P2:error-handling:20:error-handler-inspector-verifier K1:P1:correctness:30:code-reviewer-verifier U1:P2:tests:40:test-runner-skeptic; do
     IFS=: read -r id pri cat line rev <<<"$cell"
     L=$(_result "$id")
     C=$(sed -n 's/.* CONFIDENCE=\([A-Z]*\) DISPOSITION=\([a-z]*\)$/\1|\2/p' <<<"$L")
-    printf '%s|%s|%s|src/a.py:%s|%s|%s\n' "$id" "$pri" "$cat" "$line" "$C" "$rev" >> "$E2E_DIR/rows.s1"
-    jq -r --arg id "$id" '.[] | select(.id == $id) | [.id, .priority, .category, .location, .confidence, .disposition, .reviewers[0]] | join("|")' "$CH_DIR/findings.json" >> "$E2E_DIR/rows.plain"
+    printf '%s|%s|%s|src/a.py:%s|%s|%s|a caller passes an empty list\n' "$id" "$pri" "$cat" "$line" "$C" "$rev" >> "$E2E_DIR/rows.s1"
+    jq -r --arg id "$id" '.[] | select(.id == $id) | [.id, .priority, .category, .location, .confidence, .disposition, .reviewers[0], "a caller passes an empty list"] | join("|")' "$CH_DIR/findings.json" >> "$E2E_DIR/rows.plain"
   done
   e2e_expect_equal "$(cat "$E2E_DIR/rows.plain")" "$(cat "$E2E_DIR/rows.s1")" "the rows built from the block's lines, compared with the rows without System One"
-  e2e_run_bin bin/flow-finding-route.sh --mode external --pr 7 --input "$E2E_DIR/rows.plain"
+  e2e_run_bin bin/flow-finding-route.sh --mode external --pr 7 --cycle 1 --input "$E2E_DIR/rows.plain"
   PLAIN="$E2E_OUT"
-  e2e_run_bin bin/flow-finding-route.sh --mode external --pr 7 --input "$E2E_DIR/rows.s1"
+  e2e_run_bin bin/flow-finding-route.sh --mode external --pr 7 --cycle 1 --input "$E2E_DIR/rows.s1"
   e2e_expect_equal "$PLAIN" "$E2E_OUT" "router output on the rows after System One"
   e2e_expect_err_lacks "LEDGER_WARN"
   e2e_expect_line "DECISION=REQUEST_CHANGES"

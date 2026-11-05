@@ -10,7 +10,7 @@ Tier 3 operation — **always requires human confirmation**, even in autonomous 
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is no counted P1 or P2 left, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `merge-and-release` — prerequisite verification, merge execution
 - `run-state-management` — FlowRun/FlowActivity records at phase boundaries
 

@@ -10,7 +10,7 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is no counted P1 or P2 left, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `pr-lifecycle` — pre-flight, PR body, reviewer suggestion
 - `code-review-methodology` — 6-facet review synthesis
 - `capability-discovery` — detect quality commands and agents
@@ -317,13 +317,15 @@ git diff "$DEFAULT_BRANCH"...HEAD
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
+**The review scope applies to every dispatch below**, as in `/flow:review`: hand each reviewer the rules of `references/review-scope.md`. Every finding names its trigger, a finding whose only trigger is out of scope is not raised, and the priority follows the scope's priority table. In Phase 4, a finding that names no trigger is LOW (investigated like any LOW finding, or dropped for naming none), and one whose trigger is out of scope is dropped.
+
 **Duplication is `code-reviewer`'s Step 4**, gated by `duplication.enabled`: `bin/flow-clone-scan.sh` against `origin/$DEFAULT_BRANCH`, one `DUP-` finding per pair this branch introduced, located on the added side and naming the block it duplicates. A scan that reported `STATE=unavailable` goes into the PR body with its reason and its install command rather than being passed over.
 
 ```
 Agent(code-reviewer):
   "Review the branch diff against $DEFAULT_BRANCH for code quality,
    logic correctness, edge cases, and security. Return P1/P2/P3 findings
-   with file:line citations and a confidence (HIGH, MEDIUM or LOW) per finding
+   with file:line citations and a confidence (HIGH, MEDIUM or LOW) and a trigger per finding
    per references/finding-schema.md."
 
 Agent(convention-checker):
@@ -340,13 +342,13 @@ Agent(security-reviewer):
    Run Step 4's dependency judgment and emit `DEP-` findings with
    `category=dependency`, located where the helper put it: the manifest `file:line` when it printed a
    line, and the file alone when it did not.
-   Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
+   Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) and a trigger per finding
    per references/finding-schema.md."
 
 Agent(error-handler-inspector):
   "Inspect changed files for error handling gaps, silent failures,
    unhandled exceptions. Return P1/P2/P3 findings with a
-   confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
+   confidence (HIGH, MEDIUM or LOW) and a trigger per finding per references/finding-schema.md."
 
 Skill(holdout-validation):
   Inputs:
@@ -609,11 +611,12 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
    - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
 6. **Display findings** (finding-first pattern; fix-forward bounded by `fixForwardMaxIterations`, default 10 — safety net, not a budget; see `skills/llm-operator-principles/SKILL.md`):
-   - LOW-confidence findings, at any priority, including those the System One step after the grounding pass demoted → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `{"finding_id", "facet"}` (its id and the agent that raised it) to the `refuted` list of step 13's `DROPS_FILE`); when neither can settle it, escalate with the six-field structure and record it MEDIUM. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM.
+   - LOW-confidence findings, at any priority, including those the System One step after the grounding pass demoted → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `{"finding_id", "facet"}` (its id and the agent that raised it) to the `refuted` list of step 13's `DROPS_FILE`); when neither can settle it, escalate with the six-field structure and record it MEDIUM. A finding that names no trigger is LOW: name one inside `references/review-scope.md` and settle it as above, or drop it, with the outcome `dropped — names no trigger`; it is never escalated. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM, and are given a trigger when they have none: the command that failed, the claim and the `file:line` that contradicts it, or the rule a convention finding names.
    - P1 findings → must fix before PR
    - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
-   - P3 findings → fix in-PR, including cosmetic P3 in untouched files (an `improve:` commit). Do NOT add a section to the PR body that lists findings instead of fixing them.
-7. **If P1 or P2 findings that are not escalated**: Fix them, re-run review. An escalated finding keeps its priority but stays listed in the PR body and does not send the flow back here.
+   - P3 findings → fix in-PR in one batch after the P1 and P2 fixes, including cosmetic P3 in untouched files (an `improve:` commit). Do NOT add a section to the PR body that lists findings instead of fixing them. The P3 batch does not send the flow back to review.
+   - Every fix covers its class: the other inputs of the same shape and the other callers of the same code are fixed in the same commit, or the shared code they all use is (`commands/review.md` Phase 4 step 5).
+7. **If P1 or P2 findings that are not escalated**: Fix them, then re-review only what those fixes changed, for regressions they introduced. A re-review raises P1 and P2 findings only; the review has converged when no P1 or P2 is left. An escalated finding keeps its priority but stays listed in the PR body and does not send the flow back here.
 
 7a. **FlowGoal gate** (on by default; off when `flow.goals.enabled` is false or `flow.goals.goalCreation` is `off`) — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
 
