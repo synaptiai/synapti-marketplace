@@ -256,6 +256,27 @@
         }
       }
     },
+    "design": {
+      "type": "object",
+      "description": "When a change gets a design step before code. /flow:start Phase 1 runs bin/flow-risk-check.sh on the files the change will modify; a change that touches a risky file gets the design step of references/design-step.md before it is planned.",
+      "additionalProperties": false,
+      "properties": {
+        "riskAreas": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Shell patterns, matched against repository-relative paths, of the areas where a change must be designed before it is written. A * also matches /, so \"src/billing/*\" covers every file below src/billing/."
+        },
+        "hotspotFixCommits": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "A file is a fix hotspot, and so risky, when at least this many of the repository's last 200 non-merge commits are fixes that touched it (subject starting fix, hotfix, bugfix or revert). 0 turns the hotspot signal off."
+        }
+      }
+    },
     "specFirst": {
       "type": "object",
       "description": "Spec-first enforcement settings. Requires acceptance criteria before starting work.",

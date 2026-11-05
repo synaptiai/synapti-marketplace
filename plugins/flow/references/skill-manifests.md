@@ -67,7 +67,7 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | preflight-checks | dispatched · reference-only | 543 | Reference document describing six pre-flight checks (clean git state, not detached HEAD, gh auth, issue e... |
 | run-state-management | dispatched | 588 | Manage FlowRun state at `<runtime dir>/runs/<ISO-timestamp-id>/run.yaml` — create runs at command entry... |
 | runtime-verification | dispatched | 597 | Verify code works at runtime through build verification (mandatory), LSP diagnostics, ad-hoc verification... |
-| specification-capture | dispatched | 574 | Capture the four specification elements (non-goals, failure modes, interface contracts, risk map) for an... |
+| specification-capture | dispatched | 598 | Capture the four specification elements (non-goals, failure modes, interface contracts, risk map) for an... |
 | tdd-patterns | dispatched | 576 | Guide test-driven development through the mandatory Red-Green-Refactor cycle: a test is RED only when it... |
 | team-coordination | dispatched · reference-only | 589 | Coordinate agent teams for adversarial review (paired skeptic/verifier per facet, disposition-only challe... |
 | trigger-policy | dispatched | 596 | Enforce FlowTrigger safety rules — no autonomous merge, no recursive trigger creation, max active trigger... |

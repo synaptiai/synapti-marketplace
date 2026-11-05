@@ -46,6 +46,10 @@
   "journal": {
     "dir": ".decisions"
   },
+  "design": {
+    "riskAreas": [],
+    "hotspotFixCommits": 3
+  },
   "specFirst": {
     "requireAcceptanceCriteria": true,
     "allowSpecFreeLabels": ["documentation", "chore"],

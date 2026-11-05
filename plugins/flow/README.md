@@ -277,6 +277,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   └── validate-skill-input.sh — validates skill inputs against the JSON Schemas under schemas/
   Review
   ├── flow-finding-route.sh — routes consolidated findings by confidence and review mode, and builds the marker rows
+  ├── flow-risk-check.sh — says whether the files a change will modify are risky (a declared `design.riskAreas` pattern, or a fix hotspot), so /flow:start runs the design step first
   ├── flow-review-exceptions.sh — prints the team's review exceptions, read at the pull request's base commit
   ├── flow-contract-files.sh — names the changed files that are contracts (OpenAPI, GraphQL, protobuf, migrations, schemas, goals)
   ├── flow-dep-diff.sh      — lists dependencies added, bumped or removed between two commits, from the manifests, offline
