@@ -39,6 +39,9 @@
 # Exits 0 in every reported state; 2 on a usage error.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 PROG="flow-risk-check.sh"
 WINDOW=200
