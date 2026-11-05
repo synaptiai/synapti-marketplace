@@ -38,6 +38,9 @@
 # Exits 0 in every reported state; 2 on a usage error.
 
 set -uo pipefail
+# An exported CDPATH makes cd print the directory it found, which turns a
+# captured `cd X && pwd` into two lines.
+unset CDPATH
 
 PROG="flow-description-check.sh"
 usage() { echo "usage: $PROG --body <file> (--base <ref> [--head <ref>] | --staged)" >&2; }
