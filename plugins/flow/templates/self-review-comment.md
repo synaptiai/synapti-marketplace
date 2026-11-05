@@ -26,7 +26,9 @@ Verdict: N/A (independent verdict not enabled)
 ### Findings Found & Fixed
 | Finding | Fix Applied |
 |---------|-------------|
-| **{n} · {P1/P2/P3} · `{file:line}`**<br>{issue} _({HIGH\|MEDIUM} · {disposition})_ | {fix description} |
+| **{n} · {P1/P2/P3} · `{file:line}`**<br>{issue}<br>Trigger: {input or condition} → {what goes wrong} _({HIGH\|MEDIUM} · {disposition})_ | {fix description, and what else the fix covers: the other inputs of the same shape and the other callers} |
+
+{From cycle 2, list the router's `NOT_COUNTED` findings under `### Not counted in this cycle`, as plain bullets `- {ID} ({priority}, {category}, `{file:line}`) — {problem}: {fix in the P3 batch}`.}
 
 ### Blast radius
 
@@ -47,6 +49,8 @@ consumers; omit the section entirely when no contract changed.}
 | **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | Confirmed — test `{test path}` failed on the unfixed code; fixed, recorded HIGH, listed above. |
 | **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | Refuted — test `{test path}` passes on the current code; recorded as `dropped-finding` (`self-review-refuted`). |
 | **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | Unsettled — no test or command could decide it; escalated below and recorded MEDIUM. |
+| **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | No trigger — none could be named inside `references/review-scope.md`; recorded as `dropped-finding` (`no-trigger`). |
+| **{ID} · {P1/P2/P3} · `{file:line}`**<br>{issue} | Out of scope — its only trigger is excluded by `references/review-scope.md` ({the rule}); recorded as `dropped-finding` (`out-of-scope`). |
 
 ### Escalated for Human Judgment
 {Only populated if findings could not be fixed in-PR. Each escalation uses the six-field Proactive-Autonomy structure.}

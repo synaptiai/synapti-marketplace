@@ -10,7 +10,7 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is no counted P1 or P2 left, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `code-review-methodology` — 6-facet review, finding synthesis, adversarial protocol
 - `holdout-validation` — cross-reference self-review claims against file state (Phase 3)
 - `run-state-management` — FlowRun/FlowActivity records at phase boundaries
@@ -730,6 +730,23 @@ else
     printf '%s\n' "$REVIEW_CYCLES" | jq -r '.[] | "REVIEW_CYCLE=cycle=\(.cycle) findings=\"\(.findings)\""' 2>/dev/null
   fi
 
+  # The cycles of this reviewer decide what the router counts (ROUTE_CYCLE,
+  # bin/flow-finding-route.sh --cycle). A marker someone else posted, a
+  # self-review by the author included, is a cycle of another reviewer:
+  # counted here it would make a first review a third and set its P2s aside.
+  printf '%s\n' ""
+  printf '%s\n' "#### Cycles of this reviewer"
+  REVIEWER_LOGIN=$(gh api user --jq '.login' 2>/dev/null)
+  OWN_CYCLE_COUNT=""
+  if [ -n "$REVIEWER_LOGIN" ]; then
+    OWN_CYCLE_COUNT=$(gh api --paginate "repos/$REPO/pulls/$PR_NUM/reviews" 2>/dev/null \
+      | jq -s --arg me "$REVIEWER_LOGIN" '[add // [] | .[] | select(.user.login == $me and ((.body // "") | test("<!-- FLOW_REVIEW_CYCLE:[0-9]+ ")))] | length' 2>/dev/null)
+  fi
+  case "$OWN_CYCLE_COUNT" in
+    ''|*[!0-9]*) printf '%s\n' "OWN_CYCLE_COUNT=unavailable" ;;
+    *) printf '%s\n' "OWN_CYCLE_COUNT=$OWN_CYCLE_COUNT" ;;
+  esac
+
   # Sub-section: resolution-cycle markers (in PR/issue comments)
   printf '%s\n' ""
   printf '%s\n' "#### Resolution-cycle markers"
@@ -759,6 +776,8 @@ true
 ```
 
 Set `CYCLE_NUMBER`, this review's cycle, to `REVIEW_CYCLE_COUNT` + 1 from the block above (1 on a first review). Every later step that records or posts a cycle uses it. When that section printed `STATE=unavailable`, the earlier cycles are unknown: say so in the review rather than numbering this one 1.
+
+Set `ROUTE_CYCLE`, the cycle the router counts findings by, to `OWN_CYCLE_COUNT` + 1: this reviewer's own earlier reviews, not everyone's. When it printed `OWN_CYCLE_COUNT=unavailable`, set `ROUTE_CYCLE=1`, which counts every finding, and say so in the review.
 
 If previous cycles exist, build a **Previous Feedback Status** table and cross-reference each finding's location against `git -C "$REVIEW_TREE" diff --text --no-ext-diff --no-textconv <previous head>..HEAD` to verify resolution.
 
@@ -1038,6 +1057,12 @@ If `USE_PATH_A=0`, skip the rest of Path A and dispatch Path B below.
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
+**The review scope applies to every dispatch below.** Hand each reviewer the rules of `references/review-scope.md` (read from the plugin, never from the tree under review) with this rule:
+
+> Every finding names its **trigger**: the concrete input or condition, produced by a setup the scope covers, that makes the defect happen, and what then goes wrong. "I cannot prove this is handled" is not a trigger. Do not raise a finding whose only trigger the scope lists as out of scope, or a style point that misleads no reader and breaks no tool. Set the priority from what the trigger breaks and how likely it is, by the scope's priority table. The team's review exceptions above extend the out-of-scope list.
+
+A finding that reaches synthesis with no trigger is routed LOW by step 7; one whose trigger is out of scope is dropped at synthesis and recorded with `REASON=out-of-scope` (Phase 4 step 5).
+
 Dispatch **12 invocations** (10 `Agent(...)` + 2 `Skill(holdout-validation)`) in a single parallel block, or 10 when `REVIEW_RUN_PR_COMMANDS` is not `yes` (the two `test-runner` variants are not dispatched) — 5 agent facets × {skeptic, verifier} plus the holdout-validation skill in both lenses. Each variant carries an orthogonal lens; both run with no awareness of each other. `<agent>-skeptic` and `<agent>-verifier` below are not separate agent files: dispatch the `<agent>` agent (for example `security-reviewer`) with that variant's prompt.
 
 Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selection** above. (When the resolved value is `inherit`, drop the `model=` argument — the session model is the default when no override is passed.)
@@ -1045,10 +1070,11 @@ Each `Agent(...)` call below carries `model=$AGENT_TEAM_MODEL` per **Model selec
 ```
 Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. You are reviewing PR #$ARGUMENTS as the SKEPTIC variant. Assume the diff is
-   broken until proven otherwise. Flag every security behavior you cannot prove
-   correct from the code as written: OWASP Top 10, secrets, auth/authz, input
-   validation, dependency vulnerabilities. Return P1/P2/P3 findings with
-   file:line citations and category.
+   broken until shown otherwise. Flag every security defect you can show from
+   the code as written, naming the trigger that reaches it inside the review
+   scope: OWASP Top 10, secrets, auth/authz, input validation, dependency
+   vulnerabilities. Return P1/P2/P3 findings with file:line citations,
+   category and trigger.
    Run Step 4's dependency judgment and emit `DEP-` findings with
    `category=dependency`, located where the helper put it: the manifest `file:line` when it printed a
    line, and the file alone when it did not. Do NOT include challenge information —
@@ -1057,7 +1083,8 @@ Agent(security-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
 Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. You are reviewing PR #$ARGUMENTS as the VERIFIER variant. Assume the diff is
    correct as a baseline. Look only for missed security edge cases, undocumented
-   contract assumptions, or invariants that aren't enforced.
+   contract assumptions, or invariants that aren't enforced, each with the
+   trigger inside the review scope that breaks it.
    Run Step 4's dependency judgment and emit `DEP-` findings with
    `category=dependency`, located where the helper put it: the manifest `file:line` when it printed a
    line, and the file alone when it did not.
@@ -1065,7 +1092,8 @@ Agent(security-reviewer-verifier, model=$AGENT_TEAM_MODEL):
 
 Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Assume broken; flag logic/quality/edge-case
-   issues you cannot prove correct. P1/P2/P3 + file:line + category.
+   defects you can show, each with its trigger inside the review scope.
+   P1/P2/P3 + file:line + category + trigger.
    Treat each risk area below as unproven until a test in this pull request
    distinguishes it from its plausible wrong version.
    Risk areas: {one line per `RISK_MAP=` row — from the Phase 1 `### FlowGoal`
@@ -1080,7 +1108,8 @@ Agent(code-reviewer-skeptic, model=$AGENT_TEAM_MODEL):
 
 Agent(code-reviewer-verifier, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Assume correct; look only for missed edge cases
-   and unenforced invariants. P1/P2/P3 + file:line + category.
+   and unenforced invariants that a trigger inside the review scope reaches.
+   P1/P2/P3 + file:line + category + trigger.
    Assume each risk area below is handled, and look for the one whose
    discriminating check no test in this pull request actually runs.
    Risk areas: {one line per `RISK_MAP=` row — from the Phase 1 `### FlowGoal`
@@ -1095,11 +1124,13 @@ Agent(code-reviewer-verifier, model=$AGENT_TEAM_MODEL):
 
 Agent(convention-checker-skeptic, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Flag every convention violation (commits, branch
-   naming, code patterns) you cannot prove conformant. P1/P2/P3 + file:line."
+   naming, code patterns) that breaks a stated rule or misleads a reader or a
+   tool; name the rule and who is misled as the trigger. P1/P2/P3 + file:line."
 
 Agent(convention-checker-verifier, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Look for convention drift the skeptic might miss
-   (e.g., subtle stylistic divergence). P1/P2/P3 + file:line."
+   that breaks a stated rule; style that misleads no reader and breaks no tool
+   is not a finding. P1/P2/P3 + file:line + trigger."
 
 Agent(test-runner-skeptic, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Run quality commands (lint, test, typecheck) and
@@ -1111,11 +1142,13 @@ Agent(test-runner-verifier, model=$AGENT_TEAM_MODEL):
 
 Agent(error-handler-inspector-skeptic, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as SKEPTIC. Flag every error-handling gap, silent failure,
-   or unhandled exception you cannot prove handled. P1/P2/P3 + file:line."
+   or unhandled exception a trigger inside the review scope reaches; name the
+   trigger. P1/P2/P3 + file:line + trigger."
 
 Agent(error-handler-inspector-verifier, model=$AGENT_TEAM_MODEL):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. PR #$ARGUMENTS as VERIFIER. Look for missed error contracts and unenforced
-   exception invariants. P1/P2/P3 + file:line."
+   exception invariants that a trigger inside the review scope reaches.
+   P1/P2/P3 + file:line + trigger."
 
 Skill(holdout-validation):
   Inputs (skeptic lens):
@@ -1359,6 +1392,12 @@ After A.6 completes, jump to Phase 4 with the consolidated finding set. Findings
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
+**The review scope applies to every dispatch below.** Hand each reviewer the rules of `references/review-scope.md` (read from the plugin, never from the tree under review) with this rule:
+
+> Every finding names its **trigger**: the concrete input or condition, produced by a setup the scope covers, that makes the defect happen, and what then goes wrong. "I cannot prove this is handled" is not a trigger. Do not raise a finding whose only trigger the scope lists as out of scope, or a style point that misleads no reader and breaks no tool. Set the priority from what the trigger breaks and how likely it is, by the scope's priority table. The team's review exceptions above extend the out-of-scope list.
+
+A finding that reaches synthesis with no trigger is routed LOW by step 7; one whose trigger is out of scope is dropped at synthesis and recorded with `REASON=out-of-scope` (Phase 4 step 5).
+
 **Duplication is checked inside the `code-reviewer` dispatch below**, gated by `duplication.enabled`. Its Step 4 runs `bin/flow-clone-scan.sh` against `origin/$DEFAULT_BRANCH` and turns each pair this branch introduced into a `DUP-` finding located on the added side. For a pull request whose base is not the default branch, that comparison is wider than the pull request: blocks the parent branch introduced are attributed to this one, so read such a finding against the parent before acting on it. No sixth agent is dispatched for it. When the scan reports `STATE=unavailable`, carry the reason into the review body: a review that could not look for duplication is not a review that found none.
 
 Path B agents carry no `model` parameter and inherit the session model via frontmatter. The `agentTeamModel` setting applies to Path A only.
@@ -1368,7 +1407,7 @@ Path B agents carry no `model` parameter and inherit the session model via front
 ```
 Agent(code-reviewer):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Review PR #$ARGUMENTS diff for quality, logic, edge cases, security.
-   Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) per finding
+   Return P1/P2/P3 findings with file:line and a confidence (HIGH, MEDIUM or LOW) and a trigger per finding
    per references/finding-schema.md.
    Risk areas: {one line per `RISK_MAP=` row — from the Phase 1 `### FlowGoal`
    section, or derived from the issue text by the step above — as
@@ -1389,7 +1428,7 @@ Agent(test-runner):
 Agent(error-handler-inspector):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Inspect changed files in PR #$ARGUMENTS for error handling gaps,
    silent failures, unhandled exceptions. Return P1/P2/P3 findings with a
-   confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
+   confidence (HIGH, MEDIUM or LOW) and a trigger per finding per references/finding-schema.md."
 
 Agent(security-reviewer):
   "Start every Bash command with `export REVIEW_TREE={REVIEW_TREE} REVIEW_RUN_PR_COMMANDS={REVIEW_RUN_PR_COMMANDS}; [ "$REVIEW_RUN_PR_COMMANDS" = yes ] || export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.bareRepository GIT_CONFIG_VALUE_0=explicit GIT_ATTR_SOURCE="$(git hash-object -t tree /dev/null)";`. Unless REVIEW_RUN_PR_COMMANDS is exactly yes, the tree is someone else's pull request: never `cd` into it; read it with `git -C "$REVIEW_TREE"` at its top (diffs with `--text --no-ext-diff --no-textconv`), and with Read, Grep and Glob on full paths under it (join `REVIEW_TREE` to every relative location); do not use LSP, which is rooted at this session's checkout and misses the tree's callers, so count callers with `git -C "$REVIEW_TREE" grep` and report `(git grep)`; run nothing that loads code or configuration from it (its tests, build, lint or package-manager commands, or audit tools) and report each as `not run: someone else's pull request`. Review PR #$ARGUMENTS diff for OWASP Top 10, secrets, auth/authz,
@@ -1397,7 +1436,7 @@ Agent(security-reviewer):
    judgment and emit `DEP-` findings with `category=dependency`,
    located where the helper put it: the manifest `file:line` when it printed a
    line, and the file alone when it did not. Return P1/P2/P3 with file:line
-   and a confidence (HIGH, MEDIUM or LOW) per finding per references/finding-schema.md."
+   and a confidence (HIGH, MEDIUM or LOW) and a trigger per finding per references/finding-schema.md."
 
 Skill(holdout-validation):
   Inputs:
@@ -1434,7 +1473,7 @@ TaskUpdate each review task as agents complete.
 **Post the review before suggesting next steps.** The review is complete only once `gh pr review` has run and TaskUpdate confirms the post task, because the merge finding-ledger gate reads the posted marker.
 
 1. **TaskList**: Confirm all review facets complete
-2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it. After the grounding pass, an optional System One step asks whether the code each P1 or P2 finding cites shows its defect (`review.confidence`) and may re-record a finding LOW; it is described after the grounding pass.
+2. **Synthesize findings**: Deduplicate by file:line (keep the highest priority, with that finding's confidence), prioritize P1/P2/P3. A finding merged with a security finding (one raised by `security-reviewer`, or with a security category) keeps that finding's id, reviewer and `category=security`, so the grounding pass's security exemption, which the record steps check by id, reviewer and category, still applies to what survives the merge. Every finding keeps its confidence. A finding from a producer outside the finding schema (holdout-validation, convention-checker, test-runner) is stamped MEDIUM here only when the producer gave none; it is given a trigger here when it has none, because its evidence is a run or a fact, not a scenario: a test-runner finding names the command that failed and what it printed, a holdout-validation finding the claim and the `file:line` that contradicts it, an unmet acceptance criterion the criterion, and a convention finding the rule it breaks; a confidence Path A's consolidation assigned (A.4, including HIGH for a holdout finding both lenses raised) is kept. A schema agent's finding with no confidence is left blank so step 7's routing warns about it. After the grounding pass, an optional System One step asks whether the code each P1 or P2 finding cites shows its defect (`review.confidence`) and may re-record a finding LOW; it is described after the grounding pass.
 
 **Findings that describe the same defect (System One, optional).** After the file:line merge above, synthesis can ask a System One provider (`references/system-one.md`) whether two remaining findings in one file describe the same defect (`review.dedup`). With no `S1_DEDUP=` line from the block below, which is the default, skip this step and the block after it: the finding set is the one the merge above produced. A pair is asked about only when both findings are in the same file, both cite a line or both cite the whole file, their reviewer lists differ (at least one reviewer raised one and not the other), each was raised by `code-reviewer`, `error-handler-inspector` or `integration-verifier` (or a Path A variant of one), and neither is a security finding (raised by a security reviewer, with an id starting `SEC-` or `DEP-`, or with a category that is neither one of the non-security categories of `references/finding-schema.md` nor one of the error-handling sub-types `error-handler-inspector` may write, nor `error-handling/<sub-type>` with one of those sub-types or `edge-case` or `missing-validation`; any other `error-handling/<sub-type>`, such as `error-handling/csrf`, is a security finding). A security finding is never merged. The block below also reports the mode of `review.confidence`, whose step follows the grounding pass.
 
@@ -1622,7 +1661,7 @@ set -- --findings "$CONFIDENCE_DIR/findings.json" --tree "$REVIEW_TREE" \
 
 - `S1_CONFIDENCE=on` and a non-empty `S1_DEMOTED=`: keep the `S1_DEMOTED_FILE` path for step 7, and take it from this cycle's output only: the block prints it every time, empty when nothing was demoted, and a path from an earlier cycle names that cycle's findings, whose ids this cycle reuses. What a listed finding becomes depends on whose pull request it is (the checkout step resolved the author):
   - On someone else's pull request, a listed **P1** is not re-recorded. It keeps its priority and confidence, is counted in the review decision and written to the `FLOW_REVIEW_CYCLE` marker, and its cell shows the answer as a note, after the problem and before the `_(CONFIDENCE · disposition)_` suffix: `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, with the `P` and `MODEL` of its result line. The note never goes into a marker row, a disposition or the suffix. Step 7's router keeps such a P1 counted and lists it in `S1_KEPT_P1=`; the posting block refuses a body whose line for that finding lacks the note.
-  - Every other listed finding (a P2 on someone else's pull request, and any listed finding on your own) is re-recorded LOW, at its own priority, before step 3. It is then a LOW finding like any other: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 investigates it first. Its `Pattern:` line reads `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, so a reader can tell it from a reviewer's own LOW. On someone else's pull request step 7's routing applies these ids from `S1_DEMOTED_FILE` itself (`S1_DEMOTED_APPLIED=`), and a review whose only P1 and P2 findings were lowered this way posts as a comment, never an approval.
+  - Every other listed finding (a P2 on someone else's pull request, and any listed finding on your own) is re-recorded LOW, at its own priority, before step 3. It is then a LOW finding like any other: on someone else's pull request it is listed under Needs investigation, and on your own pull request step 5 investigates it first. Its `Pattern:` line reads `System One: the cited code does not show this defect (p=<P>, <MODEL>)`, so a reader can tell it from a reviewer's own LOW. On someone else's pull request step 7's routing applies these ids from `S1_DEMOTED_FILE` itself (`S1_DEMOTED_APPLIED=`), and a review whose only P1 and P2 findings were lowered this way posts as a comment, never an approval. A finding the router lists in `NOT_COUNTED` (the cycle rule set it aside) is not demoted: it is listed under `#### Not counted in this cycle` instead.
 - `S1_CONFIDENCE=shadow`: the block only records the answers. Every confidence stays, whatever the block printed, and step 7 gets no `S1_DEMOTED_FILE`.
 - Anything else (`S1_CONFIDENCE_STATE=skipped` or `no-answer`, every result `no-answer` or `skipped`, `STATE=blocked`, or no output): every confidence stays. On `STATE=blocked`, say in the review that the System One step was refused, with its `ERROR`.
 
@@ -1719,6 +1758,8 @@ set -- --findings "$CHALLENGE_DIR/findings.json" --tree "$REVIEW_TREE" \
    - It fails → confirmed: fix it, keep the test, and re-record the finding HIGH. From here it is a fix-forwarded finding like the rest.
    - It passes → refuted: keep the test, cite its passing output as the evidence in the self-review body, remove the finding from the routing rows, and record it with the block below.
    - No test or command can reproduce or refute it → escalate it with the six-field structure (`references/escalation-format.md`), re-record it MEDIUM, and list its ID in `ESCALATED` of the resolution marker. It is never left LOW and never recorded HIGH.
+   - **It names no trigger** (step 7 lists it in `NO_TRIGGER`) → name one: the input or condition, in a setup `references/review-scope.md` covers, that makes it happen, and confirm it with a failing test as above. When no such trigger exists, drop it with the block below and `REASON=no-trigger`. A finding with no trigger is never escalated: there is nothing for anyone to decide.
+   - A finding whose only trigger the review scope lists as out of scope is dropped at synthesis with `REASON=out-of-scope`, and the self-review body lists it under `Out of scope` with the scope rule it falls under.
 
    Step 7's routing block runs `bin/flow-finding-route.sh --mode self`, which stops and names every LOW finding still in the rows, so nothing posts until each has one of these outcomes.
 
@@ -1727,8 +1768,10 @@ set -- --findings "$CHALLENGE_DIR/findings.json" --tree "$REVIEW_TREE" \
 # Carried from earlier steps: CYCLE_NUMBER and PR_NUM. ISSUE is optional:
 # when unset it is the issue GitHub lists the pull request as closing, and
 # with none the record is skipped. REASON is required: self-review-refuted for
-# a LOW finding a test refuted (step 5), critic-evidence or
-# critic-unrefuted-concern for a drop by the grounding pass. A default would
+# a LOW finding a test refuted (step 5), no-trigger for a finding nobody could
+# name a trigger for, out-of-scope for one whose trigger the review scope
+# excludes (step 5), critic-evidence or critic-unrefuted-concern for a drop by
+# the grounding pass. A default would
 # record a grounding drop run without it as a step-5 refutation. The
 # vocabulary is closed because /flow:learn clusters on it, so anything else
 # is refused rather than recorded. The values taken from the finding arrive
@@ -1737,8 +1780,8 @@ set -- --findings "$CHALLENGE_DIR/findings.json" --tree "$REVIEW_TREE" \
 # facet (the reviewer agent that raised it) and category, which is required
 # because the grounding pass's security exemption is defined partly by it.
 case "${REASON:-}" in
-  self-review-refuted|critic-evidence|critic-unrefuted-concern) ;;
-  *) printf '%s\n' "ERROR: REASON '${REASON:-}' is not self-review-refuted, critic-evidence or critic-unrefuted-concern; refusing to record a dropped finding" >&2; exit 1 ;;
+  self-review-refuted|no-trigger|out-of-scope|critic-evidence|critic-unrefuted-concern) ;;
+  *) printf '%s\n' "ERROR: REASON '${REASON:-}' is not self-review-refuted, no-trigger, out-of-scope, critic-evidence or critic-unrefuted-concern; refusing to record a dropped finding" >&2; exit 1 ;;
 esac
 # Only a file the session made with mktemp is read: directly in TMPDIR, a
 # regular file and not a symlink, owned by this user, with one link. Any other
@@ -1785,7 +1828,7 @@ fi
 # categories instead left every unlisted one (csrf, ssrf, path-traversal)
 # droppable.
 case "$REASON" in
-  critic-*)
+  critic-*|no-trigger|out-of-scope)
     __sec_fac=$(printf '%s' "${FACET:-}" | tr '[:upper:]' '[:lower:]')
     __sec_id=$(printf '%s' "${FINDING_ID:-}" | tr '[:upper:]' '[:lower:]')
     __sec_cat=$(printf '%s' "${CATEGORY:-}" | tr '[:upper:]' '[:lower:]')
@@ -1797,7 +1840,7 @@ case "$REASON" in
     case "$__sec_fac" in *security*) __sec=1 ;; esac
     case "$__sec_id" in sec-*|dep-*) __sec=1 ;; esac
     if [ "$__sec" = 1 ]; then
-      printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}, ${CATEGORY:-}) is a security finding or has a category outside the non-security list, which the grounding pass never drops; refusing to record it as $REASON" >&2; exit 1
+      printf '%s\n' "ERROR: ${FINDING_ID:-} (${FACET:-}, ${CATEGORY:-}) is a security finding or has a category outside the non-security list, which no drop by rule removes (the grounding pass, no-trigger or out-of-scope); keep it, or escalate it; refusing to record it as $REASON" >&2; exit 1
     fi ;;
 esac
 for __name in CYCLE_NUMBER PR_NUM; do
@@ -1836,10 +1879,11 @@ fi
    - **A fix that would change the design is not made in the loop.** When a fix would contradict the journal's `## Design` record, add a subsystem (a new module, service, command, configuration option or stored format) or add a trust boundary, stop the fix-forward loop, run the design step (`references/design-step.md`), update the record, and make the fix the record now describes.
    - P1 findings → fix immediately
    - P2 findings → fix immediately
-   - P3 findings → fix immediately (the proximity test is not a deferral mechanism — P3 in touched files gets the same disposition as P1/P2)
+   - P3 findings, and findings the router listed in `NOT_COUNTED` → fix them in one batch, after the P1 and P2 fixes (the proximity test is not a deferral mechanism — P3 in touched files is fixed, not deferred). The batch never starts another review cycle.
+   - **Fix the class, not the instance.** Before committing a fix, list the other inputs of the same shape and the other callers of the same code (`findReferences`, or `git grep`), and fix them in the same commit, or fix the shared code they all go through. The resolution names what else the fix covers. A fix that covers one input shape is what the next cycle finds the next shape of.
    - TaskCreate("Test coverage for fix-forward", "Write or update tests for each P1/P2/P3 fix applied during self-review")
    - For each fix: write or update a test that covers the fixed behavior
-   - After fixes: run targeted re-review of only changed files
+   - After fixes: re-review only what the P1 and P2 fixes changed, for regressions they introduced; the P3 batch is not re-reviewed. The review has converged when no counted P1 or P2 is left
    - TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
    - No follow-up issue creation for fixable items — finding triage is NEVER a valid escalation trigger; fix in this PR
    - Approaching the iteration ceiling without convergence is a signal to re-check the findings (are two findings in tension? misunderstood scope?), not to escalate
@@ -1854,7 +1898,7 @@ fi
    - Cosmetic P3 in untouched files → COMMENT asking for the fix in this PR (default mode) OR follow-up issue workflow (only when `minimalScope: true` or the PR author has explicitly invoked minimal scope)
    - P1/P2 in untouched files → REQUEST_CHANGES; author must address in-PR (finding triage is NEVER a valid escalation trigger; see `skills/llm-operator-principles/SKILL.md`)
 
-   Findings in files the PR already modifies are NEVER out-of-scope — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
+   Findings in files the PR already modifies are NEVER outside this pull request's scope (a different sense from a trigger the review scope excludes) — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
 
    **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend fixing them in this PR with an `improve:` commit in the review comment.
 
@@ -1886,17 +1930,22 @@ fi
    ```
    Cross-reference each prior finding's location against `git -C "$REVIEW_TREE" diff --text --no-ext-diff --no-textconv <previous head>..HEAD` to verify resolution. Write prior-cycle ids plainly in that table (`F1 — missing auth check`), never in the bold `**{ID} · {category} · {location}**` form a finding row uses: ids restart at `F1` each cycle, and the posting block counts that form as a rendering of this cycle's finding.
 
-   **Route the findings.** Every consolidated finding, on both paths and in both review modes, goes through `bin/flow-finding-route.sh`, which applies the decision table in `skills/code-review-methodology/SKILL.md`: HIGH and MEDIUM findings are counted at their priority, and on an external review LOW findings go to Needs investigation. Both paths write 7-field marker rows (`ID|priority|category|location|status|confidence|disposition`; Path B rows carry disposition `unchallenged`). No LOW-confidence row is written to the `FLOW_REVIEW_CYCLE` marker. Replace the placeholder line with one row per consolidated finding, `ID|PRIORITY|category|location|CONFIDENCE|disposition|agent` (write a literal `|` as `\|`; `agent` names the reviewer that raised it), and run:
+   **Route the findings.** Every consolidated finding, on both paths and in both review modes, goes through `bin/flow-finding-route.sh`, which applies the decision table in `skills/code-review-methodology/SKILL.md`: HIGH and MEDIUM findings are counted at their priority, and on an external review LOW findings go to Needs investigation. Both paths write 7-field marker rows (`ID|priority|category|location|status|confidence|disposition`; Path B rows carry disposition `unchallenged`). No LOW-confidence row is written to the `FLOW_REVIEW_CYCLE` marker. Replace the placeholder line with one row per consolidated finding, `ID|PRIORITY|category|location|CONFIDENCE|disposition|agent|trigger` (write a literal `|` as `\|`; `agent` names the reviewer that raised it; `trigger` is the finding's trigger in one line, empty when the reviewer named none), and run with `CYCLE_NUMBER` and `ROUTE_CYCLE` set. A finding with an empty trigger, or `none named`, is routed LOW, unless it is a security finding. From this reviewer's cycle 2 the router sets every P3 aside, and from cycle 3 every P2, in `NOT_COUNTED`: those findings are listed in the body and decide nothing (`skills/code-review-methodology/SKILL.md` § Review cycle awareness).
 
 ```bash
 # FINDING_ROUTE_BLOCK_BEGIN
-# REVIEW_MODE (external or self, printed by step 4) and PR_NUM are carried
-# from earlier steps: each fence is its own shell. So is S1_DEMOTED_FILE when
+# REVIEW_MODE (external or self, printed by step 4), PR_NUM, CYCLE_NUMBER
+# (this review's cycle) and ROUTE_CYCLE (this reviewer's cycle, which the
+# router counts by) are carried from earlier steps: each fence is its own
+# shell. So is S1_DEMOTED_FILE when
 # the System One step of Phase 4 printed one.
 [ -n "${REVIEW_MODE:-}" ] || { printf '%s\n' "ERROR: REVIEW_MODE is not set; refusing to route findings" >&2; exit 1; }
 [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to route findings" >&2; exit 1; }
-# FINDING_TOTAL is how many findings the synthesis produced (minus any refuted
-# in step 5). An empty rows file is only a clean review when that number is 0;
+case "${ROUTE_CYCLE:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "ERROR: ROUTE_CYCLE must be a positive integer, got '${ROUTE_CYCLE:-}'; refusing to route findings" >&2; exit 1 ;;
+esac
+# FINDING_TOTAL is how many findings the synthesis produced (minus every one
+# step 5 dropped). An empty rows file is only a clean review when that number is 0;
 # any other time it is a caller that lost its input, and a marker posted from
 # it would read as a review that found nothing.
 case "${FINDING_TOTAL:-}" in
@@ -1906,7 +1955,7 @@ ALLOW_EMPTY=""
 [ "$FINDING_TOTAL" = 0 ] && ALLOW_EMPTY="--allow-empty"
 FINDING_ROWS_FILE=$(mktemp "${TMPDIR:-/tmp}/flow-review-findings.XXXXXX") || { printf '%s\n' "ERROR: cannot create the findings file" >&2; exit 1; }
 cat > "$FINDING_ROWS_FILE" <<'FLOW_FINDING_ROWS'
-{one row per consolidated finding: ID|PRIORITY|category|location|CONFIDENCE|disposition|agent}
+{one row per consolidated finding: ID|PRIORITY|category|location|CONFIDENCE|disposition|agent|trigger}
 FLOW_FINDING_ROWS
 ROUTE="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" ]||{ __t=$(cd "$__t" 2>/dev/null&&pwd -P);[ -n "$__t" ]||__x=1; };[ "$__x" = 1 ]||{ printf '%s\n' "${CLAUDE_PLUGIN_ROOT:-}";ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do __p=${__p%/};[ -n "$__p" ]&&[ -x "$__p/bin/cascade-resolve.sh" ]||continue;__r=$(cd "$__p" 2>/dev/null&&pwd -P)||continue;[ -n "$__r" ]||continue;[ -z "$__t" ]||{ __d=$__r;__in=0;while :;do [ "$__d" -ef "$__t" ]&&{ __in=1;break; };[ "$__d" = / ]&&break;__d=$(dirname "$__d");done;[ "$__in" = 1 ]&&continue; };printf '%s\n' "$__r";break;done)/bin/flow-finding-route.sh"
 [ -x "$ROUTE" ] || { printf '%s\n' "ERROR: flow-finding-route.sh not found; refusing to route findings" >&2; exit 1; }
@@ -1928,11 +1977,11 @@ if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ]; then
   fi
   set -- --s1-demoted "$S1_DEMOTED_FILE"
 fi
-ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY "$@")
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --cycle "$ROUTE_CYCLE" --input "$FINDING_ROWS_FILE" $ALLOW_EMPTY "$@")
 ROUTE_EXIT=$?
 printf '%s\n' "$ROUTED"
 if [ "$ROUTE_EXIT" -eq 3 ]; then
-  printf '%s\n' "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
+  printf '%s\n' "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED") (named no trigger: $(sed -n 's/^NO_TRIGGER=//p' <<<"$ROUTED"))" >&2
   exit 1
 fi
 [ "$ROUTE_EXIT" -eq 0 ] || { printf '%s\n' "ERROR: flow-finding-route.sh exited $ROUTE_EXIT" >&2; exit 1; }
@@ -1949,18 +1998,19 @@ printf '%s\n' "ROUTED_TOTAL=$(( $(sed -n 's/^COUNT_P1=//p' <<<"$ROUTED") + $(sed
 # FINDING_ROUTE_BLOCK_END
 ```
 
-   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block. Set `FINDING_TOTAL` (the synthesized findings minus any refuted in step 5) before running the block: it decides whether an empty rows file is a clean review or a lost input, and the block refuses rows that do not match it. On someone else's pull request, an `S1_DEMOTED_FILE` that no longer names a readable, non-empty file stops both this block and the posting block: the demotions it held are lost, and routing without them could approve a review whose only P1 or P2 System One demoted.
+   Any `LEDGER_WARN` line it prints names a schema agent that left out or garbled a confidence; the finding was counted as MEDIUM. Carry the printed `FINDING_ROWS_FILE` path into the posting block. Set `FINDING_TOTAL` (the synthesized findings minus every one step 5 dropped: refuted, no-trigger or out-of-scope) before running the block: it decides whether an empty rows file is a clean review or a lost input, and the block refuses rows that do not match it. On someone else's pull request, an `S1_DEMOTED_FILE` that no longer names a readable, non-empty file stops both this block and the posting block: the demotions it held are lost, and routing without them could approve a review whose only P1 or P2 System One demoted.
 
-   **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2 tables and P3 bullets, each opening with the bold `{ID} · {category} · {location}` and ending with its `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` in the template's entry shape (a bullet opening with the bold `{ID} · {priority} · {category} · {location}` line, then `Pattern:` and `Confirm or refute:`); the posting block checks that each LOW id appears exactly once, in that entry shape at its routed priority, and that no line carries a LOW suffix. Write the body to a file without the marker; the posting block appends it.
+   **Render the body** from the routed values, using the template for the mode — self-review: `templates/self-review-comment.md`; external review: `templates/review-comment.md`. The external body carries the `FINDINGS_HEADER` text in its `### Findings:` line, lists only counted findings in the P1/P2 tables and P3 bullets, each opening with the bold `{ID} · {category} · {location}` and ending with its `_(CONFIDENCE · disposition)_` suffix, and lists every `NEEDS_INVESTIGATION` id under `#### Needs investigation` in the template's entry shape (a bullet opening with the bold `{ID} · {priority} · {category} · {location}` line, then `Pattern:` and `Confirm or refute:`; for an id in `NO_TRIGGER`, `Pattern:` says the finding names no trigger and `Confirm or refute:` names the input that would show it), and lists every `NOT_COUNTED` id under `#### Not counted in this cycle` as a plain bullet `- {ID} ({priority}, {category}, {location}) — {problem}`, never in a counted finding's bold shape; the posting block checks that each LOW id appears exactly once, in that entry shape at its routed priority, and that no line carries a LOW suffix. Write the body to a file without the marker; the posting block appends it.
 
-   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge gate reads from a review body (`FINDINGS:[` or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry at its routed priority or sits outside that section, a counted finding is missing, rendered twice, rendered in the entry shape or rendered inside that section, or any line carries a LOW suffix. The section runs from its `#### Needs investigation` heading to the next `#### ` line; a body carrying two of those headings is refused whether or not the review has LOW findings, because which one bounds the section is not readable. Two limits are deliberate: a body that opens a section with a heading the template never writes (a setext underline, an HTML heading, a `###` of another level) is not seen, and a fenced `#### ` line after the section ends it although it is not a heading — a refusal the reviewer can reword, never a silent post. Set `FINDING_TOTAL` to the synthesized findings minus any refuted in step 5:
+   **Post the review.** The block routes the same rows again, so what is posted is exactly what was routed. It refuses to post when the rows file lost a finding, when the cycle number is not a positive integer, when the body quotes marker syntax the merge gate reads from a review body (`FINDINGS:[` or a review-cycle marker), and, on an external review, when the `### Findings:` line differs from the routed counts, a LOW finding has no Needs investigation entry at its routed priority or sits outside that section, a counted finding is missing, rendered twice, rendered in the entry shape or rendered inside that section, or any line carries a LOW suffix. The section runs from its `#### Needs investigation` heading to the next `#### ` line; a body carrying two of those headings is refused whether or not the review has LOW findings, because which one bounds the section is not readable. Two limits are deliberate: a body that opens a section with a heading the template never writes (a setext underline, an HTML heading, a `###` of another level) is not seen, and a fenced `#### ` line after the section ends it although it is not a heading — a refusal the reviewer can reword, never a silent post. Set `FINDING_TOTAL` to the synthesized findings minus every one step 5 dropped (refuted, no-trigger or out-of-scope):
 
 ```bash
 # FINDING_POST_BLOCK_BEGIN
 # Carried from earlier steps (each fence is its own shell): REVIEW_MODE and
-# PR_NUM, CYCLE_NUMBER (the review cycle), FINDING_ROWS_FILE (printed by the
+# PR_NUM, CYCLE_NUMBER (the review cycle), ROUTE_CYCLE (this reviewer's
+# cycle), FINDING_ROWS_FILE (printed by the
 # routing block), FINDING_TOTAL (the number of rows that file should hold:
-# the synthesized findings minus any refuted in step 5), BODY_FILE and
+# the synthesized findings minus every one step 5 dropped), BODY_FILE and
 # REVIEW_RUN_PR_COMMANDS (printed by the checkout step), and S1_DEMOTED_FILE
 # when the System One step of Phase 4 printed one.
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
@@ -1969,6 +2019,9 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 [ -n "${PR_NUM:-}" ] || { printf '%s\n' "ERROR: PR_NUM is not set; refusing to post" >&2; exit 1; }
 case "${CYCLE_NUMBER:-}" in
   ''|0*|*[!0-9]*) printf '%s\n' "ERROR: CYCLE_NUMBER must be a positive integer, got '${CYCLE_NUMBER:-}'; refusing to post" >&2; exit 1 ;;
+esac
+case "${ROUTE_CYCLE:-}" in
+  ''|0*|*[!0-9]*) printf '%s\n' "ERROR: ROUTE_CYCLE must be a positive integer, got '${ROUTE_CYCLE:-}'; refusing to post" >&2; exit 1 ;;
 esac
 [ -n "${FINDING_TOTAL:-}" ] || { printf '%s\n' "ERROR: FINDING_TOTAL is not set; refusing to post" >&2; exit 1; }
 [ -r "${FINDING_ROWS_FILE:-}" ] || { printf '%s\n' "ERROR: FINDING_ROWS_FILE is not readable; refusing to post" >&2; exit 1; }
@@ -2014,7 +2067,7 @@ if [ "$REVIEW_MODE" = external ] && [ -n "${S1_DEMOTED_FILE:-}" ]; then
   fi
   set -- --s1-demoted "$S1_DEMOTED_FILE"
 fi
-ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --input "$FINDING_ROWS_FILE" --allow-empty "$@")
+ROUTED=$("$ROUTE" --mode "$REVIEW_MODE" --pr "$PR_NUM" --cycle "$ROUTE_CYCLE" --input "$FINDING_ROWS_FILE" --allow-empty "$@")
 ROUTE_EXIT=$?
 if [ "$ROUTE_EXIT" -eq 3 ]; then
   printf '%s\n' "ERROR: LOW-confidence findings on your own pull request are unresolved; return to step 5 for: $(sed -n 's/^UNRESOLVED_LOW=//p' <<<"$ROUTED")" >&2
@@ -2101,6 +2154,18 @@ if [ "$REVIEW_MODE" = "external" ]; then
     COUNTED_LINE=$(grep -nF "**$ID · " "$BODY_FILE" | head -1 | cut -d: -f1)
     if [ -n "$NI_LINE" ] && [ "$COUNTED_LINE" -gt "$NI_LINE" ] && [ "$COUNTED_LINE" -lt "$NI_END" ]; then
       printf '%s\n' "ERROR: $ID is a counted finding rendered at line $COUNTED_LINE, inside the #### Needs investigation section (lines $NI_LINE to $NI_END), which says it does not block the merge; its marker row does" >&2
+      exit 1
+    fi
+  done
+  # A finding the cycle rule set aside decides nothing, so it is never rendered
+  # in the shape of a counted one: it is listed plainly under its own heading.
+  for ID in $(sed -n 's/^NOT_COUNTED=//p' <<<"$ROUTED" | tr ',' ' '); do
+    if grep -qF "**$ID · " "$BODY_FILE"; then
+      printf '%s\n' "ERROR: $ID is not counted in this reviewer's cycle $ROUTE_CYCLE but the body renders it as a finding, opening **$ID · ; list it under '#### Not counted in this cycle' as - $ID (priority, category, location) — problem" >&2
+      exit 1
+    fi
+    if [ "$(grep -cE "^[[:space:]]*[-*+][[:space:]]+$ID [(]" "$BODY_FILE" | tr -d ' ')" != 1 ]; then
+      printf '%s\n' "ERROR: $ID is not counted in this reviewer's cycle $ROUTE_CYCLE and must be listed once under '#### Not counted in this cycle' as - $ID (priority, category, location) — problem; a finding set aside is still shown" >&2
       exit 1
     fi
   done

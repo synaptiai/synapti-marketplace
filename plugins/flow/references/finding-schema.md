@@ -6,7 +6,7 @@ Reference document. The canonical shape every reviewer agent emits, and the cano
 
 ## Required fields
 
-Every finding emitted by a reviewer agent MUST include these seven fields:
+Every finding emitted by a reviewer agent MUST include these eight fields:
 
 | Field | Type | Description |
 |---|---|---|
@@ -17,6 +17,7 @@ Every finding emitted by a reviewer agent MUST include these seven fields:
 | `problem` | string | One-line description of the issue. Concrete enough that a reader can locate the defect without reading the full review. |
 | `suggested_fix` | string | One-line proposed fix. May be empty (`—`) when the fix is non-obvious; in that case the agent should append a paragraph below the table explaining the trade-offs. |
 | `confidence` | enum | `HIGH` \| `MEDIUM` \| `LOW`, assigned under the three-tier rule in "Confidence guidance" below and rendered as a trailing `_(HIGH)_` suffix on the Finding cell. Confidence decides what a finding may demand (`skills/code-review-methodology/SKILL.md` § Confidence and signal); it never changes `priority`. |
+| `trigger` | string | One line: the concrete input or condition, produced by a setup `references/review-scope.md` covers, that makes the defect happen, and what then goes wrong (`a caller passes an empty --input path → the router reads stdin`). Empty when the reviewer can name none. A finding with no trigger is a pattern match: `bin/flow-finding-route.sh` routes it LOW whatever confidence it carries. A finding whose only trigger the scope excludes is not raised. |
 
 ## Absent or invalid confidence
 
@@ -150,7 +151,7 @@ Every reviewer agent's output section uses three priority-ordered tables plus a 
 ### P1 — Critical (Blocks Merge)
 | Finding | Suggested Fix |
 |---------|---------------|
-| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation. _(HIGH)_ | Use parameterized query (`$1`, `$2`). |
+| **F1 · security · `src/auth.ts:42`**<br>SQL injection via string interpolation.<br>Trigger: a search term containing `'` → the query breaks, and `' OR 1=1 --` returns every row _(HIGH)_ | Use parameterized query (`$1`, `$2`). |
 
 ### P2 — Should Fix
 | Finding | Suggested Fix |
@@ -170,6 +171,9 @@ Cell construction:
 - **Finding cell, line 1 (bold):** `{ID} · {category} · `{location}``. Priority is NOT repeated in
   the cell — the `### P1/P2/P3` section header already carries it.
 - **Finding cell, line 2** (after `<br>`): the `problem` prose.
+- **Finding cell, line 3** (after `<br>`): `Trigger: {trigger}`, or `Trigger: none named` for a finding
+  that names none (it is LOW, so on someone else's pull request it is listed under Needs
+  investigation instead).
 - **Confidence + disposition:** agents end the Finding cell with `_(HIGH)_`, `_(MEDIUM)_` or `_(LOW)_`.
   The posted review renders `_(HIGH · consensus)_` on both paths; Path B's disposition is `unchallenged`.
   On someone else's pull request a LOW finding is not rendered in the priority tables: it is listed
@@ -217,7 +221,8 @@ Reviewers assign confidence based on the strength of their signal:
 | LSP `findReferences` confirmed all callers are or are not handled | HIGH |
 | Verified by reading the full code path | MEDIUM |
 | Pattern-match only (looks like a bug, fits a known anti-pattern) | LOW, at any priority: listed under Needs investigation and never decides the review |
-| Style preference, naming, formatting | N/A — only as P3, never blocks merge |
+| No trigger named | LOW, whatever the signal: `bin/flow-finding-route.sh` applies it |
+| Style preference, naming, formatting that misleads no reader and breaks no tool | not a finding (`references/review-scope.md`) |
 
 How confidence enters the review decision: `skills/code-review-methodology/SKILL.md` § Review decision. HIGH and MEDIUM findings decide at their priority; LOW findings never do.
 
