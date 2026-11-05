@@ -22,6 +22,12 @@
 #   K5 a risk-area pattern matches only one directory level, so a file deeper
 #      below the declared directory is missed
 #   K6 a setting of the wrong type stops the check instead of falling back
+#   K7 a path written as an agent writes it (absolute, a markdown bullet, in
+#      backticks, with :line) matches nothing and reads as not risky
+#   K8 in a shallow clone the boundary commit, whose file list is the whole
+#      tree, counts as a fix to every file
+#   K9 a path with a non-ASCII name never matches git's quoted output
+#   K10 a CODEOWNERS-style pattern (lib/, /src/x, **/) silently matches nothing
 #
 # One artifact per scenario goes to $FLOW_E2E_ARTIFACT_DIR.
 # FLOW_E2E_SCENARIOS=a,b runs only the named scenarios.
@@ -147,5 +153,59 @@ if _want bad-settings; then
   e2e_expect_line "RISK=high"
   e2e_expect_line "RISK_FILE=src/billing.sh|3 fix commits among the last 8 commits"
   e2e_expect_no_out "RISK_FILE=config/prod/app.yml"
+  e2e_expect_clean_edges
+fi
+
+if _want agent-paths; then
+  _flow_test_begin "agent-paths"
+  _rk_setup agent-paths "the files list as an agent may write it: an absolute path, a markdown bullet in backticks, and a path with :line; each is read as the repository-relative path, so src/billing.sh is still the hotspot, and a path nothing names is counted as untracked (K7)"
+  printf '%s\n' "$E2E_REPO/src/billing.sh" '- `src/ui.sh`' 'config/prod/app.yml:3' 'src/new-module.sh' > "$E2E_DIR/files"
+  _rk_repo_settings '{"design":{"riskAreas":["config/*"]}}'
+  _rk_run RISK_FILES="$E2E_DIR/files"
+  e2e_expect_line "RISK=high"
+  e2e_expect_line "FILES_CHECKED=4"
+  e2e_expect_line "RISK_FILE=src/billing.sh|3 fix commits among the last 8 commits"
+  e2e_expect_line "RISK_FILE=config/prod/app.yml|risk area config/*"
+  e2e_expect_line "UNTRACKED=1"
+  e2e_expect_line "HISTORY=HEAD"
+  e2e_expect_clean_edges
+fi
+
+if _want shallow-boundary; then
+  _flow_test_begin "shallow-boundary"
+  _rk_setup shallow-boundary "a clone 4 commits deep whose boundary commit is the Revert fix: that commit's file list is the whole tree, so it is not counted; with the threshold at 1 src/billing.sh is a hotspot from its one fix inside the window (Fix:), src/ui.sh is not, and SHALLOW=1 says the window is short (K8)"
+  ( _e2e_git_env; cd "$E2E_DIR" && git clone -q --depth 4 "file://$E2E_REPO" shallow ) || _flow_assert_fail "shallow-boundary: clone"
+  E2E_REPO="$E2E_DIR/shallow"
+  _rk_repo_settings '{"design":{"hotspotFixCommits":1}}'
+  _rk_run RISK_FILES="$E2E_DIR/files"
+  e2e_expect_line "SHALLOW=1"
+  e2e_expect_line "RISK_FILE=src/billing.sh|1 fix commits among the last 4 commits"
+  e2e_expect_no_out "RISK_FILE=src/ui.sh"
+  e2e_expect_clean_edges
+fi
+
+if _want non-ascii; then
+  _flow_test_begin "non-ascii"
+  _rk_setup non-ascii "three fix commits on src/café.sh make it a hotspot: git prints the name unquoted for the check (K9)"
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    for n in 1 2 3; do printf '%s\n' "$n" >> "src/café.sh"; git add "src/café.sh"; git commit -q -m "fix: café $n"; done
+  ) || _flow_assert_fail "non-ascii: commits"
+  printf '%s\n' "src/café.sh" > "$E2E_DIR/files"
+  _rk_run RISK_FILES="$E2E_DIR/files"
+  e2e_expect_line "RISK=high"
+  e2e_expect_line "RISK_FILE=src/café.sh|3 fix commits among the last 11 commits"
+  e2e_expect_clean_edges
+fi
+
+if _want pattern-styles; then
+  _flow_test_begin "pattern-styles"
+  _rk_setup pattern-styles "CODEOWNERS-style patterns match as their writer means: config/ (a directory) and /src/** (root-anchored, **); src/billing.sh then has two reasons, joined with '; ' (K10)"
+  _rk_repo_settings '{"design":{"riskAreas":["config/","/src/**"]}}'
+  _rk_run RISK_FILES="$E2E_DIR/files"
+  e2e_expect_line "RISK_FILE=config/prod/app.yml|risk area config/"
+  e2e_expect_line "RISK_FILE=src/billing.sh|risk area /src/**; 3 fix commits among the last 8 commits"
+  e2e_expect_line "RISK_FILE=src/ui.sh|risk area /src/**"
   e2e_expect_clean_edges
 fi

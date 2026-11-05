@@ -33,15 +33,16 @@ The agent runs the step itself. It asks the user only for a product decision it 
 3. **Choose.** Take the option that meets the acceptance criteria with the least new structure; on a
    tie, the one that reuses more. A larger option is chosen only for a reason the smaller one cannot
    meet, stated in one line.
-4. **Record it** in the decision journal, under `## Design`, with `bin/journal-append.sh --file
-   "$JOURNAL" --replace-heading '## Design' -`, and record the manifest entry with
-   `bin/journal-record.sh --issue <N> --type design --metadata chosen="<option name>"`.
+4. **Record it** in the decision journal, under `## Design`: pipe the record below, starting at its
+   `### Risky files` line (the helper writes the `## Design` heading itself, and a second one would
+   hide the record from its readers), to `bin/journal-append.sh --issue <N> --replace-heading
+   '## Design' -`, and record the manifest entry with `bin/journal-record.sh --issue <N> --type
+   design --metadata chosen="<option name>"`. A review of a pull request that links no issue has no
+   journal: the record goes in the review body instead, under `### Design`.
 
 ## The record
 
 ```markdown
-## Design
-
 ### Risky files
 - `{path}` — {reason from RISK_FILE}
 
@@ -71,4 +72,8 @@ The agent runs the step itself. It asks the user only for a product decision it 
 - **Plan.** The `implementation-planner` dispatch receives the record, and each task names the
   option it implements.
 - **Later cycles.** A fix that would contradict `Chosen`, add to what `Does not add` lists, or break an
-  invariant goes back through this step first, and the record is updated with the reason.
+  invariant goes back through this step first, and the record is updated with the reason. Then the
+  specification and the goal are brought up to date from it, so the next review is handed the new
+  design and not the old one: run `Skill(specification-capture)` for the non-goals and interface
+  contracts, and `Skill(goal-contract-capture)` to refresh the goal's `non_goals` and
+  `interface_contracts`.

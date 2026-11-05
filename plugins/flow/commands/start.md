@@ -554,7 +554,7 @@ Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summa
 - **Workflow**: `start-issue`
 - **Run**: `<RUN_ID>` (the value emitted by the FlowRun block)
 - **Branch**: `<current branch>` (`git branch --show-current`)
-- **Risk**: `<RISK>` — the `RISK_FILE` paths and reasons, `design recorded` when the design step ran, or the `REASON` when the check did not run
+- **Risk**: `<RISK>` — the `RISK_FILE` paths and reasons, `design recorded` when the design step ran, or the `REASON` when the check did not run; add `shallow history` when it printed `SHALLOW=1`, and `<n> listed files are not tracked` when `UNTRACKED` is above 0
 - _I'll work until the goal is achieved, blocked, or needs your decision._
 
 Compute the AC counts with the shared helper (it prints `<total>/<verifiable>`). It exits non-zero with no output when no goal owns the current branch — that is the **skip path** (goal creation was skipped), and the summary then omits the Goal line entirely:
@@ -567,7 +567,7 @@ Compute the AC counts with the shared helper (it prints `<total>/<verifiable>`).
 
 - **Goal**: `<GOAL_ID>` ⚠ **degenerate / needs-attention** — `0` verifiable ACs; this goal cannot auto-evaluate.
 
-A degenerate goal can only arise under `goalCreation: always` or a manual `/flow:goal create` — `auto` never creates one (it requires ≥1 verifiable AC). When goal creation was **skipped** (`auto` with zero verifiable ACs, or `off`): omit the Goal line entirely and show only Workflow / Run / Branch — never present a skipped goal as if one exists.
+A degenerate goal can only arise under `goalCreation: always` or a manual `/flow:goal create` — `auto` never creates one (it requires ≥1 verifiable AC). When goal creation was **skipped** (`auto` with zero verifiable ACs, or `off`): omit the Goal line entirely and show only Workflow / Run / Branch / Risk — never present a skipped goal as if one exists.
 
 Phase order: `preflight → explore → plan → code → verify`. At each subsequent phase boundary (PLAN, CODE, VERIFY), invoke `Skill(run-state-management)` to write a FlowActivity record and advance `state.current_phase`. After the Phase 4 verdict settles, transition the FlowRun: `state.status: completed` when the verdict is PASS (and update the `workflow-run` artifact to `status=completed`); `state.status: blocked` (with `blocked_reason`) when the verdict is FAIL or the session ends mid-workflow, so `/flow:resume` can pick it up.
 
@@ -635,6 +635,7 @@ Agent(implementation-planner):
        Failure modes covered: {which failure modes this task implements handling for}
        Interface contract: {schema/signature this task must honor}
        Risk areas: {risk-map rows whose area this task touches, verbatim | none | (disabled by specFirst.riskMap)}
+       Design option: {the ## Design option this task implements, and the invariants it keeps | none — no design step ran}
        Implementation outline: {files + approach}
        Reuses: {for every new function, class or module in the outline: existing <file>:<symbol> | none — searched: <terms>; candidates examined: N}
        Test plan: {test file + cases + assertions; one discriminating test per Risk areas row: input, expected, source of expected}

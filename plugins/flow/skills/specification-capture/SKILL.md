@@ -25,7 +25,7 @@ Run `bin/journal-read-section.sh --file "$JOURNAL" --heading '## Specification'`
 
 Cues. Non-goals: `## Non-goals`, `## Out of scope`, "Does NOT". Failure modes: `## Failure modes`, `## Error cases`, "timeout", "fallback". Interface contracts: `## API`, `## Schema`, `## Contract`, type definitions, signatures. Risk map: `## Risks`, `## Tricky parts`, "edge", "subtle", "off-by-one".
 
-Verbatim matches are `extracted-from-issue`; never prompt for what the issue states. A journal `## Design` section (`references/design-step.md`) is a source: `Does not add` items are non-goals, `Invariants` are interface contracts, marked `from-design`.
+Verbatim matches are `extracted-from-issue`; never prompt for what the issue states. A journal `## Design` (`references/design-step.md`) is merged in even when the element exists: `Does not add` items are non-goals, `Invariants` interface contracts, marked `from-design`.
 
 ### Step 3: Prompt for missing elements
 

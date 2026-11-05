@@ -16,7 +16,14 @@ finding at a time.
   setting, or a fix hotspot, a file that at least `design.hotspotFixCommits`
   (default 3; 0 turns it off) of the repository's last 200 non-merge commits
   fixed. A commit is a fix when its subject starts with fix, hotfix, bugfix or
-  revert. A check that cannot run reports `RISK=unknown`, never `normal`.
+  revert; a commit with no parent (the root, or a shallow clone's boundary)
+  is not counted, since its file list is the whole tree. History is read
+  from `origin/HEAD` when the clone has it. Paths are read as an agent may
+  list them (absolute, a markdown bullet, backticks, `:line`, relative to
+  the working directory) and non-ASCII names match; `design.riskAreas`
+  takes CODEOWNERS-style `dir/`, `/path` and `**`. It prints `SHALLOW=1` in
+  a shallow clone and `UNTRACKED=<n>` for listed paths git does not track.
+  A check that cannot run reports `RISK=unknown`, never `normal`.
 - `/flow:start` Phase 1 runs it on the Explore agent's `Files to touch` list
   (`RISK_CHECK_BLOCK`). On `RISK=high` it runs the design step of the new
   `references/design-step.md` before the specification is captured: two or
@@ -30,8 +37,9 @@ finding at a time.
   before.
 - In `/flow:review` fix-forward and in `/flow:address`, a fix that would
   contradict the design record, add a subsystem or add a trust boundary is
-  not made inside the loop: the design step runs first and the record is
-  updated.
+  not made inside the loop: the design step runs first, the record is
+  updated, and the specification and the goal are refreshed from it, so the
+  next review is handed the new design.
 
 ## 3.13.0 (2026-11-01)
 
