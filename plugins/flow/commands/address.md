@@ -1357,11 +1357,11 @@ true
 
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
 10. **Update the PR body** so it describes the branch as it is after this cycle, not as it was when the pull request was opened:
-   - Fetch the current body: run the block below with `PR_NUM=<n>` and no `BODY_FILE`; it prints the body.
+   - Fetch the current body: run `PR_BODY_BLOCK` (below the check) with `PR_NUM=<n>` and no `BODY_FILE`; it prints the body.
    - Rewrite `## Summary`, `## Changes`, `## Comprehension Report` (with its Key Decisions and Requirements Adherence) and `## Files Changed` from the current branch diff against the pull request's base (`git diff <base>...HEAD`) and the decision journal, following `templates/pr-body.md`. Keep every other section as it is.
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
-   - Check it: write the updated body to a file made with `mktemp`, with the Write tool, and run `DESCRIPTION_CHECK_BLOCK` with `DESC_FILE=<that path>` and `DESC_BASE=<the base branch>`; correct or remove every `MISMATCH` and `STALE_PATH` line until it prints `STATE=ok` or `STATE=unavailable`.
+   - Check it: run `git fetch origin <the base branch>`, write the updated body to a file made with `mktemp`, with the Write tool, and run `DESCRIPTION_CHECK_BLOCK` with `DESC_FILE=<that path>` and `DESC_BASE=<the base branch>` (a bare name is read as its `origin/` ref; `COMPARED=` shows the range). Correct or remove every `MISMATCH` and `STALE_PATH` line in that same file until it prints `STATE=ok` or `STATE=unavailable`.
 
    ```bash
    # DESCRIPTION_CHECK_BLOCK_BEGIN
@@ -1386,7 +1386,7 @@ true
    # DESCRIPTION_CHECK_BLOCK_END
    ```
 
-   - Update: run `mktemp` and note the path it prints, write the whole updated body to that path with the Write tool, and run the block with `PR_NUM=<n> BODY_FILE=<the path>`, followed in the same call by `rm -f <the path>`. The body quotes reviewer text, so it never goes in a shell command.
+   - Update: run `PR_BODY_BLOCK` with `PR_NUM=<n> BODY_FILE=<the checked file>`, the file the description check last printed `STATE=ok` for, followed in the same call by `rm -f <the checked file>`. The body quotes reviewer text, so it never goes in a shell command.
 
    ```bash
    # PR_BODY_BLOCK_BEGIN

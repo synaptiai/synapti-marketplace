@@ -326,7 +326,7 @@ For each commit group:
    - Subject: imperative, describes what and why
    - Written from the staged change (`git diff --cached`), not from the plan or the task list: it says what this commit does. When the commit does part of a task, the body says what it leaves undone
    - If `$ARGUMENTS` provided, use as message (validate format first)
-   - Check it: write the message to a file made with `mktemp`, with the Write tool, after staging the group, and run the block with `DESC_FILE=<that path>` and `DESC_STAGED=1`. Correct every `MISMATCH` and `STALE_PATH` line before committing, and commit with `git commit -F <that path>`
+   - Check it: stage the group first (`git add <specific-files>`), then write the message to a file made with `mktemp`, with the Write tool, and run the block with `DESC_FILE=<that path>` and `DESC_STAGED=1`. Correct every `MISMATCH` and `STALE_PATH` line before committing, and commit with `git commit -F <that path>`
 
    ```bash
    # DESCRIPTION_CHECK_BLOCK_BEGIN
@@ -351,9 +351,8 @@ For each commit group:
    # DESCRIPTION_CHECK_BLOCK_END
    ```
 
-2. **Stage and commit** (Tier 1 — autonomous):
+2. **Commit** the group staged in step 1 (Tier 1 — autonomous):
    ```bash
-   git add <specific-files>
    git commit -F <the checked message file>
    ```
 

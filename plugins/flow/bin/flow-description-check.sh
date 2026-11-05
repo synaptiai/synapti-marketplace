@@ -12,24 +12,33 @@
 # Checked:
 #   - Each row of a files-changed table, `| <area> | <files> | +<added> | -<deleted> |`,
 #     against the diff: <area> is a path prefix (backticks and a trailing /
-#     ignored), or Total for the whole diff. A row whose area matches no
+#     ignored), Total for the whole diff, or (root) (also root, / or .) for
+#     the files at the top of the repository. A row whose area matches no
 #     changed file is a mismatch too. Rows of other tables are not read.
+#     Renames count as git diff --stat counts them: one file, under its new
+#     path.
 #   - Each "<N> file(s) changed" phrase, against the number of changed files.
-#   - Each path in backticks that has a / in it (with an optional :line or
-#     :line-line), against the tree the change produces: the path must exist
-#     there, or be a file the change deletes, and a line it names must exist.
-#     A token holding < > { } * $ ~ or a space is a placeholder or a pattern,
-#     not a path, and is skipped; so is one starting with / or http.
+#   - Each path in backticks that looks like a file (a / in it and a dot in
+#     its last segment; directories are not checked), with an optional :line
+#     or :line-line, against the tree the change produces. It must be there,
+#     at the repository root or below a directory (a package-relative path),
+#     or be a file the change deletes or renames away; a line it names must
+#     exist. A placeholder or pattern (< > { } * $ ~ or a space), a URL, an
+#     absolute path, host:port/..., and anything that names a git commit
+#     (origin/main, a branch) are skipped.
 #
 # Usage:
 #   flow-description-check.sh --body <file> --base <ref> [--head <ref>]
 #   flow-description-check.sh --body <file> --staged
 # --base/--head compare <base>...<head> (head defaults to HEAD), as a pull
-# request does. --staged compares the index with HEAD, for a commit message.
+# request does. A bare branch name for --base is read as origin/<name> when
+# that ref exists: a local default branch is usually behind. --staged
+# compares the index with HEAD, for a commit message.
 #
 # Output (stdout, one KEY=value per line):
 #   STATE=ok|stale|unavailable
 #   REASON=<why>                              (unavailable only)
+#   COMPARED=<base>...<head>|staged           the range the counts come from
 #   CHECKED_ROWS=<n>  CHECKED_COUNTS=<n>  CHECKED_PATHS=<n>
 #   MISMATCH=<claim>|<stated>|<actual>        one per row or count that differs
 #   STALE_PATH=<path>|<why>                   one per path the tree does not have
@@ -62,27 +71,54 @@ unavailable() { printf 'STATE=unavailable\nREASON=%s\n' "$1"; exit 0; }
 [ -n "$BODY" ] && [ -f "$BODY" ] && [ -r "$BODY" ] || unavailable "cannot read the description '$BODY'"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || unavailable "not inside a git work tree"
 
-# The change: "added<TAB>deleted<TAB>path" per file (binary files count 0),
-# and the deleted paths. Renames are shown under their new path.
-if [ "$STAGED" = 1 ]; then
-  NUMSTAT=$(git diff --cached --numstat --no-renames 2>/dev/null) || unavailable "git diff --cached failed"
-  DELETED=$(git diff --cached --name-only --diff-filter=D --no-renames 2>/dev/null)
-  TREE_REF=""
-else
+# The base. /flow:start branches from origin/<default> and never updates the
+# local branch of that name, so a bare branch name is read as its
+# remote-tracking ref when there is one: the local one is usually behind, and
+# comparing against it would count every commit merged upstream since.
+if [ "$STAGED" = 0 ]; then
+  case "$BASE" in
+    origin/*) ;;
+    *) git rev-parse --verify -q "origin/$BASE^{commit}" >/dev/null 2>&1 && BASE="origin/$BASE" ;;
+  esac
   git rev-parse --verify -q "$BASE^{commit}" >/dev/null || unavailable "no commit '$BASE'"
   git rev-parse --verify -q "$HEAD_REF^{commit}" >/dev/null || unavailable "no commit '$HEAD_REF'"
-  NUMSTAT=$(git diff --numstat --no-renames "$BASE...$HEAD_REF" 2>/dev/null) || unavailable "git diff $BASE...$HEAD_REF failed"
-  DELETED=$(git diff --name-only --diff-filter=D --no-renames "$BASE...$HEAD_REF" 2>/dev/null)
-  TREE_REF="$HEAD_REF"
 fi
-NUMSTAT=$(printf '%s\n' "$NUMSTAT" | awk -F'\t' 'NF >= 3 { a = ($1 == "-") ? 0 : $1; d = ($2 == "-") ? 0 : $2; print a "\t" d "\t" $3 }')
-TOTAL_FILES=$(printf '%s\n' "$NUMSTAT" | grep -c .)
 
-# _sum <prefix|Total> — "files added deleted" over the changed files under it.
+# The change: "added<TAB>deleted<TAB>path" per file (binary files count 0),
+# with renames detected as git diff --stat detects them: a rename is one file,
+# under its new path, and its old path is added to the deleted ones.
+NUMSTAT=""
+DELETED=""
+if [ "$STAGED" = 1 ]; then
+  git diff --cached --quiet --exit-code >/dev/null 2>&1; [ $? -le 1 ] || unavailable "git diff --cached failed"
+  set -- --cached
+  TREE_REF=""
+  TREE_FILES=$(git ls-files 2>/dev/null)
+else
+  set -- "$BASE...$HEAD_REF"
+  TREE_REF="$HEAD_REF"
+  TREE_FILES=$(git ls-tree -r --name-only "$TREE_REF" 2>/dev/null) || unavailable "cannot list the tree of '$HEAD_REF'"
+fi
+while IFS= read -r -d '' rec; do
+  a=${rec%%$'\t'*}; rest=${rec#*$'\t'}; d=${rest%%$'\t'*}; path=${rest#*$'\t'}
+  if [ -z "$path" ]; then
+    IFS= read -r -d '' old || break
+    IFS= read -r -d '' path || break
+    DELETED="$DELETED$old"$'\n'
+  fi
+  [ "$a" = - ] && a=0
+  [ "$d" = - ] && d=0
+  NUMSTAT="$NUMSTAT$a"$'\t'"$d"$'\t'"$path"$'\n'
+done < <(git diff --numstat -z -M "$@" 2>/dev/null)
+DELETED="$DELETED$(git diff --name-only -M --diff-filter=D "$@" 2>/dev/null)"
+TOTAL_FILES=$(printf '%s' "$NUMSTAT" | grep -c .)
+
+# _sum <prefix|Total|(root)> — "files added deleted" over the changed files
+# under it. (root) is the files at the top of the repository.
 _sum() {
-  printf '%s\n' "$NUMSTAT" | awk -F'\t' -v p="$1" '
+  printf '%s' "$NUMSTAT" | awk -F'\t' -v p="$1" '
     NF < 3 { next }
-    p == "Total" || $3 == p || index($3, p "/") == 1 { f++; a += $1; d += $2 }
+    p == "Total" || (p == "(root)" && index($3, "/") == 0) || $3 == p || index($3, p "/") == 1 { f++; a += $1; d += $2 }
     END { printf "%d %d %d\n", f, a, d }'
 }
 
@@ -94,11 +130,15 @@ _found() { FOUND+=("$1"); STALE=1; }
 _shape() { set -- $1; printf '%s files, +%s, -%s' "$1" "$2" "$3"; }
 
 # Files-changed rows. Only a table row of four cells whose second is a whole
-# number and whose third and fourth are +N and -N.
+# number and whose third and fourth are +N and -N. [|] is a literal pipe in
+# every ERE dialect; \| is not defined by POSIX.
 while IFS= read -r line; do
-  area=$(printf '%s' "$line" | sed -E 's/^\|[[:space:]]*([^|]*[^|[:space:]])[[:space:]]*\|.*/\1/; s/`//g; s/\*\*//g; s:/+$::')
-  nums=$(printf '%s' "$line" | sed -E 's/^\|[^|]*\|[[:space:]]*([0-9]+)[[:space:]]*\|[[:space:]]*\+([0-9]+)[[:space:]]*\|[[:space:]]*-([0-9]+)[[:space:]]*\|.*/\1 \2 \3/')
-  case "$area" in [Tt]otal) area="Total" ;; esac
+  area=$(printf '%s' "$line" | sed -E 's/^[|][[:space:]]*([^|]*[^|[:space:]])[[:space:]]*[|].*/\1/; s/`//g; s/[*][*]//g; s:/+$::')
+  nums=$(printf '%s' "$line" | sed -E 's/^[|][^|]*[|][[:space:]]*([0-9]+)[[:space:]]*[|][[:space:]]*[+]([0-9]+)[[:space:]]*[|][[:space:]]*-([0-9]+)[[:space:]]*[|].*/\1 \2 \3/')
+  case "$area" in
+    [Tt]otal) area="Total" ;;
+    root|'(root)'|/|.) area="(root)" ;;
+  esac
   ROWS=$((ROWS + 1))
   actual=$(_sum "$area")
   if [ "${actual%% *}" = 0 ]; then
@@ -106,7 +146,7 @@ while IFS= read -r line; do
   elif [ "$actual" != "$nums" ]; then
     _found "MISMATCH=files-changed row $area|$(_shape "$nums")|$(_shape "$actual")"
   fi
-done < <(grep -E '^\|[^|]+\|[[:space:]]*[0-9]+[[:space:]]*\|[[:space:]]*\+[0-9]+[[:space:]]*\|[[:space:]]*-[0-9]+[[:space:]]*\|[[:space:]]*$' "$BODY")
+done < <(grep -E '^[|][^|]+[|][[:space:]]*[0-9]+[[:space:]]*[|][[:space:]]*[+][0-9]+[[:space:]]*[|][[:space:]]*-[0-9]+[[:space:]]*[|][[:space:]]*$' "$BODY")
 
 # "<N> file(s) changed" phrases.
 while IFS= read -r n; do
@@ -116,43 +156,62 @@ while IFS= read -r n; do
   fi
 done < <(grep -oE '(^|[^0-9A-Za-z])[0-9]+ files? changed' "$BODY" | grep -oE '[0-9]+')
 
-# Paths in backticks.
-_exists() {
-  if [ -n "$TREE_REF" ]; then git cat-file -e "$TREE_REF:$1" 2>/dev/null
-  else git cat-file -e ":$1" 2>/dev/null || git cat-file -e "HEAD:$1" 2>/dev/null; fi
+# Paths in backticks. Only a token that looks like a file (its last segment
+# has a dot) is checked: origin/main,
+# feature/issue-1-x, owner/repo and application/json are not paths, and a
+# token that names a git commit is never one. A path is found at the
+# repository root or, as a description scoped to one package writes it,
+# below a directory (references/x.md for plugins/flow/references/x.md).
+# _resolve <path> — the file in the tree, or nothing. Here-strings, not pipes:
+# under pipefail a reader that stops at its first match would fail the writer.
+_resolve() {
+  grep -qxF -- "$1" <<<"$TREE_FILES" && { printf '%s' "$1"; return; }
+  awk -v p="/$1" 'length($0) > length(p) && substr($0, length($0) - length(p) + 1) == p { print; exit }' <<<"$TREE_FILES"
+}
+_deleted() {
+  awk -v p="$1" 'NF && ($0 == p || (length($0) > length(p) && substr($0, length($0) - length(p)) == "/" p)) { f = 1; exit } END { exit !f }' <<<"$DELETED"
 }
 _lines() {
-  if [ -n "$TREE_REF" ]; then git show "$TREE_REF:$1" 2>/dev/null | wc -l | tr -d ' '
-  else git show ":$1" 2>/dev/null | wc -l | tr -d ' '; fi
+  if [ -n "$TREE_REF" ]; then git show "$TREE_REF:$1" 2>/dev/null | awk 'END { print NR }'
+  else git show ":$1" 2>/dev/null | awk 'END { print NR }'; fi
 }
 while IFS= read -r tok; do
   case "$tok" in
-    *[\<\>\{\}\*\$\~\ ]*|/*|http*) continue ;;
+    *[\<\>\{\}\*\$\~\ ]*|/*|http*|*://*) continue ;;
     */*) ;;
     *) continue ;;
   esac
   path="${tok%%:*}"
   ref=""
-  [ "$path" != "$tok" ] && ref="${tok#*:}"
+  if [ "$path" != "$tok" ]; then
+    ref="${tok#*:}"
+    # Only :<line> or :<line>-<line> follows a path; host:port/x is not one.
+    case "$ref" in ''|*[!0-9-]*) continue ;; esac
+  fi
   case "$path" in *[!A-Za-z0-9._/-]*) continue ;; esac
+  git rev-parse -q --verify "$path^{commit}" >/dev/null 2>&1 && continue
+  # A directory is not checked: one named in prose is as often a runtime or
+  # build location git never tracks (.venv/, dist/) as a source directory.
+  case "$path" in */) continue ;; esac
+  case "${path##*/}" in *.*) ;; *) continue ;; esac
   PATHS=$((PATHS + 1))
-  if ! _exists "$path"; then
-    if printf '%s\n' "$DELETED" | grep -qxF -- "$path"; then continue; fi
+  full=$(_resolve "$path")
+  if [ -z "$full" ]; then
+    _deleted "$path" && continue
     _found "STALE_PATH=$tok|not in the tree the change produces"
     continue
   fi
-  case "$ref" in
-    '') ;;
-    *[!0-9-]*) ;;
-    *)
-      last="${ref##*-}"
-      if [ -n "$last" ] && [ "$last" -gt "$(_lines "$path")" ] 2>/dev/null; then
-        _found "STALE_PATH=$tok|$path has $(_lines "$path") lines"
-      fi ;;
-  esac
+  if [ -n "$ref" ]; then
+    last="${ref##*-}"
+    n=$(_lines "$full")
+    if [ -n "$last" ] && [ "$last" -gt "$n" ] 2>/dev/null; then
+      _found "STALE_PATH=$tok|$full has $n lines"
+    fi
+  fi
 done < <(grep -oE '`[^`]+`' "$BODY" | sed 's/^`//; s/`$//' | sort -u)
 
 if [ "$STALE" = 1 ]; then echo "STATE=stale"; else echo "STATE=ok"; fi
+if [ "$STAGED" = 1 ]; then echo "COMPARED=staged"; else echo "COMPARED=$BASE...$HEAD_REF"; fi
 echo "CHECKED_ROWS=$ROWS"
 echo "CHECKED_COUNTS=$COUNTS"
 echo "CHECKED_PATHS=$PATHS"

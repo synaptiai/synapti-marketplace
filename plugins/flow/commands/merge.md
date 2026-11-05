@@ -745,10 +745,12 @@ below would have to name a repository nobody verified. Report the state and
 what the user can do about it.
 
 **Description check.** Before the assessment, check that the pull request's body
-still describes what will merge: write the body (`gh pr view <N> --json body
---jq .body`) to a file made with `mktemp`, with the Write tool, and run the block
-with `DESC_FILE=<that path>`, `DESC_BASE=origin/<base branch>` and
-`DESC_HEAD=<the head commit the merge names>`. On `STATE=stale`, rewrite the
+still describes what will merge. Read `gh pr view <N> --json body,baseRefName,headRefOid`,
+run `git fetch origin "<baseRefName>" "pull/<N>/head"` so both commits are here
+whatever branch is checked out, write the body to a file made with `mktemp`,
+with the Write tool, and run the block with `DESC_FILE=<that path>`,
+`DESC_BASE=origin/<baseRefName>` and `DESC_HEAD=<headRefOid>`: the head GitHub
+will merge, not the local branch, which may be another branch or behind. On `STATE=stale`, rewrite the
 sections it names as `/flow:address` step 10 does, update the body, and run it
 again; on `STATE=unavailable`, say so in the assessment with its `REASON`.
 

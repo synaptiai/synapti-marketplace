@@ -12,17 +12,22 @@ an older head" and "102 lookups; there are 103".
 
 - `bin/flow-description-check.sh` checks the claims in a pull request body or
   commit message that a script can decide, against the change: every row of a
-  files-changed table (area as a path prefix, or Total) and every "N files
-  changed", against `git diff <base>...<head>` or the staged change, and every
-  backticked path with a `/`, and the line it names, against the tree the
-  change produces. A file the change deletes may be named; placeholders,
-  globs and URLs are skipped. It prints `STATE=ok|stale|unavailable` with one
-  `MISMATCH` or `STALE_PATH` line per claim that differs, and a check that
-  cannot run never reads as ok.
+  files-changed table (area as a path prefix, `(root)` or Total) and every "N
+  files changed", against `git diff <base>...<head>` with renames counted as
+  `git diff --stat` counts them, or against the staged change; and every
+  backticked token that looks like a file (a `/`, and a dot in its last
+  segment), and the line it names, against the tree the change produces, at
+  the root or below a directory, as a package-relative path. Ref and branch
+  names, MIME types, host:port, URLs, placeholders, globs and directories
+  are not checked. A bare base branch is read as its `origin/` ref, since the
+  local one is usually behind. It prints `STATE=ok|stale|unavailable`,
+  `COMPARED=` with the range, and one `MISMATCH` or `STALE_PATH` line per
+  claim that differs; a check that cannot run never reads as ok. Replayed on
+  the bodies of the 15 pull requests merged before it, all 15 come back ok.
 - `DESCRIPTION_CHECK_BLOCK`, the same block in `/flow:pr`, `/flow:address`,
   `/flow:merge` and `/flow:commit`, runs it. `/flow:pr` checks the body before
-  it is pushed and opened, `/flow:merge` checks the body against what will
-  merge before it asks, and `/flow:commit` checks each message against the
+  it is pushed and opened, `/flow:merge` checks the body against the head GitHub
+  will merge (`headRefOid`, fetched with the base) before it asks, and `/flow:commit` checks each message against the
   staged group and commits with `git commit -F`. Every `MISMATCH` and
   `STALE_PATH` is corrected or removed before the text is published.
 - `holdout-validation` takes an optional `Description` input, so the claims

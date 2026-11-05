@@ -33,7 +33,7 @@ GUARDS="block-force-push block-destructive block-unchecked-merge block-secrets"
 
 # The fences that are templates. Each entry is <command file>:<text inside the
 # fence>; the expectation below pins that exactly these are skipped (F3).
-TEMPLATE_FENCES="commit.md:git add <specific-files>
+TEMPLATE_FENCES="commit.md:git commit -F <the checked message file>
 merge.md:gh pr merge {PR_NUMBER}
 resolve.md:git checkout <headRefName>"
 

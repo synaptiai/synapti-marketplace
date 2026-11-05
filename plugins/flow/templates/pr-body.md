@@ -98,7 +98,7 @@ Spec-free task — no acceptance criteria to verify.
 
 ## Files Changed
 
-{Grouped by top-level directory with counts:}
+{Grouped by top-level directory with counts; files at the top of the repository go in a `(root)` row:}
 
 | Area | Files | Additions | Deletions |
 |------|-------|-----------|-----------|
