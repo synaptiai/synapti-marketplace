@@ -145,6 +145,8 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `learning.sources` | `["journal","transcripts"]` | `/flow:learn`, `session-end-learn.sh` |
 | `learning.transcriptDir` | `""` (Claude Code's transcript directory) | `/flow:learn`, `session-end-learn.sh` (user settings and plugin default only) |
 | `journal.dir` | `.decisions` | `bin/journal-dir.sh`, and every command and hook that writes the journal through it |
+| `design.riskAreas` | `[]` | `/flow:start` Phase 1 risk check (`bin/flow-risk-check.sh`): shell patterns of areas that get the design step |
+| `design.hotspotFixCommits` | `3` | `/flow:start` Phase 1 risk check: fix commits among the last 200 that make a file a hotspot; `0` turns it off |
 | `specFirst.requireAcceptanceCriteria` | `true` | `/flow:start` Phase 1 |
 | `specFirst.allowSpecFreeLabels` | `["documentation","chore"]` | `/flow:start` Phase 1 |
 | `specFirst.riskMap` | `true` | `/flow:start`, `specification-capture` skill |

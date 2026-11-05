@@ -191,7 +191,7 @@ true
 
 **Parallel Agent + Skill calls:**
 
-- `Agent(Explore)`: "Read CLAUDE.md (.claude/CLAUDE.md or CLAUDE.md). Identify tech stack, testing commands, coding conventions, and any project-specific rules. Also search for code related to the issue keywords to understand affected modules."
+- `Agent(Explore)`: "Read CLAUDE.md (.claude/CLAUDE.md or CLAUDE.md). Identify tech stack, testing commands, coding conventions, and any project-specific rules. Also search for code related to the issue keywords to understand affected modules. End with a `Files to touch` list: the files the change will most likely modify, one repository-relative path per line."
 - `Skill(capability-discovery)`: Discover available agents, quality commands, and tech stack.
 
 **Spec-first validation** (after issue details are fetched):
@@ -213,6 +213,26 @@ If zero acceptance criteria found and `specFirst.requireAcceptanceCriteria` is `
 - Option 1: Use `Skill(issue-crafting)` to help write ACs, then update the issue via `gh issue edit`
 - Option 2: Only available if issue labels include any of `specFirst.allowSpecFreeLabels` (default: `documentation`, `chore`). Log to decision journal: "Spec-free task: {justification}"
 - Option 3: Stop workflow
+
+**Risk check** (before specification capture): write the Explore agent's `Files to touch` list to a file made with `mktemp`, one path per line, with the Write tool, and run the block with `RISK_FILES=<that path>`. It reports whether the change touches a risky area, and why:
+
+```bash
+# RISK_CHECK_BLOCK_BEGIN
+# RISK_FILES names the file the session wrote: the paths the change will
+# modify, one per line. They are read as data by the helper, never run.
+printf '%s\n' "### Risk check"
+if [ -z "${RISK_FILES:-}" ]; then
+  printf '%s\n' "STATE=unavailable" "REASON=RISK_FILES is not set" "RISK=unknown"
+  exit 0
+fi
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+"$FLOW_ROOT/bin/flow-risk-check.sh" --files-from "$RISK_FILES"
+# RISK_CHECK_BLOCK_END
+```
+
+- `RISK=high`: run the **design step** (`references/design-step.md`) now, before the specification is captured: read the risky files and their callers, write two or three options with one always the smallest change inside the existing structure, choose the one that adds the least new structure, and record `## Design` in the journal. Specification capture then takes its `Does not add` items as non-goals and its `Invariants` as interface contracts, so the goal, the plan and the reviewers receive them.
+- `RISK=normal`: no design step; go on.
+- `RISK=unknown` (`STATE=unavailable`): no design step; the runtime summary says the risk check did not run, with its `REASON`.
 
 **Specification capture** (before Spec Validation Gate):
 
@@ -534,6 +554,7 @@ Once the goal (if any) and the FlowRun exist, emit **one** compact runtime summa
 - **Workflow**: `start-issue`
 - **Run**: `<RUN_ID>` (the value emitted by the FlowRun block)
 - **Branch**: `<current branch>` (`git branch --show-current`)
+- **Risk**: `<RISK>` — the `RISK_FILE` paths and reasons, `design recorded` when the design step ran, or the `REASON` when the check did not run
 - _I'll work until the goal is achieved, blocked, or needs your decision._
 
 Compute the AC counts with the shared helper (it prints `<total>/<verifiable>`). It exits non-zero with no output when no goal owns the current branch — that is the **skip path** (goal creation was skipped), and the summary then omits the Goal line entirely:
@@ -603,6 +624,7 @@ Agent(implementation-planner):
   "Parse acceptance criteria from issue #$ISSUE_NUM and create atomic tasks.
    Issue context: {pre-fetched issue title, body, comments}
    Specification (from EXPLORE): {non-goals, failure modes, interface contracts, risk map}
+   Design (from EXPLORE, when the risk check ran the design step): {the journal's ## Design record; each task names the option it implements and keeps every invariant}
    Spec Validation Gate results: {criterion -> verification command mapping}
 
    For each acceptance criterion, use TaskCreate with a single atomic task:

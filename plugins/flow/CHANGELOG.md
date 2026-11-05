@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+A change to a risky area gets a design step before it is planned (#327).
+Before this, `/flow:start` went from exploring straight to planning, and the
+design of a risky change was settled in review-fix loops: on #307 three cycles
+traded one leak for another until a masking rule was written down, and on #251
+the later cycles redesigned how flow reviews other people's pull requests one
+finding at a time.
+
+### Added
+
+- `bin/flow-risk-check.sh` says whether the files a change will modify are
+  risky, and why: a path matching a pattern in the new `design.riskAreas`
+  setting, or a fix hotspot, a file that at least `design.hotspotFixCommits`
+  (default 3; 0 turns it off) of the repository's last 200 non-merge commits
+  fixed. A commit is a fix when its subject starts with fix, hotfix, bugfix or
+  revert. A check that cannot run reports `RISK=unknown`, never `normal`.
+- `/flow:start` Phase 1 runs it on the Explore agent's `Files to touch` list
+  (`RISK_CHECK_BLOCK`). On `RISK=high` it runs the design step of the new
+  `references/design-step.md` before the specification is captured: two or
+  three options, one always the smallest change inside the existing
+  structure, the one that adds the least new structure chosen, and a
+  `## Design` record in the journal (risky files, options, chosen, reuses,
+  does not add, invariants) with a `design` manifest entry. Specification
+  capture takes its `Does not add` items as non-goals and its invariants as
+  interface contracts, so the goal, the plan and every reviewer receive them.
+  The runtime summary has a Risk line. A change that is not risky goes on as
+  before.
+- In `/flow:review` fix-forward and in `/flow:address`, a fix that would
+  contradict the design record, add a subsystem or add a trust boundary is
+  not made inside the loop: the design step runs first and the record is
+  updated.
+
 ## 3.13.0 (2026-11-01)
 
 flow's documentation describes the plugin as it behaves at this release: an
