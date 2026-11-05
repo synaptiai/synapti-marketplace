@@ -10,7 +10,7 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 
 ## Required Skills
 
-- `llm-operator-principles` — operator stance (inlined below): convergence is zero findings, fix in this PR, no calendar-time estimates, escalate only for true decisions
+- `llm-operator-principles` — operator stance (inlined below): convergence is no counted P1 or P2 left, fix in this PR, no calendar-time estimates, escalate only for true decisions
 - `feedback-resolution` — surgical changes, context recovery, pushback criteria
 - `change-classification` — verify no out-of-context changes
 - `capability-discovery` — quality commands for verification
@@ -551,10 +551,10 @@ fi
 true
 ```
 
-**Escalating strategy by cycle:**
-- **Cycle 1**: Targeted fixes + Boy Scout cleanup in modified files
-- **Cycle 2**: Targeted fixes + whole-file scan of all modified files for P1/P2
-- **Cycle 3+**: Comprehensive fix-all + full self-review before re-requesting
+**Strategy by cycle:**
+- **Every cycle**: fix the class, not the instance. Before committing a fix, list the other inputs of the same shape and the other callers of the same code (`findReferences`, or `git grep`), and fix them in the same commit, or fix the shared code they all go through. The resolution comment names what else each fix covers. A fix that covers one input shape is what the next cycle finds the next shape of.
+- **Cycle 1**: targeted fixes + Boy Scout cleanup in modified files
+- **Cycle 2 and later**: targeted fixes; the self-review in Phase 4 looks only at what the fixes changed, for regressions they introduced. P3 items are fixed in one batch, which is not re-reviewed
 
 ## Phase 2: PLAN
 
@@ -949,6 +949,8 @@ Post the inline replies (step 8) and the resolution comment (step 9) every cycle
 
 When the section reported `STATE=none` there are no exceptions and this paragraph is a no-op. When it reported `STATE=unavailable` say so in the review output: reviewing as though the team has rejected nothing is a choice, not a default, and the reader should know it was made.
 
+**The review scope applies to every dispatch below**, as in `/flow:review`: hand each reviewer the rules of `references/review-scope.md`. Every finding names its trigger, a finding whose only trigger is out of scope is not raised, and the priority follows the scope's priority table.
+
 **Duplication is re-checked with everything else.** `code-reviewer`'s Step 4 runs `bin/flow-clone-scan.sh` over the fix commits as well, because a surgical fix is exactly where a block gets copied instead of shared. A `DUP-` finding raised on a fix commit is resolved in the same pass; `STATE=unavailable` is reported once in the resolution comment.
 
 In the dispatches below, `$BASE_BRANCH` is the `BASE_BRANCH=` value from Phase 1's `### PR Details` section.
@@ -956,8 +958,9 @@ In the dispatches below, `$BASE_BRANCH` is the `BASE_BRANCH=` value from Phase 1
    ```
    Agent(code-reviewer):
      "Review the fix commits since the last review against $BASE_BRANCH.
-      Check for: logic errors, security issues, missing edge cases.
-      Return P1/P2/P3 findings with file:line."
+      Check for: logic errors, security issues, missing edge cases, and
+      regressions the fixes introduced. Return P1/P2/P3 findings with
+      file:line and a trigger per finding (references/review-scope.md)."
 
    Agent(convention-checker):
      "Validate convention compliance for the fix commits since the last review.
@@ -972,11 +975,13 @@ In the dispatches below, `$BASE_BRANCH` is the `BASE_BRANCH=` value from Phase 1
    Agent(security-reviewer):
      "Review the fix commits since the last review against $BASE_BRANCH
       for OWASP Top 10, secrets, auth/authz, input validation, and dependency
-      vulnerabilities. Return P1/P2/P3 findings with file:line."
+      vulnerabilities. Return P1/P2/P3 findings with file:line and a trigger
+      per finding (references/review-scope.md)."
 
    Agent(error-handler-inspector):
      "Check error handling in the changed scope of the fix commits since
-      the last review. Return P1/P2/P3 findings with file:line."
+      the last review. Return P1/P2/P3 findings with file:line and a trigger
+      per finding (references/review-scope.md)."
    ```
 
    This dispatch is the canonical re-review fan-out — exactly the same five
@@ -994,17 +999,18 @@ In the dispatches below, `$BASE_BRANCH` is the `BASE_BRANCH=` value from Phase 1
    **Blocking treatment** (same as start.md):
    - P1/P2 holdout findings → fix immediately before proceeding
    - After fixes: re-run holdout-validation to confirm resolution
-   - P3 findings → fix in-PR in the same convergence loop
+   - P3 findings → fix in-PR in the P3 batch; they do not send the loop back to step 2
 
    **Already-addressed count** — when the System One block in Phase 1 printed `S1_STILL_APPLIES=on`, count the comments whose still-applies block printed `STILL_APPLIES=addressed`. That number must equal each of: the inline replies to be posted in step 8 that read `Already addressed: checked against`, the `Already addressed` rows of the Thread Status table in the resolution comment of step 9, and the already-addressed entries of the final summary. Draft all three before this check. A comment found addressed and missing from any of the three was dropped without a word to the reviewer. A mismatch is a P1 holdout finding: do not post replies or the resolution comment until the counts agree.
 4. **Convergence check** (bounded by `fixForwardMaxIterations`, default 10 — this is a safety net against true infinite loops, NOT a planned stop point; see `skills/llm-operator-principles/SKILL.md`):
    - Self-review finds P1 → fix NOW (don't re-request with known P1s)
    - Holdout-validation finds P1/P2 → fix NOW (same blocking treatment as self-review P1)
    - P2 in touched files → fix NOW
-   - P3 in touched files → fix NOW (same disposition as P1/P2 — the proximity test is not a deferral mechanism)
+   - P3 in touched files → fix in the P3 batch, after the P1 and P2 fixes (the proximity test is not a deferral mechanism). The batch does not restart the loop
    - P1/P2 in untouched files → fix in-PR (expand scope with `improve:` commits). Finding triage is NEVER a valid escalation trigger.
    - Cosmetic P3 in untouched files → fix in this PR (`improve:` commit). Default mode does not create follow-up issues; only `minimalScope` mode uses the follow-up issue workflow for this case.
-   - After fixes: re-run quality commands, re-review changed files, re-run holdout-validation
+   - After P1 and P2 fixes: re-run quality commands, re-review what those fixes changed (P1 and P2 only), re-run holdout-validation. After the P3 batch: re-run quality commands only
+   - **Converged** when no P1 or P2 with a trigger is left (`skills/llm-operator-principles/SKILL.md`). A finding with no trigger (`references/review-scope.md`) is not fixed or re-reviewed: name its trigger, or drop it
    - Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
    - **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
 5. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
