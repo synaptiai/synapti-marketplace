@@ -92,6 +92,11 @@ while IFS= read -r f || [ -n "$f" ]; do
   case "$f" in '- '*|'* '*|'+ '*) f="${f#??}" ;; esac
   f="${f#\`}"; f="${f%\`}"
   case "$f" in *:[0-9]*) case "${f##*:}" in *[!0-9-]*) ;; *) f="${f%:*}" ;; esac ;; esac
+  # An absolute path may spell the top differently from git: on macOS
+  # /var is a link to /private/var, so its directory is resolved first.
+  case "$f" in
+    /*) d=$(cd -P -- "$(dirname -- "$f")" 2>/dev/null && pwd -P) && [ -n "$d" ] && f="$d/${f##*/}" ;;
+  esac
   case "$f" in
     "$TOP"/*) f="${f#"$TOP"/}" ;;
     "$TOP_P"/*) f="${f#"$TOP_P"/}" ;;
