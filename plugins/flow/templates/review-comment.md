@@ -5,26 +5,31 @@
 ### Checks not run
 {checks_not_run — `Tests, advisory audit, duplication scan: not run: someone else's pull request` unless the session opted in with FLOW_REVIEW_RUN_PR_COMMANDS=1; otherwise `none`}
 
-> **Note**: Take the counts from the `FINDINGS_HEADER` printed by `commands/review.md` Phase 4 step 7; LOW-confidence findings are not in P1/P2/P3 and appear only under Needs investigation. Every counted finding ends with a `_(CONFIDENCE · disposition)_` suffix on both review paths (Path B's disposition is `unchallenged`). Escape any literal `|` in a cell as `\|`.
+> **Note**: Take the counts from the `FINDINGS_HEADER` printed by `commands/review.md` Phase 4 step 7; LOW-confidence findings are not in P1/P2/P3 and appear only under Needs investigation. Every counted finding ends with a `_(CONFIDENCE · disposition)_` suffix on both review paths (Path B's disposition is `unchallenged`), and names its trigger (`references/review-scope.md`). Escape any literal `|` in a cell as `\|`.
 
 #### P1 — Critical (Blocks Merge)
 | Finding | Suggested Fix |
 |---------|---------------|
-| **{ID} · {category} · `{file:line}`**<br>{issue} _({HIGH\|MEDIUM} · {consensus\|validated\|refined\|kept\|unchallenged})_ | {fix} |
+| **{ID} · {category} · `{file:line}`**<br>{issue}<br>Trigger: {input or condition} → {what goes wrong} _({HIGH\|MEDIUM} · {consensus\|validated\|refined\|kept\|unchallenged})_ | {fix} |
 
 #### P2 — Important
 | Finding | Suggested Fix |
 |---------|---------------|
-| **{ID} · {category} · `{file:line}`**<br>{issue} _({HIGH\|MEDIUM} · {consensus\|validated\|refined\|kept\|unchallenged})_ | {fix} |
+| **{ID} · {category} · `{file:line}`**<br>{issue}<br>Trigger: {input or condition} → {what goes wrong} _({HIGH\|MEDIUM} · {consensus\|validated\|refined\|kept\|unchallenged})_ | {fix} |
 
 #### P3 — Suggestions
-- **{ID} · {category} · `{file:line}`** — {suggestion} _({HIGH|MEDIUM} · {consensus|validated|refined|kept|unchallenged})_
+- **{ID} · {category} · `{file:line}`** — {suggestion}. Trigger: {input or condition} _({HIGH|MEDIUM} · {consensus|validated|refined|kept|unchallenged})_
 
 #### Needs investigation
 {LOW-confidence findings, at any priority. They are not counted above, do not decide the review, and are not in the review-cycle marker, so they never block the merge. One entry per finding:}
 - **{ID} · {priority} · {category} · `{file:line}`** — {problem}
   Pattern: {what triggered the finding}. Confirm or refute: {the test or check that would settle it}.
 {For a finding System One demoted (`review.confidence`), the Pattern line is `Pattern: System One: the cited code does not show this defect (p={p}, {model}).`}
+{For a finding in `NO_TRIGGER`, the Pattern line is `Pattern: names no trigger.` and Confirm or refute names the input that would show it.}
+
+#### Not counted in this cycle
+{Only from cycle 2: every id in the router's `NOT_COUNTED` (P3 from cycle 2, P2 from cycle 3). They decide nothing and are not in the review-cycle marker; the author fixes them in the P3 batch, which starts no new cycle. A plain bullet, never the bold shape of a counted finding:}
+- {ID} ({priority}, {category}, `{file:line}`) — {problem}
 {On a Path A run with `review.challenge` on, a finding with an `S1_NOTE` line shows that note as plain text: in its cell after the issue and before the suffix, or for a LOW finding at the end of its Pattern line. Never in the suffix or the review-cycle marker.}
 
 #### Blast radius

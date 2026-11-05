@@ -201,7 +201,7 @@ _cf_route() {
     awk -v rows="$rows" '/^\{one row per consolidated finding/ { while ((getline l < rows) > 0) print l; next } { print }' \
       "$E2E_DIR/route.raw" > "$E2E_DIR/fence.sh.raw"
     E2E_FENCE_SHELLS="$sh" _e2e_run_code "commands/review.md (block FINDING_ROUTE_BLOCK)" "" REVIEW_MODE="$mode" PR_NUM=7 \
-      FINDING_TOTAL="$(grep -c . "$rows")" "$@"
+      CYCLE_NUMBER=1 FINDING_TOTAL="$(grep -c . "$rows")" "$@"
     if [ -z "$first" ]; then
       first="$sh"; first_out="$E2E_OUT"; first_err="$E2E_ERR"; first_rc="$E2E_RC"
     else
@@ -211,8 +211,14 @@ _cf_route() {
   E2E_OUT="$first_out"; E2E_ERR="$first_err"; E2E_RC="$first_rc"
 }
 
-# _cf_router [arguments] — bin/flow-finding-route.sh itself.
-_cf_router() { e2e_run_bin bin/flow-finding-route.sh --pr 7 "$@"; }
+# _cf_router [arguments] — bin/flow-finding-route.sh itself, as cycle 1.
+_cf_router() { e2e_run_bin bin/flow-finding-route.sh --pr 7 --cycle 1 "$@"; }
+
+# _pre326 — router lines as the recording at 5496f00c has them. Issue #326
+# added NOT_COUNTED, NOT_COUNTED_PRIORITIES and NO_TRIGGER after it; for
+# cycle-1 rows that all name a trigger they are empty, and only an empty one
+# is dropped here, so a value in any of them still fails the comparison.
+_pre326() { grep -v '^NOT_COUNTED=$\|^NOT_COUNTED_PRIORITIES=$\|^NO_TRIGGER=$'; }
 
 _requests() { e2e_expect_equal "$1" "$(e2e_stub_requests "$CF_STUB")" "requests received by stub $CF_STUB"; }
 _record() { jq -c "$1" "$E2E_HOME/$CF_RECORDS" 2>/dev/null; }
@@ -317,17 +323,17 @@ if _want confidence-off-routing-identical; then
   for m in external self; do
     _cf_router --mode "$m" --input "$ROWS"
     e2e_expect_equal 0 "$E2E_RC" "router exit status, $m"
-    e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.$m.out")" "$E2E_OUT" "router stdout in $m mode, compared with the output recorded at 5496f00c"
+    e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.$m.out")" "$(_pre326 <<<"$E2E_OUT")" "router stdout in $m mode, compared with the output recorded at 5496f00c"
     _cf_route "$m" "$ROWS"
     e2e_expect_equal 0 "$E2E_RC" "routing block exit status, $m"
-    e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.$m.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=')" "routing block's router lines in $m mode"
+    e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.$m.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=' | _pre326)" "routing block's router lines in $m mode"
   done
   # On your own pull request the file is never passed, so a set but empty
   # S1_DEMOTED_FILE changes nothing. On someone else's it is a lost demotion
   # record (confidence-demoted-file-lost).
   : > "$E2E_DIR/empty-demoted"
   _cf_route self "$ROWS" S1_DEMOTED_FILE="$E2E_DIR/empty-demoted"
-  e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.self.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=')" "routing block's router lines in self mode with an empty S1_DEMOTED_FILE"
+  e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.self.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=' | _pre326)" "routing block's router lines in self mode with an empty S1_DEMOTED_FILE"
   e2e_expect_clean_edges
 fi
 
@@ -359,7 +365,7 @@ if _want confidence-on-unsupported; then
   e2e_expect_equal "false" "$(sed -n 1p "$(e2e_stub_log a)" | jq -c '.body.state | tostring | (contains("F1") or contains("code-reviewer") or contains("MEDIUM") or contains("fix for"))')" "the state names the id, the reviewer, the confidence or the fix"
   e2e_expect_equal '{"site":"review.confidence","question":"claim_supported","mode":"on","result":"answered","current":"MEDIUM","ref":"pr:7/review-cycle:1/F1"}' \
     "$(_record '{site, question, mode, result, current, ref}' | head -n 1)" "the record"
-  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer' 'F3|P3|conventions|src/a.py:5|MEDIUM|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 'F3|P3|conventions|src/a.py:5|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_route external "$ROWS" S1_DEMOTED_FILE="$CF_DIR/demoted.txt"
   e2e_expect_equal 0 "$E2E_RC" "routing block exit status"
   e2e_expect_line "NEEDS_INVESTIGATION="
@@ -375,7 +381,7 @@ if _want confidence-on-unsupported-self; then
   _flow_test_begin "confidence-on-unsupported-self"
   _cf_setup confidence-on-unsupported-self "on your own pull request, with S1_DEMOTED_FILE set: the routing block passes no --s1-demoted, and the row the session wrote LOW stops routing until step 5 resolves it; the router given --s1-demoted in self mode refuses (C8)"
   printf 'F1\n' > "$CF_DIR/demoted.txt"
-  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|LOW|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|LOW|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_route self "$ROWS" S1_DEMOTED_FILE="$CF_DIR/demoted.txt"
   e2e_expect_equal 1 "$E2E_RC" "routing block exit status"
   e2e_expect_line "UNRESOLVED_LOW=F1"
@@ -403,7 +409,7 @@ if _want confidence-on-supported; then
   e2e_expect_equal "no" "$([ -e "$CF_DIR/demoted.txt" ] && echo yes || echo no)" "a demoted file exists"
   _requests 2
   e2e_expect_equal '"MEDIUM","HIGH"' "$(_record .current | paste -sd, -)" "the current confidence recorded for each"
-  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer' 'F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 'F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_route external "$ROWS"
   e2e_expect_line "MARKER_ROWS=F1|P1|correctness|src/a.py:42|open|MEDIUM|unchallenged,F2|P2|tests|src/a.py:60|open|HIGH|unchallenged"
   e2e_expect_line "DECISION=REQUEST_CHANGES"
@@ -520,7 +526,7 @@ if _want confidence-shadow; then
   ROWS="$E2E_DIR/rows"
   cp "$CF_FIXTURES/s1-confidence-off.rows" "$ROWS"
   _cf_route external "$ROWS"
-  e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.external.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=')" "routing in shadow mode, compared with the output recorded at 5496f00c"
+  e2e_expect_equal "$(cat "$CF_FIXTURES/s1-confidence-off.external.out")" "$(_strip_rows_file | grep -v '^FINDINGS_HEADER=\|^ROUTED_TOTAL=' | _pre326)" "routing in shadow mode, compared with the output recorded at 5496f00c"
   _cf_stub b "$(_noul 0.7)"
   _cf_settings shadow
   _cf_findings "$F1_MED"
@@ -596,19 +602,19 @@ if _want confidence-router-refuses-security-demotion; then
   _flow_test_begin "confidence-router-refuses-security-demotion"
   _cf_setup confidence-router-refuses-security-demotion "the router given --s1-demoted naming a row with category injection, an id SEC-3, or a security-reviewer row exits 1 and prints no marker and no decision; an id not in the rows is a warning (C3)"
   printf 'X1\n' > "$CF_DIR/demoted.txt"
-  for row in 'X1|P1|injection|src/a.py:5|HIGH|unchallenged|code-reviewer' 'X1|P2|correctness|src/a.py:5|HIGH|unchallenged|security-reviewer' 'X1|P2|csrf|src/a.py:5|MEDIUM|unchallenged|code-reviewer'; do
-    ROWS=$(_rows_file rows "$row" 'F9|P3|conventions|src/a.py:6|MEDIUM|unchallenged|code-reviewer')
+  for row in 'X1|P1|injection|src/a.py:5|HIGH|unchallenged|code-reviewer|a caller passes an empty list' 'X1|P2|correctness|src/a.py:5|HIGH|unchallenged|security-reviewer|a caller passes an empty list' 'X1|P2|csrf|src/a.py:5|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list'; do
+    ROWS=$(_rows_file rows "$row" 'F9|P3|conventions|src/a.py:6|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list')
     _cf_router --mode external --input "$ROWS" --s1-demoted "$CF_DIR/demoted.txt"
     e2e_expect_equal 1 "$E2E_RC" "router exit status for $row"
     e2e_expect_no_out "MARKER_ROWS="
     e2e_expect_no_out "DECISION="
   done
   printf 'SEC-3\n' > "$CF_DIR/demoted.txt"
-  ROWS=$(_rows_file rows 'SEC-3|P1|correctness|src/a.py:5|HIGH|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'SEC-3|P1|correctness|src/a.py:5|HIGH|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_router --mode external --input "$ROWS" --s1-demoted "$CF_DIR/demoted.txt"
   e2e_expect_equal 1 "$E2E_RC" "router exit status for SEC-3"
   printf 'F7\n' > "$CF_DIR/demoted.txt"
-  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_router --mode external --input "$ROWS" --s1-demoted "$CF_DIR/demoted.txt"
   e2e_expect_equal 0 "$E2E_RC" "router exit status for an id not in the rows"
   e2e_expect_err "LEDGER_WARN"
@@ -620,8 +626,8 @@ if _want confidence-router-two-demotions; then
   _flow_test_begin "confidence-router-two-demotions"
   _cf_setup confidence-router-two-demotions "the router given --s1-demoted naming two rows, a P1 and a P2, of three, on someone else's pull request: the P1 stays counted at MEDIUM, in the marker, listed in S1_KEPT_P1, the P2 is routed LOW to Needs investigation and out of the marker, the P3 stays counted, and the decision is REQUEST_CHANGES; with the P1 row absent, the P2 alone routed LOW keeps the decision at COMMENT, never APPROVE (C4, C22)"
   printf 'F1\nF2\n' > "$CF_DIR/demoted.txt"
-  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer' 'F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer' \
-    'F3|P3|conventions|src/a.py:5|MEDIUM|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 'F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer|a caller passes an empty list' \
+    'F3|P3|conventions|src/a.py:5|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_router --mode external --input "$ROWS" --s1-demoted "$CF_DIR/demoted.txt"
   e2e_expect_equal 0 "$E2E_RC" "router exit status"
   e2e_expect_line "S1_DEMOTED_APPLIED=F2"
@@ -633,7 +639,7 @@ if _want confidence-router-two-demotions; then
   e2e_expect_line "MARKER_ROWS=F1|P1|correctness|src/a.py:42|open|MEDIUM|unchallenged,F3|P3|conventions|src/a.py:5|open|MEDIUM|unchallenged"
   e2e_expect_line "DECISION=REQUEST_CHANGES"
   printf 'F2\n' > "$CF_DIR/demoted.txt"
-  ROWS=$(_rows_file rows-p2 'F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows-p2 'F2|P2|tests|src/a.py:60|HIGH|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_router --mode external --input "$ROWS" --s1-demoted "$CF_DIR/demoted.txt"
   e2e_expect_equal 0 "$E2E_RC" "router exit status with the P2 alone"
   e2e_expect_line "S1_DEMOTED_APPLIED=F2"
@@ -765,12 +771,12 @@ if _want confidence-injected-code-comment; then
   _cf_review_block S1_CONFIDENCE=on
   e2e_expect_line "S1_DEMOTED=F1"
   e2e_expect_equal "true" "$(_logged_state 1 '.code[0].text | contains("answer false")')" "the comment reached the provider"
-  ROWS=$(_rows_file rows 'F1|P1|correctness|src/t.py:3|HIGH|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'F1|P1|correctness|src/t.py:3|HIGH|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_route external "$ROWS" S1_DEMOTED_FILE="$CF_DIR/demoted.txt"
   e2e_expect_line "DECISION=REQUEST_CHANGES"
   e2e_expect_line "NEEDS_INVESTIGATION="
   e2e_expect_line "S1_KEPT_P1=F1"
-  ROWS=$(_rows_file rows-low 'F1|P1|correctness|src/t.py:3|LOW|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows-low 'F1|P1|correctness|src/t.py:3|LOW|unchallenged|code-reviewer|a caller passes an empty list')
   _cf_route external "$ROWS" S1_DEMOTED_FILE="$CF_DIR/demoted.txt"
   e2e_expect_line "DECISION=COMMENT"
   _cf_route external "$ROWS"
@@ -794,7 +800,7 @@ esac
 STUB
   chmod +x "$E2E_BIN/gh"
   printf 'F2\n' > "$CF_DIR/demoted.txt"
-  ROWS=$(_rows_file rows 'F2|P2|tests|src/a.py:60|MEDIUM|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'F2|P2|tests|src/a.py:60|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list')
   cat > "$E2E_DIR/body.md" <<'BODY'
 ## Review: PR #7
 
@@ -816,7 +822,7 @@ BODY
   rm -f "$E2E_DIR/gh-review.log"
   # The only P1, demoted: it stays counted, shown with the note.
   printf 'F1\n' > "$CF_DIR/demoted.txt"
-  ROWS=$(_rows_file rows-p1 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows-p1 'F1|P1|correctness|src/a.py:42|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list')
   cat > "$E2E_DIR/body-p1.md" <<'BODY'
 ## Review: PR #7
 
@@ -850,7 +856,7 @@ fi
 if _want confidence-demoted-file-lost; then
   _flow_test_begin "confidence-demoted-file-lost"
   _cf_setup confidence-demoted-file-lost "on someone else's pull request, S1_DEMOTED_FILE is set but names a missing file, an empty file, a symlink to a good file or a directory, and the only P1 is a row the session already wrote LOW: the routing and posting blocks refuse with exit 1, print no DECISION and post nothing, because the confidence step writes that file only when it demoted something (C4)"
-  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|LOW|unchallenged|code-reviewer')
+  ROWS=$(_rows_file rows 'F1|P1|correctness|src/a.py:42|LOW|unchallenged|code-reviewer|a caller passes an empty list')
   printf 'F1\n' > "$CF_DIR/demoted.txt"
   : > "$CF_DIR/empty.txt"
   ln -s "$CF_DIR/demoted.txt" "$CF_DIR/link.txt"

@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+Review rounds end when no P1 or P2 with a realistic trigger is left (#326).
+On #251 the finding count per cycle never fell over 14 cycles, later cycles
+were mostly findings about the previous cycle's partial fixes, and a
+hand-picked sample of 51 findings from four pull requests held about a
+quarter that a user could hit.
+
+### Changed
+
+- A review finding names its trigger: the concrete input or condition, in a
+  setup the new `references/review-scope.md` covers, that makes the defect
+  happen. `bin/flow-finding-route.sh` takes it as an eighth field and routes
+  a finding with none LOW, so it can ask for investigation but never decides
+  the review; on your own pull request it sends the review back to step 5,
+  where the finding gets a trigger or is dropped as `no-trigger`. A row of
+  seven fields is refused.
+- `references/review-scope.md` says which triggers count (normal use and
+  plausible mistakes, the supported platforms, content the user does not
+  control where it reaches a decision, data loss and published text that is
+  wrong) and which do not (the user's own environment set against them, an
+  attacker who already has the account, values a producer never emits,
+  unsupported platforms, style that misleads no one), and sets priority from
+  what the trigger breaks and how likely it is. The reviewers of
+  `/flow:review`, `/flow:pr`, `/flow:address` and `/flow:start` get it with
+  the review exceptions, which extend its out-of-scope list from the base
+  commit. Skeptic reviewers flag what they can show fails, not what they
+  cannot prove correct.
+- `bin/flow-finding-route.sh --cycle N` is required. From cycle 2 every P3,
+  and from cycle 3 every P2, is listed in `NOT_COUNTED`: it is left out of
+  the counts, the decision and the review-cycle marker, the review body lists
+  it under `#### Not counted in this cycle`, and the posting block refuses a
+  body that shows one in a counted finding's shape. The rule that later
+  cycles raise only new P1s was prose before; the routing step applies it
+  now.
+- Convergence is no counted P1 or P2 left, not zero findings. P3s are fixed
+  in one batch after the P1 and P2 fixes, and that batch starts no new
+  review cycle; a re-review looks only at what the P1 and P2 fixes changed.
+  Every fix covers its class: the other inputs of the same shape and the
+  other callers of the same code are fixed in the same commit.
+- `dropped-finding` takes two more reasons, `no-trigger` and `out-of-scope`.
+
 ## 3.13.0 (2026-11-01)
 
 flow's documentation describes the plugin as it behaves at this release: an

@@ -13,13 +13,23 @@
 # is the decision table in skills/code-review-methodology/SKILL.md; the row
 # and marker shapes are in references/finding-schema.md.
 #
+# A finding counts only when it names its trigger: the concrete input or
+# condition, produced by a setup references/review-scope.md covers, that makes
+# the defect happen. A row with no trigger is a pattern match and is routed
+# LOW, so it can ask for investigation but never decides the review.
+#
+# Later cycles review the fixes, not the whole change again. From cycle 2 a P3
+# is listed and not counted; from cycle 3 a P2 is too, so only a P1 counts.
+# A listed finding is fixed in the same batch as the rest and does not start
+# another cycle.
+#
 # Usage:
-#   flow-finding-route.sh --mode external|self --pr <N> [--input <file>] [--allow-empty]
-#                         [--s1-demoted <file>]
+#   flow-finding-route.sh --mode external|self --pr <N> --cycle <N> [--input <file>]
+#                         [--allow-empty] [--s1-demoted <file>]
 #
 # Input: one finding per line, on stdin unless --input is given. Blank lines
 # are skipped.
-#   ID|PRIORITY|category|location|CONFIDENCE|disposition|agent
+#   ID|PRIORITY|category|location|CONFIDENCE|disposition|agent|trigger
 # A literal pipe inside a field is written `\|`. Fields are trimmed.
 #   - ID must match [A-Za-z][A-Za-z0-9_-]* and be unique; PRIORITY is P1|P2|P3;
 #     category and location are non-empty. Anything else rejects the input.
@@ -28,14 +38,26 @@
 #   - disposition is consensus|validated|refined|kept|unchallenged; empty is
 #     unchallenged, anything else is unchallenged with a LEDGER_WARN.
 #   - agent names the reviewer that raised the finding; empty is `unknown`.
+#   - trigger is the input or condition that makes the defect happen. Empty,
+#     `none`, `-` or `—` is no trigger: the row is routed LOW, with a
+#     LEDGER_WARN, and its id is listed in NO_TRIGGER.
+#
+# --cycle <N> is this review's cycle (a positive integer). From cycle 2 a P3
+#   row, and from cycle 3 a P2 row, goes to NOT_COUNTED whatever its
+#   confidence or trigger: it is excluded from the counts, the decision and
+#   MARKER_ROWS.
 #
 # Output (stdout, one KEY=value per line, in this order):
 #   ROWS_READ  COUNT_P1  COUNT_P2  COUNT_P3  COUNT_NEEDS_INVESTIGATION
 #   NEEDS_INVESTIGATION  NEEDS_INVESTIGATION_PRIORITIES  DECISION  MARKER_ROWS
+#   NOT_COUNTED  NOT_COUNTED_PRIORITIES  NO_TRIGGER
 #   [UNRESOLVED_LOW, self mode]  [S1_DEMOTED_APPLIED and S1_KEPT_P1, with --s1-demoted]
 # NEEDS_INVESTIGATION lists the LOW ids in input order, comma-joined;
 # NEEDS_INVESTIGATION_PRIORITIES lists the same findings as ID:PRIORITY, so a
 # rendered entry can be checked against the priority it was routed with.
+# NOT_COUNTED and NOT_COUNTED_PRIORITIES list the rows the cycle rule set
+# aside, the same way. NO_TRIGGER lists the rows routed LOW for naming no
+# trigger, in input order; a NOT_COUNTED row is never in it.
 # MARKER_ROWS holds 7-field rows `ID|PRIORITY|category|location|open|CONFIDENCE|disposition`
 # joined by commas, ready for `FINDINGS:[...]`. In category and location every
 # byte outside [A-Za-z0-9._~/:@+= -] is percent-encoded, so a comma, a `]`,
@@ -46,8 +68,8 @@
 #   the counts, DECISION and MARKER_ROWS. DECISION is REQUEST_CHANGES when a
 #   counted P1 or P2 exists, else COMMENT when a counted P3 exists, else
 #   APPROVE.
-# --mode self: any LOW row → exit 3 with only ROWS_READ and UNRESOLVED_LOW on
-#   stdout, so there is no marker to post. Otherwise every row is counted and
+# --mode self: any LOW row → exit 3 with only ROWS_READ, NO_TRIGGER and
+#   UNRESOLVED_LOW on stdout, so there is no marker to post. Otherwise every row is counted and
 #   DECISION is COMMENT (a self-review posts as a comment).
 #
 # --s1-demoted <file> (external mode only; with --mode self it is a usage
@@ -88,7 +110,7 @@ unset CDPATH
 PROG="flow-finding-route.sh"
 
 usage() {
-  echo "usage: $PROG --mode external|self --pr <N> [--input <file>] [--allow-empty] [--s1-demoted <file>]" >&2
+  echo "usage: $PROG --mode external|self --pr <N> --cycle <N> [--input <file>] [--allow-empty] [--s1-demoted <file>]" >&2
 }
 
 # Strip control characters and cap length before echoing input back.
@@ -134,6 +156,7 @@ encode() {
 
 MODE=""
 PR=""
+CYCLE=""
 INPUT=""
 INPUT_SET=0
 ALLOW_EMPTY=0
@@ -144,6 +167,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --mode) MODE="${2:-}"; shift 2 || { usage; exit 1; } ;;
     --pr) PR="${2:-}"; shift 2 || { usage; exit 1; } ;;
+    --cycle) CYCLE="${2:-}"; shift 2 || { usage; exit 1; } ;;
     --input) INPUT="${2:-}"; INPUT_SET=1; shift 2 || { usage; exit 1; } ;;
     --allow-empty) ALLOW_EMPTY=1; shift ;;
     --s1-demoted) S1_DEMOTED_FILE="${2:-}"; S1_DEMOTED_SET=1; shift 2 || { usage; exit 1; } ;;
@@ -160,6 +184,10 @@ esac
 
 case "$PR" in
   ""|0*|*[!0-9]*) echo "$PROG: --pr must be a positive integer, got '$(safe "$PR")'" >&2; exit 1 ;;
+esac
+
+case "$CYCLE" in
+  ""|0*|*[!0-9]*) echo "$PROG: --cycle must be a positive integer, got '$(safe "$CYCLE")'" >&2; exit 1 ;;
 esac
 
 # The demotions System One's review.confidence made. On the author's own pull
@@ -212,6 +240,9 @@ NEEDS_PRIORITIES=""
 NEEDS_COUNT=0
 UNRESOLVED=""
 MARKER=""
+NOT_COUNTED=""
+NOT_COUNTED_PRIORITIES=""
+NO_TRIGGER=""
 SEEN=","
 LINE_NO=0
 
@@ -222,12 +253,12 @@ while IFS= read -r line || [ -n "$line" ]; do
 
   line="${line//\\|/$US}"
   pipes="${line//[^|]/}"
-  if [ "${#pipes}" -ne 6 ]; then
-    echo "$PROG: line $LINE_NO: expected 7 fields separated by '|', got $(( ${#pipes} + 1 )) (write a literal pipe as '\\|')" >&2
+  if [ "${#pipes}" -ne 7 ]; then
+    echo "$PROG: line $LINE_NO: expected 8 fields separated by '|', got $(( ${#pipes} + 1 )) (write a literal pipe as '\\|')" >&2
     exit 1
   fi
 
-  IFS='|' read -r f_id f_pri f_cat f_loc f_conf f_disp f_agent <<<"$line"
+  IFS='|' read -r f_id f_pri f_cat f_loc f_conf f_disp f_agent f_trig <<<"$line"
   f_id=$(trim "${f_id//$US/|}")
   f_pri=$(trim "${f_pri//$US/|}")
   f_cat=$(trim "${f_cat//$US/|}")
@@ -235,6 +266,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   f_conf=$(trim "${f_conf//$US/|}")
   f_disp=$(trim "${f_disp//$US/|}")
   f_agent=$(trim "${f_agent//$US/|}")
+  f_trig=$(trim "${f_trig//$US/|}")
 
   if ! valid_id "$f_id"; then
     echo "$PROG: line $LINE_NO: finding id '$(safe "$f_id")' must match [A-Za-z][A-Za-z0-9_-]*" >&2
@@ -312,6 +344,25 @@ while IFS= read -r line || [ -n "$line" ]; do
       ;;
   esac
 
+  # The cycle rule comes first: a row it sets aside is not investigated
+  # either, because it no longer decides anything.
+  if { [ "$CYCLE" -ge 2 ] && [ "$f_pri" = P3 ]; } || { [ "$CYCLE" -ge 3 ] && [ "$f_pri" = P2 ]; }; then
+    NOT_COUNTED="${NOT_COUNTED:+$NOT_COUNTED,}$f_id"
+    NOT_COUNTED_PRIORITIES="${NOT_COUNTED_PRIORITIES:+$NOT_COUNTED_PRIORITIES,}$f_id:$f_pri"
+    continue
+  fi
+
+  trig_lower=$(printf '%s' "$f_trig" | tr '[:upper:]' '[:lower:]')
+  case "$trig_lower" in
+    ""|none|-|—)
+      if [ "$conf" != LOW ]; then
+        echo "LEDGER_WARN: PR#$PR finding '$f_id' from $agent_shown names no trigger — routed LOW" >&2
+      fi
+      conf="LOW"
+      NO_TRIGGER="${NO_TRIGGER:+$NO_TRIGGER,}$f_id"
+      ;;
+  esac
+
   if [ "$conf" = "LOW" ]; then
     if [ "$MODE" = "self" ]; then
       UNRESOLVED="${UNRESOLVED:+$UNRESOLVED,}$f_id"
@@ -352,8 +403,9 @@ fi
 
 if [ -n "$UNRESOLVED" ]; then
   echo "ROWS_READ=$ROWS_READ"
+  echo "NO_TRIGGER=$NO_TRIGGER"
   echo "UNRESOLVED_LOW=$UNRESOLVED"
-  echo "$PROG: LOW-confidence findings on the author's own pull request are unresolved: $UNRESOLVED — confirm each (fix it, re-record HIGH), refute it (record dropped-finding), or escalate it (re-record MEDIUM) before routing" >&2
+  echo "$PROG: LOW-confidence findings on the author's own pull request are unresolved: $UNRESOLVED — confirm each (fix it, re-record HIGH), refute it (record dropped-finding), or escalate it (re-record MEDIUM) before routing; one listed in NO_TRIGGER gets a trigger or is dropped as no-trigger" >&2
   exit 3
 fi
 
@@ -382,6 +434,9 @@ echo "NEEDS_INVESTIGATION=$NEEDS"
 echo "NEEDS_INVESTIGATION_PRIORITIES=$NEEDS_PRIORITIES"
 echo "DECISION=$DECISION"
 echo "MARKER_ROWS=$MARKER"
+echo "NOT_COUNTED=$NOT_COUNTED"
+echo "NOT_COUNTED_PRIORITIES=$NOT_COUNTED_PRIORITIES"
+echo "NO_TRIGGER=$NO_TRIGGER"
 if [ "$S1_DEMOTED_SET" = 1 ]; then
   echo "S1_DEMOTED_APPLIED=$S1_APPLIED"
   echo "S1_KEPT_P1=$S1_KEPT"

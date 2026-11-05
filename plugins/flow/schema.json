@@ -580,7 +580,7 @@
       "type": "integer",
       "default": 10,
       "minimum": 1,
-      "description": "Maximum fix-forward iterations on self-review or holdout-validation findings. Defaults to 10 because the ceiling is a safety net, not a budget \u2014 convergence means zero findings, not exhausted budget. See skills/llm-operator-principles/SKILL.md."
+      "description": "Maximum fix-forward iterations on self-review or holdout-validation findings. Defaults to 10 because the ceiling is a safety net, not a budget \u2014 convergence means no counted P1 or P2 left, not zero findings and not exhausted budget. See skills/llm-operator-principles/SKILL.md."
     },
     "autonomous": {
       "type": "boolean",

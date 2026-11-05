@@ -179,7 +179,7 @@ _fc_route() {
     { print }
   ' "$FC_TMP/route-block.sh" > "$FC_TMP/route-run.sh"
   ROUTE_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
-    REVIEW_MODE="$1" PR_NUM=7 FINDING_TOTAL="${FC_ROUTE_TOTAL-$(grep -c . "$FC_TMP/rows.in")}" \
+    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE-1}" FINDING_TOTAL="${FC_ROUTE_TOTAL-$(grep -c . "$FC_TMP/rows.in")}" \
     "${FC_SHELL:-bash}" "$FC_TMP/route-run.sh" 2>"$FC_TMP/route.err")
   ROUTE_CODE=$?
   ROUTE_ERR=$(cat "$FC_TMP/route.err")
@@ -194,7 +194,7 @@ _fc_post() {
   rm -f "$FC_TMP/gh.log" "$FC_TMP/gh.body"
   POST_OUT=$(cd "$FC_TMP" && PATH="$FC_STUB:$PATH" CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" \
     GH_LOG="$FC_TMP/gh.log" GH_BODY="$FC_TMP/gh.body" \
-    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE:-2}" FINDING_ROWS_FILE="$FC_TMP/rows" \
+    REVIEW_MODE="$1" PR_NUM=7 CYCLE_NUMBER="${FC_CYCLE:-1}" FINDING_ROWS_FILE="$FC_TMP/rows" \
     REVIEW_RUN_PR_COMMANDS="${FC_RUN_PR:-yes}" STUB_REVIEW_EXIT="${FC_REVIEW_EXIT:-0}" \
     FINDING_TOTAL="$3" BODY_FILE="$FC_TMP/body.md" "${FC_SHELL:-bash}" "$FC_TMP/post-block.sh" 2>"$FC_TMP/post.err")
   POST_CODE=$?
@@ -203,8 +203,8 @@ _fc_post() {
   POSTED=$(cat "$FC_TMP/gh.body" 2>/dev/null)
 }
 
-FC_MIXED='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
-F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer'
+FC_MIXED='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer|a caller passes an empty list
+F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer|a caller passes an empty list'
 # A one-finding external body: the P3 bullet renders the counted finding.
 FC_P3_BODY='### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
 
@@ -234,7 +234,7 @@ assert_contains "DECISION=REQUEST_CHANGES" "$ROUTE_OUT" "prints the decision"
 assert_contains "FINDINGS_HEADER=P1: 0, P2: 1, P3: 0 · Needs investigation: 1" "$ROUTE_OUT" "prints the header the body must carry"
 _fc_route external '{one row per consolidated finding: ID|PRIORITY|category|location|CONFIDENCE|disposition|agent}'
 assert_exit 1 "$ROUTE_CODE" "a placeholder left unreplaced is rejected, not routed as a clean review"
-_fc_route self 'F1|P2|edge-case|src/e.sh:5|LOW|unchallenged|code-reviewer'
+_fc_route self 'F1|P2|edge-case|src/e.sh:5|LOW|unchallenged|code-reviewer|a caller passes an empty list'
 assert_exit 1 "$ROUTE_CODE" "self mode with a LOW row stops"
 assert_contains "return to step 5" "$ROUTE_ERR" "sends the reviewer back to step 5"
 
@@ -242,7 +242,7 @@ _flow_test_begin "risk: marker vs decision — the posted marker carries no LOW 
 assert_match '[^[:space:]]' "$(cat "$FC_TMP/post-block.sh")" "posting block extracted"
 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
 assert_exit 0 "$POST_CODE" "posted"
-assert_contains "<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P2|correctness|src/b.sh:4|open|HIGH|consensus] -->" "$POSTED" "marker holds F1 only"
+assert_contains "<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[F1|P2|correctness|src/b.sh:4|open|HIGH|consensus] -->" "$POSTED" "marker holds F1 only"
 assert_not_contains "F2|" "$POSTED" "no F2 marker row"
 assert_contains "--request-changes" "$GH_ARGS" "decision from the HIGH P2"
 assert_contains "--repo" "$GH_ARGS" "repository pinned"
@@ -263,7 +263,7 @@ assert_contains "F2" "$POST_ERR" "names the missing id"
 assert_equal "" "$GH_ARGS" "gh was not called"
 
 _flow_test_begin "risk: only-LOW decision — an external review whose only finding is LOW approves"
-_fc_post external 'F1|P1|security|src/d.sh:2|LOW|kept|security-reviewer' 1 '## Review: PR #7
+_fc_post external 'F1|P1|security|src/d.sh:2|LOW|kept|security-reviewer|a caller passes an empty list' 1 '## Review: PR #7
 
 ### Findings: P1: 0, P2: 0, P3: 0 · Needs investigation: 1
 
@@ -276,21 +276,21 @@ assert_not_contains "--request-changes" "$GH_ARGS" "does not request changes"
 assert_contains "FINDINGS:[] -->" "$POSTED" "empty marker"
 
 _flow_test_begin "posting block refuses unsafe or inconsistent input, and posts a plain comment"
-_fc_post self 'F1|P2|edge-case|src/e.sh:5|LOW|unchallenged|code-reviewer' 1 '## Self-Review Summary'
+_fc_post self 'F1|P2|edge-case|src/e.sh:5|LOW|unchallenged|code-reviewer|a caller passes an empty list' 1 '## Self-Review Summary'
 assert_exit 1 "$POST_CODE" "own PR with a LOW row refused"
 assert_contains "return to step 5" "$POST_ERR" "sends the reviewer back to step 5"
 assert_equal "" "$GH_ARGS" "gh not called for an unresolved LOW row"
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 2 "$FC_P3_BODY"
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 2 "$FC_P3_BODY"
 assert_exit 1 "$POST_CODE" "synthesized 2 findings but the rows file holds 1"
 assert_equal "" "$GH_ARGS" "gh not called on a count mismatch"
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "$FC_P3_BODY
 <!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[] -->"
 assert_exit 1 "$POST_CODE" "a body that already carries a marker is refused"
 assert_equal "" "$GH_ARGS" "gh not called when the body has a marker"
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "$FC_P3_BODY"
 assert_exit 0 "$POST_CODE" "a MEDIUM P3 posts: $POST_ERR"
 assert_contains "--comment" "$GH_ARGS" "as a comment"
-_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary'
+_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer|a caller passes an empty list' 1 '## Self-Review Summary'
 assert_exit 0 "$POST_CODE" "own PR with the finding re-recorded HIGH posts"
 assert_contains "--comment" "$GH_ARGS" "self-review is a comment"
 assert_contains "F1|P2|edge-case|src/e.sh:5|open|HIGH|unchallenged" "$POSTED" "7-field row"
@@ -303,29 +303,29 @@ assert_contains "CYCLE_NUMBER" "$(cat "$FC_TMP/post.err")" "names the missing va
 _flow_test_begin "a review of someone else's pull request says which checks did not run"
 # Nothing runs in that tree, so its tests, advisory audit and duplication scan
 # are skipped; an approval that does not say so reads as one that ran them.
-FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "$FC_P3_BODY"
 assert_exit 1 "$POST_CODE" "a body without the section is refused"
 assert_contains "Checks not run" "$POST_ERR" "and the refusal names the section"
 assert_equal "" "$GH_ARGS" "gh is not called"
-FC_RUN_PR='{REVIEW_RUN_PR_COMMANDS}' _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+FC_RUN_PR='{REVIEW_RUN_PR_COMMANDS}' _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "$FC_P3_BODY"
 assert_exit 1 "$POST_CODE" "an unfilled flag is refused the same way"
-FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "### Checks not run
 Tests, advisory audit, duplication scan: not run: someone else's pull request
 
 $FC_P3_BODY"
 assert_exit 0 "$POST_CODE" "with the section it posts: $POST_ERR"
-FC_RUN_PR=no _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary'
+FC_RUN_PR=no _fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer|a caller passes an empty list' 1 '## Self-Review Summary'
 assert_exit 0 "$POST_CODE" "a self-review is not held to it"
-FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "### Checks not run
 none
 
 $FC_P3_BODY"
 assert_exit 1 "$POST_CODE" "a section that says none is refused: every check did not run"
-FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "A finding mentions ### Checks not run and not run: someone else's pull request in its prose.
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "A finding mentions ### Checks not run and not run: someone else's pull request in its prose.
 
 $FC_P3_BODY"
 assert_exit 1 "$POST_CODE" "the phrase in prose is not the section"
-FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "### Checks not run
+FC_RUN_PR=no _fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "### Checks not run
 Tests, advisory audit, duplication scan: not run: someone else’s pull request
 
 $FC_P3_BODY"
@@ -340,7 +340,7 @@ if command -v zsh >/dev/null 2>&1; then
   assert_contains "FINDINGS_HEADER=P1: 0, P2: 1, P3: 0 · Needs investigation: 1" "$ROUTE_OUT" "zsh: header"
   _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
   assert_exit 0 "$POST_CODE" "zsh: posted"
-  assert_contains "<!-- FLOW_REVIEW_CYCLE:2 FINDINGS:[F1|P2|correctness|src/b.sh:4|open|HIGH|consensus] -->" "$POSTED" "zsh: marker holds F1 only"
+  assert_contains "<!-- FLOW_REVIEW_CYCLE:1 FINDINGS:[F1|P2|correctness|src/b.sh:4|open|HIGH|consensus] -->" "$POSTED" "zsh: marker holds F1 only"
   assert_contains "--request-changes" "$GH_ARGS" "zsh: decision"
   _fc_post external "$FC_MIXED" 2 "$NO_ENTRY_BODY"
   assert_exit 1 "$POST_CODE" "zsh: missing Needs investigation entry refused"
@@ -424,7 +424,7 @@ assert_equal "no" "$([ -f "$FC_TMP/no-reason/.decisions/issue-42.md" ] && echo y
 _flow_test_begin "/flow:pr applies the same LOW protocol and journals refuted findings"
 PR_MD="$PLUGIN_DIR/commands/pr.md"
 PR_PHASE3=$(awk '/^## Phase 3/ { f = 1 } /^## Phase 4/ { f = 0 } f' "$PR_MD")
-assert_equal "3" "$(grep -c 'confidence (HIGH, MEDIUM or LOW) per finding' <<<"$PR_PHASE3")" "code-reviewer, security-reviewer and error-handler-inspector prompts ask for confidence"
+assert_equal "3" "$(grep -c 'confidence (HIGH, MEDIUM or LOW) and a trigger per finding' <<<"$PR_PHASE3")" "code-reviewer, security-reviewer and error-handler-inspector prompts ask for confidence and a trigger"
 PR_STEP6=$(awk '/^6\. \*\*Display findings\*\*/ { f = 1; print; next } f && /^7\. \*\*/ { exit } f' "$PR_MD")
 assert_contains "fails on the current code" "$PR_STEP6" "confirmation rule"
 assert_contains 'the `refuted` list of step 13'"'"'s `DROPS_FILE`' "$PR_STEP6" "refuted findings are carried to the manifest step"
@@ -615,7 +615,7 @@ assert_contains "FINDINGS:[" "$POST_ERR" "names the marker syntax found"
 assert_equal "" "$GH_ARGS" "gh not called"
 # RESOLVED, ESCALATED and DISPUTED are read only from issue comments
 # (merge.md, status.md), never from a review body, so mentioning them posts.
-_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 '## Self-Review Summary
+_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer|a caller passes an empty list' 1 '## Self-Review Summary
 
 The resolution comment will carry RESOLVED:[F1] ESCALATED:[] DISPUTED:[].'
 assert_exit 0 "$POST_CODE" "a self-review body naming the resolution arrays posts"
@@ -714,7 +714,7 @@ assert_exit 1 "$?" "a record that fails before the last one is still an error"
 _flow_test_begin "posting: guards that nothing had pinned (round 7)"
 # The merge gate and /flow:status select review bodies on the bare token, so a
 # body quoting it is refused even with no FINDINGS:[ array beside it.
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
 
 Cycle 1 posted FLOW_REVIEW_CYCLE:1 with no findings.
 
@@ -762,9 +762,9 @@ assert_exit 0 "$POST_CODE" "and a successful one posts: $POST_ERR"
 _flow_test_begin "posting: two LOW findings are both checked (round 7)"
 # Every earlier fixture has exactly one LOW row, so the loop over the routed
 # LOW findings was never seen to iterate.
-FC_TWO_LOW='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
-F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer
-F3|P3|docs|a.md:2|LOW|kept|code-reviewer'
+FC_TWO_LOW='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer|a caller passes an empty list
+F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer|a caller passes an empty list
+F3|P3|docs|a.md:2|LOW|kept|code-reviewer|a caller passes an empty list'
 FC_TWO_LOW_BODY='## Review: PR #7
 
 ### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 2
@@ -797,7 +797,12 @@ for BAD_CYCLE in '{N} -->' 0 2a; do
   assert_exit 1 "$POST_CODE" "cycle '$BAD_CYCLE' refused"
   assert_equal "" "$GH_ARGS" "gh not called for cycle '$BAD_CYCLE'"
 done
-FC_CYCLE=11 _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY"
+# From cycle 3 only a P1 counts, so the accepted case routes one.
+FC_CYCLE=11 _fc_post external 'F9|P1|correctness|src/b.sh:4|HIGH|consensus|code-reviewer|a caller passes an empty list' 1 '## Review: PR #7
+
+### Findings: P1: 1, P2: 0, P3: 0 · Needs investigation: 0
+
+| **F9 · correctness · `src/b.sh:4`**<br>Breaks. _(HIGH · consensus)_ | Fix. |'
 assert_exit 0 "$POST_CODE" "cycle 11 accepted"
 assert_contains "FLOW_REVIEW_CYCLE:11 FINDINGS:[" "$POSTED" "marker carries cycle 11"
 
@@ -874,9 +879,9 @@ _fc_post external "$FC_MIXED" 2 "$FC_MIXED_BODY
 assert_exit 1 "$POST_CODE" "a LOW id rendered twice is refused"
 # F21 is not F2: an id that extends another id is not a second rendering.
 F21_BODY=$(awk '/^\| \*\*F1 · / { print; print "| **F21 · docs · `a.md:3`**<br>Stale link. _(HIGH · consensus)_ | Update it. |"; next } { print }' <<<"${FC_MIXED_BODY/P2: 1, P3: 0/P2: 2, P3: 0}")
-_fc_post external "F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
-F21|P2|docs|a.md:3|HIGH|consensus|code-reviewer
-F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer" 3 "$F21_BODY"
+_fc_post external "F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer|a caller passes an empty list
+F21|P2|docs|a.md:3|HIGH|consensus|code-reviewer|a caller passes an empty list
+F2|P1|correctness|src/c.sh:9|LOW|kept|code-reviewer|a caller passes an empty list" 3 "$F21_BODY"
 assert_exit 0 "$POST_CODE" "F21 beside a LOW F2 posts: $POST_ERR"
 
 _flow_test_begin "posting: a LOW finding filed under a priority heading is refused (round 4)"
@@ -948,7 +953,7 @@ _fc_post external "$FC_MIXED" 2 "$DUP_BODY"
 assert_exit 1 "$POST_CODE" "a counted finding rendered twice is refused"
 assert_contains "at line(s) $DUP_LINES" "$POST_ERR" "the message names both lines, so the reviewer knows which to reword"
 # The counted finding rendered as a P3 bullet, in the template's shape, posts.
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY"
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "$FC_P3_BODY"
 assert_exit 0 "$POST_CODE" "a P3 bullet carrying the id posts: $POST_ERR"
 
 _flow_test_begin "posting: the Needs investigation section has an end as well as a start (round 5)"
@@ -991,7 +996,7 @@ assert_contains "--request-changes" "$GH_ARGS" "posted"
 
 # Two headings, with or without LOW findings: which one bounds the section is
 # not readable, so nothing is posted.
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 "$FC_P3_BODY
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 "$FC_P3_BODY
 
 #### Needs investigation
 (none)
@@ -1014,7 +1019,7 @@ assert_exit 1 "$POST_CODE" "a counted finding on the last line of the section is
 assert_contains "F1" "$POST_ERR" "names the counted id"
 assert_equal "" "$GH_ARGS" "gh not called"
 # The section is bounded whether or not the review has LOW findings.
-_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
+_fc_post external 'F1|P3|docs|a.md:1|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list' 1 '### Findings: P1: 0, P2: 0, P3: 1 · Needs investigation: 0
 
 #### Needs investigation
 - **F1 · docs · `a.md:1`** — Stale link. _(MEDIUM · unchallenged)_'
@@ -1040,8 +1045,8 @@ assert_exit 0 "$POST_CODE" "a counted finding below the closing heading posts: $
 assert_contains "--request-changes" "$GH_ARGS" "posted"
 
 _flow_test_begin "posting: every counted finding is checked, not only the first (round 5)"
-FC_TWO_COUNTED='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer
-F3|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer'
+FC_TWO_COUNTED='F1|P2|correctness|src/b.sh:4|HIGH|consensus|code-reviewer|a caller passes an empty list
+F3|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list'
 FC_TWO_COUNTED_BODY='## Review: PR #7
 
 ### Findings: P1: 0, P2: 1, P3: 1 · Needs investigation: 0
@@ -1168,9 +1173,9 @@ assert_contains "RES_EXIT=0" "$RES_OUT" "and reports it"
 assert_equal "pr comment" "$(head -2 <<<"$RES_GH" | tr '\n' ' ' | sed 's/ $//')" "posted as an issue comment"
 
 _flow_test_begin "routing and posting print the counted total for the review-cycle manifest"
-_fc_route external 'F1|P1|security|src/a.sh:1|HIGH|consensus|security-reviewer
-F2|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer
-F3|P2|correctness|src/c.sh:9|LOW|kept|code-reviewer'
+_fc_route external 'F1|P1|security|src/a.sh:1|HIGH|consensus|security-reviewer|a caller passes an empty list
+F2|P3|docs|a.md:2|MEDIUM|unchallenged|code-reviewer|a caller passes an empty list
+F3|P2|correctness|src/c.sh:9|LOW|kept|code-reviewer|a caller passes an empty list'
 assert_equal "ROUTED_TOTAL=2" "$(grep '^ROUTED_TOTAL=' <<<"$ROUTE_OUT")" "P1 + P3 counted, the LOW P2 not (hand count: 2)"
 assert_equal "" "$(grep '^COUNT_TOTAL=' <<<"$ROUTE_OUT")" "the routing block does not print the value the manifest reads as proof the review posted"
 _fc_route external "$FC_MIXED"
@@ -1587,10 +1592,10 @@ awk '
   { print }
 ' "$TEMPLATES/self-review-comment.md" > "$FC_TMP/rendered-self-review.md"
 assert_contains "Self-Review Summary" "$(cat "$FC_TMP/rendered-self-review.md")" "rendered the self-review template"
-_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer' 1 "$(cat "$FC_TMP/rendered-self-review.md")"
+_fc_post self 'F1|P2|edge-case|src/e.sh:5|HIGH|unchallenged|code-reviewer|a caller passes an empty list' 1 "$(cat "$FC_TMP/rendered-self-review.md")"
 assert_exit 0 "$POST_CODE" "the rendered self-review template posts: $POST_ERR"
 assert_contains "--comment" "$GH_ARGS" "self-review posts as a comment"
-assert_equal "1" "$(grep -c 'FLOW_REVIEW_CYCLE:2 FINDINGS:\[' <<<"$POSTED")" "exactly one marker in the posted body"
+assert_equal "1" "$(grep -c 'FLOW_REVIEW_CYCLE:1 FINDINGS:\[' <<<"$POSTED")" "exactly one marker in the posted body"
 
 _flow_test_begin "real template: a body rendered from review-comment.md posts through the block"
 awk '
@@ -1607,4 +1612,4 @@ assert_contains "### Findings: P1: 0, P2: 1, P3: 0 · Needs investigation: 1" "$
 _fc_post external "$FC_MIXED" 2 "$(cat "$FC_TMP/rendered-review.md")"
 assert_exit 0 "$POST_CODE" "the rendered template posts (its closing comment trips no guard): $POST_ERR"
 assert_contains "--request-changes" "$GH_ARGS" "decision from the HIGH P2"
-assert_equal "1" "$(grep -c 'FLOW_REVIEW_CYCLE:2 FINDINGS:\[' <<<"$POSTED")" "exactly one marker in the posted body"
+assert_equal "1" "$(grep -c 'FLOW_REVIEW_CYCLE:1 FINDINGS:\[' <<<"$POSTED")" "exactly one marker in the posted body"
