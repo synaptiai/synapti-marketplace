@@ -324,12 +324,37 @@ For each commit group:
    - For Boy Scout cleanup changes, use `improve(<scope>): <summary>`
    - Scope: top-level directory or module
    - Subject: imperative, describes what and why
+   - Written from the staged change (`git diff --cached`), not from the plan or the task list: it says what this commit does. When the commit does part of a task, the body says what it leaves undone
    - If `$ARGUMENTS` provided, use as message (validate format first)
+   - Check it: write the message to a file made with `mktemp`, with the Write tool, after staging the group, and run the block with `DESC_FILE=<that path>` and `DESC_STAGED=1`. Correct every `MISMATCH` and `STALE_PATH` line before committing, and commit with `git commit -F <that path>`
+
+   ```bash
+   # DESCRIPTION_CHECK_BLOCK_BEGIN
+   # DESC_FILE names the description the session wrote with the Write tool.
+   # DESC_BASE is the ref the change is compared against (the pull request's
+   # base), with DESC_HEAD (default HEAD) the change's head; or DESC_STAGED=1
+   # checks a commit message against the staged change. The text is read as
+   # data by the helper, never run.
+   printf '%s\n' "### Description check"
+   if [ -z "${DESC_FILE:-}" ]; then
+     printf '%s\n' "STATE=unavailable" "REASON=DESC_FILE is not set"
+     exit 0
+   fi
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+   if [ "${DESC_STAGED:-}" = 1 ]; then
+     "$FLOW_ROOT/bin/flow-description-check.sh" --body "$DESC_FILE" --staged
+   elif [ -n "${DESC_BASE:-}" ]; then
+     "$FLOW_ROOT/bin/flow-description-check.sh" --body "$DESC_FILE" --base "$DESC_BASE" --head "${DESC_HEAD:-HEAD}"
+   else
+     printf '%s\n' "STATE=unavailable" "REASON=set DESC_BASE, or DESC_STAGED=1 for a commit message"
+   fi
+   # DESCRIPTION_CHECK_BLOCK_END
+   ```
 
 2. **Stage and commit** (Tier 1 — autonomous):
    ```bash
    git add <specific-files>
-   git commit -m "<type>(<scope>): <subject>"
+   git commit -F <the checked message file>
    ```
 
 3. **Verify** — the `log-commits.sh` PostToolUse hook writes a breadcrumb for the commit to the git-ignored auto-log trail (`<journal dir>/auto-log/`); it does not write to the decision journal.
@@ -349,6 +374,10 @@ Display:
 - **All out-of-context**: Warn and require explicit confirmation
 - **Mixed types**: Create separate commits per type (feat + test)
 
+## Final reply
+
+End with what was done, what was verified and how (the command and what it printed, or the `file:line`), and what was not done or not verified. Every claim in it is one the work supports: a count is the one a command printed, "tests pass" names the run, and a step that was skipped is said to be skipped (`references/command-output-format.md` § Final reply).
+
 ## Tier Classification
 
 | Action | Tier | Behavior |
@@ -357,4 +386,4 @@ Display:
 | Classify changes via `change-classification` skill | 1 | Autonomous |
 | `AskUserQuestion` for uncertain/out-of-context files | n/a | User-driven escalation per `references/escalation-format.md` |
 | `git add <specific-files>` (per-group atomic staging) | 1 | Autonomous |
-| `git commit -m "<conventional-message>"` | 1 | Autonomous, logged by `log-commits.sh` PostToolUse hook |
+| `git commit -F <checked-message-file>` | 1 | Autonomous, logged by `log-commits.sh` PostToolUse hook |

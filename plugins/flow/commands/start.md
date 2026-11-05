@@ -1148,6 +1148,10 @@ Present next steps:
 - `/flow:commit` — if uncommitted changes remain
 - Continue working — keep implementing
 
+## Final reply
+
+End with what was done, what was verified and how (the command and what it printed, or the `file:line`), and what was not done or not verified. Every claim in it is one the work supports: a count is the one a command printed, "tests pass" names the run, and a step that was skipped is said to be skipped (`references/command-output-format.md` § Final reply).
+
 ## Tier Classification
 
 | Action | Tier | Behavior |

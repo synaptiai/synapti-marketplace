@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+What flow publishes describes the final change, and its checkable claims are
+checked first (#328). A pull request body was written once, when the pull
+request was opened, and only its review-cycle history changed after that;
+reviewers on #250, #251 and #307 filed findings such as "the PR body described
+an older head" and "102 lookups; there are 103".
+
+### Added
+
+- `bin/flow-description-check.sh` checks the claims in a pull request body or
+  commit message that a script can decide, against the change: every row of a
+  files-changed table (area as a path prefix, or Total) and every "N files
+  changed", against `git diff <base>...<head>` or the staged change, and every
+  backticked path with a `/`, and the line it names, against the tree the
+  change produces. A file the change deletes may be named; placeholders,
+  globs and URLs are skipped. It prints `STATE=ok|stale|unavailable` with one
+  `MISMATCH` or `STALE_PATH` line per claim that differs, and a check that
+  cannot run never reads as ok.
+- `DESCRIPTION_CHECK_BLOCK`, the same block in `/flow:pr`, `/flow:address`,
+  `/flow:merge` and `/flow:commit`, runs it. `/flow:pr` checks the body before
+  it is pushed and opened, `/flow:merge` checks the body against what will
+  merge before it asks, and `/flow:commit` checks each message against the
+  staged group and commits with `git commit -F`. Every `MISMATCH` and
+  `STALE_PATH` is corrected or removed before the text is published.
+- `holdout-validation` takes an optional `Description` input, so the claims
+  a script cannot check (what the change does) are cross-referenced against
+  the files like a self-review claim.
+
+### Changed
+
+- `/flow:address` step 10 rewrites the Summary, Changes, Comprehension Report
+  and Files Changed sections from the branch's current diff and the decision
+  journal every cycle, not only the review-cycle history, and checks the body
+  before it updates the pull request.
+- A pull request body and a commit message are written from the final diff
+  or the staged change, not the plan; a Summary says what the issue asked for
+  that the pull request does not do, and a partial commit's body says what it
+  leaves undone. An issue's Current State names where each number came from.
+- `/flow:start`, `/flow:pr`, `/flow:review`, `/flow:address`, `/flow:merge`
+  and `/flow:commit` end with a final reply that says what was done, what was
+  verified and how, and what was not (`references/command-output-format.md`
+  § Final reply).
+
 ## 3.13.0 (2026-11-01)
 
 flow's documentation describes the plugin as it behaves at this release: an

@@ -10,13 +10,14 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: the holdout set stays hidden; scenario IDs only, never names or descriptions. Invoked by `/flow:start` Phase 4 VERIFY step 4, `/flow:address` Phase 4 step 3, `/flow:pr` Phase 3, and `/flow:review` Phase 3 fan-out (twice in Path A, once in Path B) with self-review findings, an evidence bundle draft, and a file list. Returns `Holdout validation: PASS` or `FINDINGS` with P1/P2/P3 rows citing `file:line`, mapped to visible acceptance criteria, consumed by verdict-judge. Permitted skips: none; with a missing input, evaluate what is available and note the gap, halting only when no file list is given.
+Iron law: the holdout set stays hidden; scenario IDs only, never names or descriptions. Invoked by `/flow:start` Phase 4 VERIFY step 4, `/flow:address` Phase 4 step 3, `/flow:pr` Phase 3, and `/flow:review` Phase 3 fan-out with self-review findings, an evidence bundle draft, and a file list. Returns `Holdout validation: PASS` or `FINDINGS` with P1/P2/P3 rows citing `file:line`, mapped to visible acceptance criteria, consumed by verdict-judge. Permitted skips: none; with a missing input, evaluate what is available and note the gap, halting only when no file list is given.
 
 ## Inputs
 
 1. **Self-review findings**: the code-reviewer's P1/P2/P3 findings
 2. **Evidence bundle draft**: per-criterion evidence, including `### Test inputs and expected values` and `### Risk map coverage`
 3. **File list**: every file modified or created on the branch
+4. **Description** (optional): a body or commit message about to be published; its claims join step 2.
 
 Schema: `schemas/holdout-validation/input-schema.json`.
 
@@ -66,7 +67,7 @@ Blocking: {Yes — P1/P2 present | No — P3 only}
 
 - Claims without file evidence are findings; trust files over narrative; judge the work, not the agent.
 - Scenario IDs only, in findings, conversation, and every artifact.
-- Every finding cites `file:line` and maps to a visible criterion only; "test does not cover timeout" beats "coverage is weak".
+- Every finding cites `file:line` and maps to a visible criterion only.
 
 ## Path A and Path B
 

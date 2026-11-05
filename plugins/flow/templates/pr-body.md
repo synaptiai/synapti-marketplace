@@ -9,7 +9,7 @@ anchor downstream deferral. See `skills/llm-operator-principles/SKILL.md`.
 
 ## Summary
 
-{2-3 sentence description of what changed and why}
+{2-3 sentence description of what changed and why, written from the branch's final diff, not the plan. When the issue asked for something this pull request does not do, one sentence says what and why.}
 
 Closes #{issue_number}
 

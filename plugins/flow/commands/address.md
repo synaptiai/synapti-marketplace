@@ -1356,10 +1356,36 @@ true
    false-block this emission exists to prevent. commands/review.md's emitter says the same.
 
    - TaskUpdate(postCommentTaskId, status: "completed", result: "PASS — resolution comment posted to PR")
-10. **Update PR body review cycle state** (if `### Review Cycle History` exists in the PR body):
+10. **Update the PR body** so it describes the branch as it is after this cycle, not as it was when the pull request was opened:
    - Fetch the current body: run the block below with `PR_NUM=<n>` and no `BODY_FILE`; it prints the body.
+   - Rewrite `## Summary`, `## Changes`, `## Comprehension Report` (with its Key Decisions and Requirements Adherence) and `## Files Changed` from the current branch diff against the pull request's base (`git diff <base>...HEAD`) and the decision journal, following `templates/pr-body.md`. Keep every other section as it is.
    - If the body contains `### Review Cycle History`, replace content between that heading and the next `##` heading with the cycle metrics table (received/fixed/discussed/escalated)
    - If the heading does not exist, append a `### Review Cycle History` section under `## Review Findings`
+   - Check it: write the updated body to a file made with `mktemp`, with the Write tool, and run `DESCRIPTION_CHECK_BLOCK` with `DESC_FILE=<that path>` and `DESC_BASE=<the base branch>`; correct or remove every `MISMATCH` and `STALE_PATH` line until it prints `STATE=ok` or `STATE=unavailable`.
+
+   ```bash
+   # DESCRIPTION_CHECK_BLOCK_BEGIN
+   # DESC_FILE names the description the session wrote with the Write tool.
+   # DESC_BASE is the ref the change is compared against (the pull request's
+   # base), with DESC_HEAD (default HEAD) the change's head; or DESC_STAGED=1
+   # checks a commit message against the staged change. The text is read as
+   # data by the helper, never run.
+   printf '%s\n' "### Description check"
+   if [ -z "${DESC_FILE:-}" ]; then
+     printf '%s\n' "STATE=unavailable" "REASON=DESC_FILE is not set"
+     exit 0
+   fi
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+   if [ "${DESC_STAGED:-}" = 1 ]; then
+     "$FLOW_ROOT/bin/flow-description-check.sh" --body "$DESC_FILE" --staged
+   elif [ -n "${DESC_BASE:-}" ]; then
+     "$FLOW_ROOT/bin/flow-description-check.sh" --body "$DESC_FILE" --base "$DESC_BASE" --head "${DESC_HEAD:-HEAD}"
+   else
+     printf '%s\n' "STATE=unavailable" "REASON=set DESC_BASE, or DESC_STAGED=1 for a commit message"
+   fi
+   # DESCRIPTION_CHECK_BLOCK_END
+   ```
+
    - Update: run `mktemp` and note the path it prints, write the whole updated body to that path with the Write tool, and run the block with `PR_NUM=<n> BODY_FILE=<the path>`, followed in the same call by `rm -f <the path>`. The body quotes reviewer text, so it never goes in a shell command.
 
    ```bash
@@ -1423,6 +1449,10 @@ Display summary: fixes applied, Boy Scout improvements, questions answered, push
 With `S1_STILL_APPLIES=on`, the summary also lists each comment found already addressed, with its `CHECKED` value and confidence, and counts the inline comments System One answered, those it gave no answer for (by reason, timeouts named), and those it skipped. With `S1_CATEGORY=on`, it also lists each item raised, and from which category.
 
 **FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): once all findings are resolved and the resolution comment is posted, invoke `Skill(run-state-management)` to transition the FlowRun to `state.status: completed`. The `workflow-run` journal artifact is best-effort because address is PR-scoped: emit `bin/journal-record.sh --type workflow-run` only if a single issue can be inferred from the PR (e.g., the PR closes exactly one issue); otherwise the `run.yaml` is the durable record. If feedback resolution fails or is cancelled, transition to `state.status: cancelled` (with `blocked_reason`) instead so `/flow:resume` does not treat it as resumable.
+
+## Final reply
+
+End with what was done, what was verified and how (the command and what it printed, or the `file:line`), and what was not done or not verified. Every claim in it is one the work supports: a count is the one a command printed, "tests pass" names the run, and a step that was skipped is said to be skipped (`references/command-output-format.md` § Final reply).
 
 ## Tier Classification
 
