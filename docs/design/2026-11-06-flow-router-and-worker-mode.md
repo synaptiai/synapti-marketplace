@@ -4,6 +4,7 @@
 **Status**: Proposed (decisions taken by the maintainer on 2026-11-06; nothing built)
 **Scope**: `plugins/flow` and a new router layer that serves several repositories
 **Layout**: the decision-record layout of `plugins/flow/references/architecture-decision-record.md`
+**Alternative**: `2026-11-06-flow-harness.md` puts the router in a separate harness built on the Claude Agent SDK. Both records are kept so they can be compared; Phase 1 below applies to both.
 
 ## Summary
 
