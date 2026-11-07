@@ -10,8 +10,9 @@
 #               decision or a permission, are still asked.
 #
 # Read by the preflight of /flow:start, /flow:pr, /flow:address, /flow:review,
-# /flow:commit and /flow:resolve (ASK_POLICY=...) and by the PreToolUse hook
-# on AskUserQuestion (hooks/scripts/ask-policy.sh), so both read one rule.
+# /flow:commit, /flow:resolve, /flow:merge, /flow:setup, /flow:goal and
+# /flow:resume (ASK_POLICY=...) and by the PreToolUse hook on AskUserQuestion
+# (hooks/scripts/ask-policy.sh), so both read one rule.
 #
 # Usage: flow-ask-policy.sh
 # Output: attended | autonomous, one line

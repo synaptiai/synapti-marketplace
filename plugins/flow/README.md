@@ -273,6 +273,7 @@ HOOKS (20 scripts; 18 registered in hooks/hooks.json, the other two run from flo
 BIN/ HELPER SCRIPTS (most print usage with --help)
   Settings and skills
   ├── cascade-resolve.sh    — reads one setting through the settings cascade (see Configuration)
+  ├── flow-ask-policy.sh    — prints the ask policy, attended or autonomous (`autonomous` in the settings cascade); read by the command preflights and the ask-policy hook
   ├── flow-migrate-settings.sh — upgrades a settings file that still uses a deprecated key (dry-run unless --apply); by default the project file at the repository top
   ├── flow-load-skills.sh   — inlines a command's Required Skills (ambient bodies, dispatched contracts)
   ├── flow-skill-manifests.sh — regenerates the tables in references/skill-manifests.md (--write)
