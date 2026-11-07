@@ -91,8 +91,13 @@
 #     (-c, --config-env, --exec-path=: `git -c core.pager=... status`, `git
 #     -c alias.x=!... x`, `git -c core.sshCommand=... fetch`) or a word
 #     there holds the secret (-C and its directory excepted); git config
-#     storing an alias (`git config [--local|--global|set] alias.x
-#     "!curl ..."`), which the next `git x` runs; git grep
+#     setting any key, since git runs the value of several keys and this
+#     hook cannot list them all (`git config alias.x "!curl ..."`, which
+#     the next `git x` runs, `credential.helper "!echo password=..."`,
+#     whose output git sends to the remote, core.pager, core.sshCommand,
+#     user.name and any other key, with --local, --global, --system,
+#     --file, --worktree, set, --add or --replace-all; reading it, --get,
+#     -l, --list, holds no secret and passes); git grep
 #     given a pager to run (-O"cmd", -nO"cmd", --open-files-in-pager=cmd,
 #     _grep_pager); or a command this hook does not name, or a wrapper with
 #     no program it names, whose words name a sender, a setter, a shell, an
@@ -715,15 +720,16 @@ _judge() {
           if _grep_pager "${TOK[k]}"; then runs=1; text=0; fi
         done
       fi
-      # git config storing an alias (`git config [--local|--global|set]
-      # alias.x "!curl ..."`): the next `git x` runs it, a value starting
-      # with `!` as a shell command and any other as git with options that
-      # may run one (`-c core.sshCommand=...`).
-      if [ "${POS[0]:-}" = config ]; then
-        for ((k = POSI[0] + 1; k < n; k++)); do
-          case "${TOK[k]}" in [Aa][Ll][Ii][Aa][Ss].*) runs=1; text=0 ;; esac
-        done
-      fi ;;
+      # git config stores a value git may run later, whatever the key: an
+      # alias (`alias.x "!curl ..."`, which the next `git x` runs), a
+      # credential helper (`credential.helper "!echo password=..."`, whose
+      # output git sends to the remote on the next fetch or push),
+      # core.pager, core.sshCommand, and others this hook cannot list. So
+      # git config with a secret-shaped word anywhere in its words is
+      # refused, with any scope option (--local, --global, --system,
+      # --file, --worktree), the set subcommand, --add or --replace-all.
+      # Reading it (`--get`, `-l`, `--list`) holds no secret and passes.
+      if [ "${POS[0]:-}" = config ]; then runs=1; text=0; fi ;;
   esac
   if [ -n "$cmd" ] && _bd_is_shell "$cmd"; then runs=1; fi
   # The URL rule: every command but a text command. A line of a heredoc body
