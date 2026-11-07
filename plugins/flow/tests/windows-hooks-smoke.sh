@@ -316,7 +316,7 @@ if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&
     cp "$PLUGIN_ROOT/tests/fixtures/evidence/valid.yaml" "$HWORK/evidence.yaml"
     printf '%s\n' '{"verdict":"not_achieved","confidence":0.5,"delta":"unchanged","reason":"smoke","next_step_hint":"none","source":"command"}' > "$HWORK/verdict.json"
     B="$PLUGIN_ROOT/bin"
-    _helper "flow-goal-record.sh creates a goal from an absolute path" '[ -f .flow/goals/issue-42.goal.yaml ]' -- \
+    _helper "flow-goal-record.sh creates a goal from an absolute path and records its trust" '[ -f .flow/goals/issue-42.goal.yaml ] && case "$HOUT" in *"trust ledger record failed"*) false ;; *) true ;; esac' -- \
       "$B/flow-goal-record.sh" --create --goal-file "$HWORK/goal.yaml"
     _helper "flow-active-goal.sh finds it" '[ "$HOUT" = issue-42 ]' -- \
       "$B/flow-active-goal.sh" --id --branch-strict

@@ -136,6 +136,10 @@ fi
 
 # All diagnostics go to stderr; python3 also records a created goal in the
 # trust ledger, so that its note is printed the same way.
+# The bash this script runs under, which runs the trust ledger script: a
+# native Windows python3 looks a bare `bash` up in System32 before PATH, where
+# WSL's bash.exe can sit, so it is handed the path, as python3 reads it.
+FLOW_RECORD_BASH=$(py_path "${BASH:-bash}"); export FLOW_RECORD_BASH
 python3 - "$SCRIPT_DIR" "$@" <<'PYTHON'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
@@ -463,7 +467,7 @@ if mode == "create":
     trust = os.path.join(script_dir, "flow-goal-trust.sh")
     try:
         ledger = subprocess.run(
-            ["bash", trust, "record", "--goal-file", target],
+            [os.environ.get("FLOW_RECORD_BASH") or "bash", trust, "record", "--goal-file", target],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace",
         )
         problem = None if ledger.returncode == 0 else shown(ledger.stderr.strip())
