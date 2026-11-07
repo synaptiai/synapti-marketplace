@@ -22,6 +22,9 @@
 #   Q9 /flow:status does not list open questions, or lists answered ones
 #   Q10 /flow:resume does not show the open question of the run it resumes,
 #      or shows another run's
+#   Q11 a question added from a subdirectory (packages/app) is stored under
+#      packages/app/.flow, so list, /flow:status and /flow:resume at the
+#      repository top do not see it
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -213,4 +216,30 @@ BYISSUE=$(_id)
 e2e_run_block RUN_ID=2026-11-07T00-00-00Z-c GOAL_ID=issue-343 commands/resume.md RESUME_QUESTIONS_BLOCK
 e2e_expect_line "STATE=open"
 e2e_expect_out "QUESTION=$BYISSUE"
+e2e_expect_clean_edges
+
+# --- a subdirectory (Q11) -----------------------------------------------------
+# _in_app <script under the plugin> [arguments] — run it in packages/app.
+_in_app() {
+  mkdir -p "$E2E_REPO/packages/app"
+  printf 'code: %s (run in packages/app)\narguments: %s\n' "$1" "${*:2}" | _e2e_art
+  _e2e_exec sh -c 'cd packages/app && s=$1 && shift && exec "$CLAUDE_PLUGIN_ROOT/$s" "$@"' sh "$@"
+  printf -- '--- expectations\n' | _e2e_art
+}
+_q_case q-subdir "a question added in packages/app is stored at the repository top, listed there, and answered from packages/app (Q11)"
+_in_app "$Q" add --situation "Two API versions fit" --tried "Read both changelogs" \
+  --option "Target v2 (Recommended)" --option "Target v1" \
+  --recommendation "v2 is the supported one" --blocking yes --risk "v1 is deprecated" \
+  --command "/flow:start Phase 1" --issue 344
+e2e_expect_equal 0 "$E2E_RC" "add exit status in packages/app"
+QID=$(_id)
+e2e_expect_equal yes "$([ -f "$E2E_REPO/.flow/questions/$QID.yaml" ] && echo yes || echo no)" "the record at the top"
+e2e_expect_equal no "$([ -e "$E2E_REPO/packages/app/.flow" ] && echo yes || echo no)" "a .flow in packages/app"
+e2e_run_bin "$Q" list
+e2e_expect_line "$QID|open|yes|344|-|/flow:start Phase 1|Two API versions fit"
+e2e_run_block commands/status.md OPEN_QUESTIONS_BLOCK
+e2e_expect_out "QUESTION=$QID|open|yes|344"
+_in_app "$Q" answer "$QID" --choice 1
+e2e_expect_equal 0 "$E2E_RC" "answer exit status in packages/app"
+e2e_expect_equal answered "$(_field "$QID" status)" "the record's status at the top"
 e2e_expect_clean_edges

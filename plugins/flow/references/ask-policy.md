@@ -5,9 +5,9 @@ Flow asks a person with `AskUserQuestion` at the points its commands and skills 
 | Policy | Set by | Questions asked |
 |---|---|---|
 | `attended` | the default (`autonomous: false`) | every question |
-| `autonomous` | `autonomous: true` in any settings file (`bin/cascade-resolve.sh`) | decisions and permissions only; a default is taken, recorded and reported |
+| `autonomous` | `autonomous: true` from the settings cascade (`bin/cascade-resolve.sh`: the highest-precedence file that sets it; a project `false` overrides a user `true`) | decisions and permissions only; a default is taken, recorded and reported |
 
-`bin/flow-ask-policy.sh` prints the policy. The preflight of `/flow:start`, `/flow:pr`, `/flow:address`, `/flow:review`, `/flow:commit` and `/flow:resolve` prints it as `ASK_POLICY=attended` or `ASK_POLICY=autonomous`, and `hooks/scripts/ask-policy.sh` enforces it.
+`bin/flow-ask-policy.sh` prints the policy. The preflight of the six pipeline commands, `/flow:start`, `/flow:pr`, `/flow:address`, `/flow:review`, `/flow:commit` and `/flow:resolve`, and of `/flow:merge`, `/flow:setup`, `/flow:goal` and `/flow:resume`, prints it as `ASK_POLICY=attended` or `ASK_POLICY=autonomous`, and `hooks/scripts/ask-policy.sh` enforces it.
 
 ## Question classes
 
@@ -19,7 +19,7 @@ Every place in `commands/` and `skills/` that tells the agent to use `AskUserQue
 | `[ask: permission]` | a Tier 3 action (merge, release, a tag push, deleting a trigger, a terminal goal transition, creating rulesets), or a skip outside the runtime-verification list (a required visual or runtime check that cannot run) | asks in both policies, with `metadata: {"source": "flow:permission"}` |
 | `[ask: default]` | a question whose answer the agent can take: which uncommitted files to include, whether to fix a closed-loop failure now, whether to go on above a conflict-count limit, whether to apply a settings migration | `attended`: asks (no metadata needed). `autonomous`: takes the recommended option, records it, and says so in the summary |
 
-`metadata` is a field of the `AskUserQuestion` tool input; the person does not see it. Every `[ask: decision]` and `[ask: permission]` place names the source to pass: the six pipeline commands in the paragraph after their preflight, which covers every place below it, and every other command and skill on the tagged line itself (`tests/e2e-ask-policy.test.sh` checks both). A place that named no source would be denied under `autonomous` as if it were a default.
+`metadata` is a field of the `AskUserQuestion` tool input; the person does not see it. Every `[ask: decision]` and `[ask: permission]` place names the source to pass: the six pipeline commands in the paragraph after their preflight, which covers every place below it, and every other command and skill on the tagged line itself (`tests/e2e-ask-policy.test.sh` checks both). `/flow:merge`, `/flow:setup`, `/flow:goal` and `/flow:resume` carry the same paragraph after their preflight and name the source on the tagged line as well. A place that named no source would be denied under `autonomous` as if it were a default.
 
 ## Recording a default that was taken
 

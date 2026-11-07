@@ -49,16 +49,23 @@
 #     secret-shaped query parameter (`?token=abcdefghij`) or a literal
 #     password in its userinfo (`https://user:abcdefghij@host`), given to
 #     any command but a text command (TEXTS below: echo, printf, cat, grep,
-#     sed and the like; git commit, log, show, diff, tag and notes; gh
-#     issue create, edit and comment, gh pr create, edit, comment and
+#     sed and the like; git commit, log, show, diff, tag, notes and grep;
+#     gh issue create, edit and comment, gh pr create, edit, comment and
 #     review, gh release create and edit), or assigned in command position:
 #     `git ls-remote URL`, `pip install --index-url URL` and `svn checkout
 #     URL` are refused, `echo URL >> README.md` and `git log --grep URL`
-#     are text. A line of a heredoc body that nothing on its line runs
-#     (`cat <<EOF > notes.md`, `git commit -F - <<EOF`) is not a command:
-#     it gets the URL rule only when its first word is a sender, a setter,
-#     git clone, fetch, pull, push, remote add or set-url, or submodule add,
-#     or a program a wrapper runs that this hook does not name (_body_line);
+#     are text. A heredoc body fed to cat, tee, echo, printf or gh on a
+#     line with no `>` or `|` (`cat <<EOF`, `tee .env <<EOF`) is removed by
+#     the parser and never judged. Any other body (`cat <<EOF > notes.md`,
+#     `git commit -F - <<EOF`) is kept, and each line of it is judged as a
+#     simple command. A line that nothing on its line runs (_body_line)
+#     gets the URL rule only when its first word is a sender, a setter, git
+#     clone, fetch, pull, push, remote add or set-url, or submodule add, or
+#     a program a wrapper runs that this hook does not name; the other rules
+#     above apply to it as to any command, so a secret-shaped assignment at
+#     its start (`cat <<EOF > .env` with an `API_TOKEN=...` line), a
+#     secret-shaped option word, or a secret-shaped word after a sender or
+#     a setter is refused;
 #   - a script given inline to python (`-c`), perl (`-e`, `-E`, also in a
 #     bundle such as `-ne` or `-pie`, and after `-i` and its attached backup
 #     extension, `-pi.bak -e`, `-i.pre -pe`), ruby (`-e`) or node (`-e`, `-p`,
@@ -72,7 +79,11 @@
 # Allowed: the same text as an argument of any other command: echo, printf,
 # grep, git commit -m, gh issue create --body, and so on. That is the policy
 # #241 asked to settle: text that names a secret-shaped assignment is not a
-# secret being passed.
+# secret being passed. So echo, printf or tee writing a secret-shaped word to
+# a file (`echo "API_TOKEN=..." > .env`, `printf ... >> .env`, `tee .env
+# <<< "API_TOKEN=..."`, `tee .env <<EOF`) is allowed too, which the
+# whole-line check refused before #241. A kept heredoc body line that is
+# the assignment itself (`cat <<EOF > .env`) is refused, as above.
 #
 # Not a general shell parser: a variable is not expanded, as in the
 # force-push guard. When the parser cannot be loaded or cannot split the

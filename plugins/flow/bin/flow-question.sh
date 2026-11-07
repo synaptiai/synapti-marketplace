@@ -33,7 +33,9 @@
 # today's session journal without it (bin/journal-record.sh).
 #
 # Records are <runtime dir>/questions/<id>.yaml (bin/flow-runtime-dir.sh,
-# default .flow), not committed: the directory carries a .gitignore of `*`,
+# default .flow) at the repository top, from whichever directory of the
+# repository this runs in (from_repo_top() in bin/_repo_dir.py, which the
+# goals use too), not committed: the directory carries a .gitignore of `*`,
 # written on first use. Writes take the directory's lock and go through
 # bin/_journal_atomic.py (O_NOFOLLOW, flock, temp file + rename + fsync), the
 # rules the decision journal follows; a new record is created exclusively, so
@@ -90,7 +92,7 @@ except ImportError:
 from _journal_atomic import (JournalAtomicError, TargetExists, acquire_lock, ensure_repo_dir,
                              write_yaml_file)
 from _flow_cli import open_regular
-from _repo_dir import runtime_dir
+from _repo_dir import from_repo_top, runtime_dir
 
 ARGS = sys.argv[2:]
 PLUGIN_BIN = sys.argv[1]
@@ -161,7 +163,10 @@ def run_id(opts):
     return v
 
 
-QDIR = os.path.join(runtime_dir(), "questions")
+# The runtime directory is relative to the repository top. A block run with
+# the working directory in a subdirectory (packages/app) still stores and
+# reads the top's questions, as the goals are read (from_repo_top()).
+QDIR = from_repo_top(os.path.join(runtime_dir(), "questions"))
 LOCK = os.path.join(QDIR, ".lock")
 RMW_LOCK = os.path.join(QDIR, ".update.lock")
 

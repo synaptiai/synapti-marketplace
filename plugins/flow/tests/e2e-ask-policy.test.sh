@@ -4,7 +4,8 @@
 #
 # The hook scenarios feed hooks/scripts/ask-policy.sh the PreToolUse payload
 # Claude Code sends for an AskUserQuestion call; the preflight scenarios run
-# ASK_POLICY_BLOCK from each pipeline command; the tag scan reads every place
+# ASK_POLICY_BLOCK from each pipeline command and from /flow:merge, /flow:setup,
+# /flow:goal and /flow:resume; the tag scan reads every place
 # in commands/ and skills/ that names AskUserQuestion. The artifact for each
 # scenario is written to $FLOW_E2E_ARTIFACT_DIR.
 #
@@ -18,7 +19,9 @@
 #   A5 the hook reads the settings of the directory it was started in, not
 #      the repository the session works in, so a session in a subdirectory
 #      is attended whatever the repository says
-#   A6 a pipeline preflight does not print the policy, or prints the wrong one
+#   A6 a pipeline preflight, or the preflight of /flow:merge, /flow:setup,
+#      /flow:goal or /flow:resume, does not print the policy, or prints the
+#      wrong one
 #   A7 a place in commands/ or skills/ that tells the agent to ask carries no
 #      class, so nobody can tell whether autonomous mode may drop it
 #   A8 the default-taken record the reference names cannot be written
@@ -102,7 +105,7 @@ e2e_expect_out "$DENY"
 e2e_expect_clean_edges
 
 # --- the preflight of each pipeline command (A6) ------------------------------
-for cmd in start pr address review commit resolve; do
+for cmd in start pr address review commit resolve merge setup goal resume; do
   for v in true false; do
     want=attended; [ "$v" = true ] && want=autonomous
     _flow_test_begin "ask-preflight-$cmd-$want"
