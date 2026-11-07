@@ -105,6 +105,30 @@
 #   R31 an -e line continued with a trailing backslash, which pip joins with
 #      the next line before splitting it, is refused as an unclosed quote
 #      instead of read
+#   R32 a Ruby special global named by a quote ($", $', $`) is read as the
+#      start of a string, so inside a path/git { block the brace of the
+#      block it pairs over is hidden, its } closes the path block early, and
+#      the gems after it read as from the registry with STATE=ok; the same
+#      pairing hides a gem call written after one at the top level, as does
+#      a character literal of a quote (?"), and a # after one is kept as code
+#      instead of read as the comment it is
+#   R33 a git/github/path block opened after another statement on the same
+#      line (`x = 1; path("vendor/x") {`, `x = 1; git "u" do`) is not
+#      recognised, so its gems read as from the registry with STATE=ok; or,
+#      once refused, a local variable named path or git used as a value
+#      makes a Gemfile Bundler reads unreadable
+#   R34 a package.json spec npm-package-arg reads case-insensitively or more
+#      loosely than written is missed: a tarball name whose dot is any
+#      character (u.tar_gz, w.tarXgz), FILE: in any case, an NPM: alias in
+#      any case (whose target never reaches the added and near-name checks),
+#      an npm: alias with no version, a hosted-git or URL prefix in upper
+#      case with no slash (GITHUB:u, HTTPS:host)
+#   R35 a requirements*.txt option split over lines by a trailing backslash
+#      (`-\` then `e git+...`, `--edit\` then `able ...`) is not joined as
+#      pip joins every such line, so an editable install reads as a package
+#      named e or able; or an -e after another option on its line, an
+#      abbreviated --edit, a second -e on one line (pip installs the first
+#      only) or a requirement continued onto a --hash line is misread
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -697,3 +721,105 @@ DEP_ADDED=b@(unpinned) manifest=requirements.txt:2
 DEP_ADDED=y@(unpinned) manifest=requirements.txt:4
 DEP_REPLACED=b -> git+https://evil.example/x.git#egg=b@(unpinned) manifest=requirements.txt:2
 DEP_REPLACED=y -> ../y#egg=y@(unpinned) manifest=requirements.txt:4'
+
+# --- Ruby special globals named by a quote (R32) -------------------------------
+_dep dep-gem-brace-special-global "a \$\" global inside a path { block does not hide the brace of the block it pairs over (R32)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  y = $"; [1].each { |q| $"\n  gem "activesupport"\n  }\n  gem "actionpack"\n}\n' \
+'STATE=ok
+DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:6
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:4
+DEP_REPLACED=actionpack -> vendor/x@(unpinned) manifest=Gemfile:6
+DEP_REPLACED=activesupport -> vendor/x@(unpinned) manifest=Gemfile:4'
+
+_dep dep-gem-brace-special-globals "\$' and \$\` globals inside a path { block hide no brace, and a # after \$\" is a comment (R32)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  a = $\'; [1].each { |q| $\'\n  gem "activesupport"\n  }\n  b = $`; [2].each { |q| $`\n  gem "actionpack"\n  }\n  c = $" # }\n  gem "railties"\n}\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:7
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:4
+DEP_ADDED=railties@(unpinned) manifest=Gemfile:10
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:12
+DEP_REPLACED=actionpack -> vendor/x@(unpinned) manifest=Gemfile:7
+DEP_REPLACED=activesupport -> vendor/x@(unpinned) manifest=Gemfile:4
+DEP_REPLACED=railties -> vendor/x@(unpinned) manifest=Gemfile:10'
+
+_dep dep-gem-brace-interpolated-global "a string interpolating \$\" (#\$\") inside a path { block makes the file unreadable (R32)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = "#$""; [1].each { |q| "#$""\n  gem "activesupport"\n  }\n  gem "actionpack"\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+
+_dep dep-gem-global-hides-gem "a gem call after a \$\" global on its line is seen, so the file is unreadable rather than missing it (R32)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\nx = $"; gem "evil", git: "https://evil.example/e.git"; y = $"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 is not at the start of its statement at head'
+
+_dep dep-gem-char-literal-quote "a character literal of a quote (?\") makes the file unreadable: it hides the gem call after it (R32)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\nx = ?"; gem "evil", git: "https://evil.example/e.git"; y = ?"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 2 holds a character literal of a quote, which this cannot pair with the strings around it at head'
+
+# --- a block opened after another statement (R33) ------------------------------
+_dep dep-gem-block-after-statement-brace "a path { block opened after another statement on its line makes the file unreadable (R33)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\nx = 1; path("vendor/x") {\n  gem "activesupport"\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the path call on line 2 is not at the start of its statement at head'
+
+_dep dep-gem-block-after-statement-do "a git do block opened after another statement on its line makes the file unreadable (R33)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\nx = 1; git "https://evil.example/r.git" do\n  gem "activesupport"\nend\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the git call on line 2 is not at the start of its statement at head'
+
+_dep dep-gem-path-variable "a local variable named path or git used as a value is not a block call (R33)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath = File.join(__dir__, "Gemfile.local")\neval_gemfile path if File.exist?(path)\ngit = ENV.fetch("G", nil)\nputs git, path\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:6'
+
+# --- package.json specs npm-package-arg reads loosely (R34) --------------------
+_dep dep-npm-loose-specs "a spec npm-package-arg reads case-insensitively or loosely is a redirect, and an alias in any case adds its target (R34)" package.json \
+'{"dependencies":{"express":"4.18.0"}}' \
+'{"dependencies":{"express":"4.18.0","under":"u.tar_gz","anydot":"w.tarXgz","fi":"FILE:fi","al":"NPM:evil-pkg@1.0.0","bare":"Npm:bare-evil","gh":"GITHUB:u","web":"HTTPS:evil.example","gi":"Gist:abc123","tag":"latest"}}' \
+'STATE=ok
+DEP_ADDED=al@NPM:evil-pkg@1.0.0 manifest=package.json
+DEP_ADDED=anydot@w.tarXgz manifest=package.json
+DEP_ADDED=bare@Npm:bare-evil manifest=package.json
+DEP_ADDED=bare-evil@(unpinned) manifest=package.json
+DEP_ADDED=evil-pkg@1.0.0 manifest=package.json
+DEP_ADDED=fi@FILE:fi manifest=package.json
+DEP_ADDED=gh@GITHUB:u manifest=package.json
+DEP_ADDED=gi@Gist:abc123 manifest=package.json
+DEP_ADDED=tag@latest manifest=package.json
+DEP_ADDED=under@u.tar_gz manifest=package.json
+DEP_ADDED=web@HTTPS:evil.example manifest=package.json
+DEP_REPLACED=anydot -> w.tarXgz@(unpinned) manifest=package.json
+DEP_REPLACED=fi -> FILE:fi@(unpinned) manifest=package.json
+DEP_REPLACED=gh -> GITHUB:u@(unpinned) manifest=package.json
+DEP_REPLACED=gi -> Gist:abc123@(unpinned) manifest=package.json
+DEP_REPLACED=under -> u.tar_gz@(unpinned) manifest=package.json
+DEP_REPLACED=web -> HTTPS:evil.example@(unpinned) manifest=package.json'
+
+# --- requirements options continued over lines (R35) ---------------------------
+_dep dep-req-option-continued "every backslash-ended line is joined as pip joins it before its options are read (R35)" requirements.txt \
+$'flask==2.0\n' \
+$'flask==2.0\n-\\\ne git+https://evil.example/x.git#egg=h\n--edit\\\nable git+https://evil.example/x.git#egg=l\n-\\\n-editable=git+https://evil.example/x.git#egg=k\n--index-url https://pypi.org/simple \\\n  -e git+https://evil.example/y.git#egg=m\nrequests==2.0 \\\n    --hash=sha256:abc\n--edit ../z#egg=z\n-e ../a#egg=a -e ../b#egg=b\nsix \\\n  ==1.0\n' \
+'STATE=ok
+DEP_ADDED=a@(unpinned) manifest=requirements.txt:13
+DEP_ADDED=h@(unpinned) manifest=requirements.txt:2
+DEP_ADDED=k@(unpinned) manifest=requirements.txt:6
+DEP_ADDED=l@(unpinned) manifest=requirements.txt:4
+DEP_ADDED=m@(unpinned) manifest=requirements.txt:8
+DEP_ADDED=requests@2.0 manifest=requirements.txt:10
+DEP_ADDED=six@1.0 manifest=requirements.txt:14
+DEP_ADDED=z@(unpinned) manifest=requirements.txt:12
+DEP_REPLACED=a -> ../a#egg=a@(unpinned) manifest=requirements.txt:13
+DEP_REPLACED=h -> git+https://evil.example/x.git#egg=h@(unpinned) manifest=requirements.txt:2
+DEP_REPLACED=k -> git+https://evil.example/x.git#egg=k@(unpinned) manifest=requirements.txt:6
+DEP_REPLACED=l -> git+https://evil.example/x.git#egg=l@(unpinned) manifest=requirements.txt:4
+DEP_REPLACED=m -> git+https://evil.example/y.git#egg=m@(unpinned) manifest=requirements.txt:8
+DEP_REPLACED=z -> ../z#egg=z@(unpinned) manifest=requirements.txt:12'

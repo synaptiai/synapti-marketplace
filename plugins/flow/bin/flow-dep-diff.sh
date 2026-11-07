@@ -45,15 +45,19 @@
 #     entry (names matched PEP 503 normalised); a requirements*.txt line
 #     that is a URL (`git+https://...#egg=x`, `https://.../x-1.0-py3-none-any.whl`),
 #     a local path (`../x#egg=x`, `./dist/x-1.0-py3-none-any.whl`) or an
-#     editable install (`-e ...`, `--editable ...`, its target read with
-#     shell quoting as pip reads it: `-e "../x#egg=x"`, once a trailing
-#     backslash has joined the next line to it, as pip joins it), named by
-#     its #egg= fragment or wheel file name, with the target as written; a
+#     editable install (`-e ...`, `--editable ...`, `--edit ...`, also after
+#     another option on its line, its target read with shell quoting as pip
+#     reads it: `-e "../x#egg=x"`), named by its #egg= fragment or wheel
+#     file name, with the target as written, every line read once each
+#     trailing backslash has joined the next line to it, as pip joins them
+#     (`-\` then `e git+...` is an -e line); a
 #     package.json spec that is a URL, a hosted-git shorthand (github:,
 #     user/repo), an scp-style git spec (git@host:path), file:/link:, or a
 #     path without them (one starting with ., ~/, / or \, a drive letter,
-#     any other spec holding a slash, a .tgz/.tar.gz/.tar file name in any
-#     case); a Gemfile git:, github:, gitlab:, bitbucket:, gist: or path:
+#     any other spec holding a slash, a .tgz/.tar.gz/.tar file name), each
+#     prefix and file name in any case and the file name's second dot any
+#     character, as npm-package-arg reads them (FILE:x, GITHUB:u, u.tar_gz;
+#     an NPM: alias in any case adds its target); a Gemfile git:, github:, gitlab:, bitbucket:, gist: or path:
 #     option, or an option a `git_source(:name)` line declared, keyed by a
 #     label, a symbol or a string (`git: url`, `:git => url`,
 #     `"git" => url`, also on the lines a gem call continues onto), or a gem
@@ -97,7 +101,11 @@
 #     call does not close on its line or carries a trailing modifier
 #     (`gem("x") if c`); a continued call, or a git/github/path block's
 #     continued opening call, runs past the end of the file or into another
-#     statement; an `end` closes no block it has seen, or closes a `{`
+#     statement; a git/github/path block call does not start its statement
+#     (`x = 1; path("v") {`, `x = 1; git "u" do`); a line holds a character
+#     literal of a quote (`?"`), which can pair with the strings around it
+#     (a special global named by a quote, `$"`, `$'` or `` $` ``, is read as
+#     the variable it is, and hides nothing); an `end` closes no block it has seen, or closes a `{`
 #     block; inside a `{` block, the only place a `}` is counted, a `}`
 #     closes no block it has seen or closes a `do` block, or a line holds a
 #     regex, a %-literal, a character literal, a heredoc, an interpolation

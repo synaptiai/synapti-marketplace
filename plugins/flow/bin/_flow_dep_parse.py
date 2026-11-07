@@ -471,8 +471,6 @@ _REQ_COMMENT = re.compile(r"(?:^|\s)#.*$")
 # pip's comment line: `#` first on the line after any whitespace. It ends a
 # backslash continuation instead of being joined to it.
 _REQ_COMMENT_LINE = re.compile(r"^\s*#")
-# `-e <target>`, `-e<target>`, `--editable <target>`, `--editable=<target>`.
-_REQ_EDITABLE = re.compile(r"^(?:-e|--editable(?=[\s=]))\s*=?\s*(\S+)")
 # A requirement given as a local path rather than a name: it starts with `.`,
 # `/` or `~`, carries a path separator, or is an archive file.
 _REQ_PATH = re.compile(
@@ -509,41 +507,113 @@ def _requirement_target_name(target, lineno):
         "(no egg fragment and no wheel file name)" % lineno)
 
 
-def _req_continued(lines, index):
-    """The line at `index` joined with the lines its trailing backslashes
-    continue onto, as pip joins them before it strips comments or splits
-    an option line: each backslash-ended line loses its backslashes and runs
-    straight into the next, a comment line ends the run, and so does the
-    end of the file. Returns the joined line and the index of the line
-    after it."""
-    parts = []
-    while index < len(lines):
-        raw = lines[index]
-        index += 1
-        if not raw.endswith("\\") or _REQ_COMMENT_LINE.match(raw):
-            parts.append(" " + raw if _REQ_COMMENT_LINE.match(raw) else raw)
-            break
-        parts.append(raw.strip("\\"))
-    return "".join(parts), index
+def _req_logical_lines(text):
+    """(line number, line) for each line pip reads, as pip's join_lines and
+    ignore_comments make them: every line ending in a backslash loses its
+    backslashes and runs straight into the next (`-\\` then `e x` is
+    `-e x`), a comment line ends the run, and so does the end of the file;
+    the joined line takes the number of its first line. Its comment is then
+    removed and it is stripped."""
+    out, parts, first = [], [], None
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        comment = _REQ_COMMENT_LINE.match(raw)
+        if not raw.endswith("\\") or comment:
+            if comment:
+                raw = " " + raw
+            if parts:
+                parts.append(raw)
+                out.append((first, "".join(parts)))
+                parts = []
+            else:
+                out.append((lineno, raw))
+        else:
+            if not parts:
+                first = lineno
+            parts.append(raw.strip("\\"))
+    if parts:
+        out.append((first, "".join(parts)))
+    return [(n, _REQ_COMMENT.sub("", line).strip()) for n, line in out]
 
 
-def _editable_target(line, lineno):
-    """The target of an `-e`/`--editable` line, read as pip reads an option
-    line: split with shell quoting, so `-e ".[dev]"` is `.[dev]`. None when
-    the line names no target. An unclosed quote makes the file unreadable:
-    the target cannot be told."""
+def _req_args_options(line):
+    """pip's break_args_options: the words before the first one that starts
+    with `-` are the requirement, the rest are options. Words are split at
+    single spaces, as pip splits them."""
+    words = line.split(" ")
+    for i, word in enumerate(words):
+        if word.startswith("-"):
+            return " ".join(words[:i]).strip(), " ".join(words[i:])
+    return line.strip(), ""
+
+
+# The options pip's requirements-file parser knows (pip 24), by the long
+# name each short one stands for, and whether each takes a value. A long
+# option may be abbreviated to any prefix no other one shares (`--edit` is
+# `--editable`), as optparse reads it.
+_REQ_LONG_OPTIONS = {
+    "--index-url": True, "--pypi-url": True, "--extra-index-url": True,
+    "--no-index": False, "--constraint": True, "--requirement": True,
+    "--editable": True, "--find-links": True, "--no-binary": True,
+    "--only-binary": True, "--prefer-binary": False,
+    "--require-hashes": False, "--pre": False, "--trusted-host": True,
+    "--use-feature": True, "--global-option": True, "--hash": True,
+    "--config-settings": True,
+}
+_REQ_SHORT_OPTIONS = {"i": "--index-url", "c": "--constraint", "r": "--requirement",
+                      "e": "--editable", "f": "--find-links", "C": "--config-settings"}
+
+
+def _req_long_option(word):
+    """The full name of the long option `word` names, exactly or by an
+    unambiguous prefix, or None."""
+    if word in _REQ_LONG_OPTIONS:
+        return word
+    matches = [o for o in _REQ_LONG_OPTIONS if o.startswith(word)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _editable_target(options, lineno):
+    """The target of the first `-e`/`--editable` in an option line, read as
+    pip reads it: split with shell quoting (`-e ".[dev]"` is `.[dev]`), then
+    walked option by option as optparse walks it, so an -e after another
+    option (`--index-url u -e x`) and an abbreviated `--edit x` are read,
+    and the value of another option is not taken for one. None when the
+    line holds none. An unclosed quote makes the file unreadable: the
+    target cannot be told. pip installs only the first -e of a line."""
     try:
-        words = shlex.split(line)
+        words = shlex.split(options)
     except ValueError:
         raise ParseError("the option on line %d has an unclosed quote" % lineno)
-    if not words:
-        return None
-    first = words[0]
-    if first in ("-e", "--editable"):
-        return words[1] if len(words) > 1 else None
-    for prefix in ("--editable=", "-e"):
-        if first.startswith(prefix):
-            return first[len(prefix):].lstrip("=") or (words[1] if len(words) > 1 else None)
+    i = 0
+    while i < len(words):
+        word = words[i]
+        i += 1
+        if word == "--":
+            return None
+        if word.startswith("--"):
+            name, eq, value = word.partition("=")
+            option = _req_long_option(name)
+            if option is None or not _REQ_LONG_OPTIONS[option]:
+                continue
+            if not eq:
+                value = words[i] if i < len(words) else None
+                i += 1
+        elif word.startswith("-") and len(word) > 1:
+            option = _REQ_SHORT_OPTIONS.get(word[1])
+            if option is None:
+                continue
+            value = word[2:]
+            if not value:
+                value = words[i] if i < len(words) else None
+                i += 1
+        else:
+            continue
+        if option == "--editable":
+            # optparse reads `-e=x` as the value `=x`; the `=` is dropped
+            # here, so the target is the one the line plainly names.
+            if value is not None and not word.startswith("--"):
+                value = value.lstrip("=") or None
+            return value
     return None
 
 
@@ -556,32 +626,27 @@ def parse_requirements(text):
     (`-e ../x`, `-e git+https://...#egg=x`). Each of the last three installs
     a package from somewhere other than the index, so it is a redirect as
     well as a dependency, named by its `#egg=` fragment or its wheel file
-    name; one that names neither makes the file unreadable. An editable
-    line is split with shell quoting, as pip splits it (`-e ".[dev]"`),
-    once the lines its trailing backslashes continue onto are joined to it,
-    as pip joins them; one with an unclosed quote makes the file
+    name; one that names neither makes the file unreadable. Lines are read
+    as pip reads them: every line ending in a backslash is first joined
+    with the next (`-\\` then `e git+...` is `-e git+...`), and a line's
+    words from the first that starts with `-` are its options, the words
+    before them its requirement (`x==1 --hash=...` is `x==1`). An option
+    line's first editable install is read wherever it stands on the line
+    and however optparse lets it be spelled (`-e x`, `-ex`, `--editable=x`,
+    `--edit x`), its words split with shell quoting, as pip splits them
+    (`-e ".[dev]"`); one with an unclosed quote makes the file
     unreadable. The project
     itself (`.`, `-e .`, `-e .[dev]`) is the code under review and is not
-    read. No other option line (`-r`, `-c`, `--index-url`,
+    read. No other option (`-r`, `-c`, `--index-url`,
     `--extra-index-url`, `--find-links`, ...) is read."""
     r = ParseResult()
-    lines = text.splitlines()
-    index = 0
-    while index < len(lines):
-        lineno = index + 1
-        raw = lines[index]
-        index += 1
-        line = _REQ_COMMENT.sub("", raw).strip()
+    for lineno, line in _req_logical_lines(text):
         if not line:
             continue
+        line, options = _req_args_options(line)
         target = None
-        if line.startswith("-"):
-            if not _REQ_EDITABLE.match(line):
-                continue
-            if raw.endswith("\\"):
-                raw, index = _req_continued(lines, index - 1)
-                line = _REQ_COMMENT.sub("", raw).strip()
-            target = _editable_target(line, lineno)
+        if not line:
+            target = _editable_target(options, lineno)
             if target is None:
                 continue
         elif _URL_REQ.match(line) or _REQ_PATH.match(line):
@@ -690,13 +755,34 @@ _NPM_ALIAS = re.compile(r"^npm:(.+)@([^@]+)$")
 # starting with `.`, `~/`, `/` or `\`, or a drive letter: `../x`, `~/x`,
 # `/abs`, `C:/x`), an scp-style git spec (`git@host:path`), any other spec
 # holding a slash (the GitHub shorthand `user/repo[#ref]`, a path `a/b/c`),
-# and a tarball file name (`x.tgz`, in any case, as npm-package-arg matches
-# it: `x.TGZ`, `x.Tar.Gz`). A semver range (`~1.2.3`, `^2.0.0`) or a
-# dist-tag (`latest`) is none of these, and an `npm:` alias is read apart.
+# and a tarball file name (`x.tgz`). npm-package-arg reads these loosely, so
+# this does too: every prefix in any case (`FILE:x`, `GITHUB:u`,
+# `HTTPS:host`, which it lower-cases or reads as a URL scheme before it
+# tests them; a URL with no `//`, `https:host`), and a tarball name by its
+# own test, /[.](?:tgz|tar.gz|tar)$/i, whose second dot is any character
+# (`x.TGZ`, `u.tar_gz`). A semver range (`~1.2.3`, `^2.0.0`) or a dist-tag
+# (`latest`) is none of these, and an `npm:` alias, in any case, is read
+# apart. A prefix npm does not fetch from (pnpm's `workspace:`) is not one.
 _NPM_REDIRECT = re.compile(
-    r"^(?!npm:)(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:github|gitlab|bitbucket|gist|file|link):"
-    r"|[.]|~/|[/\\]|[A-Za-z]:|[^@\s/:]+@[^:\s/]+:|.*[/\\]|.*(?i:\.(?:tgz|tar\.gz|tar))$)"
+    r"^(?:[A-Za-z][A-Za-z0-9+.-]*://"
+    r"|(?:git\+[a-z]+|git|https?|file|link|github|gitlab|bitbucket|gist):"
+    r"|[.]|~/|[/\\]|[A-Za-z]:|[^@\s/:]+@[^:\s/]+:|.*[/\\]|.*[.](?:tgz|tar.gz|tar)$)",
+    re.IGNORECASE,
 )
+
+
+def _npm_alias(spec):
+    """(name, version) of the package an `npm:` alias installs, read as
+    npm-package-arg reads it: the prefix in any case (`NPM:x@1`), the name
+    up to the first `@` after its first character (so a scope's `@` is
+    kept), and no version when none is given (`npm:x`). None when `spec` is
+    not an alias."""
+    if not spec.lower().startswith("npm:"):
+        return None
+    sub = spec[4:]
+    at = sub.find("@", 1)
+    name, version = (sub[:at], sub[at + 1:] or None) if at > 0 else (sub, None)
+    return (name, version) if name else None
 
 
 def _line_of_key(text, key):
@@ -739,9 +825,9 @@ def parse_package_json(text):
             # project already trusts and the package that actually installs is
             # never compared with anything.
             if v:
-                am = _NPM_ALIAS.match(v)
-                if am:
-                    r.add(am.group(1), am.group(2), line)
+                alias = _npm_alias(v.strip())
+                if alias:
+                    r.add(alias[0], alias[1], line)
                 elif _NPM_REDIRECT.match(v.strip()):
                     r.replaces.append((name, v.strip(), None, line))
     return r
@@ -966,30 +1052,72 @@ _DOC_END = re.compile(r"^=end(?:\s|$)")
 # A `gem` call anywhere in a line's code: not `gemspec`, `gem_group`,
 # `Gem::Version`, `.gem` or `:gem`. Read on the line with its strings blanked.
 _GEM_CALL_ANYWHERE = re.compile(r"(?<![A-Za-z0-9_.:@$])gem(?=[ \t(])")
+# A git/github/path block call anywhere in a line's code: the keyword called
+# with an argument, in parentheses or after a space (`x = 1; path("v") {`,
+# `x = 1; git "u" do`). Not a label (`path:`), a symbol (`:path`), a method
+# on a receiver (`File.path`, `path.each`), an assignment (`path = ...`), or
+# a local variable named path or git read as a value (`eval_gemfile path`,
+# `File.exist?(path)`, `path if c`, `puts git, path`). Read on the line with
+# its strings blanked.
+_BLOCK_CALL_ANYWHERE = re.compile(
+    r"(?<![A-Za-z0-9_.:@$])(git|github|gitlab|bitbucket|gist|path)(?![A-Za-z0-9_?!:])"
+    r"(?=\s*\(|[ \t]+(?!(?:and|or|if|unless|while|until|then|rescue|do|end)(?![A-Za-z0-9_]))"
+    r"(?:[A-Za-z0-9_\"'`@$%\[]|:[A-Za-z_\"']))"
+)
 _RUBY_STRING = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`')
 
 
-def _ruby_code(raw):
-    """A Gemfile line without its comment, as this parser reads it. A `#`
+# The punctuation that names one of Ruby's special globals after a `$`
+# (`$"`, `$'`, `` $` ``, `$;`, `$\`, `$/`, `$?`, `$~`, `$!`, ...): Ruby's
+# own list. The token is the `$` and that one character, so a quote in it
+# opens no string, a `\` in it continues no line and a `;` in it ends no
+# statement.
+_GLOBAL_PUNCT = "~*$?!@/\\;,.=:<>\"&`'+0"
+_IDENT = re.compile(r"[A-Za-z0-9_]")
+
+
+def _ruby_scan(raw):
+    """(code, quote_char_at) for a Gemfile line: the line without its
+    comment, with every special global named by punctuation written `$_`,
+    in code and where a double-quoted string or backtick command
+    interpolates one (`"#$""`), and the position of a character literal of
+    a quote (`?"`, `?'`, `` ?` ``, `?\\"`) outside a string, or None. A `#`
     inside a quoted string or a backtick command (a URL fragment, a `#{...}`
     interpolation) is not a comment, so the rest of the line is kept."""
     stack = []  # open quotes, and `{` for the code of an interpolation
-    i = 0
-    while i < len(raw):
+    out = []
+    quote_char_at = None
+    i, n = 0, len(raw)
+    while i < n:
         c = raw[i]
         top = stack[-1] if stack else None
         if top in ('"', "'", "`"):
             if c == "\\":
+                out.append(raw[i:i + 2])
                 i += 2
                 continue
             if c == top:
                 stack.pop()
             elif top != "'" and raw.startswith("#{", i):
                 stack.append("{")
+                out.append("#{")
                 i += 2
                 continue
+            elif top != "'" and raw.startswith("#$", i) and i + 2 < n and raw[i + 2] in _GLOBAL_PUNCT:
+                out.append("#$_")
+                i += 3
+                continue
         elif c == "#" and not stack:
-            return raw[:i].rstrip()
+            return "".join(out).rstrip(), quote_char_at
+        elif c == "$" and i + 1 < n and raw[i + 1] in _GLOBAL_PUNCT:
+            out.append("$_")
+            i += 2
+            continue
+        elif (c == "?" and quote_char_at is None
+              and not (i and _IDENT.match(raw[i - 1]))
+              and (raw[i + 1:i + 2] in ('"', "'", "`")
+                   or (raw[i + 1:i + 2] == "\\" and raw[i + 2:i + 3] in ('"', "'", "`")))):
+            quote_char_at = i
         elif c in "\"'`":
             stack.append(c)
         elif top == "{" and c in "{}":
@@ -997,8 +1125,14 @@ def _ruby_code(raw):
                 stack.append(c)
             else:
                 stack.pop()
+        out.append(c)
         i += 1
-    return raw.rstrip()
+    return "".join(out).rstrip(), quote_char_at
+
+
+def _ruby_code(raw):
+    """A Gemfile line as this parser reads it: see _ruby_scan."""
+    return _ruby_scan(raw)[0]
 
 
 # What starts an interpolation in a double-quoted string: `#{expr}`,
@@ -1020,8 +1154,12 @@ def _literal(quote, value):
 
 
 def _ruby_lines(text):
-    """The Gemfile's lines, with each line of a `=begin` ... `=end` block
-    comment blank, so it is read as the comment it is."""
+    """The Gemfile's lines as code (see _ruby_scan), with each line of a
+    `=begin` ... `=end` block comment blank, so it is read as the comment it
+    is. A character literal of a quote (`?"`) makes the file unreadable:
+    whether a `?` starts one or is a ternary depends on what precedes it,
+    and read the wrong way its quote pairs with the strings around it and
+    can hide a gem call or a brace."""
     lines = text.splitlines()
     begun = None
     for index, raw in enumerate(lines):
@@ -1032,6 +1170,12 @@ def _ruby_lines(text):
         elif _DOC_BEGIN.match(raw):
             begun = index + 1
             lines[index] = ""
+        else:
+            lines[index], quote_char_at = _ruby_scan(raw)
+            if quote_char_at is not None:
+                raise ParseError(
+                    "line %d holds a character literal of a quote, which "
+                    "this cannot pair with the strings around it" % (index + 1))
     if begun is not None:
         raise ParseError("the =begin on line %d has no =end" % begun)
     return lines
@@ -1258,11 +1402,11 @@ _BRACE_UNSURE = re.compile(r"[/%]|<<|(?<![A-Za-z0-9_])\?|[\"'`]")
 def _brace_unsure(code):
     """Whether this parser cannot be sure which `{` and `}` in `code` are
     braces: it holds one of _BRACE_UNSURE's forms, or a double-quoted
-    string or backtick command that interpolates (`"#{"}"}"`), whose inner
-    quotes the string pattern does not pair. Ruby is not lexed here, so
-    every such line is unsure, whether or not a brace is in it."""
+    string or backtick command that interpolates (`"#{"}"}"`, `"#$""`),
+    whose inner quotes the string pattern does not pair. Ruby is not lexed
+    here, so every such line is unsure, whether or not a brace is in it."""
     for m in _RUBY_STRING.finditer(code):
-        if m.group(0)[0] != "'" and "#{" in m.group(0):
+        if m.group(0)[0] != "'" and _INTERPOLATION.search(m.group(0)):
             return True
     return bool(_BRACE_UNSURE.search(_RUBY_STRING.sub("", code)))
 
@@ -1301,7 +1445,10 @@ def parse_gemfile(text):
     which can carry a source option; a `gem(` call that does not close on
     its line; a call without parentheses, or a git/github/path block's
     opening call, whose continuation runs past the end of the file or into
-    another statement; a source option or block target whose value is not
+    another statement; a git/github/path block call that does not start
+    its statement (`x = 1; path("v") {`, `x = 1; git "u" do`); a character
+    literal of a quote (`?"`), which can pair with the strings around it;
+    a source option or block target whose value is not
     a literal; a `git_source` whose name is not a literal; an `end` that
     closes no block this has seen, or closes a `{` block; inside a `{`
     block, a `}` that closes no block this has seen or closes a `do` block,
@@ -1315,7 +1462,10 @@ def parse_gemfile(text):
     together with the lines that continue it, so options written one per
     line are read like options written on one. Any statement continued with
     a backslash onto a modifier (`if`, `unless`, ...) ends there, so the
-    modifier opens no block. A `#` starts a comment only outside a string or
+    modifier opens no block. A special global named by punctuation (`$"`,
+    `$'`, `` $` ``, `$;`, `$\\`, ...) is read as the one token it is, so its
+    quote opens no string and hides no brace or gem call. A `#` starts a
+    comment only outside a string or
     a backtick command, a double-quoted value that interpolates (`"#{x}"`,
     `"#@ivar"`, `"#@@cvar"`, `"#$gvar"`) is not a literal while a
     single-quoted one, which Ruby does not interpolate, is, and the
@@ -1359,6 +1509,14 @@ def parse_gemfile(text):
         bk = None if m else _GEM_BLOCK_START.match(line)
         kind = "gem call" if m and not m.group(1) else ("%s block" % bk.group(1) if bk else None)
         line, index = _statement(lines, index, line, lineno, kind)
+        # A git/github/path block opened after another statement on its line
+        # (`x = 1; path("v") {`) or inside an expression is one this would
+        # read as an anonymous block or not at all, losing the redirect of
+        # every gem in it: the file is unreadable instead.
+        for cm in _BLOCK_CALL_ANYWHERE.finditer(_blank_strings(line)):
+            if not (bk and cm.start() == bk.start(1)):
+                raise ParseError(
+                    "the %s call on line %d is not at the start of its statement" % (cm.group(1), lineno))
         # Inside a `{` block, a `}` closes it, so a `}` or `{` this cannot
         # be sure is a brace (one in a regex, a %-literal, a character
         # literal, a heredoc's body or an interpolation) could end the block

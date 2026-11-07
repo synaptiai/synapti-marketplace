@@ -216,7 +216,8 @@ fragment or wheel file name (one that names neither makes the file
 reported), a `package.json` spec that is a URL, a GitHub shorthand
 (`github:user/repo`, `user/repo`), an scp-style git spec (`git@host:path`)
 or a local path (`file:`/`link:`, or a bare `../x`, `~/x`, `/x`, `C:/x`,
-`x.tgz`), a Gemfile `git:`, `github:`, `gitlab:`, `bitbucket:`, `gist:` or
+`x.tgz`), each prefix in any case, as npm reads it (`FILE:x`, `NPM:` aliases
+too), a Gemfile `git:`, `github:`, `gitlab:`, `bitbucket:`, `gist:` or
 `path:` source or an option a `git_source(:name)` line declared, keyed by a
 label, a symbol or a string (or a gem inside a `git`, `github` or `path`
 block, `do`/`end` or `{`/`}`), or a gem resolved in a `Gemfile.lock` GIT
