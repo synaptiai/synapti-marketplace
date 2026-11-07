@@ -29,6 +29,30 @@
   - Saying "autonomous mode" in the conversation no longer turns it on; the
     setting does.
 
+- Escalations are stored with their status, not kept only in the live
+  `AskUserQuestion` call (#340). A question was lost when the session ended,
+  was compacted, or ran where `AskUserQuestion` does not exist, and
+  `/flow:status` and `/flow:resume` could not show it.
+  - `bin/flow-question.sh` (`add`, `answer`, `withdraw`, `list`, `get`)
+    keeps each question as `<runtime dir>/questions/<id>.yaml`: the six
+    fields, two or three options with the recommendation first, the blocking
+    level, `status` (`open`, `answered`, `withdrawn`), the issue, pull
+    request and FlowRun, the command that asked, and the times. Writes take
+    the directory's lock and go through `bin/_journal_atomic.py`; a new
+    record is created exclusively, so concurrent adds never share an id. A
+    missing field, one option or more than three, or another blocking level
+    is refused with the field named. The directory ignores itself, so the
+    questions are not committed. `get <id> --prompt` renders the six-field
+    body.
+  - `references/escalation-format.md`: store before asking, record the
+    answer after (`escalation-asked` and `escalation-resolved` journal
+    artifacts with `--journal`); where `AskUserQuestion` is not available, a
+    `Blocking: yes` question stops the pipeline naming its id, and a `soft`
+    one goes on with the recommendation, recorded and listed in the pull
+    request body under `## Decisions taken on a recommendation`.
+  - `/flow:status` has an Open Questions section; `/flow:resume` shows the
+    open questions of the run it resumes and of its goal's issue.
+
 ### Fixed
 
 - `/flow:merge`'s FlowGoal gate no longer lets a pull request through when

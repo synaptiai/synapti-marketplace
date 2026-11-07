@@ -95,6 +95,27 @@ AskUserQuestion(
 
 This shape gives the user the full context (in the question body) AND a structured choice (in the options array). When the user picks an option, the agent has unambiguous direction.
 
+### Every escalation is stored
+
+An escalation is a record with an id and a status, not only a live tool call, so it survives the session ending, a compaction, or a session where nobody can answer it. `bin/flow-question.sh` keeps it under `<runtime dir>/questions/` ([`flow-runtime-state.md`](flow-runtime-state.md)):
+
+1. **Before asking**, store it, the recommended option first:
+
+   ```bash
+   "$FLOW_ROOT/bin/flow-question.sh" add --journal \
+     --situation "..." --tried "..." \
+     --option "<recommended option>" --option "<another>" [--option "<a third>"] \
+     --recommendation "..." --blocking yes|soft|no --risk "..." \
+     --command "<command and step>" [--issue N] [--pr N] [--run <FlowRun id>]
+   ```
+
+   It prints `QUESTION_ID=<id>` and, with `--journal`, writes an `escalation-asked` artifact. A missing field, fewer than two options or more than three, or another blocking level is refused with the field named. `bin/flow-question.sh get <id> --prompt` prints the six-field body for the question.
+2. **Attended** (the session has `AskUserQuestion`): ask it as above, then record the answer: `bin/flow-question.sh answer <id> --choice <option number> --journal`, which writes `escalation-resolved` (`escalation_field: options`, `outcome`: the option chosen). A question that no longer applies is withdrawn: `withdraw <id> --reason "..." --journal`.
+3. **Where `AskUserQuestion` is not available** (it is not among the session's tools, as in `claude -p`): store the question and do not wait for it.
+   - `Blocking: yes` — stop the pipeline. The final reply says the run is waiting and names the question id; `/flow:status` and `/flow:resume` show it, and whoever answers it records the answer with `answer`.
+   - `Blocking: soft` — go on with the recommended option and record that with `answer <id> --choice 1 --by recommendation --journal`. The pull request body lists it under `## Decisions taken on a recommendation` (`/flow:pr` reads them with `flow-question.sh list --status answered --issue N`).
+   - `Blocking: no` — record it the same way as `soft`; it is not listed in the pull request body.
+
 ## Anti-patterns
 
 - **"What should I do?"** with no Situation/Tried/Options. This is the bare question that the protocol exists to prevent.

@@ -45,6 +45,10 @@ Closes #{issue_number}
 | 1 | {criterion} | Met | {file:line} |
 | 2 | {criterion} | Met | {file:line} |
 
+## Decisions taken on a recommendation
+
+{Only when questions stored for this issue were answered `by: recommendation` (`bin/flow-question.sh list --status answered --issue N`, then `get <id>` for `answered_by` and `blocking: soft`); otherwise leave this section out. One line each: `{question id}` — {situation} → {answer}.}
+
 ## Review Findings
 
 | Priority | Count | Details |

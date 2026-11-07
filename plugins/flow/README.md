@@ -323,7 +323,8 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   Learning, escalation and evals
   ├── flow-mine-corrections.sh — mines user corrections from session transcripts for /flow:learn
   ├── promote-proposal.sh   — promotes a /flow:learn proposal: a skill via draft PR, or a review exception as a row in the project
-  ├── flow-escalate.sh      — formats canonical six-field escalation prompts (CLI utility)
+  ├── flow-question.sh      — stores escalations as records with an id and a status: add, answer, withdraw, list, get
+  ├── flow-escalate.sh      — formats a six-field escalation prompt without storing it (CLI utility)
   └── flow-eval-run.sh      — headless evals: correctness (seeded-bug tasks, hidden tests) and review precision
 
 SCHEMAS/ (ship inside the plugin payload, available at runtime)

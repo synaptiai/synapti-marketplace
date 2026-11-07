@@ -121,4 +121,4 @@ The skill input schemas reference the row shape from `references/finding-schema.
 
 Similarly, `evidence-bundle-format.md` defines the `evidenceBundle` shape; `escalation-format.md` defines the format `bin/flow-escalate.sh` outputs. The contracts here are downstream consumers of those reference docs.
 
-`bin/flow-escalate.sh` itself is a CLI utility for ad-hoc human use — it lets a reviewer or maintainer render the canonical escalation shape from the terminal. Commands continue to inline the escalation prose so each command's escalation paths stay inspectable in the command body rather than hidden behind a helper invocation.
+Commands store every escalation with `bin/flow-question.sh` (`add`, then `answer` or `withdraw`), whose `get <id> --prompt` renders the canonical shape for `AskUserQuestion`; the six fields stay inline in each command body, so its escalation paths stay inspectable there. `bin/flow-escalate.sh` remains a CLI utility for rendering the shape from the terminal without storing anything.

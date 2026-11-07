@@ -213,6 +213,23 @@ RT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__
 [ -n "$RT" ] || RT=".flow"
 printf '%s\n' "RUNTIME_DIR=$RT"
 
+# Section: Open Questions — escalations stored with bin/flow-question.sh that
+# nobody has answered or withdrawn (references/escalation-format.md). One
+# QUESTION= line each: id|status|blocking|issue|pr|command|situation.
+printf '%s\n' ""
+printf '%s\n' "### Open Questions"
+# OPEN_QUESTIONS_BLOCK_BEGIN
+Q_LIST=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"/bin/flow-question.sh list --status open 2>/dev/null); Q_RC=$?
+if [ "$Q_RC" -ne 0 ]; then
+  printf '%s\n' "STATE=unavailable" "REASON=flow-question.sh exited $Q_RC"
+elif [ -z "$Q_LIST" ]; then
+  printf '%s\n' "STATE=none"
+else
+  printf '%s\n' "STATE=open" "COUNT=$(printf '%s\n' "$Q_LIST" | wc -l | tr -d ' ')"
+  printf '%s\n' "$Q_LIST" | sed 's/^/QUESTION=/'
+fi
+# OPEN_QUESTIONS_BLOCK_END
+
 # Section: Recent Runs (last 3 by modification time)
 # The runs directory under the runtime directory holds FlowActivity ledgers
 # per workflow invocation. Surface the latest 3 so the user can see what is
@@ -605,6 +622,7 @@ A five-line operational dashboard — the fastest read of "where am I, and what'
 - **Goal**: {GOAL_ID} {lifecycle} — {verifiable}/{total} ACs verified  (or "none (no active goal on this branch)", or the ⚠ degenerate / needs-attention marker when 0 verifiable ACs)
 - **Workflow**: {workflow} @ {phase} ({status}) — run {run id}, verdict {verdict}, {activities} activities (from the first `RUN=` line, the most recent; or "no runs")
 - **Evidence**: {Findings Ledger one-liner — P1/P2/P3 per Render Rules}
+- **Questions**: {COUNT} open, {N} blocking — `{id}`: {situation} (the first blocking one, else the first) (or "none"; the line is left out when the Open Questions section reports `STATE=none`)
 - **Next safe action**: {from Suggestions Logic}
 ```
 
@@ -664,6 +682,17 @@ The complete verbose dashboard (every section):
 
 `verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read; `verdict=not-read` and `activities=not-read` mean the file is a symlink, which is not read through (the block names it on stderr). `workflow`, `phase` and `status` come from the run's `run.yaml` (`metadata.workflow`, `state.current_phase`, `state.status`) with the same values: `-` when the file or the field is absent, `unreadable` when the file does not parse or is not shaped as a run, `not-read` when it is a symlink, and `unknown` when the reader could not run (python3 or PyYAML missing). Render them differently — never collapse `unreadable`, `not-read` or `unknown` into `-`, or `activities=not-read` into 0.
 
+### Open Questions
+{When STATE=none: render "No open questions."}
+{When STATE=unavailable: render "Unavailable: {REASON}"}
+{When STATE=open: render a table, one row per QUESTION= line, blocking ones first}
+
+| Question | Blocking | Issue | PR | Asked by | Situation |
+|----------|----------|-------|----|----------|-----------|
+| `{id}` | {blocking} | {issue} | {pr} | {command} | {situation} |
+
+Answer one with `bin/flow-question.sh answer <id> --choice <n>`, or `withdraw <id> --reason ...`.
+
 ### Active Triggers
 {When STATE=disabled: render "(Triggers turned off — `flow.triggers.enabled` is false in your settings; set it to true to turn them back on)"}
 {When STATE=empty: render "No triggers registered."}
@@ -693,6 +722,7 @@ A single machine-readable JSON object for tooling/debugging — no prose, no tab
   "goal": {"id": "{GOAL_ID}", "lifecycle": "{status}", "acs": {"total": N, "verifiable": M}},
   "run": {"id": "{RUN_ID}", "workflow": "{workflow}", "phase": "{phase}", "status": "{status}", "verdict": "{verdict}", "activities": N},
   "findings": {"p1": N, "p2": N, "p3": N},
+  "questions": [{"id": "{id}", "blocking": "{blocking}", "issue": N, "pr": N, "command": "{command}", "situation": "{situation}"}],
   "next_action": "{suggestion}"
 }
 ```

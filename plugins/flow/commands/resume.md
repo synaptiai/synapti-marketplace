@@ -257,6 +257,36 @@ Read the last 5 lines of `events.jsonl` for additional context, unless `events.j
 
 Read the linked goal (if any): `<runtime dir>/goals/<metadata.goal>.goal.yaml`. Show AC pass/fail state. Read none through a symlink: when `bin/flow-mkdir.sh --check <runtime dir>/goals` refuses, or the goal file is itself a symlink, say so and show no goal — a repository can commit `<runtime dir>` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
 
+### Step 3.2: Open questions
+
+A question stored for this run, or for the issue of its goal, that nobody has answered is what the run waits on: show it before suggesting anything.
+
+```bash
+# RESUME_QUESTIONS_BLOCK_BEGIN
+# RUN_ID is the run from Step 1; GOAL_ID is metadata.goal from run.yaml, or
+# empty. A goal named issue-N gives the issue whose questions are listed too.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+printf '%s\n' "### Open Questions"
+Q_ISSUE=$(printf '%s' "${GOAL_ID:-}" | sed -n 's/^issue-\([0-9][0-9]*\)$/\1/p')
+Q_RC=0
+Q_LIST=$("$FLOW_ROOT/bin/flow-question.sh" list --status open --run "$RUN_ID" 2>/dev/null) || Q_RC=$?
+if [ -n "$Q_ISSUE" ] && [ "$Q_RC" -eq 0 ]; then
+  Q_MORE=$("$FLOW_ROOT/bin/flow-question.sh" list --status open --issue "$Q_ISSUE" 2>/dev/null) || Q_RC=$?
+  Q_LIST=$(printf '%s\n%s\n' "$Q_LIST" "$Q_MORE" | sed '/^$/d' | sort -u)
+fi
+if [ "$Q_RC" -ne 0 ]; then
+  printf '%s\n' "STATE=unavailable" "REASON=flow-question.sh exited $Q_RC"
+elif [ -z "$Q_LIST" ]; then
+  printf '%s\n' "STATE=none"
+else
+  printf '%s\n' "STATE=open"
+  printf '%s\n' "$Q_LIST" | sed 's/^/QUESTION=/'
+fi
+# RESUME_QUESTIONS_BLOCK_END
+```
+
+With `STATE=open`, show each question in the report (Step 4) with `bin/flow-question.sh get <id> --prompt`, and make the next safe action answering the blocking one: ask it with `AskUserQuestion` when the session can, then record the answer with `bin/flow-question.sh answer <id> --choice <n> --journal`.
+
 ### Step 3.5: Detect unlinked working-tree changes
 
 Flow records its own artifacts under `<runtime dir>/` and the decision journal in its journal directory (`journal.dir` as `bin/journal-dir.sh` resolves it, default `.decisions/`). **Any other tracked change in the working tree is "unlinked"** — most likely unrelated human work that `/flow:resume` must not silently fold into a continuation.
@@ -343,6 +373,9 @@ Recent events:
   <last 5 lines from events.jsonl>
 
 Blocked reason (when applicable): <state.blocked_reason>
+
+Open questions (when Step 3.2 printed STATE=open):
+  <id> (blocking: <yes|soft|no>) — <situation>
 
 Next safe action:
   <suggestion based on workflow + current_phase>
