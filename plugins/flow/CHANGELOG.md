@@ -15,6 +15,18 @@
   one. When a branch carries a failed or cancelled goal beside an achieved one,
   the failed or cancelled one decides. `/flow:goal clear` and `/flow:goal
   pause` say that a cancelled or paused goal keeps the merge blocked.
+- `/flow:merge`'s FlowGoal gate judges the goal of the pull request being
+  merged, not the goal of whatever branch is checked out (#309). On
+  2026-10-15 it blocked #306 on the unfinished goal of #304, whose branch
+  happened to be checked out; and with a goal-less branch checked out, a pull
+  request whose own goal was not achieved passed. The gate now takes the
+  pull request's `headRefName` and `headRefOid` from `gh pr view` and looks up
+  the goal owning that branch: in the working tree when the branch is checked
+  out, and in the head commit otherwise, fetched from origin when the clone
+  lacks it. When the head cannot be read the gate blocks and says why. The
+  block now needs the pull request number, as the finding-ledger gate does.
+- `bin/flow-active-goal.sh --commit <rev>` reads the goals committed in a
+  commit instead of the working tree, with the same symlink refusals.
 - `bin/flow-active-goal.sh` has a `--reason` mode that prints the goal's
   `lifecycle.last_evaluation.reason` on one line.
 

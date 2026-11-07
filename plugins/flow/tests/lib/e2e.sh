@@ -164,6 +164,8 @@ case "$args" in
     n=${args%/replies}; f=reply-${n##*/} ;;
   # The merge guard's calls, and the branch-delete guard's.
   "pr view "*" --json number,baseRefName,statusCheckRollup") n=${args#pr view }; f=pr-${n%% *} ;;
+  # /flow:merge's FlowGoal gate: the pull request's head branch and commit.
+  "pr view "*" --json headRefName,headRefOid") n=${args#pr view }; f=pr-head-${n%% *} ;;
   # bin/flow-pr-feedback.sh's review list.
   "pr view "*" --json reviews") n=${args#pr view }; f=pr-reviews-${n%% *} ;;
   # Each is keyed on the values the guard passes, so a call that asks about

@@ -288,7 +288,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── flow-pr-feedback.sh   — prints a pull request's inline review comments, reviews and conversation comments, every page, one JSON object per line
   └── flow-finding-state.sh, flow-comment-state.sh, flow-test-state.sh — build the state a System One question about one finding, review comment or test is asked with
   Goals, runs and the quality ledger
-  ├── flow-active-goal.sh   — finds the FlowGoal for the current branch and prints its status, criteria or JSON
+  ├── flow-active-goal.sh   — finds the FlowGoal for the current branch, or for another branch in a given commit, and prints its status, criteria or JSON
   ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
   ├── flow-goal-judge-run.sh — runs the goal judge for /flow:goal evaluate, as the Stop hook runs it

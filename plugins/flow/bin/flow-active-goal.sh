@@ -35,7 +35,9 @@
 #   applicable" and proceeds, which is the wrong answer when a goal is sitting
 #   there unreadable. Unreadable goals are still skipped when some other goal
 #   does answer, so one corrupt file never blocks a legitimate sibling.
-#   --branch <name>    override the detected current branch (test-only / scripting)
+#   --branch <name>    override the detected current branch: the branch whose
+#                      goal is wanted (/flow:merge passes the pull request's
+#                      head branch; tests and scripts use it too)
 #   --allow-terminal   also consider a terminal `achieved` goal, but ONLY when it
 #                      owns the current branch (never cross-branch) — lets the
 #                      merge/pr gate observe a goal that already left the active
@@ -64,6 +66,18 @@
 #                      omit the flag.
 #   --runtime-dir <dir> the runtime directory the caller already resolved (a
 #                      hook asks once per run); otherwise it is resolved here
+#   --commit <rev>     read the goals committed in <rev> (a commit the local
+#                      repository has) instead of the working tree: the goals
+#                      directory at the same path, relative to the repository
+#                      top. /flow:merge uses it, with --branch set to the pull
+#                      request's head branch, to judge the goal the pull
+#                      request carries when another branch is checked out.
+#                      The same symlink rule applies inside the commit: a
+#                      directory on the way to the goals, or a goal file,
+#                      committed as a symlink is refused with exit 2. A <rev>
+#                      that git cannot resolve to a commit is exit 2 as well.
+#                      No goal has a modification time there, so ties go to
+#                      the alphabetically first path.
 #
 # Exit codes:
 #   0  active goal found; output on stdout
@@ -103,6 +117,7 @@ ALLOW_TERMINAL=0
 ANY_STATUS=0
 BRANCH_STRICT=0
 RUNTIME_DIR_ARG=""
+COMMIT_ARG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -135,6 +150,14 @@ while [ $# -gt 0 ]; do
       RUNTIME_DIR_ARG="$2"
       shift 2
       ;;
+    --commit)
+      [ $# -lt 2 ] && { echo "flow-active-goal.sh: --commit requires a value" >&2; exit 2; }
+      case "$2" in
+        ''|-*) echo "flow-active-goal.sh: --commit needs a revision, not '$2'" >&2; exit 2 ;;
+      esac
+      COMMIT_ARG="$2"
+      shift 2
+      ;;
     -h|--help)
       awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 0
@@ -157,7 +180,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" "$RUNTIME_DIR_ARG" "$ANY_STATUS" <<'PYEOF'
+python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" "$RUNTIME_DIR_ARG" "$ANY_STATUS" "$COMMIT_ARG" <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -178,21 +201,108 @@ override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
 allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
 branch_strict = (sys.argv[4] if len(sys.argv) > 4 else "0") == "1"
 any_status = (sys.argv[7] if len(sys.argv) > 7 else "0") == "1"
+commit = sys.argv[8] if len(sys.argv) > 8 else ""
 
 GOALS_DIR = os.path.join(runtime_dir(sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None), "goals")
 
 # Symlink defense — no goal is read through a symlinked runtime directory or goals.
 READ_NOTE = "goals are not read through it"
-try:
-    ensure_repo_dir(GOALS_DIR)
-except JournalAtomicError as exc:
-    # "refusing — .flow is a symlink", which names the component: the
-    # summary set where the rule refused, never the message cut at a "; ".
-    print(f"flow-active-goal.sh: {exc.summary}; {READ_NOTE}", file=sys.stderr)
-    sys.exit(2)
 
-if not os.path.isdir(GOALS_DIR):
-    sys.exit(1)
+
+def _git(args, text=True):
+    return subprocess.run(["git"] + args, capture_output=True, text=text, timeout=30)
+
+
+def _committed_goals(rev):
+    """[(display path, loader)] for the *.goal.yaml files directly in the goals
+    directory of commit `rev`, sorted by path. Exits 2 when `rev` is not a
+    commit, or when a directory on the way or a goal file is committed as a
+    symlink (mode 120000) or is not what it should be: the working-tree rule,
+    applied to the tree git would check out."""
+    r = _git(["rev-parse", "--verify", "--quiet", "--end-of-options", rev + "^{commit}"])
+    oid = r.stdout.strip() if r.returncode == 0 else ""
+    if not oid:
+        print(f"flow-active-goal.sh: --commit {rev} is not a commit in this repository; {READ_NOTE}", file=sys.stderr)
+        sys.exit(2)
+    rel = os.path.normpath(GOALS_DIR).replace(os.sep, "/")
+    parts = [n for n in rel.split("/") if n and n != "."]
+    # Each directory on the way, as git stores it: 040000 is a tree, 120000 a
+    # symlink. A missing component means the commit has no goals.
+    for i in range(1, len(parts) + 1):
+        sub = "/".join(parts[:i])
+        r = _git(["ls-tree", "--full-tree", "-z", oid, "--", sub])
+        if r.returncode != 0:
+            print(f"flow-active-goal.sh: cannot list {sub} in {rev}: {r.stderr.strip()}", file=sys.stderr)
+            sys.exit(2)
+        entry = next((e for e in r.stdout.split("\0") if e.endswith("\t" + sub)), "")
+        if not entry:
+            return []
+        mode = entry.split(" ", 1)[0]
+        if mode == "120000":
+            print(f"flow-active-goal.sh: refusing — {sub} is a symlink in {rev}; {READ_NOTE}", file=sys.stderr)
+            sys.exit(2)
+        if mode != "040000":
+            print(f"flow-active-goal.sh: refusing — {sub} is not a directory in {rev}; {READ_NOTE}", file=sys.stderr)
+            sys.exit(2)
+    r = _git(["ls-tree", "--full-tree", "-z", oid, "--", "/".join(parts) + "/"])
+    if r.returncode != 0:
+        print(f"flow-active-goal.sh: cannot list {rel} in {rev}: {r.stderr.strip()}", file=sys.stderr)
+        sys.exit(2)
+    found = []
+    for e in r.stdout.split("\0"):
+        if "\t" not in e:
+            continue
+        meta, name = e.split("\t", 1)
+        if not name.endswith(".goal.yaml") or "/" in name[len("/".join(parts)) + 1:]:
+            continue
+        mode, typ, blob = meta.split(" ")
+        shown = f"{rev}:{name}"
+        if mode == "120000":
+            print(f"flow-active-goal.sh: refusing — {shown} is a symlink; {READ_NOTE}", file=sys.stderr)
+            sys.exit(2)
+        if typ != "blob":
+            continue
+        def _load(blob=blob):
+            out = _git(["cat-file", "blob", blob], text=False)
+            if out.returncode != 0:
+                raise OSError(f"git cat-file failed for {blob}")
+            return yaml.safe_load(out.stdout.decode("utf-8")) or {}
+        found.append((shown, _load))
+    return sorted(found, key=lambda t: t[0])
+
+
+if commit:
+    SOURCES = [(shown, load, 0.0) for shown, load in _committed_goals(commit)]
+    if not SOURCES:
+        sys.exit(1)
+else:
+    try:
+        ensure_repo_dir(GOALS_DIR)
+    except JournalAtomicError as exc:
+        # "refusing — .flow is a symlink", which names the component: the
+        # summary set where the rule refused, never the message cut at a "; ".
+        print(f"flow-active-goal.sh: {exc.summary}; {READ_NOTE}", file=sys.stderr)
+        sys.exit(2)
+
+    if not os.path.isdir(GOALS_DIR):
+        sys.exit(1)
+
+    def _load_file(path):
+        # Never waits on, or reads, anything but a regular file: a FIFO named
+        # like a goal is opened at once and refused, and counted unreadable.
+        with open_regular(path) as f:
+            return yaml.safe_load(f) or {}
+
+    SOURCES = []
+    for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
+        if os.path.islink(path):
+            print(f"flow-active-goal.sh: refusing — {path} is a symlink; {READ_NOTE}", file=sys.stderr)
+            sys.exit(2)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = 0.0
+        SOURCES.append((path, (lambda p=path: _load_file(p)), mtime))
 
 # Determine the current branch for branch-first selection. An
 # explicit --branch override wins (test-only / scripting); otherwise ask git,
@@ -225,21 +335,11 @@ terminal = []
 # current branch.
 other = []
 unreadable = []
-for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
-    if os.path.islink(path):
-        print(f"flow-active-goal.sh: refusing — {path} is a symlink; {READ_NOTE}", file=sys.stderr)
-        sys.exit(2)
+for path, load, mtime in SOURCES:
     try:
-        # Never waits on, or reads, anything but a regular file: a FIFO named
-        # like a goal is opened at once and refused, and counted unreadable.
-        with open_regular(path) as f:
-            data = yaml.safe_load(f) or {}
+        data = load()
         status = (data.get("lifecycle") or {}).get("status")
         branch = (data.get("scope") or {}).get("branch") or ""
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            mtime = 0.0
         if status == "active":
             active.append((path, data, branch, mtime))
         elif allow_terminal and status == "achieved":
