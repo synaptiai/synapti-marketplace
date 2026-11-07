@@ -86,12 +86,24 @@
 #     -c "..."`); find or fd with -exec, -execdir, -ok, -okdir, -x or
 #     --exec; awk whose program may run one (system(), a `|`, getline,
 #     /inet, or a program file, _awk_runs); sed whose script may (its e
-#     command or the e flag of s, or a script file, _sed_runs); git given it
-#     before its subcommand (`git -c core.pager=...`), which is
-#     configuration; or a command this hook does not name, or a wrapper with
+#     command or the e flag of s, or a script file, _sed_runs); git, with
+#     any subcommand, when it is given configuration before the subcommand
+#     (-c, --config-env, --exec-path=: `git -c core.pager=... status`, `git
+#     -c alias.x=!... x`, `git -c core.sshCommand=... fetch`) or a word
+#     there holds the secret (-C and its directory excepted); git grep
+#     given a pager to run (-O"cmd", -nO"cmd", --open-files-in-pager=cmd,
+#     _grep_pager); or a command this hook does not name, or a wrapper with
 #     no program it names, whose words name a sender, a setter, a shell, an
 #     interpreter or eval (`chroot / curl ...`, `watch "curl ..."`), which
-#     may be the program it runs (_names_runner);
+#     may be the program it runs (_names_runner; a word ending in `/`, such
+#     as `out/`, names a directory and no program);
+#   - any secret held anywhere in the command when a simple command in it
+#     has a device as a target: a redirection to a path under /dev/ but
+#     /dev/null, /dev/stdout and /dev/stderr (`echo ... > /dev/tcp/host/80`,
+#     `cat <<EOF > /dev/tcp/host/80`, `> /dev/fd/3`), a redirection whose
+#     target holds an expansion (`> $D/tcp/host/80`), or tee given such a
+#     path (DEVSINK). A /dev/tcp or /dev/udp path is a connection, so a text
+#     command writing to one sends what it writes;
 #   - the flow rule: when the command has a pipe, a command or process
 #     substitution, a kept heredoc body, a /dev/tcp or /dev/udp path, or a
 #     simple command holding a secret that writes to a file (a redirection
@@ -113,8 +125,10 @@
 # secret being passed. So echo, printf or tee writing a secret-shaped word to
 # a file (`echo "API_TOKEN=..." > .env`, `printf ... >> .env`, `tee .env
 # <<< "API_TOKEN=..."`, `tee .env <<EOF`) is allowed too, which the
-# whole-line check refused before #241, as long as no other command on the
-# line could read the file (the flow rule). A program this hook does not
+# whole-line check refused before #241, as long as every other command on
+# the line is a text command or shell syntax that runs nothing (the flow
+# rule: `echo ... > notes.txt; ls` is refused, since ls is neither), and
+# the file is not a device (DEVSINK). A program this hook does not
 # name may still be given such a word as its argument (`python3 x.py
 # "token=..."`), unless its words name a program that sends or runs. A kept
 # heredoc body line that is the assignment itself (`cat <<EOF > .env`) is
@@ -181,6 +195,19 @@ TEXTS=" echo printf cat tee grep egrep fgrep rg ag sed awk head tail less more w
 # pieces so the PYTHONPATH scan does not take this list for a python call.
 INTERPS=" python python2 python""3 node nodejs ruby perl "
 
+# _wordlist <list>...: the words of the lists as one list with a single
+# space before, between and after them. Lists joined as they are written
+# (" curl ... helm "" export ...") hold two spaces where they meet, and
+# `*" $b "*` with an empty b (the basename of `out/`) matches those.
+_wordlist() {
+  local IFS=' '
+  local -a w
+  read -r -a w <<< "$*"
+  printf ' %s ' "${w[*]}"
+}
+# The programs _target names.
+TARGETS=$(_wordlist "$SENDERS" "$SETTERS" "$CREDS" "$INTERPS" "$TEXTS" gh npm yarn pnpm aws gcloud az git)
+
 # The check this hook made before #241, on the whole line: the fallback.
 _whole_line() {
   if printf '%s\n' "$COMMAND" | grep -qiE "$SECRET_RE"; then
@@ -231,7 +258,7 @@ _target() {
   case "$b" in ''|*[[:space:]]*) return 1 ;; esac
   shopt -q nocasematch && nc=1
   shopt -s nocasematch
-  case "$SENDERS$SETTERS$CREDS$INTERPS$TEXTS gh npm yarn pnpm aws gcloud az git " in *" $b "*) r=0 ;; esac
+  case "$TARGETS" in *" $b "*) r=0 ;; esac
   case "$b" in python[0-9]*) r=0 ;; esac
   [ "$nc" = 1 ] || shopt -u nocasematch
   return "$r"
@@ -280,12 +307,14 @@ _positional() {
 # arguments of a command this hook does not name (`chroot / curl ...`,
 # `find . -exec curl ...`, `uv run curl ...`) may be the program that command
 # runs. Shells are added by _bd_is_shell.
-RUNNERS=" $SENDERS $SETTERS $CREDS $INTERPS eval exec source gh npm npx yarn pnpm aws gcloud az "
+RUNNERS=$(_wordlist "$SENDERS" "$SETTERS" "$CREDS" "$INTERPS" eval exec source gh npm npx yarn pnpm aws gcloud az)
 
 # _names_runner: does a word of TOK after the command's first word (but the
 # program itself), or a space-separated piece of one (`sh -c "curl ..."`),
 # name a program in RUNNERS or a shell? Read loosely: a piece that only looks
-# like one counts. The caller declares first and n.
+# like one counts. A piece ending in `/` (`out/`, `tests/`) names a
+# directory, no program, and its empty basename is skipped. The caller
+# declares first and n.
 _names_runner() {
   local j p b nc=0 r=1
   local -a P=()
@@ -297,6 +326,7 @@ _names_runner() {
     read -r -a P <<< "${TOK[j]//[\(\)\{\}\;\&\|\`\"\']/ }"
     for p in "${P[@]}"; do
       b=${p##*/}
+      [ -n "$b" ] || continue
       case "$RUNNERS" in *" $b "*) r=0; break ;; esac
       if _bd_is_shell "$b"; then r=0; break; fi
     done
@@ -337,6 +367,34 @@ _awk_runs() {
       *system*|*'|'*|*getline*|*/inet*) return 0 ;;
     esac
   done
+  return 1
+}
+
+# _grep_pager <word>: is the word an option of git grep that names the pager
+# it runs: --open-files-in-pager=cmd (or a prefix of it, which git accepts),
+# or -O with its value glued, alone or ending a bundle of short options
+# (-O"cmd", -nO"cmd")? A bare -O or --open-files-in-pager runs the
+# configured pager, and a word after -O is the pattern. In a bundle, a letter
+# that takes a value (-A -B -C -e -f -m) makes the rest of the word its value.
+_grep_pager() {
+  local r
+  case "$1" in
+    --*=*)
+      r=${1%%=*}
+      [ "${#r}" -ge 3 ] || return 1
+      case "--open-files-in-pager" in "$r"*) return 0 ;; esac
+      return 1 ;;
+    --*) return 1 ;;
+    -?*)
+      r=${1#-}
+      while [ -n "$r" ]; do
+        case "$r" in
+          O?*) return 0 ;;
+          [ABCefm]*) return 1 ;;
+        esac
+        r=${r:1}
+      done ;;
+  esac
   return 1
 }
 
@@ -450,13 +508,41 @@ FLOW=0
 HELD=()
 RISKY=()
 SEGNO=0
+# DEVSINK: some simple command writes to, or reads from, a device: a
+# redirection to a path under /dev/ but /dev/null, /dev/stdout and
+# /dev/stderr (`> /dev/tcp/host/80`, `> /dev/fd/3`), a redirection whose
+# target holds an expansion (`> $D/tcp/host/80`), which may be one, or tee
+# given such a path. A /dev/tcp or /dev/udp path is a connection, so a
+# secret held anywhere in the command refuses it, even when every command
+# in it is a text command (`echo ... > /dev/tcp/host/80`, `cat <<EOF >
+# /dev/tcp/host/80`).
+DEVSINK=0
+
+# _dev_target <word>: is the word a device path that is not /dev/null,
+# /dev/stdout or /dev/stderr, or a path that holds an expansion?
+_dev_target() {
+  case "$1" in
+    /dev/null|/dev/stdout|/dev/stderr) return 1 ;;
+    */dev/*|*'$'*|*'`'*) return 0 ;;
+  esac
+  return 1
+}
 
 # _flow_record <held> <body>: called by _judge for each simple command, with
-# its cmd, text, BD_RDIR and BD_WRAPI. A simple command that holds a secret
-# and writes to a file (any redirection but to /dev/null, /dev/stdout,
-# /dev/stderr or a file descriptor), or is tee, sets FLOW.
+# its cmd, text, TOK, n, BD_CMDI, BD_RDIR and BD_WRAPI. A simple command that
+# holds a secret and writes to a file (any redirection but to /dev/null,
+# /dev/stdout, /dev/stderr or a file descriptor), or is tee, sets FLOW. Any
+# simple command with a device target sets DEVSINK.
 _flow_record() {
-  local t
+  local t k
+  for t in ${BD_RDIR[@]+"${BD_RDIR[@]}"}; do
+    if _dev_target "$t"; then DEVSINK=1; fi
+  done
+  if [ "$cmd" = tee ]; then
+    for ((k = BD_CMDI + 1; k < n; k++)); do
+      if _dev_target "${TOK[k]}"; then DEVSINK=1; fi
+    done
+  fi
   if [ "$1" = 1 ]; then
     HELD+=("$SEGNO")
     [ "$cmd" != tee ] || FLOW=1
@@ -588,7 +674,14 @@ _judge() {
   # and fd the words after -exec (-execdir, -ok, -x and the like), and awk
   # and sed a program their script names (_awk_runs, _sed_runs), which makes
   # them no text command. git reads a value given before its subcommand
-  # (`git -c core.pager=...`) as configuration, not text, and may run it.
+  # (`git -c core.pager=...`, `-c alias.x=!...`, `--config-env`) as
+  # configuration, not text, and may run it whatever the subcommand
+  # (`status` runs core.pager, `x` the alias, `fetch` core.sshCommand), so
+  # any of those options, or a word before the subcommand holding a
+  # secret, makes the command no text command. Only -C and its value, a
+  # directory, run nothing. git grep runs the pager given to -O (glued, or
+  # ending a bundle: -O"cmd", -nO"cmd") or --open-files-in-pager=cmd
+  # (_grep_pager).
   case "$cmd" in
     eval|source|.) runs=1 ;;
     find|fd|fdfind)
@@ -598,9 +691,17 @@ _judge() {
     awk|gawk|mawk|nawk) if _awk_runs; then runs=1; text=0; fi ;;
     sed|gsed) if _sed_runs; then runs=1; text=0; fi ;;
     git)
-      if [ "$text" = 1 ]; then
-        for ((k = BD_CMDI + 1; k < ${POSI[0]:-$n}; k++)); do
-          if printf '%s\n' "${TOK[k]}" | grep -qiE "$HELD_RE"; then runs=1; text=0; fi
+      for ((k = BD_CMDI + 1; k < ${POSI[0]:-$n}; k++)); do
+        case "${TOK[k]}" in
+          -C) k=$((k + 1)); continue ;;
+          -c|-c?*|--config-env|--config-env=*|--exec-path=*) runs=1; text=0 ;;
+        esac
+        if printf '%s\n' "${TOK[k]}" | grep -qiE "$HELD_RE"; then runs=1; text=0; fi
+      done
+      if [ "${POS[0]:-}" = grep ]; then
+        for ((k = POSI[0] + 1; k < n; k++)); do
+          [ "${TOK[k]}" != -- ] || break
+          if _grep_pager "${TOK[k]}"; then runs=1; text=0; fi
         done
       fi ;;
   esac
@@ -711,6 +812,7 @@ while IFS= read -r SEG; do
 $SEG"; else FEED=$SEG; fi
 done <<< "$BD_SEGS"
 
+if [ "$DEVSINK" = 1 ] && [ "${#HELD[@]}" -gt 0 ]; then _refuse "$SECRET_MSG"; fi
 if [ "$FLOW" = 1 ] && [ "${#HELD[@]}" -gt 0 ] && [ "${#RISKY[@]}" -gt 0 ]; then
   for H in "${HELD[@]}"; do
     for R in "${RISKY[@]}"; do
