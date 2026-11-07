@@ -100,9 +100,9 @@ _flow_autolog() {
   journal_dir=".decisions"
   if [ -x "$helper_dir/bin/journal-dir.sh" ]; then
     # journal-dir.sh, as every journal writer resolves the directory. It reads
-    # .claude/settings.flow.json from its process CWD, and judges a
-    # repository's value against it, so it must run inside the repo the
-    # payload named, not this process's.
+    # the settings of the repository its process CWD is in, and judges a
+    # repository's value against that repository, so it must run inside the
+    # repo the payload named, not this process's.
     # Guarded even though this function's only call site is `_flow_autolog ||
     # true`, which suspends `set -e` inside it: the body should not depend on
     # how a future caller invokes it.

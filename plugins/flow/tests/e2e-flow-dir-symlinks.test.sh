@@ -335,6 +335,13 @@
 #      text, or on a goal whose status is not text or whose turn count is
 #      not a whole number; or, when the trust ledger script cannot be
 #      started, writes the goal and then exits 1, so a retry is refused
+#   L74 run from a subdirectory, journal-dir.sh looks for the repository's
+#      settings files where the cascade does not read them (relative to the
+#      working directory, while the cascade reads them at the repository
+#      top): it finds no file, so a committed or local journal.dir outside
+#      the checkout goes unchecked, --user-owned calls it the user's own, and
+#      journal-append.sh writes outside the repository; or, the other way, a
+#      repository value inside the checkout is refused from a subdirectory
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -1156,6 +1163,58 @@ if _want journal-append-local-absolute; then
   e2e_expect_err "$REPO_REFUSED"
   e2e_expect_file_has ".decisions/issue-42.md" "$BRAINSTORM"
   _expect_untouched
+fi
+
+if _want journal-dir-subdir-project-absolute; then
+  _flow_test_begin "journal-dir.sh run from a subdirectory: an absolute journal.dir outside the repository in the committed settings is refused, is not the user's own, and journal-append.sh does not write there (L74)"
+  e2e_new journal-dir-subdir-project-absolute
+  e2e_describe "journal.dir in the committed .claude/settings.flow.json at the repository top is the physical path of an empty directory beside the repository; every step runs with the working directory in sub/"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/sub"
+  _outside_empty
+  _settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/outside")\"}}"
+  _run_in sub bin/journal-dir.sh
+  e2e_expect_equal 0 "$E2E_RC" "journal-dir.sh exit status"
+  e2e_expect_equal ".decisions" "$E2E_OUT" "what journal-dir.sh prints"
+  e2e_expect_err "$REPO_REFUSED"
+  e2e_expect_err "/.claude/settings.flow.json: "
+  _run_in sub bin/journal-dir.sh --user-owned
+  e2e_expect_equal 1 "$E2E_RC" "journal-dir.sh --user-owned exit status"
+  e2e_expect_equal "" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
+  _run_in sub bin/journal-append.sh --issue 42 --text entry
+  e2e_expect_equal 0 "$E2E_RC" "journal-append.sh exit status"
+  e2e_expect_err "$REPO_REFUSED"
+  _expect_untouched
+fi
+
+if _want journal-dir-subdir-local-absolute; then
+  _flow_test_begin "journal-dir.sh --user-owned run from a subdirectory: an absolute journal.dir outside the repository in the local settings file is not the user's own (L74)"
+  e2e_new journal-dir-subdir-local-absolute
+  e2e_describe "journal.dir in .claude/settings.flow.local.json at the repository top is the physical path of an empty directory beside the repository; the working directory is sub/deeper"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/sub/deeper"
+  _outside_empty
+  _local_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/outside")\"}}"
+  _run_in sub/deeper bin/journal-dir.sh --user-owned
+  e2e_expect_equal 1 "$E2E_RC" "journal-dir.sh --user-owned exit status"
+  e2e_expect_equal "" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
+  e2e_expect_err "/.claude/settings.flow.local.json: "
+  e2e_expect_err "$REPO_REFUSED"
+fi
+
+if _want journal-dir-subdir-inside; then
+  _flow_test_begin "journal-dir.sh run from a subdirectory: an absolute repository journal.dir inside the repository is used, and is not the user's own (L74)"
+  e2e_new journal-dir-subdir-inside
+  e2e_describe "journal.dir in the committed .claude/settings.flow.json is <physical repository path>/docs/j, a real directory; the working directory is sub/"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/sub" "$E2E_REPO/docs/j"
+  _settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/docs/j\"}}"
+  _run_in sub bin/journal-dir.sh
+  e2e_expect_equal 0 "$E2E_RC" "journal-dir.sh exit status"
+  e2e_expect_equal "$(_physical "$E2E_REPO")/docs/j" "$E2E_OUT" "what journal-dir.sh prints"
+  _expect_err_lacks "refusing"
+  _run_in sub bin/journal-dir.sh --user-owned
+  e2e_expect_equal 1 "$E2E_RC" "journal-dir.sh --user-owned exit status"
 fi
 
 if _want journal-record-local-prefix; then

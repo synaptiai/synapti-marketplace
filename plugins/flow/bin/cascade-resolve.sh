@@ -41,6 +41,13 @@
 #                         names resolves inside the repository (or is a symlink):
 #                         then it is skipped with a WARN, and a script that is
 #                         itself inside the repository refuses to answer.
+#   --repo-settings-paths print the two repository settings files this script
+#                         reads, the local file then the project file, each
+#                         followed by a NUL byte (a path can hold a newline),
+#                         whether or not they exist, and exit 0. A caller that
+#                         must know which file a value came from (journal-dir.sh)
+#                         reads these, so it judges the same files the cascade
+#                         reads, from any directory.
 #   --user-settings-path  print the user settings file this script would read
 #                         (FLOW_USER_SETTINGS or .claude/settings.flow.json in
 #                         the user's home, after the checks below), or nothing
@@ -143,6 +150,7 @@ USER_PATH_ONLY=0
 STATE_DIR_ONLY=0
 USER_HOME_ONLY=0
 USER_ENV_NAME=""
+REPO_PATHS_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -167,6 +175,10 @@ while [ $# -gt 0 ]; do
       ;;
     --no-repo-settings)
       NO_REPO_SETTINGS=1
+      shift
+      ;;
+    --repo-settings-paths)
+      REPO_PATHS_ONLY=1
       shift
       ;;
     --user-settings-path)
@@ -207,6 +219,7 @@ EXPR="${1:-}"
 [ "$USER_PATH_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ "$STATE_DIR_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ "$USER_HOME_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
+[ "$REPO_PATHS_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ -n "$USER_ENV_NAME" ] && EXPR="${EXPR:-.}"
 [ -z "$EXPR" ] && {
   echo "cascade-resolve: missing <jq-expression>. Usage: $0 [--default <v>] [--compact] <jq-expression>" >&2
@@ -530,7 +543,7 @@ if [ "$STATE_DIR_ONLY" -eq 1 ]; then
   exit 0
 fi
 
-if ! command -v jq >/dev/null 2>&1; then
+if [ "$REPO_PATHS_ONLY" -eq 0 ] && ! command -v jq >/dev/null 2>&1; then
   echo "cascade-resolve: WARN: jq not installed; cannot resolve cascade" >&2
   if [ $DEFAULT_SET -eq 1 ]; then
     printf '%s\n' "$DEFAULT_VALUE"
@@ -556,6 +569,10 @@ if [ -n "$_cr_repo_top" ] && [ -d "$_cr_repo_top" ] && ! [ "$_cr_repo_top" -ef .
    ! { [ -n "${_cr_user_home:-}" ] && [ "$_cr_repo_top" -ef "$_cr_user_home" ]; }; then
   LOCAL_SETTINGS="$_cr_repo_top/$LOCAL_SETTINGS"
   PROJECT_SETTINGS="$_cr_repo_top/$PROJECT_SETTINGS"
+fi
+if [ "$REPO_PATHS_ONLY" -eq 1 ]; then
+  printf '%s\0%s\0' "$LOCAL_SETTINGS" "$PROJECT_SETTINGS"
+  exit 0
 fi
 USER_SETTINGS="${_cr_user_home}/.claude/settings.flow.json"
 # FLOW_USER_SETTINGS names a different user settings file. The review-precision

@@ -17,6 +17,8 @@
 # cascade-resolve.sh --no-repo-settings, which also refuses to answer when this
 # script itself lies inside the repository being checked (the plugin's own
 # checkout); .decisions is printed then.
+# The two files are the ones cascade-resolve.sh reads: at the top of the
+# repository, from whatever directory in it this runs (see its header).
 # Inside is ensure_inside_repo() in bin/_repo_dir.py, the rule every flow
 # writer applies below the repository (ensure_repo_dir), taken from the
 # repository top (the nearest directory at or above the working directory with
@@ -109,10 +111,25 @@ DIR=$("$SCRIPT_DIR/cascade-resolve.sh" --default "$DEFAULT" '.journal.dir // emp
 # run from HOME, .claude/settings.flow.json IS ~/.claude/settings.flow.json,
 # and its value is the user's choice, not the repository's. Which file that is
 # comes from cascade-resolve.sh, the one place that decides it.
+# The two repository files are the ones the cascade read, which it names
+# (--repo-settings-paths): at the repository top, wherever in it this runs.
+# Looking for them relative to the working directory found nothing from a
+# subdirectory, so a committed journal.dir outside the checkout went
+# unchecked there and counted as the user's own (--user-owned).
 SOURCE=""
 FROM_REPO=0
+REPO_FILES=()
+while IFS= read -r -d '' f; do
+  REPO_FILES+=("$f")
+done < <("${BASH:-bash}" "$SCRIPT_DIR/cascade-resolve.sh" --repo-settings-paths 2>/dev/null)
+# Without its answer, the files are looked for at the repository top here.
+if [ "${#REPO_FILES[@]}" -ne 2 ]; then
+  _jd_top=$(git rev-parse --show-toplevel 2>/dev/null) || _jd_top="."
+  [ -n "$_jd_top" ] || _jd_top="."
+  REPO_FILES=("$_jd_top/.claude/settings.flow.local.json" "$_jd_top/.claude/settings.flow.json")
+fi
 if command -v jq >/dev/null 2>&1; then
-  for f in .claude/settings.flow.local.json .claude/settings.flow.json; do
+  for f in "${REPO_FILES[@]}"; do
     [ -f "$f" ] || continue
     v=$(jq -r '.journal.dir // empty' "$f" 2>/dev/null) || continue
     if [ -n "$v" ] && [ "$v" != null ]; then

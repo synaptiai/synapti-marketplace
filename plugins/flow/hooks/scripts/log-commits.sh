@@ -46,9 +46,9 @@ REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || exit 0
 HELPER_DIR="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 JOURNAL_DIR=".decisions"
 if [ -x "$HELPER_DIR/bin/journal-dir.sh" ]; then
-  # journal-dir.sh reads .claude/settings.flow.json from its process CWD, and
-  # judges a repository's value against it, so it must run inside the repo the
-  # payload named, not this process's.
+  # journal-dir.sh reads the settings of the repository its process CWD is in,
+  # and judges a repository's value against that repository, so it must run
+  # inside the repo the payload named, not this process's.
   # `|| JOURNAL_DIR=""` because this runs under `set -e` and is not in a tested
   # context: without it a `cd` or resolver failure aborts the whole hook, which
   # breaks the contract that a hook never fails the tool call it follows. The
