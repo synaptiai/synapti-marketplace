@@ -130,6 +130,13 @@
   fragment) no longer cuts the line as a comment, so the `end` of a one-line
   `def` that builds a URL is seen. An interpolated gem name or source is still
   not a literal and still makes the Gemfile `MANIFEST_UNPARSED` (#248)
+- Gemfile reading (#248): a double-quoted or backtick gem name, source option
+  (`git:`, `github:`, `path:`, ...) or `git`/`path` block target that
+  interpolates with `#{...}`, `#@ivar`, `#@@cvar` or `#$gvar` is not a
+  literal, so the Gemfile is reported `MANIFEST_UNPARSED` instead of naming
+  that value as a redirect target. A single-quoted value is not interpolated
+  and is reported as written. A `#` inside a backtick command is no longer
+  read as a comment.
 - A setter or operator method in a Gemfile (`def mode=(v)`, `def ==(o)`, `def
   []=(k, v)`) now opens a block closed by its `end`. Only a true endless `def
   x = expr` does not, so the setter's `end` no longer closes the surrounding
@@ -149,14 +156,30 @@
   lists the piped-into-a-shell check uses. A secret given to a sender is also
   refused when it arrives in a here-string (`curl -d @- … <<< "password=…"`)
   or is piped into the sender (`echo "password=…" | curl -d @- …`). `gh api`,
-  `gh secret`, `gh variable`, vault, heroku, fly, flyctl, aws, gcloud, az and
-  `npm`/`yarn`/`pnpm config set` count as commands that send what they are
-  given. In any command, a URL with a secret-shaped query parameter
-  (`?token=…`) or a literal password in its userinfo (`https://user:…@host`)
+  `gh secret`, `gh variable`, vault, heroku, fly, flyctl, `npm`/`yarn`/`pnpm
+  config set` and `npm set` count as commands that send what they are given,
+  and so do aws, gcloud and az for every subcommand but their log and
+  monitoring searches (`aws logs`/`cloudwatch`, `gcloud logging`, `az
+  monitor`), where a value is a search pattern: `aws lambda
+  update-function-configuration --environment "Variables={DB_PASSWORD=…}"`,
+  `gcloud run deploy --set-env-vars DB_PASSWORD=…` and `az webapp config
+  appsettings set --settings DB_PASSWORD=…` are refused; `gcloud
+  --set-secrets` and `--update-secrets`, which take Secret Manager references,
+  are not judged. A URL with a secret-shaped query parameter (`?token=…`) or a
+  literal password in its userinfo (`https://user:…@host`) is refused in every
+  command but a text command (`echo`, `printf`, `cat`, `grep`, `sed`, `jq` and
+  the like, `git commit`/`log`/`show`/`diff`/`tag`/`notes`/`grep`, the text
+  subcommands of `gh issue`, `gh pr` and `gh release`), including `git
+  ls-remote`, `git config`, `pip install --index-url`, `npm install`, `svn
+  checkout` and a `gh api` field value; a line of a heredoc body nothing runs
+  (`cat <<EOF > notes.md`) is not a command. After a wrapper, a word naming a
+  text command is the program only when nothing but options or a duration
+  stands before it, so `sudo pip install --index-url <URL with a password> jq`
   is refused. An inline `python -c`, `node -e`, `ruby -e` or `perl -e` script,
-  which is not shell, is checked as a whole. `gh issue create --body`, `echo`,
-  `grep`, `printf >> README` and `git commit -m` are still allowed.
-
+  which is not shell, is checked as a whole, also after perl's or ruby's `-i`
+  and its attached backup extension (`perl -pi.bak -e …`, `perl -i.pre -pe
+  …`). `gh issue create --body`, `echo`, `grep`, `printf >> README` and `git
+  commit -m` are still allowed.
 - The `bin/` helpers that run `python3` with a path do their work on Windows
   (#246). Git Bash hands a script POSIX paths (`/d/a/proj/...`), and a native
   Windows `python3` reads them as another place, so a helper importing the

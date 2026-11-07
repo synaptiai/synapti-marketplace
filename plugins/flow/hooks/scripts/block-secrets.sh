@@ -374,6 +374,19 @@ _judge() {
   case "$SETTERS" in *" $cmd "*) setter=1 ;; esac
   case "$CREDS" in *" $cmd "*) sender=1 ;; esac
   case "$TEXTS" in *" $cmd "*) text=1 ;; esac
+  # After a wrapper, the program is the first word this hook names, which a
+  # text command can be only when nothing but options or a duration stands
+  # between the wrapper and it: in `sudo pip install --index-url URL jq`, jq
+  # is the package, not the program, and the command is one this hook does
+  # not name (cmd empty), which keeps the URL rule.
+  if [ "$text" = 1 ] && [ "${#BD_WRAPI[@]}" -gt 0 ]; then
+    for ((k = BD_WRAPI[${#BD_WRAPI[@]} - 1] + 1; k < BD_CMDI; k++)); do
+      case "${TOK[k]}" in
+        -*|[0-9]|[0-9]*[0-9smhd]) ;;
+        *) text=0; cmd=""; break ;;
+      esac
+    done
+  fi
   # The subcommand decides what gh, npm, yarn, pnpm, aws, gcloud, az and git
   # do, read past the global options in front of it (_positional). A global
   # option whose value is not listed leaves the value as the subcommand, so
@@ -409,7 +422,7 @@ _judge() {
       # that take a URL to fetch from or push to, network ones.
       _positional " -C -c --git-dir --work-tree --namespace --exec-path --config-env "
       case "${POS[0]:-}" in
-        commit|log|show|diff|tag|notes) text=1 ;;
+        commit|log|show|diff|tag|notes|grep) text=1 ;;
         clone|fetch|pull|push) gitnet=1 ;;
         remote) case "${POS[1]:-}" in add|set-url) gitnet=1 ;; esac ;;
         submodule) [ "${POS[1]:-}" != add ] || gitnet=1 ;;
@@ -437,6 +450,14 @@ _judge() {
   done
   for ((j = first + 1; j < n; j++)); do
     w=${TOK[j]}
+    # gcloud --set-secrets and --update-secrets take Secret Manager references
+    # (NAME=secret-name:version), not values.
+    if [ "$cmd" = gcloud ]; then
+      case "$w" in
+        --set-secrets|--update-secrets) j=$((j + 1)); continue ;;
+        --set-secrets=*|--update-secrets=*) continue ;;
+      esac
+    fi
     # gh api judges a field (-f/-F/--field/--raw-field name=value) by its
     # name: a secrets endpoint takes token, encrypted_value, key_id; a
     # comment body that names a token is text.

@@ -257,3 +257,15 @@ _case sec-gcloud-project-logging 'gcloud --project p logging read "textPayload:t
 _case sec-az-monitor-q "az monitor log-analytics query -q \"x | where m has 'token=abcdefghij'\"" allowed "az querying logs with -q for the pattern (K17)"
 _case sec-npm-set 'npm set //registry.example/:_authToken=abcdefghijk' refused "npm set, the alias of npm config set (K17)"
 _case sec-npm-location-set 'npm --location project set //r/:_authToken=abcdefghijk' refused "npm set after --location project (K17)"
+
+# --- K18: a text command named after a wrapper, and references not values ---
+# After a wrapper, a word naming a text command is the program only when
+# nothing but options or a duration stands before it; a package named jq is
+# an argument, and the URL rule still applies to the command.
+_case sec-sudo-pip-jq 'sudo pip install --index-url https://user:abcdefghijk@pypi.example/simple jq' refused "a package named jq after a wrapper is not the program (K18)"
+_case sec-timeout-pip-yq 'timeout 60 pip install --index-url https://user:abcdefghijk@pypi.example/simple yq' refused "a package named yq after timeout N (K18)"
+_case sec-xargs-pip-jq 'xargs pip install --index-url https://user:abcdefghijk@pypi.example/simple jq' refused "a package named jq after xargs (K18)"
+_case sec-timeout-grep-url 'timeout 5 grep -rn "https://deploy:abcdefghijk@x" docs' allowed "grep after timeout and its duration is still a text command (K18)"
+_case sec-git-grep-url 'git grep "https://deploy:abcdefghijk@"' allowed "git grep searches text (K18)"
+_case sec-gcloud-set-secrets 'gcloud run deploy api --set-secrets DB_PASSWORD=db-password:latest' allowed "gcloud --set-secrets takes a Secret Manager reference, not a value (K18)"
+_case sec-gcloud-set-env 'gcloud run deploy api --set-env-vars DB_PASSWORD=abcdefghijk' refused "gcloud --set-env-vars with a literal value is still refused (K18)"
