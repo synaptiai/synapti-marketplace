@@ -150,13 +150,17 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
   # character); a `(` ends a word only when it opens one itself, and a `)`
   # only when it closes a subshell or a `((` (`subat` is the position of the
   # last such `)`): the `)` of `$(true)#x`, `$((1))#x` or `<(true)#x` leaves
-  # the word going on.
+  # the word going on. Counting parentheses cannot tell which `)` closes what
+  # once the line holds a `$` or a backquote (the `)` inside `${x:-)}`, an
+  # escaped or case-pattern `)` inside a `$( )`) or a `(` inside a word, so
+  # after either (`nosub`) no `)` opens a comment and the rest of the line
+  # is read as code.
   function is_comment_start(line, i, escat,   p, pp) {
     if (i == 1) return 1
     if (escat == i - 1) return 0
     p = substr(line, i - 1, 1)
     if (p ~ /[ \t;|&]/) return 1
-    if (p == ")") return (subat == i - 1)
+    if (p == ")") return (subat == i - 1 && !nosub)
     if (p != "(") return 0
     if (i == 2) return 1
     if (escat == i - 2) return 0
@@ -368,9 +372,12 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
 
     # `ps` holds one letter per `(` open on this line: s for one that opens a
     # word (a subshell, a `((`), w for one inside a word (`<(`, `@(`).
-    n = length(line); i = 1; escat = 0; ps = ""; subat = 0
+    n = length(line); i = 1; escat = 0; ps = ""; subat = 0; nosub = 0
     while (i <= n) {
       c = substr(line, i, 1)
+      # An escaped character is stepped over, so a `$` or a backquote reached
+      # here is not escaped.
+      if ((c == "$" || c == BT) && q != SQ) nosub = 1
       if (q != "") {
         if (c == "\\" && q == "\"") { i += 2; continue }
         # A substitution runs even inside double quotes. Inside single quotes it
@@ -419,6 +426,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       if (c == "(" && substr(line, i + 1, 1) == "(") {
         unmodelled = 1
         ps = ps (opens_word(line, i, escat) ? "ss" : "ww")
+        if (substr(ps, length(ps), 1) == "w") nosub = 1
         i += 2; continue
       }
       if (c == "\"" || c == SQ) {
@@ -468,7 +476,10 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       }
       if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")" ||
           c == "{" || c == "}") {
-        if (c == "(") ps = ps (opens_word(line, i, escat) ? "s" : "w")
+        if (c == "(") {
+          ps = ps (opens_word(line, i, escat) ? "s" : "w")
+          if (substr(ps, length(ps), 1) == "w") nosub = 1
+        }
         if (c == ")" && ps != "") {
           if (substr(ps, length(ps), 1) == "s") subat = i
           ps = substr(ps, 1, length(ps) - 1)

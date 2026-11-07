@@ -24,6 +24,12 @@
 #      inside a word is read as a comment, though the word goes on, so the
 #      command after the next `;` is never checked
 #   C7 a `#` right after the `)` that closes a subshell stops being a comment
+#   C8 a `)` the parenthesis count pairs with the wrong `(` is read as
+#      closing a subshell, so the `#` after it cuts the rest of the line: a
+#      `)` inside `${x:-)}`, a case pattern's `)` inside a `$( )`, or an
+#      escaped `\)` inside a `$( )` that the force-push scanner's span
+#      skipper takes for the end of the substitution. When the count cannot
+#      be trusted the rest of the line must stay code.
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -88,6 +94,17 @@ _case esc-push-procsub "$PUSH_HOOK" 'cat <(true)#x ; git push --force origin mai
 _case esc-push-subshell-close "$PUSH_HOOK" '(ls)#x ; git push --force origin main' allowed "a # after the ) that closes a subshell is a comment (C7)"
 _case esc-gate-subst "$GATE_HOOK" 'echo $(true)#x ; gh pr merge 7 --squash' asks "a merge after \$(true)#x is asked about (C6, C5)"
 _case esc-gate-subshell-close "$GATE_HOOK" '(ls)#x ; gh pr merge 7 --squash' silent "a merge in the comment after a subshell is not (C7)"
+
+# --- a ) the parenthesis count cannot place (C8) -----------------------------
+MERGE_HOOK=hooks/scripts/block-unchecked-merge.sh
+_case esc-rm-param-paren "$DELETE_HOOK" '( echo ${x:-)#} ; rm -rf ~ )' refused "a ) inside \${x:-)} does not close the subshell (C8)"
+_case esc-rm-case-subst "$DELETE_HOOK" '( echo $(case y in y) true;; esac)#x ; rm -rf ~ )' refused "a case pattern's ) inside \$( ) does not close the subshell (C8)"
+_case esc-rm-escaped-subst "$DELETE_HOOK" '( echo $(echo a\)b)#x ; rm -rf ~ )' refused "an escaped ) inside \$( ) does not close the subshell (C8)"
+_case esc-push-escaped-subst "$PUSH_HOOK" '( echo $(echo a\)b)#x ; git push --force origin main )' refused "an escaped ) inside \$( ) is not the end of the substitution (C8, C5)"
+_case esc-push-case-subst "$PUSH_HOOK" '( echo $(case y in y) true;; esac)#x ; git push --force origin main )' refused "a case pattern's ) inside \$( ) (C8, C5)"
+_case esc-push-param-paren "$PUSH_HOOK" '( echo ${x:-)#} ; git push --force origin main )' refused "a ) inside \${x:-)} (C8, C5)"
+_case esc-gate-param-paren "$GATE_HOOK" '( echo ${x:-)#} ; gh pr merge 5 )' asks "a merge after \${x:-)#} is asked about (C8, C5)"
+_case esc-merge-case-subst "$MERGE_HOOK" '( echo $(case y in y) true;; esac)#x ; gh pr merge 5 )' refused "an unchecked merge after a case pattern inside \$( ) is refused (C8, C5)"
 
 # --- gh issue create during an active goal (ask-issue-create.sh) ------------
 _issue_goal() { e2e_goal issue-304 feature/issue-304-e2e active true; }

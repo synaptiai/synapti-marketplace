@@ -599,9 +599,13 @@ _bd_strip_noncode() {
       # holds one letter per open `(` on the line, s for one that opens a
       # word and w for one inside a word, and `sc` is where the last `)` that
       # closed an s stood. A `)` with no `(` on its line is not known to end
-      # a word. When in doubt the text is kept, which only ever makes a rule
-      # see more.
-      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0; ps = ""; sc = 0
+      # a word. Counting parentheses cannot tell which `)` closes what once
+      # the line holds a `$` or a backquote (the `)` inside `${x:-)}`, or a
+      # case pattern inside a `$( )`, pops the wrong `(`), or a `(` inside a
+      # word, so after either (`nos`) no `)` opens a comment and the rest of
+      # the line stays code. When in doubt the text is kept, which only ever
+      # makes a rule see more.
+      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0; ps = ""; sc = 0; nos = 0
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
@@ -618,6 +622,7 @@ _bd_strip_noncode() {
         else if (ql != "") { if (c == ql || (ql == DQ && c == SQ)) ql = "" }
         else if (dq) ql = DQ
         else if (c == "\"" || c == SQ) ql = c
+        if ((c == "$" || c == "`") && !bq && !bl) nos = 1
         if (oq && ol && !bq && !bl && (c == "(" || c == ")")) {
           prev = (i == 1) ? "" : substr(line, i - 1, 1)
           if (c == ")") {
@@ -630,11 +635,12 @@ _bd_strip_noncode() {
           else if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
                    prev == "|" || prev == "&" || prev == ")") ps = ps "s"
           else ps = ps "w"
+          if (c == "(" && substr(ps, length(ps), 1) == "w") nos = 1
         }
         if (c == "#" && oq && ol && !bq && !bl && !pe1) {
           prev = (i == 1) ? "" : substr(line, i - 1, 1)
           if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
-              prev == "|" || prev == "&" || (prev == ")" && sc == i - 1)) { cut = i; break }
+              prev == "|" || prev == "&" || (prev == ")" && sc == i - 1 && !nos)) { cut = i; break }
           if (prev == "(") {
             pp = (i == 2) ? "" : substr(line, i - 2, 1)
             if (pp == "" || (!pe2 && (pp == " " || pp == "\t" || pp == ";" || pp == "|" ||
