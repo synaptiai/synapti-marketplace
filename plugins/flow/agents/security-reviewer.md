@@ -214,7 +214,10 @@ URL, a GitHub shorthand (`github:user/repo`, `user/repo`) or a `file:`/`link:`
 path, a Gemfile `git:`, `github:` or `path:` source (or a gem inside a `git`
 block), or a gem resolved in a `Gemfile.lock` GIT section or in a PATH
 section other than the project's own (`remote: .`, the gemspec gem, is not
-reported). The
+reported). A Gemfile target is always one written as a literal: a gem name,
+source or `git` block target in double quotes that interpolates (`#{...}`,
+`#@ivar`, `#@@cvar`, `#$gvar`) is decided only when the Gemfile runs, so the
+Gemfile is reported `MANIFEST_UNPARSED=` instead. The
 `<version>` is a ref or revision when the manifest names one. A `<version>` of `(unpinned)` is
 normal: most redirect forms name a place, not a version, and a `Gemfile.lock`
 PATH redirect always reads `(unpinned)`. **Judge the target exactly as you would an added

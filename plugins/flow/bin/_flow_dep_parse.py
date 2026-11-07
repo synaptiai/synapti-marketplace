@@ -775,7 +775,7 @@ def parse_pnpm_lock(text):
 
 # `gem` as a method call: `gem "x"`, `gem("x")`. Not `gemspec` or `gem_group`.
 _GEM_START = re.compile(r"^\s*gem(?![A-Za-z0-9_?!])\s*(\(?)(.*)$")
-_GEM_LITERAL = re.compile(r"^['\"]([^'\"]+)['\"]\s*(?:,\s*['\"]([^'\"]+)['\"])?")
+_GEM_LITERAL = re.compile(r"^(['\"])([^'\"]+)\1\s*(?:,\s*(['\"])([^'\"]+)\3)?")
 # The options that fetch a gem from somewhere other than its registry, in
 # either hash syntax: `git: "url"` or `:git => "url"`.
 _GEM_SOURCE_KEYS = ("git", "github", "gitlab", "bitbucket", "path")
@@ -805,7 +805,7 @@ _ENDLESS_DEF = re.compile(r"^\s*def\s+[^\s(;]+(?:\s*\([^)]*\)|\s)\s*=(?![=~>])")
 # ends where Ruby cannot end a statement: after a comma, a backslash, a hash
 # rocket, a label with no value yet, `||`/`&&`, or an open bracket.
 _GEM_CONTINUES = re.compile(r"(?:,|\\|=>|[A-Za-z0-9_]:|\|\||&&|[(\[{])\s*$")
-_RUBY_STRING = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'")
+_RUBY_STRING = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`")
 # A line a continued gem call cannot run into: a statement of its own.
 _GEMFILE_STATEMENT = re.compile(
     r"^\s*(?:gem|gemspec|git|github|gitlab|bitbucket|path|group|platforms?"
@@ -826,26 +826,26 @@ _DOC_END = re.compile(r"^=end(?:\s|$)")
 
 def _ruby_code(raw):
     """A Gemfile line without its comment, as this parser reads it. A `#`
-    inside a quoted string (a URL fragment, a `#{...}` interpolation) is not
-    a comment, so the rest of the line is kept."""
+    inside a quoted string or a backtick command (a URL fragment, a `#{...}`
+    interpolation) is not a comment, so the rest of the line is kept."""
     stack = []  # open quotes, and `{` for the code of an interpolation
     i = 0
     while i < len(raw):
         c = raw[i]
         top = stack[-1] if stack else None
-        if top in ('"', "'"):
+        if top in ('"', "'", "`"):
             if c == "\\":
                 i += 2
                 continue
             if c == top:
                 stack.pop()
-            elif top == '"' and raw.startswith("#{", i):
+            elif top != "'" and raw.startswith("#{", i):
                 stack.append("{")
                 i += 2
                 continue
         elif c == "#" and not stack:
             return raw[:i].rstrip()
-        elif c in "\"'":
+        elif c in "\"'`":
             stack.append(c)
         elif top == "{" and c in "{}":
             if c == "{":
@@ -856,10 +856,22 @@ def _ruby_code(raw):
     return raw.rstrip()
 
 
-def _literal(value):
-    """A quoted value as written, or None when it interpolates (`"#{x}"`):
-    its text is then decided when the Gemfile runs, not by what it says."""
-    return None if value is None or "#{" in value else value
+# What starts an interpolation in a double-quoted string: `#{expr}`,
+# `#@ivar`, `#@@cvar` and `#$gvar`. Read wider than Ruby's own rule (`#@`
+# and `#$` count whatever follows them, and an escaped `\#{` counts too), so
+# a value this cannot be sure of is refused rather than printed as a target
+# it may not be.
+_INTERPOLATION = re.compile(r"#[{@$]")
+
+
+def _literal(quote, value):
+    """A quoted value as written, or None when it interpolates: a
+    double-quoted value holding `#{...}`, `#@ivar`, `#@@cvar` or `#$gvar`,
+    whose text is then decided when the Gemfile runs, not by what it says.
+    A single-quoted value is not interpolated, so it is always as written."""
+    if value is None or (quote != "'" and _INTERPOLATION.search(value)):
+        return None
+    return value
 
 
 def _ruby_lines(text):
@@ -948,8 +960,10 @@ def parse_gemfile(text):
     together with the lines that continue it, so options written one per
     line are read like options written on one. Any statement continued with
     a backslash onto a modifier (`if`, `unless`, ...) ends there, so the
-    modifier opens no block. A `#` starts a comment only outside a string,
-    a quoted value that interpolates (`"#{x}"`) is not a literal, and the
+    modifier opens no block. A `#` starts a comment only outside a string or
+    a backtick command, a double-quoted value that interpolates (`"#{x}"`,
+    `"#@ivar"`, `"#@@cvar"`, `"#$gvar"`) is not a literal while a
+    single-quoted one, which Ruby does not interpolate, is, and the
     lines of a `=begin` ... `=end` block comment are not read (a `=begin`
     with no `=end` makes the file unreadable).
 
@@ -978,7 +992,7 @@ def parse_gemfile(text):
         line, index = _statement(lines, index, line, lineno, bool(m and not m.group(1)))
         bm = _GEM_BLOCK.match(line)
         if bm:
-            if _literal(bm.group(3)) is None:
+            if _literal(bm.group(2), bm.group(3)) is None:
                 raise ParseError("the %s block on line %d does not name a string literal" % (bm.group(1), lineno))
             blocks.append(_gem_source(bm.group(1), bm.group(3)))
             continue
@@ -990,15 +1004,15 @@ def parse_gemfile(text):
                     raise ParseError("the gem call on line %d does not close on its line" % lineno)
                 args = args[:-1].strip()
             lm = _GEM_LITERAL.match(args)
-            if not lm or _literal(lm.group(1)) is None:
+            if not lm or _literal(lm.group(1), lm.group(2)) is None:
                 raise ParseError("gem name on line %d is not a string literal" % lineno)
-            name = lm.group(1).lower()
-            version = _literal(lm.group(2))
+            name = lm.group(2).lower()
+            version = _literal(lm.group(3), lm.group(4))
             r.add(name, version, lineno)
             source, ref = None, None
             for om in _GEM_OPTION.finditer(args[lm.end():]):
                 key = om.group(1) or om.group(2)
-                value = _literal(om.group(4))
+                value = _literal(om.group(3), om.group(4))
                 if key in _GEM_SOURCE_KEYS:
                     if value is None:
                         raise ParseError("the %s: of gem %s on line %d is not a string literal" % (key, name, lineno))

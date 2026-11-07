@@ -48,6 +48,11 @@
 #      interpolated gem name or source is read as if it were a literal
 #   R16 a setter or operator method (def mode=(v), def []=(k, v)) is read as
 #      an endless def and opens nothing, so its end closes the git block
+#   R17 only #{...} is taken for interpolation, so a double-quoted gem name,
+#      source option or git/path block target interpolating #@ivar, #@@cvar
+#      or #$gvar is reported as a literal target; or a single-quoted string,
+#      which Ruby does not interpolate, is refused as if it did; or a # inside
+#      a backtick command is read as a comment, cutting off its git block's do
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -273,6 +278,47 @@ $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\ngem "rack", git: "https://github.com/#{ORG}/rack"\n' \
 'STATE=unavailable
 MANIFEST_UNPARSED=Gemfile reason=the git: of gem rack on line 2 is not a string literal at head'
+
+_dep dep-gem-ivar-source "a git: source interpolating an instance variable is not a literal (R17)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "rack", git: "https://github.com/#@org/rack"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the git: of gem rack on line 2 is not a string literal at head'
+
+_dep dep-gem-cvar-path "a :path => source interpolating a class variable is not a literal (R17)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "local", :path => "#@@root/local"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the path: of gem local on line 2 is not a string literal at head'
+
+_dep dep-gem-gvar-block "a git block target interpolating a global variable is not a literal (R17)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://github.com/#$FORK/rails.git" do\n  gem "activesupport"\nend\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the git block on line 2 does not name a string literal at head'
+
+_dep dep-gem-ivar-name "a gem name interpolating an instance variable is not a literal (R17)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "#@name"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=gem name on line 2 is not a string literal at head'
+
+_dep dep-gem-single-quoted-hash "a single-quoted source is not interpolated, so it is a literal reported as written (R17)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "rack", git: \'https://github.com/#@org/rack\'\ngem "rake", github: \'evil/#{rake}\'\npath \'../#$vendor\' do\n  gem "local"\nend\n' \
+'STATE=ok
+DEP_ADDED=local@(unpinned) manifest=Gemfile:5
+DEP_ADDED=rack@(unpinned) manifest=Gemfile:2
+DEP_ADDED=rake@(unpinned) manifest=Gemfile:3
+DEP_REPLACED=local -> ../#$vendor@(unpinned) manifest=Gemfile:5
+DEP_REPLACED=rack -> https://github.com/#@org/rack@(unpinned) manifest=Gemfile:2
+DEP_REPLACED=rake -> github:evil/#{rake}@(unpinned) manifest=Gemfile:3'
+
+_dep dep-gem-backtick-block "a backtick command is a string whose # is not a comment, and not a literal (R17)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit `echo https://github.com/#{ENV["FORK"]}/rails.git` do\n  gem "activesupport"\nend\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the git block on line 2 does not name a string literal at head'
 
 _dep dep-gem-setter-def "a setter or operator def opens a block; only an endless def does not (R16)" Gemfile \
 $'gem "rails", "7.0.0"\n' \

@@ -49,7 +49,10 @@
 #     git/github/path block; a Gemfile.lock GIT section, at its revision;
 #     and a Gemfile.lock PATH section other than the project's own
 #     (remote: . is the gemspec gem, not a redirect), with no version, so
-#     a version bump of a path gem is not a new redirect
+#     a version bump of a path gem is not a new redirect. A Gemfile target
+#     is reported only as a literal: a double-quoted gem name, source option
+#     or block target that interpolates (#{...}, #@ivar, #@@cvar, #$gvar)
+#     makes the Gemfile MANIFEST_UNPARSED; a single-quoted one is as written
 #   DEP_NEAR_NAME=<added> ~ <baseline> distance=<n>
 #     two Python names are compared PEP 503 normalised (my_pkg is my-pkg);
 #     names from other ecosystems as written
