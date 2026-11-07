@@ -87,7 +87,7 @@ Used by `goal-evaluator` Step 6. "Candidate" is the deterministic verdict from t
 
 ### `/flow:start` at the end of VERIFY: `achieved` without a question
 
-`/flow:start` Phase 4 step 9a (`GOAL_EVALUATE_BLOCK` in `commands/start.md`) evaluates the run's own goal once the completion gate holds, and writes `achieved` itself when the evaluation is `pass`: the goal is in the trust ledger, every verification command ran and exited 0, no file is outside the goal's allowed paths, and the verdict judge passed every criterion that has no command. Any other result keeps the goal `active` and records the result and the criteria not met in `last_evaluation`. The write merges into the lifecycle, so `turns_evaluated`, `current_phase` and `current_activity` are kept.
+`/flow:start` Phase 4 step 9a (`GOAL_EVALUATE_BLOCK` in `commands/start.md`) evaluates the run's own goal once the completion gate holds, and writes `achieved` itself when the evaluation is `pass`: the goal is in the trust ledger, every verification command ran and exited 0 (a command that could not be started did not run), no file is outside the goal's allowed paths, and the verdict judge passed every criterion that has no command. Any other result keeps the goal `active` and records the result and the criteria not met in `last_evaluation`. The write merges into the lifecycle, so `turns_evaluated`, `current_phase` and `current_activity` are kept.
 
 The confirmation `/flow:goal evaluate` asks for is not asked here, for these reasons:
 

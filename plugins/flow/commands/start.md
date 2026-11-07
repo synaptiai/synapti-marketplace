@@ -1181,7 +1181,7 @@ Prove everything works with fix-forward:
    - Option 3 → Provide Playwright MCP installation guidance, then retry browser tool cascade
 9a. **Goal evaluation** — when this branch has a FlowGoal that is `active`, evaluate it now, on this run's evidence, so `/flow:pr` finds it already decided. Run the block below once the completion gate holds, with `GOAL_EVAL_VERDICT` set to the verdict judge's result from step 6: `PASS` (or the criteria the user approved there under `verdict.requireAllPass: false`), `FAIL`, `NEEDS-HUMAN-REVIEW`, or `DISABLED` when `VERDICT_JUDGE_STATE=disabled`.
 
-   The block runs the goal's verification commands (`hooks/scripts/flow-run-deterministic-checks.sh`, which runs them for a goal in the trust ledger, as every goal `/flow:start` creates is) and records the result in the goal's `lifecycle.last_evaluation`, keeping the rest of the lifecycle (`turns_evaluated`, `current_phase`, `current_activity`). It is `pass` only when the goal is in the trust ledger, every command that ran exited 0, nothing is outside the goal's allowed paths, no command was skipped, and every criterion without a command was passed by the verdict judge. A goal outside the ledger is `incomplete` even when `flow.goals.executeVerificationCommands: true` ran its commands and they passed. On `pass` the goal moves to `achieved` without a question: why no confirmation is needed here is written in `references/goal-lifecycle-transitions.md`. On anything else the goal stays `active`, and the block names the criteria that are not met; report them in the summary, and `/flow:pr`'s goal gate asks about them as before.
+   The block runs the goal's verification commands (`hooks/scripts/flow-run-deterministic-checks.sh`, which runs them for a goal in the trust ledger, as every goal `/flow:start` creates is) and records the result in the goal's `lifecycle.last_evaluation`, keeping the rest of the lifecycle (`turns_evaluated`, `current_phase`, `current_activity`). It is `pass` only when the goal is in the trust ledger, every command that ran exited 0, nothing is outside the goal's allowed paths, no command was skipped or failed to start, and every criterion without a command was passed by the verdict judge. A goal outside the ledger is `incomplete` even when `flow.goals.executeVerificationCommands: true` ran its commands and they passed. On `pass` the goal moves to `achieved` without a question: why no confirmation is needed here is written in `references/goal-lifecycle-transitions.md`. On anything else the goal stays `active`, and the block names the criteria that are not met; report them in the summary, and `/flow:pr`'s goal gate asks about them as before.
 
    ```bash
    # GOAL_EVALUATE_BLOCK_BEGIN
@@ -1221,6 +1221,10 @@ Prove everything works with fix-forward:
    VIOLATIONS=$(_ids path_violations)
    NOT_EXECUTED=$(_ids not_executed)
    NO_COMMAND=$(_ids no_command)
+   # A criterion whose command could not be started (bash missing, a command
+   # the operating system refuses) is in incomplete_acs only, in neither
+   # no_command nor not_executed: it neither passed nor failed.
+   NOT_STARTED=$(printf '%s' "$REPORT" | jq -r '([.incomplete_acs[]?] - [.no_command[]?] - [.not_executed[]?]) | join(", ")')
    TRUSTED=$(printf '%s' "$REPORT" | jq -r '.trusted == true')
    if [ -n "$FAILING" ]; then
      RESULT=fail; REASON="verification commands failed for: $FAILING"
@@ -1228,6 +1232,8 @@ Prove everything works with fix-forward:
      RESULT=fail; REASON="files changed outside the goal's allowed paths: $VIOLATIONS"
    elif [ -n "$NOT_EXECUTED" ]; then
      RESULT=incomplete; REASON="verification commands were not run, because the goal is not trusted: $NOT_EXECUTED"
+   elif [ -n "$NOT_STARTED" ]; then
+     RESULT=incomplete; REASON="verification commands could not be started for: $NOT_STARTED"
    elif [ "$GOAL_EVAL_VERDICT" = FAIL ]; then
      RESULT=fail; REASON="the verdict judge failed one or more acceptance criteria"
    elif [ -n "$NO_COMMAND" ] && [ "$GOAL_EVAL_VERDICT" != PASS ]; then

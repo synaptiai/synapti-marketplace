@@ -28,6 +28,9 @@
 #   V9 a goal on this branch that is no longer active (waiting, blocked,
 #      failed) is reported as no goal, so the summary says there is nothing
 #      to do, or it is evaluated and changed
+#   V10 a criterion whose verification command could not be started (the
+#      runner lists it in incomplete_acs only, not in failing, not_executed
+#      or no_command) counts as passed, so the goal moves to achieved
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -86,11 +89,14 @@ _start_repo() {
 
 # _trusted_goal <command for AC1, or "" for none> [<lifecycle JSON>] — create
 # issue-42's goal the way /flow:start does, on this branch; the lifecycle is
-# {"status": "active"} unless given.
+# {"status": "active"} unless given. A command written as \0 in the argument
+# gets a real NUL byte there (an argument cannot hold one): no operating
+# system starts a command that holds one.
 _trusted_goal() {
   python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$E2E_DIR/goal.yaml" "$1" "${2:-}" <<'PY'
 import json, sys, yaml
 src, dst, cmd, life = sys.argv[1:5]
+cmd = cmd.replace("\\0", "\0")
 g = yaml.safe_load(open(src, encoding="utf-8"))
 ac = g["objective"]["acceptance_criteria"][0]
 if cmd:
@@ -194,6 +200,17 @@ _start_repo start-goal-none "no goal on this branch: nothing is evaluated or wri
 _eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=none"
 e2e_expect_equal 0 "$([ -d "$E2E_REPO/.flow/goals" ] && echo 1 || echo 0)" "a goals directory was created"
+e2e_expect_clean_edges
+
+_start_repo start-goal-not-started "a verification command cannot be started (it holds a NUL byte): the goal stays active and the criterion is named (V10)"
+_trusted_goal 'false\0'
+_eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_line "GOAL_EVAL_RESULT=incomplete"
+e2e_expect_line "GOAL_LIFECYCLE=active"
+e2e_expect_line "GOAL_EVAL_REASON=verification commands could not be started for: AC1"
+e2e_expect_equal active "$(_goal_field lifecycle.status)" "the goal file's lifecycle.status"
+e2e_expect_equal incomplete "$(_goal_field lifecycle.last_evaluation.result)" "the goal file's last_evaluation.result"
 e2e_expect_clean_edges
 
 for status in waiting_for_user blocked failed; do
