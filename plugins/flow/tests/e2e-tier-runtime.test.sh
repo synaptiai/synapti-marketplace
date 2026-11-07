@@ -36,6 +36,8 @@
 #      wrappers after the real programs on PATH, or fail under zsh
 #   W8 a push whose refs cannot be listed (an unreachable remote) is run as
 #      if it sent no tag
+#   W17 a repository's tiers.push: confirm is missed when the push starts in a
+#      subdirectory, so a push from a script there runs without an ask (#337)
 #   W9 a gh or git alias, a gh api call (REST or GraphQL from a file) or a
 #      push with --follow-tags, push.followTags, GIT_CONFIG_* or a mirror
 #      remote is not seen as the action it is
@@ -365,6 +367,17 @@ e2e_expect_equal 0 "$TR_ASKED" "the gate did not ask"
 e2e_expect_equal 1 "$E2E_RC" "exit status"
 e2e_expect_err "tiers.push"
 e2e_expect_equal "main" "$(git --git-dir="$E2E_DIR/remote.git" for-each-ref --format='%(refname:short)' refs/heads | tr '\n' ' ' | sed 's/ $//')" "remote branches"
+
+_tr_setup tr-push-confirm-subdir "tiers.push is confirm in the repository: a push hidden in a script that runs in a subdirectory is still refused (W17)" '{"tiers":{"push":"confirm"}}'
+mkdir -p "$E2E_REPO/sub/deeper"
+_tr_call "cd sub/deeper && printf 'git push origin HEAD:refs/heads/from-sub\n' > s.sh && bash s.sh"
+e2e_expect_equal 0 "$TR_ASKED" "the gate did not ask"
+e2e_expect_equal 1 "$E2E_RC" "exit status"
+e2e_expect_err "tiers.push"
+e2e_expect_equal "" "$(git --git-dir="$E2E_DIR/remote.git" for-each-ref --format='%(refname:short)' refs/heads | tr '\n' ' ' | sed 's/ $//')" "remote branches"
+_tr_call "printf 'git -C sub push origin HEAD:refs/heads/from-c\n' > c.sh; bash c.sh"
+e2e_expect_equal 1 "$E2E_RC" "a push through git -C sub is refused too"
+e2e_expect_equal "" "$(git --git-dir="$E2E_DIR/remote.git" for-each-ref --format='%(refname:short)' refs/heads | tr '\n' ' ' | sed 's/ $//')" "remote branches after git -C"
 
 _tr_setup tr-prcreate-journal "a pull request created from a script with the default journal tier: it runs, with the wrapper's breadcrumb"
 _tr_call "printf 'gh pr create --title t --body b\n' > m.sh; bash m.sh"

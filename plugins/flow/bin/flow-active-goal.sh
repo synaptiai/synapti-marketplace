@@ -204,6 +204,26 @@ any_status = (sys.argv[7] if len(sys.argv) > 7 else "0") == "1"
 commit = sys.argv[8] if len(sys.argv) > 8 else ""
 
 GOALS_DIR = os.path.join(runtime_dir(sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None), "goals")
+# The runtime directory is relative to the repository top. Run from a
+# subdirectory, the goals are still the top's: join them to it (the path stays
+# relative when the working directory is the top, so what callers print does
+# not change there). A --commit lookup keeps the relative path, which is what
+# git's tree is keyed by.
+def _repo_top():
+    try:
+        r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=5)
+    except Exception:
+        return None
+    top = r.stdout.strip() if r.returncode == 0 else ""
+    return top if top and os.path.isdir(top) else None
+_top = _repo_top()
+GOALS_REL = GOALS_DIR
+if _top is not None:
+    try:
+        if not os.path.samefile(_top, os.curdir):
+            GOALS_DIR = os.path.join(_top, GOALS_DIR)
+    except OSError:
+        pass
 
 # Symlink defense — no goal is read through a symlinked runtime directory or goals.
 READ_NOTE = "goals are not read through it"
@@ -224,7 +244,7 @@ def _committed_goals(rev):
     if not oid:
         print(f"flow-active-goal.sh: --commit {rev} is not a commit in this repository; {READ_NOTE}", file=sys.stderr)
         sys.exit(2)
-    rel = os.path.normpath(GOALS_DIR).replace(os.sep, "/")
+    rel = os.path.normpath(GOALS_REL).replace(os.sep, "/")
     parts = [n for n in rel.split("/") if n and n != "."]
     # Each directory on the way, as git stores it: 040000 is a tree, 120000 a
     # symlink. A missing component means the commit has no goals.

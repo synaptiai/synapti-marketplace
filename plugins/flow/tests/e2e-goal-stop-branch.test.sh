@@ -18,6 +18,9 @@
 #   B4 two active goals that both own this branch: one is picked silently
 #      instead of the stop being allowed with the reason
 #   B5 with no branch to go by (detached HEAD), no goal is judged at all
+#   B6 run from a subdirectory of the repository, the hook reads no
+#      stopHookEnforcement from the repository's settings and falls back to
+#      warn, so a block-mode repository's stop is allowed (#337)
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -96,4 +99,18 @@ e2e_goal issue-7 feature/issue-7-x active false
 ( _e2e_git_env; cd "$E2E_REPO" && git checkout -q --detach ) || _flow_assert_fail "stop-branch-detached: could not detach HEAD"
 e2e_run_hook "$STOP_HOOK" "$PAYLOAD"
 e2e_expect_out "Active goal: issue-7"
+e2e_expect_clean_edges
+
+_flow_test_begin "goal Stop hook: run from a subdirectory, the repository's block mode still applies (B6)"
+e2e_new stop-branch-subdir
+e2e_describe "block mode set in the repository's .claude/settings.flow.json; the hook runs in sub/deeper"
+_stop_repo block
+e2e_goal issue-7 feature/issue-7-x active false
+mkdir -p "$E2E_REPO/sub/deeper"
+printf '%s' "$PAYLOAD" > "$E2E_DIR/payload.json"
+printf 'code: %s (run in sub/deeper)\npayload: %s\n' "$STOP_HOOK" "$PAYLOAD" | _e2e_art
+_e2e_exec sh -c 'cd sub/deeper && exec "$CLAUDE_PLUGIN_ROOT/$1" < "$2"' sh "$STOP_HOOK" "$E2E_DIR/payload.json"
+printf -- '--- expectations\n' | _e2e_art
+e2e_expect_out '"decision":"block"'
+e2e_expect_out "stopHookEnforcement=block"
 e2e_expect_clean_edges

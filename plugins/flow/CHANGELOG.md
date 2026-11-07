@@ -33,6 +33,19 @@
   evaluator and the merge gate use, and with no goal for the branch it
   approves with `no active flow goal`. Two active goals owning the branch
   are reported (`FLOW_GOAL_UNCHECKED`), not one picked.
+- A repository's settings are read from its top, whatever directory a command
+  or hook runs in (#337). `bin/cascade-resolve.sh` looked for
+  `.claude/settings.flow.json` and `.claude/settings.flow.local.json` relative
+  to the working directory, so from a subdirectory a repository's
+  `tiers.push: confirm` read as the default `journal`, and the git wrapper let
+  a push started there, inside a script the tier gate cannot read, run
+  without asking. The same miss reached the Stop hook's
+  `stopHookEnforcement`, `ask-issue-create.sh`'s `minimalScope` and
+  `verify-task-completion.sh`'s `taskCompletionGate`. Both files are now read
+  at `git rev-parse --show-toplevel`; at the top the paths, and the messages
+  that name them, are unchanged, and outside a repository the working
+  directory's files are read as before. `bin/flow-active-goal.sh` finds the
+  goals at the top too, so the Stop hook judges a goal from a subdirectory.
 - `bin/flow-active-goal.sh --commit <rev>` reads the goals committed in a
   commit instead of the working tree, with the same symlink refusals.
 - `bin/flow-active-goal.sh` has a `--reason` mode that prints the goal's

@@ -11,6 +11,8 @@ Settings cascade — highest precedence first; first non-empty value wins:
 3. `~/.claude/settings.flow.json` — user-global; cross-project default
 4. `${CLAUDE_PLUGIN_ROOT}/settings.json` — plugin default; bundled with flow
 
+The two project files are read at the top of the repository (`git rev-parse --show-toplevel`), whatever directory a command, hook or the git and gh wrappers run in, so a setting such as `tiers.push: confirm` holds for a push started in a subdirectory. Outside a git repository they are read in the working directory.
+
 See [Settings Cascade](#settings-cascade) below for the full precedence rules and worked examples.
 
 ## Tier Settings

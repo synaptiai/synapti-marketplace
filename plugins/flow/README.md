@@ -531,6 +531,8 @@ Settings cascade in priority order; later layers override earlier ones:
 3. `.claude/settings.flow.json` — project settings (committed)
 4. `.claude/settings.flow.local.json` — local overrides (gitignored, highest priority)
 
+The project files (3 and 4) are read at the repository's top, wherever in the repository a command or hook runs.
+
 ### Per-user locations
 
 Two environment variables move what is yours alone: `FLOW_STATE_DIR` names the directory Flow keeps per-user state in (default `~/.claude/flow-state`: the goal trust ledger, stop and stuck counters, quality ledgers, System One records), and `FLOW_USER_SETTINGS` names your user settings file (default `~/.claude/settings.flow.json`), which holds settings only you may choose, such as the System One provider's address.
