@@ -74,8 +74,10 @@ specification:
   - DEP_ADDED / DEP_CHANGED / DEP_REMOVED / DEP_BASELINE / DEP_BASELINE_TRUNCATED
     / DEP_NEAR_NAME / DEP_INSTALL_HOOK / DEP_REPLACED / MANIFEST_UNPARSED
   - 'DEP_REPLACED covers the redirect class in every ecosystem: a go.mod replace,
-    a Cargo patch or replace table, a tool.uv.sources or poetry git entry, and a PEP
-    508 direct reference. The target is judged as an added package.'
+    a Cargo patch or replace table, a tool.uv.sources or poetry git entry, a PEP
+    508 direct reference, a package.json URL, git shorthand or file: spec, a Gemfile
+    git:, github: or path: source or git block, and a Gemfile.lock GIT or PATH section
+    (#248). The target is judged as an added package.'
   - A TOML entry carries no line number; the location is the file, which finding-schema.md
     permits. A line-oriented manifest carries its real line.
   - DEP- findings use finding-schema.md with category=dependency and manifest file:line.

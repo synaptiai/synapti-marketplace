@@ -38,8 +38,17 @@
 #   DEP_BASELINE_TRUNCATED=<n> name(s) not printed
 #   DEP_INSTALL_HOOK=<name> manifest=<path>:<line>
 #   DEP_REPLACED=<module> -> <target>@<version> manifest=<path>:<line>
-#     a go.mod replace: the named module no longer comes from upstream
+#     the named package no longer comes from its registry, in every
+#     ecosystem read here: a go.mod replace; a Cargo [patch] or [replace]
+#     table; a Python direct reference (`name @ <any scheme>://...`, cut at
+#     an environment marker's `;`), a tool.uv.sources or poetry git/url/path
+#     entry (names matched PEP 503 normalised); a package.json spec that is
+#     a URL, a hosted-git shorthand (github:, user/repo), or file:/link:; a
+#     Gemfile git:, github:, gitlab:, bitbucket: or path: option, or a gem
+#     inside a git/github/path block; and a Gemfile.lock GIT or PATH section
 #   DEP_NEAR_NAME=<added> ~ <baseline> distance=<n>
+#     two Python names are compared PEP 503 normalised (my_pkg is my-pkg);
+#     names from other ecosystems as written
 #   MANIFEST_UNPARSED=<path> reason=<why>
 #
 # MANIFESTS_EXAMINED=0 with STATE=none means no manifest was in the diff.
@@ -177,6 +186,7 @@ try:
         ParseError,
         classify,
         edit_distance,
+        pep503,
         safe_name,
         safe_scalar,
     )
@@ -288,6 +298,12 @@ hooks = []
 unparsed = []
 replaced = []
 baseline_names = set()
+# Names that come from a Python manifest, at the base and in the change: two
+# of them are compared PEP 503 normalised (pep503), as pip and PyPI compare
+# them. Names from any other ecosystem are compared as written: npm's my_pkg
+# and my-pkg are two packages, and a near-name between them is the point.
+python_baseline = set()
+python_new = set()
 examined = 0
 
 for path, parser in manifests:
@@ -351,8 +367,15 @@ for path, parser in manifests:
     if bad:
         continue
 
+    is_python = (classify(path) or ("", None))[0] == "python"
     for name in base_deps:
         baseline_names.add(safe_name(name))
+        if is_python:
+            python_baseline.add(safe_name(name))
+    if is_python:
+        python_new.update(safe_name(n) for n in head_deps)
+        if head_res:
+            python_new.update(safe_name(m) for m, _t, _v, _l in head_res.replaces)
 
     if head_res:
         base_replaces = set(
@@ -485,7 +508,14 @@ for name in _near_candidates:
     for existing in baseline_names:
         if existing == name:
             continue
-        distance = edit_distance(name.lower(), existing.lower())
+        a, b = name.lower(), existing.lower()
+        if name in python_new and existing in python_baseline:
+            # The same project spelled another way (my_pkg, my-pkg) is not a
+            # near-name of itself; and the distance is the one PyPI sees.
+            a, b = pep503(name), pep503(existing)
+            if a == b:
+                continue
+        distance = edit_distance(a, b)
         if distance <= 2:
             near.add((name, existing, distance))
 for name, existing, distance in sorted(near):

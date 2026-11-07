@@ -208,7 +208,19 @@ _PEP508 = re.compile(
 )
 
 
-_DIRECT_REF_SCHEMES = ("http://", "https://", "file://", "git+", "ssh://", "hg+", "svn+", "bzr+")
+# A direct reference's target is a URL: any scheme, recognised by its shape
+# (RFC 3986: a letter, then letters, digits, +, . or -, then ://), not by a
+# list. A fixed list read `pkg @ sftp://ex.com/p.whl` as the version
+# "@sftp://ex.com/p.whl" of an ordinary package.
+_DIRECT_REF_URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+
+
+def pep503(name):
+    """A Python package name as PEP 503 normalises it: lowercase, and every run
+    of -, _ and . one -. pip, uv and PyPI treat `my_pkg`, `My.Pkg` and
+    `my-pkg` as one project, so wherever one Python name is matched against
+    another it is matched in this form."""
+    return re.sub(r"[-_.]+", "-", name.lower())
 
 
 def _split_direct_reference(item):
@@ -223,8 +235,11 @@ def _split_direct_reference(item):
     left, sep, right = item.partition("@")
     if sep:
         right = right.strip()
-        if right.lower().startswith(_DIRECT_REF_SCHEMES):
-            return left.strip(), right
+        if _DIRECT_REF_URL.match(right):
+            # An environment marker follows the URL after a `;`
+            # (`pkg @ https://ex.com/a.whl ; python_version<"3.9"`); it says
+            # when the requirement applies, and is not part of the target.
+            return left.strip(), right.split(";", 1)[0].strip()
     return item, None
 
 
@@ -402,9 +417,14 @@ def parse_toml_manifest(text):
     data = _load_toml(text)
     r = ParseResult()
     _harvest_dependencies(data, r, text)
+    # Matched PEP 503 normalised: `[tool.uv.sources] my_pkg` redirects the
+    # dependency declared as `my-pkg`, as uv itself reads it. Cargo treats -
+    # and _ in a crate name the same way. The record names the dependency as
+    # it is declared.
+    declared = {pep503(n): n for n in r.deps}
     for name, src in r.pending_sources:
-        if name in r.deps:
-            r.replaces.append((name, src, None, None))
+        if pep503(name) in declared:
+            r.replaces.append((declared[pep503(name)], src, None, None))
     r.pending_sources = []
     return r
 
@@ -546,6 +566,14 @@ _NPM_DEP_SECTIONS = (
     "optionalDependencies",
 )
 _NPM_ALIAS = re.compile(r"^npm:(.+)@([^@]+)$")
+# A package.json spec that fetches the package from somewhere other than the
+# registry: a URL (git+https://, git://, https://...tgz), a hosted-git
+# shorthand (github:, gitlab:, bitbucket:, gist:), a local path (file:,
+# link:), or the bare GitHub shorthand `user/repo[#ref]`.
+_NPM_REDIRECT = re.compile(
+    r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:github|gitlab|bitbucket|gist|file|link):"
+    r"|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:#.*)?$)"
+)
 
 
 def _line_of_key(text, key):
@@ -591,6 +619,8 @@ def parse_package_json(text):
                 am = _NPM_ALIAS.match(v)
                 if am:
                     r.add(am.group(1), am.group(2), line)
+                elif _NPM_REDIRECT.match(v.strip()):
+                    r.replaces.append((name, v.strip(), None, line))
     return r
 
 
@@ -743,28 +773,91 @@ def parse_pnpm_lock(text):
 # ---------------------------------------------------------------------------
 # Ruby
 
-_GEM_LINE = re.compile(r"^\s*gem\s+(.+)$")
+# `gem` as a method call: `gem "x"`, `gem("x")`. Not `gemspec` or `gem_group`.
+_GEM_START = re.compile(r"^\s*gem(?![A-Za-z0-9_?!])\s*(\(?)(.*)$")
 _GEM_LITERAL = re.compile(r"^['\"]([^'\"]+)['\"]\s*(?:,\s*['\"]([^'\"]+)['\"])?")
+# The options that fetch a gem from somewhere other than its registry, in
+# either hash syntax: `git: "url"` or `:git => "url"`.
+_GEM_SOURCE_KEYS = ("git", "github", "gitlab", "bitbucket", "path")
+_GEM_OPTION = re.compile(
+    r"(?:(?<![A-Za-z0-9_:])([a-z_]+):(?!:)|:([a-z_]+)\s*=>)\s*(?:(['\"])(.*?)\3)?"
+)
+# A block whose gems all come from one place: `git "url" do`, `path "dir" do`,
+# `github "user/repo" do`.
+_GEM_BLOCK = re.compile(r"^\s*(git|github|gitlab|bitbucket|path)\b\s*\(?\s*(?:(['\"])(.*?)\2)?.*\bdo\s*(\|[^|]*\|)?\s*$")
+_DO = re.compile(r"\bdo\s*(\|[^|]*\|)?\s*$")
+_END = re.compile(r"^\s*end\b")
+
+
+def _gem_source(kind, value):
+    """The target a gem source option names: the URL or path as written, with
+    the hosted-git shorthands kept recognisable (`github:user/repo`)."""
+    return value if kind in ("git", "path") else "%s:%s" % (kind, value)
 
 
 def parse_gemfile(text):
     """A Gemfile is Ruby, not a data format.
 
-    A `gem` line whose name is a literal is read. One whose name is a
-    variable, a method call or an interpolation is NOT guessed at: the file is
+    A `gem` call whose name is a literal is read, written `gem "x"` or
+    `gem("x")`. A `gem` line this cannot read (the name a variable, a method
+    call or an interpolation; a call that does not close on its line; a source
+    option whose value is not a literal) is NOT guessed at: the file is
     reported unreadable, because a dependency this cannot see is one a
     reviewer would be told does not exist.
+
+    A gem fetched from somewhere other than its registry, by a `git:`,
+    `github:`, `gitlab:`, `bitbucket:` or `path:` option or inside a
+    `git`/`github`/`path ... do` block, is also a redirect: the same record a
+    go.mod replace makes, so a gem built from a fork does not read as an
+    unpinned gem from rubygems.org.
     """
     r = ParseResult()
+    blocks = []
     for lineno, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#", 1)[0].rstrip()
-        m = _GEM_LINE.match(line)
-        if not m:
+        if not line.strip():
             continue
-        lm = _GEM_LITERAL.match(m.group(1).strip())
-        if not lm:
-            raise ParseError("gem name on line %d is not a string literal" % lineno)
-        r.add(lm.group(1).lower(), lm.group(2), lineno)
+        bm = _GEM_BLOCK.match(line)
+        if bm:
+            if bm.group(3) is None:
+                raise ParseError("the %s block on line %d does not name a string literal" % (bm.group(1), lineno))
+            blocks.append(_gem_source(bm.group(1), bm.group(3)))
+            continue
+        m = _GEM_START.match(line)
+        if m:
+            args = m.group(2).strip()
+            if m.group(1):
+                if not args.endswith(")"):
+                    raise ParseError("the gem call on line %d does not close on its line" % lineno)
+                args = args[:-1].strip()
+            lm = _GEM_LITERAL.match(args)
+            if not lm:
+                raise ParseError("gem name on line %d is not a string literal" % lineno)
+            name = lm.group(1).lower()
+            r.add(name, lm.group(2), lineno)
+            source, ref = None, None
+            for om in _GEM_OPTION.finditer(args[lm.end():]):
+                key = om.group(1) or om.group(2)
+                value = om.group(4)
+                if key in _GEM_SOURCE_KEYS:
+                    if value is None:
+                        raise ParseError("the %s: of gem %s on line %d is not a string literal" % (key, name, lineno))
+                    source = _gem_source(key, value)
+                elif key in ("ref", "tag", "branch") and value is not None:
+                    ref = value
+            if source is None:
+                source = next((b for b in reversed(blocks) if b), None)
+            if source is not None:
+                r.replaces.append((name, source, ref or lm.group(2), lineno))
+            if _DO.search(line):
+                blocks.append(None)
+            continue
+        if _END.match(line):
+            if blocks:
+                blocks.pop()
+            continue
+        if _DO.search(line):
+            blocks.append(None)
     return r
 
 
@@ -774,16 +867,28 @@ def parse_gemfile(text):
 _GEMFILE_LOCK_SPEC = re.compile(
     r"^ {4}(?! )([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\(([^)]*)\))?\s*$"
 )
+_GEMFILE_LOCK_FIELD = re.compile(r"^ {2}(remote|revision|ref|tag|branch):\s*(.*?)\s*$")
 
 
 def parse_gemfile_lock(text):
+    """Gemfile.lock's specs. A gem resolved in a GIT or PATH section comes
+    from that section's remote, not from the registry: each is also a
+    redirect, to the remote at its revision."""
     r = ParseResult()
     in_specs = False
+    section = None
+    fields = {}
     for lineno, raw in enumerate(text.splitlines(), 1):
         if not raw.strip():
             continue
         if not raw[0].isspace():
             in_specs = False
+            section = raw.strip()
+            fields = {}
+            continue
+        fm = _GEMFILE_LOCK_FIELD.match(raw)
+        if fm and not in_specs:
+            fields[fm.group(1)] = fm.group(2)
             continue
         if raw.strip() == "specs:":
             in_specs = True
@@ -792,7 +897,14 @@ def parse_gemfile_lock(text):
             continue
         m = _GEMFILE_LOCK_SPEC.match(raw)
         if m:
-            r.add(m.group(1).lower(), m.group(2), lineno)
+            name = m.group(1).lower()
+            r.add(name, m.group(2), lineno)
+            if section in ("GIT", "PATH"):
+                remote = fields.get("remote")
+                if not remote:
+                    raise ParseError("the %s section above line %d names no remote" % (section, lineno))
+                ref = fields.get("revision") or fields.get("ref") or fields.get("tag") or fields.get("branch")
+                r.replaces.append((name, remote, ref or m.group(2), lineno))
     return r
 
 

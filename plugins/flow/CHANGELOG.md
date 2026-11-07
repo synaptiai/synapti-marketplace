@@ -55,6 +55,28 @@
 
 ### Fixed
 
+- A dependency redirected away from its registry is reported the same way in
+  every ecosystem `bin/flow-dep-diff.sh` reads (#248). A Gemfile gem built
+  from a fork (`git:`, `github:`, `gitlab:`, `bitbucket:`, `path:`, in either
+  hash syntax, or inside a `git`/`github`/`path ... do` block) and a gem
+  resolved in a `Gemfile.lock` GIT or PATH section now print `DEP_REPLACED`;
+  before, each read as an unpinned gem from rubygems.org. So does a
+  `package.json` spec that is a URL, a hosted-git shorthand or a
+  `file:`/`link:` path.
+- `gem("rack", "3.0.0")` is read; a `gem` line the parser cannot read (a call
+  that does not close on its line, a source that is not a literal) makes the
+  Gemfile `MANIFEST_UNPARSED` instead of being skipped with `STATE=ok`.
+- Python names are compared PEP 503 normalised where one is matched against
+  another: `[tool.uv.sources] my_pkg` redirects the dependency `my-pkg`, and
+  the near-name check measures two Python names as PyPI does
+  (`django_rest_framewrk` is now reported against `django-rest-framework`,
+  and `my_pkg` is no longer a near-name of the project `my-pkg`). npm names
+  are still compared as written, since npm's `my_pkg` and `my-pkg` are two
+  packages.
+- A Python direct reference is recognised by any URL scheme, not a fixed
+  list, so `pkg @ sftp://…` is a redirect rather than a version string, and
+  an environment marker after `;` is no longer part of the target.
+
 - `/flow:merge`'s FlowGoal gate no longer lets a pull request through when
   its goal failed, was cancelled, is blocked, is a draft, or waits on a person
   or CI (#335). The lookup saw only `active` and `achieved` goals, so every
