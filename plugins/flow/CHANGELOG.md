@@ -65,6 +65,19 @@
   relative. `bin/flow-runtime-dir.sh --goals` names the same directory for
   shell callers, and `bin/flow-goal-judge-run.sh` now reads the goal from it
   (#337)
+- `/flow:start`, `/flow:goal status` and `/flow:learn` read goals at the
+  repository top when run from a subdirectory, as the writer does. Before,
+  `/flow:start` missed a goal at the top and created a second one under the
+  same id (#337)
+- `bin/flow-goal-record.sh --create` follows the pre-flight
+  `goal-contract-capture` documents again. It replaces a `failed` or
+  `cancelled` goal, so `/flow:goal clear` and then `/flow:start` create the
+  goal again under the same id. It refuses an `achieved` goal, which never
+  changes, and a goal still in progress, naming the file and its status. An
+  existing goal whose `lifecycle.status` is missing, not text (a list, a
+  mapping, null, a number) or not a status is refused with exit 2, saying its
+  lifecycle cannot be read. Before, a list or a mapping stopped the create
+  with a Python traceback, and the other cases were overwritten (#337)
 - `/flow:merge`'s block reason for a `failed` or `cancelled` goal no longer
   says that finishing the work under a new goal is enough. That goal still
   decides over an `achieved` one on the branch, so the reason now says the
@@ -103,6 +116,24 @@
   longer closes the git block, so the gems after it are still reported as
   redirects. An `end` that closes no block the parser has seen now makes the
   Gemfile `MANIFEST_UNPARSED` instead of being skipped (#248)
+- A Gemfile statement continued with a backslash onto a modifier `if`/`unless`
+  is read as one statement. `gem "rb-fsevent", require: false \` followed by
+  `if RUBY_PLATFORM =~ /darwin/` is now reported as an added gem instead of
+  making the Gemfile `MANIFEST_UNPARSED`. A statement such as `eval_gemfile
+  "Gemfile.local" \` followed by `if File.exist?(...)` inside a `git` block no
+  longer opens a block that swallows the git block's `end`, so the gems after
+  the block are not reported as redirects (#248)
+- A Gemfile `=begin` ... `=end` block comment is skipped as a comment: it
+  opens no block and the gems written in it are not reported. A `=begin` with
+  no `=end` makes the Gemfile `MANIFEST_UNPARSED` (#248)
+- A `#` inside a quoted Gemfile string (a `#{...}` interpolation, a URL
+  fragment) no longer cuts the line as a comment, so the `end` of a one-line
+  `def` that builds a URL is seen. An interpolated gem name or source is still
+  not a literal and still makes the Gemfile `MANIFEST_UNPARSED` (#248)
+- A setter or operator method in a Gemfile (`def mode=(v)`, `def ==(o)`, `def
+  []=(k, v)`) now opens a block closed by its `end`. Only a true endless `def
+  x = expr` does not, so the setter's `end` no longer closes the surrounding
+  `git` block (#248)
 - The project's own gem in `Gemfile.lock` (the `PATH` section with `remote:
   .`, which a `gemspec` line resolves to) is no longer reported as
   `DEP_REPLACED`. Other `PATH` redirects now print `(unpinned)` instead of the
