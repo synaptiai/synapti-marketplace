@@ -485,7 +485,7 @@ else
   # so the goal of another issue on the checked-out branch neither blocks this
   # merge nor stands in for the goal of this one. A branch name alone is not
   # enough: a local branch of that name that is behind or has diverged holds
-  # a goal the merge does not land, and a fork's pull request can carry the
+  # a goal the merge does not land, and a pull request from a fork can carry the
   # name of a branch here.
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   PR_HEAD=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefName,headRefOid --jq '"\(.headRefName) \(.headRefOid)"' 2>/dev/null) || PR_HEAD=""
