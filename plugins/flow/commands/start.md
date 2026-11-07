@@ -391,7 +391,14 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   RT=$("${CASCADE%/cascade-resolve.sh}/flow-runtime-dir.sh") || RT=""
   [ -n "$RT" ] || RT=".flow"
   printf '%s\n' "RUNTIME_DIR=$RT"
-  GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"
+  # The goals are at the repository top, wherever below the top this block
+  # runs: flow-runtime-dir.sh --goals prints the directory flow-goal-record.sh
+  # writes and flow-active-goal.sh reads. Read from the working directory, a
+  # block run in a subdirectory missed a terminal goal at the top and answered
+  # create, which then replaced it.
+  GOALS_DIR=$("${CASCADE%/cascade-resolve.sh}/flow-runtime-dir.sh" --goals) || GOALS_DIR=""
+  [ -n "$GOALS_DIR" ] || GOALS_DIR="$RT/goals"
+  GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"
   # No goal is read through a symlink. A repository can commit that directory
   # or its goals, or the goal file, as a symlink to something outside the
   # checkout, and a goal read there belongs to the target of the link: it is not
@@ -402,7 +409,7 @@ if [ "$GOAL_MODE" != "off" ] && [ -n "$ISSUE_NUM" ]; then
   GOAL_READ_ERR=""
   GOAL_UNCHECKED=""
   GOAL_READ_RC=0
-  GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check -- "$RT/goals" 2>&1) || GOAL_READ_RC=$?
+  GOAL_DIR_OUT=$("${CASCADE%/cascade-resolve.sh}/flow-mkdir.sh" --check -- "$GOALS_DIR" 2>&1) || GOAL_READ_RC=$?
   GOAL_DIR_OUT=${GOAL_DIR_OUT#flow-mkdir.sh: }
   # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
   GOAL_DIR_OUT=${GOAL_DIR_OUT%$'\r'}
@@ -472,7 +479,7 @@ Dispatch based on `FLOW_GOAL_STATE`:
 
   In both create paths the visibility echo is gated on the post-write verify.
 - **`exists`** — non-terminal goal already on disk; print `FlowGoal already exists: <GOAL_PATH> (status: $GOAL_STATUS) — resuming. Use /flow:goal inspect <GOAL_ID> to review.`
-- **`terminal`** — goal is `achieved|failed|cancelled` and immutable. Refuse to resume; surface a six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md): _Situation_: terminal goal at `<GOAL_PATH>`. _Tried_: detected `lifecycle.status=<GOAL_STATUS>`. _Options_: (1) Use `/flow:goal clear <GOAL_ID>` then re-run `/flow:start`, (2) Pick a new goal id, (3) Abort. _Recommendation_: Option 1 if the original goal is stale. _Blocking_: yes. _Risk_: mutating a terminal goal corrupts the audit trail.
+- **`terminal`** — goal is `achieved|failed|cancelled` and immutable. Refuse to resume; surface a six-field escalation per [`references/escalation-format.md`](../references/escalation-format.md): _Situation_: terminal goal at `<GOAL_PATH>`. _Tried_: detected `lifecycle.status=<GOAL_STATUS>`. _Options_: (1) Remove the goal's file (`git rm <GOAL_PATH>`) then re-run `/flow:start` — `/flow:goal clear` moves only a goal that is not terminal, and `bin/flow-goal-record.sh --create` refuses to replace a terminal goal, (2) Pick a new goal id, (3) Abort. _Recommendation_: Option 1 if the original goal is stale. _Blocking_: yes. _Risk_: mutating a terminal goal corrupts the audit trail.
 - **`blocked`** — a check the block needs could not run (cascade-resolve unavailable, or the `<runtime dir>/goals` symlink check could not run because python3 is missing); surface `FLOW_GOAL_ERROR` and halt Phase 1. It is not a symlink and not an absent goal.
 - **`skip`** — proceed without creating a goal.
 

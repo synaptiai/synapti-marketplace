@@ -1081,7 +1081,7 @@ if _want start-goal-flow-link; then
   e2e_repo feature/issue-42-e2e
   e2e_goal issue-42 feature/issue-42-e2e active true
   _plant .flow
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_line "FLOW_GOAL_STATE=create"
   e2e_expect_no_line "FLOW_GOAL_STATE=exists"
   e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
@@ -1095,7 +1095,7 @@ if _want start-goal-real; then
   e2e_describe "an active goal issue-42, no symlink under the repository; /flow:start 42"
   e2e_repo feature/issue-42-e2e
   e2e_goal issue-42 feature/issue-42-e2e active true
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_line "FLOW_GOAL_STATE=exists"
   e2e_expect_line "GOAL_STATUS=active"
   e2e_expect_clean_edges
@@ -1752,7 +1752,7 @@ if _want start-goal-unchecked; then
   e2e_repo feature/issue-42-e2e
   e2e_goal issue-42 feature/issue-42-e2e active true
   _python_dead
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_line "FLOW_GOAL_STATE=blocked"
   e2e_expect_out "FLOW_GOAL_ERROR=$UNCHECKED"
   e2e_expect_no_line "FLOW_GOAL_STATE=create"
@@ -3730,7 +3730,7 @@ if _want start-goal-flow-link-crlf; then
   e2e_goal issue-42 feature/issue-42-e2e active true
   _plant .flow
   _python_crlf
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
 fi
 

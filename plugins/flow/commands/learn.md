@@ -136,15 +136,20 @@ else
   RT=$("${HELPER%/cascade-resolve.sh}/flow-runtime-dir.sh") || RT=""
   [ -n "$RT" ] || RT=".flow"
   printf '%s\n' "RUNTIME_DIR=$RT"
+  # The goals are at the repository top, wherever below the top this block
+  # runs: flow-runtime-dir.sh --goals prints the directory flow-goal-record.sh
+  # writes and flow-active-goal.sh reads.
+  GOALS_DIR=$("${HELPER%/cascade-resolve.sh}/flow-runtime-dir.sh" --goals) || GOALS_DIR=""
+  [ -n "$GOALS_DIR" ] || GOALS_DIR="$RT/goals"
   GOAL_DIR_RC=0
-  GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- "$RT/goals" 2>&1) || GOAL_DIR_RC=$?
+  GOAL_DIR_ERR=$("${HELPER%/cascade-resolve.sh}/flow-mkdir.sh" --check -- "$GOALS_DIR" 2>&1) || GOAL_DIR_RC=$?
   GOAL_DIR_ERR=${GOAL_DIR_ERR#flow-mkdir.sh: }
   # A Windows python3 ends the line in \r\n, which $(...) keeps the \r of.
   GOAL_DIR_ERR=${GOAL_DIR_ERR%$'\r'}
   if [ "$GOAL_DIR_RC" -eq 0 ]; then
-    if [ -d "$RT/goals" ]; then
-      GOAL_LIST=$(find "$RT/goals" -maxdepth 1 -name '*.goal.yaml' ! -type l 2>/dev/null | LC_ALL=C sort)
-      find "$RT/goals" -maxdepth 1 -name '*.goal.yaml' -type l 2>/dev/null | LC_ALL=C sort |
+    if [ -d "$GOALS_DIR" ]; then
+      GOAL_LIST=$(find "$GOALS_DIR" -maxdepth 1 -name '*.goal.yaml' ! -type l 2>/dev/null | LC_ALL=C sort)
+      find "$GOALS_DIR" -maxdepth 1 -name '*.goal.yaml' -type l 2>/dev/null | LC_ALL=C sort |
         while IFS= read -r GOAL_LINK; do
           printf 'refusing — %s is a symlink; goals are not read through it\n' "$GOAL_LINK" >&2
         done

@@ -439,7 +439,7 @@ fi
 if _want goal-stuck-reused-id; then
   _flow_test_begin "evaluator loop: a new goal that reuses an id starts with no stuck count (E15)"
   e2e_new goal-stuck-reused-id
-  e2e_describe "no run id; g-stuck fails twice and is cancelled, then a new g-stuck is created"
+  e2e_describe "no run id; g-stuck fails twice and is cancelled, its file is removed (flow-goal-record.sh --create refuses to replace a terminal goal), then a new g-stuck is created"
   _loop_repo
   _create_goal g-stuck feature/e2e "" "" false "2026-09-01T00:00:00Z"
   _turn 1 "$FIRST"; _turn 2 "$FIRST"
@@ -447,6 +447,7 @@ if _want goal-stuck-reused-id; then
   (_e2e_git_env; cd "$E2E_REPO" && "$E2E_ACTIVE_PLUGIN/bin/flow-goal-record.sh" --update-lifecycle \
     --goal-id g-stuck --lifecycle-file "$E2E_DIR/cancel.yaml" --from-status active --merge >/dev/null 2>&1) \
     || _flow_assert_fail "$E2E_NAME: could not cancel the first goal"
+  rm -f "$E2E_REPO/$GOAL_FILE"
   _create_goal g-stuck feature/e2e "" "" false "2026-09-02T00:00:00Z"
   _turn 3 "$FIRST"
   e2e_expect_out '"decision":"block"'

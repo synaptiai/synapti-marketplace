@@ -253,3 +253,129 @@ e2e_expect_line "$TOP/state/flow/goals/issue-7.goal.yaml"
 e2e_run_bin bin/flow-runtime-dir.sh --goals
 e2e_expect_line "state/flow/goals"
 e2e_expect_clean_edges
+
+# Ways a terminal goal can be changed from a subdirectory (#337), written down
+# before the scenarios. A terminal goal (achieved, failed, cancelled) never
+# changes; the readers must see the goals where the writer writes them, at the
+# repository top, and the writer must not replace a terminal goal.
+#   B13 /flow:start run in packages/app does not see the achieved goal at the
+#       top and answers FLOW_GOAL_STATE=create, which goes on to create the
+#       goal again under the same id
+#   B14 the same for an active goal at the top: create instead of exists, so
+#       the goal in progress is not resumed
+#   B15 flow-goal-record.sh --create, at the top or in packages/app, replaces
+#       an achieved, failed or cancelled goal with a new active one: it
+#       refuses only a goal that is not terminal
+#   B16 /flow:goal status run in packages/app finds no goal under
+#       packages/app and says no goal is active, beside the active one at the
+#       top
+#   B17 /flow:learn run in packages/app lists no goal file, so its goal
+#       patterns read nothing
+
+START_MD="commands/start.md"
+GOAL_CHECK_MARK='FLOW_GOAL_STATE=terminal'
+
+# _commit_goals — commit .flow/goals, as a branch carries its goal.
+_commit_goals() {
+  ( _e2e_git_env; cd "$E2E_REPO" && git add .flow && git commit -q -m goals ) \
+    || _flow_assert_fail "$E2E_NAME: could not commit the goals"
+}
+# _fence_in_app <command.md> <marker> [arguments] — run that fence with the
+# working directory in packages/app, as the Bash tool keeps it between calls.
+_fence_in_app() {
+  local top="$E2E_REPO"
+  mkdir -p "$top/packages/app"
+  E2E_REPO="$top/packages/app"
+  printf 'working directory: <repo>/packages/app\n' | _e2e_art
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/$1" "$2" "${3:-}"
+  E2E_REPO="$top"
+}
+# _block_in_app <command.md> <BLOCK> — the same for a marker-delimited block.
+_block_in_app() {
+  local top="$E2E_REPO"
+  mkdir -p "$top/packages/app"
+  E2E_REPO="$top/packages/app"
+  printf 'working directory: <repo>/packages/app\n' | _e2e_art
+  e2e_run_block "$1" "$2"
+  E2E_REPO="$top"
+}
+
+_flow_test_begin "/flow:start goal check: run in a subdirectory, an achieved goal at the top is terminal (B13)"
+e2e_new start-goal-terminal-subdir
+e2e_describe "an achieved issue-7 goal committed at the top; /flow:start 7's goal check at the top, then in packages/app"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+e2e_goal issue-7 feature/issue-7-x achieved true
+_commit_goals
+e2e_run_fence "$E2E_ACTIVE_PLUGIN/$START_MD" "$GOAL_CHECK_MARK" 7
+e2e_expect_line "FLOW_GOAL_STATE=terminal"
+e2e_expect_line "GOAL_PATH=.flow/goals/issue-7.goal.yaml"
+_fence_in_app "$START_MD" "$GOAL_CHECK_MARK" 7
+e2e_expect_line "FLOW_GOAL_STATE=terminal"
+e2e_expect_line "GOAL_STATUS=achieved"
+e2e_expect_line "GOAL_PATH=$TOP/.flow/goals/issue-7.goal.yaml"
+e2e_expect_no_line "FLOW_GOAL_STATE=create"
+e2e_expect_equal no "$(_exists packages/app/.flow)" "a .flow in packages/app"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:start goal check: run in a subdirectory, an active goal at the top is resumed (B14)"
+e2e_new start-goal-exists-subdir
+e2e_describe "an active issue-7 goal committed at the top; /flow:start 7's goal check in packages/app"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+e2e_goal issue-7 feature/issue-7-x active true
+_commit_goals
+_fence_in_app "$START_MD" "$GOAL_CHECK_MARK" 7
+e2e_expect_line "FLOW_GOAL_STATE=exists"
+e2e_expect_line "GOAL_STATUS=active"
+e2e_expect_line "GOAL_PATH=$TOP/.flow/goals/issue-7.goal.yaml"
+e2e_expect_no_line "FLOW_GOAL_STATE=create"
+e2e_expect_clean_edges
+
+_flow_test_begin "goal record: --create refuses to replace an achieved, failed or cancelled goal, at the top or in a subdirectory (B15)"
+e2e_new goal-create-over-terminal
+e2e_describe "for each terminal status, a goal issue-7 in it committed at the top; flow-goal-record.sh --create of an active issue-7 in packages/app, then at the top. Each is refused with the status named, and the goal at the top keeps its status and its bytes"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+_goal_input issue-7
+for B15_STATUS in achieved failed cancelled; do
+  rm -rf "$E2E_REPO/.flow"
+  e2e_goal issue-7 feature/issue-7-x "$B15_STATUS" true
+  _commit_goals
+  B15_BEFORE=$(cat "$E2E_REPO/.flow/goals/issue-7.goal.yaml")
+  _in_app bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+  e2e_expect_equal 1 "$E2E_RC" "the create's exit status in packages/app over a $B15_STATUS goal"
+  e2e_expect_err "refusing to overwrite — $TOP/.flow/goals/issue-7.goal.yaml exists with terminal status '$B15_STATUS'"
+  e2e_expect_equal "$B15_STATUS" "$(_top_status issue-7)" "the top goal's lifecycle.status after the create in packages/app"
+  e2e_expect_equal no "$(_exists packages/app/.flow)" "a .flow in packages/app"
+  e2e_run_bin bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+  e2e_expect_equal 1 "$E2E_RC" "the create's exit status at the top over a $B15_STATUS goal"
+  e2e_expect_err "refusing to overwrite — .flow/goals/issue-7.goal.yaml exists with terminal status '$B15_STATUS'"
+  e2e_expect_equal "$B15_BEFORE" "$(cat "$E2E_REPO/.flow/goals/issue-7.goal.yaml")" "the $B15_STATUS goal's bytes"
+done
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:goal status: run in a subdirectory, the scan reads the top's goals (B16)"
+e2e_new goal-scan-subdir
+e2e_describe "an active issue-7 goal committed at the top; the GOAL_SCAN_BLOCK of commands/goal.md in packages/app"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+e2e_goal issue-7 feature/issue-7-x active true
+_commit_goals
+_block_in_app commands/goal.md GOAL_SCAN_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_line "ACTIVE_GOAL=$TOP/.flow/goals/issue-7.goal.yaml"
+e2e_expect_no_line "STATE=none"
+e2e_expect_clean_edges
+
+_flow_test_begin "/flow:learn: run in a subdirectory, the goal files listed are the top's (B17)"
+e2e_new learn-goals-subdir
+e2e_describe "an achieved issue-7 goal committed at the top; /flow:learn's block in packages/app"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+e2e_goal issue-7 feature/issue-7-x achieved true
+_commit_goals
+_fence_in_app commands/learn.md 'GOAL_FILE_COUNT='
+e2e_expect_line "GOAL_FILE_COUNT=1"
+e2e_expect_line "GOAL_FILE=$TOP/.flow/goals/issue-7.goal.yaml"
+e2e_expect_clean_edges

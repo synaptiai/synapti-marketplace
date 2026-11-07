@@ -53,7 +53,7 @@ A transition to the same status (`active → active`) is accepted by the helper 
 
 The helper rejects these with exit 1 and a stderr explanation:
 
-- `terminal → any` — once `achieved`, `failed`, or `cancelled`, the goal is immutable. New work requires a new goal id.
+- `terminal → any` — once `achieved`, `failed`, or `cancelled`, the goal is immutable. New work requires a new goal id, or the terminal goal's file removed first: `bin/flow-goal-record.sh --create` refuses to replace a terminal goal.
 - `active → draft` — no going back to draft.
 - `blocked → achieved` — must pass through `active` first, which forces an evaluation step.
 - `waiting_for_* → achieved | failed | blocked` — resume to `active` first.

@@ -105,9 +105,12 @@ import os, sys, glob
 sys.path.insert(0, sys.argv[1])
 import yaml
 from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
+from _repo_dir import from_repo_top
 
 READ_NOTE = "goals are not read through it"
-GOALS_DIR = os.path.join(sys.argv[2], "goals")
+# The goals are at the repository top, wherever below the top this runs: the
+# directory bin/flow-goal-record.sh writes and bin/flow-active-goal.sh reads.
+GOALS_DIR = from_repo_top(os.path.join(sys.argv[2], "goals"))
 try:
     ensure_repo_dir(GOALS_DIR)
 except RepoDirRefused as exc:
@@ -241,7 +244,7 @@ Stop hook mode:    <stopHookEnforcement value>
 Next safe action:  /flow:goal evaluate <id>
 ```
 
-No subcommand reads a goal through a symlink. The scan above refuses a symlinked `<runtime dir>` or `<runtime dir>/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check <runtime dir>/goals`, then no goal file that is a symlink). Run files are read the same way: the delta in `status` and the events in `inspect` come from `<runtime dir>/runs/<run-id>/` only when `bin/flow-mkdir.sh --check <runtime dir>/runs/<run-id>` passes and neither `last-verdict.json` nor `events.jsonl` is itself a symlink; otherwise say the run file is not read through a symlink and show none. A repository can commit `<runtime dir>` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
+Every subcommand reads the goals at the repository top, wherever below it the working directory is: `bin/flow-runtime-dir.sh --goals` prints that directory as a path from the working directory (relative at the top), the directory `bin/flow-goal-record.sh` writes, and `<runtime dir>/goals` in this file means it. No subcommand reads a goal through a symlink. The scan above refuses a symlinked `<runtime dir>` or `<runtime dir>/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check <runtime dir>/goals`, then no goal file that is a symlink). Run files are read the same way: the delta in `status` and the events in `inspect` come from `<runtime dir>/runs/<run-id>/` only when `bin/flow-mkdir.sh --check <runtime dir>/runs/<run-id>` passes and neither `last-verdict.json` nor `events.jsonl` is itself a symlink; otherwise say the run file is not read through a symlink and show none. A repository can commit `<runtime dir>` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
 
 ### `/flow:goal create <kind> [id]`
 
@@ -256,7 +259,7 @@ Examples:
 
 Workflow:
 1. Resolve `<id>` from `<kind>` + branch state.
-2. Pre-flight check: refuse if `<runtime dir>/goals/<id>.goal.yaml` already exists with non-terminal status.
+2. Pre-flight check: refuse if `<runtime dir>/goals/<id>.goal.yaml` already exists. A goal that is not terminal is cleared first (`/flow:goal clear <id>`); a terminal one (`achieved`, `failed`, `cancelled`) never changes, so its file is removed first or the new goal takes another id. `bin/flow-goal-record.sh --create` refuses both.
 3. Invoke `Skill(goal-contract-capture)` with the inputs documented in its SKILL.md.
 4. After the skill writes the YAML, transition `lifecycle: draft → active` via `Skill(goal-lifecycle)`.
 5. Print: `Created <runtime dir>/goals/<id>.goal.yaml (status: active).`

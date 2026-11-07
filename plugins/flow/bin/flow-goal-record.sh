@@ -4,10 +4,13 @@
 # default .flow).
 #
 # Two modes:
-#   --create:           write a new goal YAML from scratch (refuses if existing
-#                       goal has non-terminal status — goal-contract-capture
-#                       does the pre-flight check, this is a second line of
-#                       defense against race conditions)
+#   --create:           write a new goal YAML from scratch (refuses if a goal
+#                       with that id exists, non-terminal or terminal: a
+#                       goal in progress is cleared first, and a terminal
+#                       one never changes — goal-contract-capture does the
+#                       pre-flight check, this is a second line of defense
+#                       against race conditions and a caller that read the
+#                       goals in the wrong place)
 #   --update-lifecycle: merge a new lifecycle block into an existing goal
 #                       (used by goal-lifecycle skill)
 #
@@ -61,9 +64,9 @@
 #       fragment with no top-level lifecycle block, or whose lifecycle is not
 #       a mapping or whose status is not text; a goal that does not
 #       match the schema (with jsonschema installed); an existing goal with a
-#       non-terminal status (--create); a goal to update that does not exist,
-#       is not a mapping, has a lifecycle that is not a mapping, a status that
-#       is not text or a turns_evaluated that is not a whole number (with
+#       non-terminal or a terminal status (--create); a goal to update that
+#       does not exist, is not a mapping, has a lifecycle that is not a
+#       mapping, a status that is not text or a turns_evaluated that is not a whole number (with
 #       --increment-turns), is terminal, or is not in the --from-status given;
 #       a transition the lifecycle does not permit
 #   2 — python3 or PyYAML missing; an input that cannot be read for a reason
@@ -402,6 +405,12 @@ if mode == "create":
         if existing_status in ("draft", "active", "waiting_for_user", "waiting_for_ci", "blocked"):
             say(f"refusing to overwrite — {target} exists with non-terminal status '{shown(existing_status)}'")
             refuse("use /flow:goal clear to cancel before re-creating")
+        # A terminal goal never changes (goal-lifecycle/SKILL.md): replacing
+        # an achieved, failed or cancelled goal with a new one under the same
+        # id rewrites the record the merge gate and the audit trail read.
+        if existing_status in TERMINAL_STATES:
+            say(f"refusing to overwrite — {target} exists with terminal status '{existing_status}'")
+            refuse("a terminal goal never changes; remove its file before creating a goal under the same id, or use a new id")
 
     try:
         write_yaml_file(target, lockfile, goal, text=goal_text)
