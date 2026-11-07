@@ -33,6 +33,22 @@
   evaluator and the merge gate use, and with no goal for the branch it
   approves with `no active flow goal`. Two active goals owning the branch
   are reported (`FLOW_GOAL_UNCHECKED`), not one picked.
+- The secrets guard no longer refuses text that only names a secret-shaped
+  assignment (#241). It matched its pattern against the whole line, so filing
+  an issue about a leaked token, writing the pattern into a README, grepping
+  for it, or committing a message about a rotation was refused. It now reads
+  the command with `lib/command-parse.sh` and judges each simple command:
+  refused are a secret-shaped assignment set in the shell (an assignment in
+  command position, `export`, `declare`, `readonly`, `local`, `env`), a
+  secret-shaped option (`--password=…`) whatever the command, any
+  secret-shaped argument or literal `Authorization`/`X-API-Key` header given
+  to a command that sends data or sets another process's environment (curl,
+  wget, httpie, ssh, mysql, psql, docker, kubectl and others), and the same
+  inside a script run with `bash -c`. The same text as an argument of any
+  other command is allowed. The pattern itself is unchanged. When the parser
+  cannot be loaded or cannot split the command, the hook falls back to the
+  whole-line check. The payload is read with `printf`, not `echo`, so a
+  backslash escape reaches `jq` as written.
 - The pattern checks no longer miss a command hidden after an escaped
   separator and a `#` (#304). `ls x\ #y ; rm -rf ~` and `ls x\;#y ; git push
   --force origin main` ran their second command in bash and zsh, but the
