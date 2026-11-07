@@ -11,7 +11,7 @@ Flow asks a person with `AskUserQuestion` at the points its commands and skills 
 
 ## Question classes
 
-Every place in `commands/` and `skills/` that tells the agent to use `AskUserQuestion` carries one tag. A mention of the tool that is not a place to ask (a rule, a description of another step) carries `[ask: none]`.
+Every place in `commands/` and `skills/` that tells the agent to ask the person carries one tag: a line that names `AskUserQuestion`, says to ask the user, or says to escalate (a six-field escalation is delivered with `AskUserQuestion`, [`escalation-format.md`](escalation-format.md)), whether or not it names the tool. A line of that kind that is not a place to ask (a rule such as "finding triage is never an escalation", a description of another step) carries `[ask: none]`. The one place that asks questions of more than one class, `/flow:resume` asking stored questions, carries the tag of each class it can ask with and asks each question with the class it was stored with (`bin/flow-question.sh add --class`). `tests/e2e-ask-policy.test.sh` (A7) scans for all three kinds of line, outside the frontmatter, fenced code, tables, headings and References or Required Skills entries.
 
 | Tag | Class | What the agent does |
 |---|---|---|

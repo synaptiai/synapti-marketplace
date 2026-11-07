@@ -49,7 +49,7 @@ Playwright MCP exposes `browser_navigate`, `browser_snapshot`, `browser_click`, 
 memory: a call to a tool that does not exist finds nothing and says nothing, so the check never
 runs and nothing reports it.
 
-No tool: `SKIP_WARN`, or `BLOCKED` when `requireVisualVerification` is true (escalate per
+[ask: permission] No tool: `SKIP_WARN`, or `BLOCKED` when `requireVisualVerification` is true (escalate, `flow:permission`, per
 `references/escalation-format.md`). Never install silently.
 
 ## Screenshot-Analyze-Verify Loop

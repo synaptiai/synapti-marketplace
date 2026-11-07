@@ -935,7 +935,7 @@ For **Out-of-scope** items — finding triage is NEVER a valid escalation trigge
 
 A finding in a file the PR already modifies is NEVER out-of-scope — it must be fixed in this PR (Boy Scout Rule + ownership of known defects in touched files).
 
-P1 or P2 findings in untouched files must be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded). They MUST NOT be filed as a six-field Proactive-Autonomy escalation — finding triage is not a decision, it is work. See `skills/llm-operator-principles/SKILL.md`.
+[ask: none] P1 or P2 findings in untouched files must be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded). They MUST NOT be filed as a six-field Proactive-Autonomy escalation — finding triage is not a decision, it is work. See `skills/llm-operator-principles/SKILL.md`.
 
 [ask: none] **Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed in this PR with an `improve:` commit. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
 
@@ -1034,8 +1034,8 @@ In the dispatches below, `$BASE_BRANCH` is the `BASE_BRANCH=` value from Phase 1
    - Cosmetic P3 in untouched files → fix in this PR (`improve:` commit). Default mode does not create follow-up issues; only `minimalScope` mode uses the follow-up issue workflow for this case.
    - After P1 and P2 fixes: re-run quality commands, re-review what those fixes changed (P1 and P2 only), re-run holdout-validation. After the P3 batch: re-run quality commands only
    - **Converged** when no P1 or P2 with a trigger is left (`skills/llm-operator-principles/SKILL.md`). A finding with no trigger (`references/review-scope.md`) is not fixed or re-reviewed: name its trigger, or drop it
-   - Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
-   - **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
+   - [ask: none] Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
+   - [ask: decision] **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
 5. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
 6. **Change classification** — verify no out-of-context changes introduced
 7. **Push** (Tier 2, follows `tiers.push`; default `journal`: it runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks):

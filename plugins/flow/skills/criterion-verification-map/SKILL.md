@@ -38,7 +38,7 @@ Does NOT promise: {non-goals scoped to this criterion}
 Risk areas: {risk-map rows whose area this criterion's logic touches, verbatim | none | (disabled by specFirst.riskMap)}
 ```
 
-`Does NOT promise` comes from the journal's `### Non-goals`, `Risk areas` from `### Risk map` ([`references/specification-journal-format.md`](../../references/specification-journal-format.md)). `implementation-planner` adds one discriminating test per risk row (input, expected, source). Any unfillable field: escalate through the Spec Validation Gate.
+[ask: decision] `Does NOT promise` comes from the journal's `### Non-goals`, `Risk areas` from `### Risk map` ([`references/specification-journal-format.md`](../../references/specification-journal-format.md)). `implementation-planner` adds one discriminating test per risk row. Any unfillable field: escalate (`flow:decision`) through the Spec Validation Gate.
 
 ## Evidence collection protocol (verify time)
 
@@ -54,9 +54,9 @@ Then assemble one `## Criterion {N}` section each. `### Type` and `### Does NOT 
 Two subsections come from test source, never memory:
 
 - **`### Test inputs and expected values`**: open every test file the command or its output cites. For each test that ran, record one `| Test | Input | Expected | Source of expected |` row from its source: literal input, literal asserted value, its origin (spec/criterion text, reference implementation, hand computation, existing fixture, external standard). Implementation-captured values are written `implementation output`; the judge FAILs them. `none — {reason}` only for `ui`/`config` types.
-- **`### Risk map coverage`**: for each `Risk areas` row, find the test whose input is its discriminating check and write `<area> → <test file:line>`. A row with no such test is a gap: add it or escalate. `none — {reason}` only when no row maps here; `none — risk map disabled (specFirst.riskMap=false)` only when the journal subsection is the disabled marker.
+- [ask: decision] **`### Risk map coverage`**: for each `Risk areas` row, find the test whose input is its discriminating check and write `<area> → <test file:line>`. A row with no such test is a gap: add it or escalate (`flow:decision`). `none — {reason}` only when no row maps here; `none — risk map disabled (specFirst.riskMap=false)` only when the journal subsection is the disabled marker.
 
-Validate the bundle against the reference (every mandatory subsection present, `none` only where permitted) before the verdict judge runs (`/flow:start` Phase 4 step 6).
+Validate the bundle against the reference (every mandatory subsection present, `none` only where permitted) before the verdict judge runs.
 
 ## Judge isolation
 

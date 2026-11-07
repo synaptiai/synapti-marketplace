@@ -1776,7 +1776,7 @@ set -- --findings "$CHALLENGE_DIR/findings.json" --tree "$REVIEW_TREE" \
    - Write a test (for a prose or configuration finding, a command) that fails on the current code if the finding is real.
    - It fails → confirmed: fix it, keep the test, and re-record the finding HIGH. From here it is a fix-forwarded finding like the rest.
    - It passes → refuted: keep the test, cite its passing output as the evidence in the self-review body, remove the finding from the routing rows, and record it with the block below.
-   - No test or command can reproduce or refute it → escalate it with the six-field structure (`references/escalation-format.md`), re-record it MEDIUM, and list its ID in `ESCALATED` of the resolution marker. It is never left LOW and never recorded HIGH.
+   - [ask: decision] No test or command can reproduce or refute it → escalate it with the six-field structure (`references/escalation-format.md`), re-record it MEDIUM, and list its ID in `ESCALATED` of the resolution marker. It is never left LOW and never recorded HIGH.
    - **It names no trigger** (step 7 lists it in `NO_TRIGGER`) → name one: the input or condition, in a setup `references/review-scope.md` covers, that makes it happen, and confirm it with a failing test as above. When no such trigger exists, drop it with the block below and `REASON=no-trigger`. A finding with no trigger is never escalated: there is nothing for anyone to decide.
    - A finding whose only trigger the review scope lists as out of scope is dropped at synthesis with `REASON=out-of-scope`, and the self-review body lists it under `Out of scope` with the scope rule it falls under.
 
@@ -1905,7 +1905,7 @@ fi
    - After fixes: re-review only what the P1 and P2 fixes changed, for regressions they introduced; the P3 batch is not re-reviewed. The review has converged when no counted P1 or P2 is left
    - TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
    - No follow-up issue creation for fixable items — finding triage is NEVER a valid escalation trigger; fix in this PR
-   - Approaching the iteration ceiling without convergence is a signal to re-check the findings (are two findings in tension? misunderstood scope?), not to escalate
+   - [ask: none] Approaching the iteration ceiling without convergence is a signal to re-check the findings (are two findings in tension? misunderstood scope?), not to escalate
    - TaskCreate("Post self-review comment", "Post review findings summary to PR via gh pr review --comment")
    - TaskCreate("Post self-review resolution marker", "Post a FLOW_RESOLUTION_CYCLE issue comment (gh pr comment) recording the fix-forwarded finding IDs as RESOLVED — required so the merge finding-ledger gate balances for self-reviewed PRs. Skip only when zero findings were raised.")
 

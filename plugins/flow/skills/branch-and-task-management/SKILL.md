@@ -14,7 +14,7 @@ Iron law: no code before context — read the issue body and comments, load hist
 
 ## Pre-Conditions
 
-Before creating a branch, confirm: the issue exists and is OPEN; it has acceptance criteria (otherwise ask the user or create them); no existing branch already addresses it; you have read the full body AND comments.
+[ask: decision] Before creating a branch, confirm: the issue exists and is OPEN; it has acceptance criteria (otherwise ask the user, with `metadata.source` `flow:decision`, or create them); no existing branch already addresses it; you have read the full body AND comments.
 
 ## Branch Creation
 

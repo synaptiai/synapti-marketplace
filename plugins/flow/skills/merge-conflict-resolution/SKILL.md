@@ -10,7 +10,7 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: **never silently drop changes — every resolution accounts for both sides, documents any excluded lines, and asks the user rather than guessing.** Invoked by `/flow:resolve` Phase 1 (detect and classify), Phase 2 (per-file strategy plan), Phase 3 (resolve hunks), and Phase 4 (marker audit, complete merge/rebase, quality checks). Returns, per conflicted file: type (UU/AA/UD/DU/AU/UA), complexity (trivial/semantic/structural/delete-modify), strategy (accept-ours/accept-theirs/manual-merge/ask-user), hunk count, and result, plus the quality outcome. Permitted skips: none — trivial files auto-resolve only when `conflictResolution.autoResolveTrivial` is true; delete-modify and competing hunks always go to the user.
+[ask: none] Iron law: **never silently drop changes — every resolution accounts for both sides, documents any excluded lines, and asks the user rather than guessing.** Invoked by `/flow:resolve` Phase 1 (detect and classify), Phase 2 (per-file strategy plan), Phase 3 (resolve hunks), and Phase 4 (marker audit, complete merge/rebase, quality checks). Returns, per conflicted file: type (UU/AA/UD/DU/AU/UA), complexity (trivial/semantic/structural/delete-modify), strategy (accept-ours/accept-theirs/manual-merge/ask-user), hunk count, and result, plus the quality outcome. Permitted skips: none — trivial files auto-resolve only when `conflictResolution.autoResolveTrivial` is true; delete-modify and competing hunks always go to the user.
 
 ## Detect
 

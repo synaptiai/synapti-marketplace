@@ -42,7 +42,7 @@ true
 
 ## References
 
-- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by the max-conflict-files escalation (Phase 1) and any semantic/structural/delete-modify escalation surfaced during resolution
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by the max-conflict-files escalation (Phase 1) and any semantic/structural/delete-modify escalation surfaced during resolution. Store each escalation before asking it: `bin/flow-question.sh add --journal --class <the place's tag> ...` prints `QUESTION_ID`; record the answer after with `bin/flow-question.sh answer <id> --choice <n> --journal` (§ Every escalation is stored)
 
 ## Phase 0: Pre-Flight
 

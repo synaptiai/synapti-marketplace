@@ -28,7 +28,7 @@ true
 
 ## References
 
-- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure for any Proactive-Autonomy escalation surfaced during design
+- [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure for any Proactive-Autonomy escalation surfaced during design. Store each escalation before asking it: `bin/flow-question.sh add --journal --class <the place's tag> ...` prints `QUESTION_ID`; record the answer after with `bin/flow-question.sh answer <id> --choice <n> --journal` (§ Every escalation is stored)
 
 ## Phase 1: EXPLORE
 

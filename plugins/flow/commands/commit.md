@@ -384,8 +384,8 @@ Display:
 ## Edge Cases
 
 - **No changes**: Report "Working tree clean" and exit
-- **Only untracked files**: Ask whether to include
-- **All out-of-context**: Warn and require explicit confirmation
+- [ask: default] **Only untracked files**: Ask whether to include them. Under `ASK_POLICY=autonomous`, do not ask: classify them like any other file, commit the ones in the change's context, leave the rest untracked, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
+- [ask: default] **All out-of-context**: Warn and require explicit confirmation. Under `ASK_POLICY=autonomous`, do not ask: commit nothing, leave the files unstaged, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 - **Mixed types**: Create separate commits per type (feat + test)
 
 ## Final reply

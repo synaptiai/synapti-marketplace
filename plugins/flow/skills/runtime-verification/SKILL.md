@@ -33,7 +33,7 @@ Mixed diffs (a whitelisted category plus one `.py` file, a new dependency, or a 
 6. **E2E** when a framework exists, within `timeouts.e2eTest` (default 120); otherwise ad-hoc verification by project type (reference); "no test framework" is a problem to solve, not a skip.
 7. **Acceptance criteria**: map each to a method (reference table) and record Pass/Fail/N/A.
 
-On any failure: read the full error, root-cause it (`debugging-patterns`), fix, re-verify, up to `closedLoop.maxDebugIterations` (default 5), then escalate; the user never supplies logs.
+[ask: decision] On any failure: root-cause it (`debugging-patterns`), fix, re-verify, up to `closedLoop.maxDebugIterations` (default 5), then escalate (`flow:decision`); the user never supplies logs.
 
 ## Completion
 

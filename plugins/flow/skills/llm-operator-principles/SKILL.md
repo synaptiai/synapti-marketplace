@@ -10,7 +10,7 @@ allowed-tools: Read
 
 **CONVERGENCE = NO COUNTED P1 OR P2 LEFT. NOT ZERO FINDINGS, NOT EXHAUSTED BUDGET.**
 
-A finding counts only when it names a trigger inside `references/review-scope.md`; from cycle 2 a P3, from cycle 3 a P2, is listed and not counted (`bin/flow-finding-route.sh`). Iteration ceilings (below) are safety nets against infinite loops, not planned stop points.
+A finding counts only when it names a trigger inside `references/review-scope.md`; from cycle 2 a P3, from cycle 3 a P2, is listed and not counted (`bin/flow-finding-route.sh`).
 
 ## You Are An LLM Agent
 
@@ -18,7 +18,7 @@ Iteration is cheap and you do not tire; work is measured in tool calls.
 
 ## Calendar-Time Estimates Are Prohibited
 
-Never write, suggest, or imply estimates in calendar units (weeks, days, hours, sprints, ETAs, deadlines) in any output: PR bodies, journal entries, commit messages, questions, escalations, issues. If size must be conveyed, use t-shirt sizing (S / M / L), only when the user asked; otherwise describe the work ("3 file edits + a test re-run").
+Never write, suggest, or imply estimates in calendar units (weeks, days, hours, sprints, ETAs, deadlines) in any output. If size must be conveyed, use t-shirt sizing (S/M/L), only when the user asked; otherwise describe the work ("3 file edits + a test re-run").
 
 ## Default Finding Disposition: Fix In This PR
 
@@ -37,7 +37,7 @@ Default to ONE PR. Split only when the user asks, the work crosses a deployment 
 
 ## Iteration Ceiling Semantics
 
-Defaults: `fixForwardMaxIterations: 10`, `reviewCycleLimit: 10`, `closedLoop.maxDebugIterations: 5`, `timeouts.qualityCheckMaxIterations: 3`. Approaching a ceiling: re-read findings against the diff, check whether two are in tension, then continue. Escalate only when you cannot progress at all.
+Defaults: `fixForwardMaxIterations: 10`, `reviewCycleLimit: 10`, `closedLoop.maxDebugIterations: 5`, `timeouts.qualityCheckMaxIterations: 3`. [ask: none] Approaching a ceiling: re-read findings against the diff, check whether two are in tension, then continue. Escalate only when you cannot progress at all.
 
 ### Genuine non-convergence
 
@@ -46,14 +46,14 @@ Two signals:
 1. **Stuck signal**: the same findings reappear across the last 3 iterations with no progress, or fixes oscillate (fix A flags B, fix B flags A).
 2. **Reach-limit signal**: the iteration count equals `fixForwardMaxIterations` (or `reviewCycleLimit`) with findings still open.
 
-Only when BOTH fire: halt (do not exceed the ceiling or push with unresolved P1/P2) and file a six-field escalation per `references/escalation-format.md` citing **"genuinely ambiguous architecture decision"** (NOT finding-triage). Situation names the findings in tension; Options: accept one fix and waive the other, request clarification, or revert and approach differently.
+[ask: decision] Only when BOTH fire: halt (do not exceed the ceiling or push with unresolved P1/P2) and file a six-field escalation (`flow:decision`) citing **"genuinely ambiguous architecture decision"** (NOT finding-triage). Situation: the findings in tension; options: accept one fix, ask for clarification, or revert.
 
 ## Escalation Triggers
 
-Valid (six-field escalation, `references/escalation-format.md`):
+Valid:
 
 - Irreversible actions (merge, release, force-push, data deletion, production deploys): Tier 3
-- Genuinely ambiguous product/architecture decisions requiring user-only knowledge
+- Genuinely ambiguous product/architecture decisions
 - Out-of-whitelist runtime-verification skip requests
 - True scope decisions ("this has grown beyond the issue; pause for triage?")
 
@@ -63,9 +63,11 @@ Invalid:
 - "I found something unrelated": fix it (`improve:` commit)
 - "Should I keep going?": yes, until convergence
 
+[ask: none] **Every escalation is stored** (`references/escalation-format.md`): before `AskUserQuestion`, `bin/flow-question.sh add --journal --class <the place's tag> ...` prints `QUESTION_ID`; after it, `answer <id> --choice N --journal`. Without `AskUserQuestion`, `Blocking: yes` stops the run naming that id; otherwise take option 1 (`--by recommendation`).
+
 ## Autonomous Mode
 
-[ask: none] `autonomous: true` in settings: `[ask: default]` places take their recommendation and record it (`default-taken`); `[ask: decision]` and `[ask: permission]` places ask, with `metadata.source` set. A hook enforces it: `references/ask-policy.md`.
+[ask: none] `autonomous: true`: `[ask: default]` places take their recommendation and record it (`default-taken`); decision and permission places ask, with `metadata.source` set; a hook enforces it (`references/ask-policy.md`).
 
 ## Minimal-Scope Mode
 

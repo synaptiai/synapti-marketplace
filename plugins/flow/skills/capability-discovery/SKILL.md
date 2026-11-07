@@ -50,7 +50,7 @@ Six sections, Agents Available, Skills Available, Quality Commands, Tech Stack, 
 
 ## Graceful Degradation
 
-No agents → built-in review checklist. No CLAUDE.md commands → detect from tech stack. No tech stack → ask the user for commands. No LSP server → CLI-only analysis (grep/glob for references, CLI tools for diagnostics); not an error.
+[ask: decision] No agents → built-in review checklist. No CLAUDE.md commands → detect from tech stack. No tech stack → ask the user for commands (`metadata.source` `flow:decision`). No LSP server → CLI-only analysis (grep/glob for references, CLI tools for diagnostics); not an error.
 
 ## Caching
 
