@@ -538,7 +538,15 @@ _bd_strip_noncode() {
       # later `-m "Refs #12" written with single quotes` into a comment that cuts the command after it.
       # A `#` is a comment only when both say it is outside quotes. Either
       # alone can only be wrong in the direction of keeping text.
-      n = length(line); cut = 0; ql = ""; eq = 0; el = 0
+      # A `#` opens a comment only when the character before it ends a word:
+      # a space, a tab, a separator, or nothing. An ESCAPED space or `;` is
+      # part of the word, as the shell reads it, so `ls x\ #y ; rm -rf ~` has
+      # no comment and runs the rm. `pe1` and `pe2` say whether the character
+      # one and two places back was escaped. A `(` ends a word for this only
+      # when it opens one itself: zsh reads the `#` of `ls /(#|tmp) ; rm -rf ~`
+      # as part of a glob and runs the rm (bash refuses the line). When in
+      # doubt the text is kept, which only ever makes a rule see more.
+      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
@@ -555,11 +563,17 @@ _bd_strip_noncode() {
         else if (ql != "") { if (c == ql || (ql == DQ && c == SQ)) ql = "" }
         else if (dq) ql = DQ
         else if (c == "\"" || c == SQ) ql = c
-        if (c == "#" && oq && ol && !bq && !bl) {
+        if (c == "#" && oq && ol && !bq && !bl && !pe1) {
           prev = (i == 1) ? "" : substr(line, i - 1, 1)
           if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
-              prev == "|" || prev == "&" || prev == "(" || prev == ")") { cut = i; break }
+              prev == "|" || prev == "&" || prev == ")") { cut = i; break }
+          if (prev == "(") {
+            pp = (i == 2) ? "" : substr(line, i - 2, 1)
+            if (pp == "" || (!pe2 && (pp == " " || pp == "\t" || pp == ";" || pp == "|" ||
+                pp == "&" || pp == "(" || pp == ")"))) { cut = i; break }
+          }
         }
+        pe2 = pe1; pe1 = (bq || bl)
       }
       out = (cut > 0) ? substr(line, 1, cut - 1) : line
 

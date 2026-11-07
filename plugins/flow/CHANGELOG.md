@@ -33,6 +33,19 @@
   evaluator and the merge gate use, and with no goal for the branch it
   approves with `no active flow goal`. Two active goals owning the branch
   are reported (`FLOW_GOAL_UNCHECKED`), not one picked.
+- The pattern checks no longer miss a command hidden after an escaped
+  separator and a `#` (#304). `ls x\ #y ; rm -rf ~` and `ls x\;#y ; git push
+  --force origin main` ran their second command in bash and zsh, but the
+  destructive-command and force-push checks read the rest of the line as a
+  comment: the space or `;` before the `#` is escaped, so it is part of the
+  word and the `#` opens no comment. The same held for `ls /(#|tmp) ; …`,
+  where zsh reads `(#` as part of a glob. A `#` now opens a comment only
+  after an unescaped space, tab or separator, and after a `(` only when that
+  `(` opens a word itself. Every reader that decides where a comment starts
+  follows the rule: `lib/command-parse.sh` (the destructive-command check,
+  the merge check and the tier gate), `block-force-push.sh`, and
+  `ask-issue-create.sh`. A real comment, `ls # rm -rf ~` or `ls x\\;#y`,
+  is still one.
 - `/flow:pr` no longer asks on most runs (#338). `/flow:start` created a goal
   but never evaluated it, so the goal was still `active` when `/flow:pr`'s
   gate looked, and the gate asked even when VERIFY had passed every

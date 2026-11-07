@@ -66,6 +66,9 @@ COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/nul
 [ -z "$COMMAND" ] && exit 0
 
 # 1. Remove quoted spans ("..." first, then '...') and `#` comments, per line.
+#    A `#` opens a comment only after an unescaped space or tab, or at the
+#    start of the line: an escaped space (`ls x\ #y ; gh issue create`) is
+#    part of the word, and the command after it runs.
 # 2. Split into simple commands. Separators: ; | & ( ) backtick newline.
 #    `$(` becomes `$` + `(`.
 # 3. Test each simple command for `gh issue create` in command position.
@@ -77,7 +80,7 @@ while IFS= read -r SEG; do
     break
   fi
 done < <(printf '%s\n' "$COMMAND" \
-  | sed -E -e 's/"[^"]*"//g' -e "s/'[^']*'//g" -e 's/(^|[[:space:]])#.*$//' \
+  | sed -E -e 's/"[^"]*"//g' -e "s/'[^']*'//g" -e 's/(^|(^|[^\\])(\\\\)*[[:space:]])#.*$/\1/' \
   | tr ';|&()`' '\n')
 [ "$IS_ISSUE_CREATE" = "1" ] || exit 0
 

@@ -145,6 +145,20 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
 
   # /usr/bin/echo is still echo.
   function base(w) { sub(/^.*\//, "", w); return w }
+  # Does the `#` at i open a comment? The character before it must end a word
+  # and not be escaped (`escat` is the position of the last escaped
+  # character); a `(` ends a word only when it opens one itself.
+  function is_comment_start(line, i, escat,   p, pp) {
+    if (i == 1) return 1
+    if (escat == i - 1) return 0
+    p = substr(line, i - 1, 1)
+    if (p ~ /[ \t;|&)]/) return 1
+    if (p != "(") return 0
+    if (i == 2) return 1
+    if (escat == i - 2) return 0
+    pp = substr(line, i - 2, 1)
+    return (pp ~ /[ \t;|&()]/)
+  }
 
   function is_safe(w) { return (index(safe, " " w " ") > 0) }
 
@@ -338,7 +352,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       if (!is_safe(q_owner)) risky = 1
     }
 
-    n = length(line); i = 1
+    n = length(line); i = 1; escat = 0
     while (i <= n) {
       c = substr(line, i, 1)
       if (q != "") {
@@ -356,7 +370,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
         if (c == q) { q = ""; if (segstart == 0) segstart = i + 1 }
         i++; continue
       }
-      if (c == "\\") { i += 2; continue }
+      if (c == "\\") { escat = i + 1; i += 2; continue }
       # Substitutions are not modelled, and a command the guard cannot read is
       # not one it can allow.
       if (c == "$") {
@@ -396,7 +410,11 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
         }
         q = c; i++; continue
       }
-      if (c == "#" && (i == 1 || substr(line, i - 1, 1) ~ /[ \t;|&(]/)) {
+      # A `#` opens a comment only after a character that ends a word and was
+      # not escaped: `ls x\ #y ; git push --force` has no comment, and runs
+      # the push. A `(` ends a word only when it opens one itself, since zsh
+      # reads `/(#|tmp)` as a glob (lib/command-parse.sh has the same rule).
+      if (c == "#" && is_comment_start(line, i, escat)) {
         if (segstart > 0) judge(substr(line, segstart, i - segstart))
         # A comment is prose about the command. Its flags are accounted for,
         # but they are still flags the floor saw, so they are counted.
