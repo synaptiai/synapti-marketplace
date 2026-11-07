@@ -468,6 +468,9 @@ _URL_REQ = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*(\+[A-Za-z][A-Za-z0-9+.-]*)?://"
 # A `#` inside a token is part of it: `git+https://h/x.git#egg=x` names its
 # package in that fragment.
 _REQ_COMMENT = re.compile(r"(?:^|\s)#.*$")
+# pip's comment line: `#` first on the line after any whitespace. It ends a
+# backslash continuation instead of being joined to it.
+_REQ_COMMENT_LINE = re.compile(r"^\s*#")
 # `-e <target>`, `-e<target>`, `--editable <target>`, `--editable=<target>`.
 _REQ_EDITABLE = re.compile(r"^(?:-e|--editable(?=[\s=]))\s*=?\s*(\S+)")
 # A requirement given as a local path rather than a name: it starts with `.`,
@@ -506,6 +509,24 @@ def _requirement_target_name(target, lineno):
         "(no egg fragment and no wheel file name)" % lineno)
 
 
+def _req_continued(lines, index):
+    """The line at `index` joined with the lines its trailing backslashes
+    continue onto, as pip joins them before it strips comments or splits
+    an option line: each backslash-ended line loses its backslashes and runs
+    straight into the next, a comment line ends the run, and so does the
+    end of the file. Returns the joined line and the index of the line
+    after it."""
+    parts = []
+    while index < len(lines):
+        raw = lines[index]
+        index += 1
+        if not raw.endswith("\\") or _REQ_COMMENT_LINE.match(raw):
+            parts.append(" " + raw if _REQ_COMMENT_LINE.match(raw) else raw)
+            break
+        parts.append(raw.strip("\\"))
+    return "".join(parts), index
+
+
 def _editable_target(line, lineno):
     """The target of an `-e`/`--editable` line, read as pip reads an option
     line: split with shell quoting, so `-e ".[dev]"` is `.[dev]`. None when
@@ -536,13 +557,20 @@ def parse_requirements(text):
     a package from somewhere other than the index, so it is a redirect as
     well as a dependency, named by its `#egg=` fragment or its wheel file
     name; one that names neither makes the file unreadable. An editable
-    line is split with shell quoting, as pip splits it (`-e ".[dev]"`), and
-    one with an unclosed quote makes the file unreadable. The project
+    line is split with shell quoting, as pip splits it (`-e ".[dev]"`),
+    once the lines its trailing backslashes continue onto are joined to it,
+    as pip joins them; one with an unclosed quote makes the file
+    unreadable. The project
     itself (`.`, `-e .`, `-e .[dev]`) is the code under review and is not
     read. No other option line (`-r`, `-c`, `--index-url`,
     `--extra-index-url`, `--find-links`, ...) is read."""
     r = ParseResult()
-    for lineno, raw in enumerate(text.splitlines(), 1):
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        lineno = index + 1
+        raw = lines[index]
+        index += 1
         line = _REQ_COMMENT.sub("", raw).strip()
         if not line:
             continue
@@ -550,6 +578,9 @@ def parse_requirements(text):
         if line.startswith("-"):
             if not _REQ_EDITABLE.match(line):
                 continue
+            if raw.endswith("\\"):
+                raw, index = _req_continued(lines, index - 1)
+                line = _REQ_COMMENT.sub("", raw).strip()
             target = _editable_target(line, lineno)
             if target is None:
                 continue
@@ -659,11 +690,12 @@ _NPM_ALIAS = re.compile(r"^npm:(.+)@([^@]+)$")
 # starting with `.`, `~/`, `/` or `\`, or a drive letter: `../x`, `~/x`,
 # `/abs`, `C:/x`), an scp-style git spec (`git@host:path`), any other spec
 # holding a slash (the GitHub shorthand `user/repo[#ref]`, a path `a/b/c`),
-# and a tarball file name (`x.tgz`). A semver range (`~1.2.3`, `^2.0.0`) or a
+# and a tarball file name (`x.tgz`, in any case, as npm-package-arg matches
+# it: `x.TGZ`, `x.Tar.Gz`). A semver range (`~1.2.3`, `^2.0.0`) or a
 # dist-tag (`latest`) is none of these, and an `npm:` alias is read apart.
 _NPM_REDIRECT = re.compile(
     r"^(?!npm:)(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:github|gitlab|bitbucket|gist|file|link):"
-    r"|[.]|~/|[/\\]|[A-Za-z]:|[^@\s/:]+@[^:\s/]+:|.*[/\\]|.*\.(?:tgz|tar\.gz|tar)$)"
+    r"|[.]|~/|[/\\]|[A-Za-z]:|[^@\s/:]+@[^:\s/]+:|.*[/\\]|.*(?i:\.(?:tgz|tar\.gz|tar))$)"
 )
 
 
@@ -1156,7 +1188,9 @@ def _block_source(keyword, line, start, lineno):
     """(target, ref) of the git/github/path block that `line` opens, its
     opener (`do` or `{`) at `start`. The target is the first argument, a
     string literal and nothing more (`git "u" + x do` is not one); the ref
-    is a literal `ref:`, `tag:` or `branch:` option, or None."""
+    is a literal `ref:`, `tag:` or `branch:` option, written as an argument
+    or in a hash literal that is the one argument after the target
+    (`git "u", { branch: "x" } do`), or None."""
     what = "the %s block" % keyword
     args = line[_GEM_BLOCK_START.match(line).end():start].strip()
     if args.startswith("("):
@@ -1167,6 +1201,19 @@ def _block_source(keyword, line, start, lineno):
     if (st is None or _literal(st[0], st[1]) is None
             or (st[2].strip() and not st[2].lstrip().startswith(","))):
         raise ParseError("%s on line %d does not name a string literal" % (what, lineno))
+    # Bundler's block methods take their options as a hash
+    # (`git(uri, options = {})`), so `git "u", { branch: "x" } do` passes
+    # them as a hash literal: when that is the one argument after the
+    # target, its entries are read as the options.
+    rest = st[2].strip()[1:].strip()
+    if rest.startswith("{"):
+        depth = 0
+        for i, c in enumerate(_blank_strings(rest)):
+            depth += (c == "{") - (c == "}")
+            if depth == 0:
+                if not rest[i + 1:].strip():
+                    args = '"", ' + rest[1:i]
+                break
     ref = None
     for arg in _gem_args(args, lineno, what):
         if arg[0] == "option" and arg[1] in ("ref", "tag", "branch"):
@@ -1191,11 +1238,42 @@ def _close_block(blocks, closer, lineno):
     blocks.pop()
 
 
+def _brace_frame(blocks):
+    """The innermost `{` frame open, or None. Braces are counted only while
+    there is one: a `}` can close only a `{`, so where no `{` frame is open
+    a brace changes nothing this tracks, and a lone `{` or `}` in a regex
+    or a character literal (`x = /\\{/`, `?}`) around a `do` block is not
+    read as one."""
+    return next((b for b in reversed(blocks) if b[0] == "{"), None)
+
+
+# What may hold a `{` or `}` that is not a brace, or start a literal whose
+# text runs on over later lines: a regex or a division (`/`), a %-literal or
+# a modulo (`%`), a heredoc or an append (`<<`), a character literal or a
+# ternary (a `?` that does not end a method name such as `key?`), and a
+# quote left open. Read on the code with its closed strings removed.
+_BRACE_UNSURE = re.compile(r"[/%]|<<|(?<![A-Za-z0-9_])\?|[\"'`]")
+
+
+def _brace_unsure(code):
+    """Whether this parser cannot be sure which `{` and `}` in `code` are
+    braces: it holds one of _BRACE_UNSURE's forms, or a double-quoted
+    string or backtick command that interpolates (`"#{"}"}"`), whose inner
+    quotes the string pattern does not pair. Ruby is not lexed here, so
+    every such line is unsure, whether or not a brace is in it."""
+    for m in _RUBY_STRING.finditer(code):
+        if m.group(0)[0] != "'" and "#{" in m.group(0):
+            return True
+    return bool(_BRACE_UNSURE.search(_RUBY_STRING.sub("", code)))
+
+
 def _close_and_open_braces(blocks, code, lineno):
     """Close a block for each `}` in `code` that no earlier `{` on the line
     opened, then open one for each `{` left open: a multi-line hash literal
     or a brace block (`.each { |g|`), whose `}` must not close a git block
-    around it."""
+    around it. Nothing is counted while no `{` frame is open."""
+    if _brace_frame(blocks) is None:
+        return
     opened = 0
     for c in _blank_strings(code):
         if c == "{":
@@ -1224,9 +1302,13 @@ def parse_gemfile(text):
     its line; a call without parentheses, or a git/github/path block's
     opening call, whose continuation runs past the end of the file or into
     another statement; a source option or block target whose value is not
-    a literal; a `git_source` whose name is not a literal; an `end` or `}`
-    that closes no block this has seen, or closes one the other belongs to)
-    is NOT guessed at: the file is
+    a literal; a `git_source` whose name is not a literal; an `end` that
+    closes no block this has seen, or closes a `{` block; inside a `{`
+    block, a `}` that closes no block this has seen or closes a `do` block,
+    or a line holding a regex, a %-literal, a character literal, a heredoc,
+    an interpolation or an unclosed string, any of which can hide a brace
+    this would miscount, as can a git/path `{` block's opening call) is
+    NOT guessed at: the file is
     reported unreadable, because a dependency this cannot see is one a
     reviewer would be told does not exist. A call without parentheses
     whose line ends with a comma, a backslash or an open bracket is read
@@ -1244,7 +1326,8 @@ def parse_gemfile(text):
     `github:`, `gitlab:`, `bitbucket:`, `gist:` or `path:` option, an
     option a `git_source(:name)` line declared earlier, or inside a
     `git`/`github`/`path` block (`... do` ... `end` or `(...) {` ... `}`,
-    its opening call continued over lines like a gem call's), is also a
+    its opening call continued over lines like a gem call's, its options
+    arguments or one hash literal), is also a
     redirect: the same record a go.mod replace makes, so a gem built from a
     fork does not read as an unpinned gem from rubygems.org. The redirect's
     version is the git ref, tag or branch (the gem's, else its block's) and
@@ -1255,8 +1338,11 @@ def parse_gemfile(text):
     their modifier and one-line forms, and other than an endless
     `def x = expr`; a setter or operator `def mode=(v)` takes an end), and
     every `{` a later line's `}` closes (a hash literal, an `.each { |g|`
-    block), is tracked too, so its closer does not close the git block
-    around it.
+    block) inside a `{` block, is tracked too, so its closer does not close
+    the git block around it. Braces are counted only inside a `{` block,
+    since only there can a `}` close anything tracked: around `do` blocks
+    alone a lone `{` or `}` in a regex or a character literal is not read
+    as one.
     """
     r = ParseResult()
     blocks = []
@@ -1273,7 +1359,24 @@ def parse_gemfile(text):
         bk = None if m else _GEM_BLOCK_START.match(line)
         kind = "gem call" if m and not m.group(1) else ("%s block" % bk.group(1) if bk else None)
         line, index = _statement(lines, index, line, lineno, kind)
+        # Inside a `{` block, a `}` closes it, so a `}` or `{` this cannot
+        # be sure is a brace (one in a regex, a %-literal, a character
+        # literal, a heredoc's body or an interpolation) could end the block
+        # early and drop the redirect of every gem after it. The file is
+        # unreadable instead.
+        frame = _brace_frame(blocks)
+        if frame is not None and _brace_unsure(line):
+            raise ParseError(
+                "line %d, inside the { block on line %d, holds a regex, "
+                "%%-literal, character literal, heredoc, interpolation or "
+                "unclosed string, whose braces this cannot count" % (lineno, frame[2]))
         opener = _block_opener(line) if bk else None
+        if opener and opener[0] == "{" and frame is None and _brace_unsure(line[:opener[1]]):
+            raise ParseError(
+                "the %s { block on line %d holds a regex, %%-literal, "
+                "character literal, heredoc, interpolation or unclosed "
+                "string in its opening call, whose braces this cannot "
+                "count" % (bk.group(1), lineno))
         if opener:
             keyword = bk.group(1)
             target, ref = _block_source(keyword, line, opener[1], lineno)

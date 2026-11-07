@@ -76,7 +76,8 @@
 #   R24 a git/path block written with braces (`path("x") {` ... `}`) is not
 #      tracked, so its gems read as from the registry; or the } of a hash
 #      literal inside it closes it; or an end that closes a { block, or a }
-#      that closes a do block, is read instead of making the file unreadable
+#      that closes a do block inside a { block, is read instead of making the
+#      file unreadable
 #   R25 a package.json spec npm installs from outside the registry is missed:
 #      a relative, home or absolute path without file: (../a/b, ~/x, /abs,
 #      C:/x, ./c.tgz) or an scp-style git spec (git@host:path); or a semver
@@ -88,6 +89,22 @@
 #      which pip reads with shell quoting, keeps its quotes, so the project
 #      itself makes the file unreadable and a quoted VCS target is misnamed;
 #      or an unclosed quote is skipped instead of making the file unreadable
+#   R28 a } or { inside a character literal, a regex, a %-literal, a heredoc
+#      or a string interpolation, inside a git/path block written with
+#      braces, is counted as a brace: a } closes the block early, a later {
+#      in such a literal keeps the count balanced, and the gems between read
+#      as from the registry with STATE=ok; the same on a gem line in the
+#      block, whose %-literal runs over a line holding a }
+#   R29 a package.json tarball file name in upper or mixed case (x.TGZ,
+#      X.TAR.GZ, x.Tar), which npm-package-arg reads as a file, is not a
+#      redirect
+#   R30 a Gemfile Bundler reads, and this parser read before brace blocks
+#      were tracked, becomes unreadable: a git block whose options are a
+#      hash literal (`git "u", { branch: "x" } do`), or a lone { or } in a
+#      regex or character literal inside a do block or at the top level
+#   R31 an -e line continued with a trailing backslash, which pip joins with
+#      the next line before splitting it, is refused as an unclosed quote
+#      instead of read
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -561,11 +578,11 @@ $'gem "rails", "7.0.0"\ngit("https://evil.example/r.git") {\n  gem "activesuppor
 'STATE=unavailable
 MANIFEST_UNPARSED=Gemfile reason=the end on line 4 closes the { on line 2 at head'
 
-_dep dep-gem-brace-closes-do "a } that closes a do block makes the file unreadable (R24)" Gemfile \
+_dep dep-gem-brace-closes-do "a } that closes a do block inside a { block makes the file unreadable (R24)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
-$'gem "rails", "7.0.0"\ngit "https://evil.example/r.git" do\n  gem "activesupport"\n}\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  git "https://evil.example/r.git" do\n    gem "activesupport"\n  }\n}\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=the } on line 4 closes the do on line 2 at head'
+MANIFEST_UNPARSED=Gemfile reason=the } on line 5 closes the do on line 3 at head'
 
 _dep dep-gem-redirect-version-bump "a path or git gem whose version moves is not a new redirect; a git gem whose tag moves is (R26)" Gemfile \
 $'gem "engine", "~> 1.0", path: "engines/engine"\ngem "fork", "~> 2.0", git: "https://evil.example/fork.git", tag: "v2"\ngem "pinned", git: "https://evil.example/pinned.git", tag: "v1"\npath "vendor" do\n  gem "inner", "1.0"\nend\n' \
@@ -610,3 +627,73 @@ $'flask==2.0\n' \
 $'flask==2.0\n-e "../x#egg=x\n' \
 'STATE=unavailable
 MANIFEST_UNPARSED=requirements.txt reason=the option on line 2 has an unclosed quote at head'
+
+# --- braces inside literals in a brace-form block (R28) ------------------------
+_dep dep-gem-brace-char-literal "a } and a { in character literals inside a path { block make the file unreadable, not a lost redirect (R28)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = ?}\n  gem "activesupport"\n  y = ?{\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+
+_dep dep-gem-brace-regex "a } and a { in regexes inside a path { block make the file unreadable (R28)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = /}/\n  gem "activesupport"\n  y = /{/\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+
+_dep dep-gem-brace-percent "a } and a { in %-literals inside a git { block make the file unreadable (R28)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit("https://evil.example/r.git") {\n  x = %q(})\n  gem "activesupport"\n  y = %q({)\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+
+_dep dep-gem-brace-heredoc "a heredoc whose body holds a } inside a path { block makes the file unreadable (R28)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = <<~E\n}\nE\n  gem "activesupport"\n  y = <<~E\n{\nE\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+
+_dep dep-gem-brace-interpolation "a } and a { in string interpolations inside a path { block make the file unreadable (R28)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = "#{"}"}"\n  gem "activesupport"\n  y = "#{"{"}"\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+
+_dep dep-gem-brace-gem-literal "a gem line inside a path { block whose %-literal runs over a } makes the file unreadable (R28)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  gem "a", require: %q<\n}\n>\n  gem "activesupport"\n  gem "b", require: %q<\n{\n>\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+
+# --- npm tarball names in any case (R29) ---------------------------------------
+_dep dep-npm-tarball-case "a tarball file name is a redirect in upper or mixed case, as npm-package-arg reads it (R29)" package.json \
+'{"dependencies":{"express":"4.18.0"}}' \
+'{"dependencies":{"express":"4.18.0","evil":"evil-1.0.0.TGZ","big":"X.TAR.GZ","mixed":"foo.Tar"}}' \
+'STATE=ok
+DEP_ADDED=big@X.TAR.GZ manifest=package.json
+DEP_ADDED=evil@evil-1.0.0.TGZ manifest=package.json
+DEP_ADDED=mixed@foo.Tar manifest=package.json
+DEP_REPLACED=big -> X.TAR.GZ@(unpinned) manifest=package.json
+DEP_REPLACED=evil -> evil-1.0.0.TGZ@(unpinned) manifest=package.json
+DEP_REPLACED=mixed -> foo.Tar@(unpinned) manifest=package.json'
+
+# --- Gemfiles Bundler reads that stay readable (R30) ---------------------------
+_dep dep-gem-do-block-literals "a git block with a hash of options, and lone braces in literals around do blocks, are read (R30)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\nx = ?}\ngit "https://evil.example/r.git", { branch: "x" } do\n  gem "activesupport"\n  y = /\\{/\n  gem "actionpack"\nend\ngroup :test do\n  z = ?{\n  gem "rspec", "3.12.0"\nend\n' \
+'STATE=ok
+DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:6
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:4
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:10
+DEP_REPLACED=actionpack -> https://evil.example/r.git@x manifest=Gemfile:6
+DEP_REPLACED=activesupport -> https://evil.example/r.git@x manifest=Gemfile:4'
+
+# --- a continued editable line (R31) -------------------------------------------
+_dep dep-req-editable-continued "an -e line continued with a backslash is joined with the next line, as pip joins it (R31)" requirements.txt \
+$'flask==2.0\n' \
+$'flask==2.0\n-e git+https://evil.example/x.git#egg=b \\\n    --config-settings editable_mode=compat\n-e ../y#egg=y \\\n' \
+'STATE=ok
+DEP_ADDED=b@(unpinned) manifest=requirements.txt:2
+DEP_ADDED=y@(unpinned) manifest=requirements.txt:4
+DEP_REPLACED=b -> git+https://evil.example/x.git#egg=b@(unpinned) manifest=requirements.txt:2
+DEP_REPLACED=y -> ../y#egg=y@(unpinned) manifest=requirements.txt:4'

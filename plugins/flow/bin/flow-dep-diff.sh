@@ -46,18 +46,21 @@
 #     that is a URL (`git+https://...#egg=x`, `https://.../x-1.0-py3-none-any.whl`),
 #     a local path (`../x#egg=x`, `./dist/x-1.0-py3-none-any.whl`) or an
 #     editable install (`-e ...`, `--editable ...`, its target read with
-#     shell quoting as pip reads it: `-e "../x#egg=x"`), named by its #egg=
-#     fragment or wheel file name, with the target as written; a
+#     shell quoting as pip reads it: `-e "../x#egg=x"`, once a trailing
+#     backslash has joined the next line to it, as pip joins it), named by
+#     its #egg= fragment or wheel file name, with the target as written; a
 #     package.json spec that is a URL, a hosted-git shorthand (github:,
 #     user/repo), an scp-style git spec (git@host:path), file:/link:, or a
 #     path without them (one starting with ., ~/, / or \, a drive letter,
-#     any other spec holding a slash, a .tgz/.tar.gz/.tar file name); a
-#     Gemfile git:, github:, gitlab:, bitbucket:, gist: or path: option, or
-#     an option a `git_source(:name)` line declared, keyed by a label, a
-#     symbol or a string (`git: url`, `:git => url`, `"git" => url`, also on
-#     the lines a gem call continues onto), or a gem inside a git/github/path
-#     block, written `do ... end` or `{ ... }`, also when its opening call
-#     runs over several lines; a Gemfile.lock GIT section, at its revision;
+#     any other spec holding a slash, a .tgz/.tar.gz/.tar file name in any
+#     case); a Gemfile git:, github:, gitlab:, bitbucket:, gist: or path:
+#     option, or an option a `git_source(:name)` line declared, keyed by a
+#     label, a symbol or a string (`git: url`, `:git => url`,
+#     `"git" => url`, also on the lines a gem call continues onto), or a gem
+#     inside a git/github/path block, written `do ... end` or `{ ... }`,
+#     also when its opening call runs over several lines or passes its
+#     options as a hash literal (`git "u", { branch: "x" } do`); a
+#     Gemfile.lock GIT section, at its revision;
 #     and a Gemfile.lock PATH section other than the project's own
 #     (remote: . or ./ is the gemspec gem, not a redirect). A Gemfile git
 #     redirect's version is its ref, tag or branch (the gem's own, or its
@@ -94,9 +97,13 @@
 #     call does not close on its line or carries a trailing modifier
 #     (`gem("x") if c`); a continued call, or a git/github/path block's
 #     continued opening call, runs past the end of the file or into another
-#     statement; an `end` or `}` closes no block it has seen, or closes a
-#     block the other one belongs to (an `end` for a `{`, a `}` for a `do`);
-#     or a `=begin` has no `=end`. A requirements*.txt -e line with an
+#     statement; an `end` closes no block it has seen, or closes a `{`
+#     block; inside a `{` block, the only place a `}` is counted, a `}`
+#     closes no block it has seen or closes a `do` block, or a line holds a
+#     regex, a %-literal, a character literal, a heredoc, an interpolation
+#     or an unclosed string, any of which can hide a brace (`x = ?}`); a
+#     git/path `{` block's opening call holds one of those; or a `=begin`
+#     has no `=end`. A requirements*.txt -e line with an
 #     unclosed quote is unreadable too
 #
 # MANIFESTS_EXAMINED=0 with STATE=none means no manifest was in the diff.
