@@ -217,6 +217,12 @@ See [`flow-runtime-state.md`](flow-runtime-state.md#gitignore-policy).
 
 Teams that want fully-private goals can add `.flow/goals/` to their personal `.gitignore`; the helper writes don't depend on git state.
 
+## Where goals are kept
+
+Goals are kept in `<runtime dir>/goals` at the repository top (`.flow/goals` unless `flow.runtime.stateDir` says otherwise), whatever directory a command or hook runs in: `bin/flow-goal-record.sh` writes them there and every reader (the Stop hook, `/flow:start`, the `/flow:pr` and `/flow:merge` goal gates, `/flow:status`) reads them only from there, and from the same path in a pull request's head commit.
+
+**Moving goals once, after upgrading from Flow 3.14 or earlier.** Those versions took the runtime directory from the working directory, so a session working in a subdirectory (say `packages/app`) wrote its goals to `packages/app/.flow/goals/`. Nothing reads them there any more: such a goal no longer gates the merge (the gate reports no goal for the branch) and the Stop hook does not see it. `/flow:status` lists any it finds as `STRAY_GOAL` lines, tracked or untracked and not ignored. Move each to the top, from the top: `git mv packages/app/.flow/goals/<id>.goal.yaml .flow/goals/` (`mv` for an untracked one). A goal whose id is already at the top is a second goal for that id: keep the one that is current and remove the other.
+
 ## What FlowGoal explicitly does NOT do
 
 These are non-goals — flow makes no claim to provide them:

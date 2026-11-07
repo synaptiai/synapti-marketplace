@@ -162,6 +162,7 @@ fi
 # When goals are enabled, surface the active FlowGoal lifecycle + per-AC
 # pass/fail so the user sees what the Stop hook is watching. A project whose
 # settings set the flag to false emits STATE=disabled.
+# GOAL_STATE_BLOCK_BEGIN
 printf '%s\n' ""
 printf '%s\n' "### FlowGoal State"
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -202,8 +203,21 @@ else
         printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT${GOAL_ERR:+: $GOAL_ERR}"
         ;;
     esac
+    # Goal files under a runtime directory below the top. Flow 3.14 and
+    # earlier wrote the goals of a session working in a subdirectory there;
+    # every reader now looks only at the top, so those goals are not seen by
+    # the Stop hook or the merge gate. Listed so they can be moved (at most
+    # 20, tracked or untracked and not ignored; control characters removed).
+    STRAY_RT=$("${ACTIVE_GOAL_HELPER%/flow-active-goal.sh}/flow-runtime-dir.sh" 2>/dev/null) || STRAY_RT=""
+    STRAY_RT=${STRAY_RT#./}
+    STRAY_TOP=$(git rev-parse --show-toplevel 2>/dev/null) || STRAY_TOP=""
+    if [ -n "$STRAY_RT" ] && [ -n "$STRAY_TOP" ]; then
+      git -C "$STRAY_TOP" ls-files -z --cached --others --exclude-standard -- ":(glob)*/**/$STRAY_RT/goals/*.goal.yaml" 2>/dev/null |
+        LC_ALL=C tr -d '\001-\037\177' | tr '\000' '\n' | head -20 | sed 's/^/STRAY_GOAL=/'
+    fi
   fi
 fi
+# GOAL_STATE_BLOCK_END
 
 # Section: Runtime Directory — where the runs and triggers below are read:
 # flow.runtime.stateDir, default .flow (bin/flow-runtime-dir.sh).
@@ -665,6 +679,7 @@ The complete verbose dashboard (every section):
 {When STATE=degenerate: render "⚠ Degenerate state: multiple active goals — run `/flow:goal history` and clear extras"}
 {When STATE=unavailable: render "Unavailable: {REASON}"}
 {When STATE=ok: render the goal id + lifecycle + AC table}
+{When STRAY_GOAL lines are present, in any state but disabled: render "⚠ Goal files below the repository top are not read: {each STRAY_GOAL path}. Flow reads goals only from `<runtime dir>/goals` at the top; move each there (`git mv <path> {RUNTIME_DIR}/goals/` from the top, `mv` for an untracked one; see `references/flow-goals.md` § Where goals are kept) so the Stop hook and the `/flow:merge` goal gate see it." Show it in every mode.}
 
 | Goal | Lifecycle | ACs |
 |------|-----------|-----|
@@ -792,6 +807,7 @@ Edge cases (driven by `LEDGER_STATE=`, NOT by silence):
 | Read `~/.claude/flow-learn-pending` flag | 1 | Autonomous, read-only |
 | Findings-ledger aggregation across open PRs (`gh api` paginated) | 1 | Autonomous, read-only |
 | Read `<runtime dir>/goals/*.goal.yaml` for active goal + ACs | 1 | Autonomous, read-only |
+| List goal files under a runtime directory below the repository top (`git ls-files`) | 1 | Autonomous, read-only |
 | Read `<runtime dir>/runs/*/` for recent run summaries | 1 | Autonomous, read-only |
 | Render status tables | 1 | Autonomous, output-only |
 
