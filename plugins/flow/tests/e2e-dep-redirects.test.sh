@@ -37,6 +37,17 @@
 #   R12 the project's own gem in Gemfile.lock (PATH remote: ., what a gemspec
 #      line resolves to) is reported as a redirect, and a version bump of any
 #      PATH gem reads as a new redirect
+#   R13 a statement continued with a backslash onto a line holding a modifier
+#      if/unless is misread: a gem call so continued makes the file
+#      unreadable, and any other statement so continued opens a block that
+#      swallows the git block's end
+#   R14 a =begin ... =end block comment is read as code: =begin opens a block
+#      and the gems written in the comment are reported
+#   R15 a # inside a string is read as a comment, so the rest of the line
+#      (the end of a one-line def) is not seen; or, once strings are kept, an
+#      interpolated gem name or source is read as if it were a literal
+#   R16 a setter or operator method (def mode=(v), def []=(k, v)) is read as
+#      an endless def and opens nothing, so its end closes the git block
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -203,6 +214,73 @@ $'PATH\n  remote: ./\n  specs:\n    mygem (0.1.0)\n\nPATH\n  remote: ../shared\n
 DEP_ADDED=vendored@2.0.0 manifest=Gemfile.lock:14
 DEP_CHANGED=shared 1.0.0->1.1.0 manifest=Gemfile.lock:9
 DEP_REPLACED=vendored -> ../vendored@(unpinned) manifest=Gemfile.lock:14'
+
+_dep dep-gem-backslash-modifier "a gem call continued with a backslash onto a modifier if or unless is read; one inside a git block keeps its end (R13)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "rb-fsevent", require: false \\\n  if RUBY_PLATFORM =~ /darwin/\ngit "https://github.com/evil/rails.git" do\n  gem "listen" \\\n    unless ENV["CI"]\n  gem "activesupport"\nend\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:7
+DEP_ADDED=listen@(unpinned) manifest=Gemfile:5
+DEP_ADDED=rb-fsevent@(unpinned) manifest=Gemfile:2
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:9
+DEP_REPLACED=activesupport -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:7
+DEP_REPLACED=listen -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:5'
+
+_dep dep-gem-backslash-comma-if "a gem call whose comma and backslash continue into an if makes the file unreadable (R13)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "devise", \\\n  if ENV["EDGE"]\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 continues into line 3, which is not part of it at head'
+
+_dep dep-statement-backslash-modifier "a statement continued with a backslash onto a modifier if opens no block inside a git block (R13)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://github.com/evil/rails.git" do\n  eval_gemfile "Gemfile.local" \\\n    if File.exist?("Gemfile.local")\n  gem "activesupport"\nend\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:5
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:7
+DEP_REPLACED=activesupport -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:5'
+
+_dep dep-gem-block-comment "a =begin ... =end block comment opens no block and its gems are not read (R14)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://github.com/evil/rails.git" do\n=begin\n  if ENV["EDGE"]\n  gem "actionpack"\n=end\n  gem "activesupport"\nend\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:7
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:9
+DEP_REPLACED=activesupport -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:7'
+
+_dep dep-gem-block-comment-open "a =begin with no =end makes the file unreadable (R14)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\n=begin\ngem "rack", "3.0.0"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the =begin on line 2 has no =end at head'
+
+_dep dep-gem-string-hash "a # inside a string is not a comment, so a one-line def ends on its line (R15)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://github.com/evil/rails.git" do\n  def self.gh(r) "https://github.com/#{r}" end\n  gem "activesupport" # the fork\nend\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:4
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:6
+DEP_REPLACED=activesupport -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:4'
+
+_dep dep-gem-interpolated-name "an interpolated gem name is not a literal and makes the file unreadable (R15)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "rails-#{ENV["FLAVOUR"]}"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=gem name on line 2 is not a string literal at head'
+
+_dep dep-gem-interpolated-source "an interpolated git: source is not a literal and makes the file unreadable (R15)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "rack", git: "https://github.com/#{ORG}/rack"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the git: of gem rack on line 2 is not a string literal at head'
+
+_dep dep-gem-setter-def "a setter or operator def opens a block; only an endless def does not (R16)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://github.com/evil/rails.git" do\n  def mode=(v)\n    @mode = v\n  end\n  def ==(o)\n    true\n  end\n  def []=(k, v)\n    nil\n  end\n  def label = "edge"\n  def pin(v) = v\n  gem "activesupport"\nend\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:14
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:16
+DEP_REPLACED=activesupport -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:14'
 
 # --- Python names, PEP 503 (R5-R7) --------------------------------------------
 _dep dep-uv-source-normalised "tool.uv.sources my_pkg redirects the dependency my-pkg (R5)" pyproject.toml \

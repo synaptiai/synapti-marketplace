@@ -796,9 +796,11 @@ _KEYWORD_OPEN = re.compile(
     r"(?:if|unless|case|while|until|for|begin|def|class|module)(?![A-Za-z0-9_?!:])"
 )
 # A keyword block that also closes on its line (`def x; end`,
-# `if c then y end`), and an endless method (`def x = 1`), which takes no end.
+# `if c then y end`), and an endless method (`def x = 1`, `def x(a) = a`),
+# which takes no end. Its `=` follows the parameter list or a space after the
+# name: `def mode=(v)` and `def []=(k, v)` are setters, which take an end.
 _ENDS_ON_LINE = re.compile(r"(?:^|[\s;])end\s*$")
-_ENDLESS_DEF = re.compile(r"^\s*def\s+[^\s(=;]+\s*(?:\([^)]*\))?\s*=(?![=~>])")
+_ENDLESS_DEF = re.compile(r"^\s*def\s+[^\s(;]+(?:\s*\([^)]*\)|\s)\s*=(?![=~>])")
 # A gem call without parentheses carries on to the next line when its line
 # ends where Ruby cannot end a statement: after a comma, a backslash, a hash
 # rocket, a label with no value yet, `||`/`&&`, or an open bracket.
@@ -810,11 +812,105 @@ _GEMFILE_STATEMENT = re.compile(
     r"|source|ruby|git_source|install_if|eval_gemfile|end|else|elsif|when"
     r"|if|unless|case|while|until|for|begin|def|class|module)(?![A-Za-z0-9_?!:])"
 )
+# What a backslash may continue a statement into: a modifier that ends it
+# (`gem "x" \` then `if c`), and, for a statement other than a gem call, a
+# keyword that is the value it assigns (`pin = \` then `if c`).
+_MODIFIER = re.compile(r"^\s*(?:if|unless|while|until|rescue)(?![A-Za-z0-9_?!:])")
+_KEYWORD_VALUE = re.compile(
+    r"^\s*(?:if|unless|case|while|until|for|begin|def|class|module)(?![A-Za-z0-9_?!:])"
+)
+# A block comment: from a line starting `=begin` to one starting `=end`.
+_DOC_BEGIN = re.compile(r"^=begin(?:\s|$)")
+_DOC_END = re.compile(r"^=end(?:\s|$)")
 
 
 def _ruby_code(raw):
-    """A Gemfile line without its comment, as this parser reads it."""
-    return raw.split("#", 1)[0].rstrip()
+    """A Gemfile line without its comment, as this parser reads it. A `#`
+    inside a quoted string (a URL fragment, a `#{...}` interpolation) is not
+    a comment, so the rest of the line is kept."""
+    stack = []  # open quotes, and `{` for the code of an interpolation
+    i = 0
+    while i < len(raw):
+        c = raw[i]
+        top = stack[-1] if stack else None
+        if top in ('"', "'"):
+            if c == "\\":
+                i += 2
+                continue
+            if c == top:
+                stack.pop()
+            elif top == '"' and raw.startswith("#{", i):
+                stack.append("{")
+                i += 2
+                continue
+        elif c == "#" and not stack:
+            return raw[:i].rstrip()
+        elif c in "\"'":
+            stack.append(c)
+        elif top == "{" and c in "{}":
+            if c == "{":
+                stack.append(c)
+            else:
+                stack.pop()
+        i += 1
+    return raw.rstrip()
+
+
+def _literal(value):
+    """A quoted value as written, or None when it interpolates (`"#{x}"`):
+    its text is then decided when the Gemfile runs, not by what it says."""
+    return None if value is None or "#{" in value else value
+
+
+def _ruby_lines(text):
+    """The Gemfile's lines, with each line of a `=begin` ... `=end` block
+    comment blank, so it is read as the comment it is."""
+    lines = text.splitlines()
+    begun = None
+    for index, raw in enumerate(lines):
+        if begun is not None:
+            if _DOC_END.match(raw):
+                begun = None
+            lines[index] = ""
+        elif _DOC_BEGIN.match(raw):
+            begun = index + 1
+            lines[index] = ""
+    if begun is not None:
+        raise ParseError("the =begin on line %d has no =end" % begun)
+    return lines
+
+
+def _statement(lines, index, line, lineno, gem):
+    """The statement that starts with `line` (line `lineno`), read with the
+    lines that continue it, and the index of the line after it. A statement
+    continues past a trailing backslash; a gem call without parentheses also
+    past a trailing comma, hash rocket, label, `||`/`&&` or open bracket, and
+    over blank lines. A continuation line that is a statement of its own makes
+    the file unreadable, except a modifier (`if`, `unless`, ...) right after
+    a backslash, which ends the statement it follows, and, for a statement
+    other than a gem call, a keyword that is the value it assigns."""
+    kind = "gem call" if gem else "statement"
+    while True:
+        backslash = line.endswith("\\")
+        head = line[:-1].rstrip() if backslash else line
+        if not backslash and not (gem and _gem_call_continues(line)):
+            return line, index
+        start = index
+        if gem:
+            while index < len(lines) and not _ruby_code(lines[index]).strip():
+                index += 1
+        if index >= len(lines):
+            if gem:
+                raise ParseError("the gem call on line %d continues past the end of the file" % lineno)
+            return head, index
+        nxt = _ruby_code(lines[index])
+        if _GEMFILE_STATEMENT.match(nxt):
+            modifier = backslash and index == start and _MODIFIER.match(nxt) and not _gem_call_continues(head)
+            value = backslash and not gem and _KEYWORD_VALUE.match(nxt)
+            if not (modifier or value):
+                raise ParseError("the %s on line %d continues into line %d, which is not part of it" % (kind, lineno, index + 1))
+        line = ("%s %s" % (head, nxt.strip())).rstrip()
+        index += 1
 
 
 def _gem_call_continues(line):
@@ -850,7 +946,12 @@ def parse_gemfile(text):
     one a reviewer would be told does not exist. A call without parentheses
     whose line ends with a comma, a backslash or an open bracket is read
     together with the lines that continue it, so options written one per
-    line are read like options written on one.
+    line are read like options written on one. Any statement continued with
+    a backslash onto a modifier (`if`, `unless`, ...) ends there, so the
+    modifier opens no block. A `#` starts a comment only outside a string,
+    a quoted value that interpolates (`"#{x}"`) is not a literal, and the
+    lines of a `=begin` ... `=end` block comment are not read (a `=begin`
+    with no `=end` makes the file unreadable).
 
     A gem fetched from somewhere other than its registry, by a `git:`,
     `github:`, `gitlab:`, `bitbucket:` or `path:` option or inside a
@@ -859,12 +960,13 @@ def parse_gemfile(text):
     unpinned gem from rubygems.org. Every other block a later `end` closes
     (`group ... do`, and `if`, `unless`, `case`, `while`, `until`, `for`,
     `begin`, `def`, `class` and `module` other than their modifier and
-    one-line forms) is tracked too, so its `end` does not close the git block
-    around it.
+    one-line forms, and other than an endless `def x = expr`; a setter or
+    operator `def mode=(v)` takes an end) is tracked too, so its `end` does
+    not close the git block around it.
     """
     r = ParseResult()
     blocks = []
-    lines = text.splitlines()
+    lines = _ruby_lines(text)
     index = 0
     while index < len(lines):
         lineno = index + 1
@@ -872,42 +974,31 @@ def parse_gemfile(text):
         index += 1
         if not line.strip():
             continue
+        m = _GEM_START.match(line)
+        line, index = _statement(lines, index, line, lineno, bool(m and not m.group(1)))
         bm = _GEM_BLOCK.match(line)
         if bm:
-            if bm.group(3) is None:
+            if _literal(bm.group(3)) is None:
                 raise ParseError("the %s block on line %d does not name a string literal" % (bm.group(1), lineno))
             blocks.append(_gem_source(bm.group(1), bm.group(3)))
             continue
         m = _GEM_START.match(line)
         if m:
-            if not m.group(1):
-                while _gem_call_continues(line):
-                    while index < len(lines) and not _ruby_code(lines[index]).strip():
-                        index += 1
-                    if index >= len(lines):
-                        raise ParseError("the gem call on line %d continues past the end of the file" % lineno)
-                    nxt = _ruby_code(lines[index])
-                    if _GEMFILE_STATEMENT.match(nxt):
-                        raise ParseError("the gem call on line %d continues into line %d, which is not part of it" % (lineno, index + 1))
-                    if line.endswith("\\"):
-                        line = line[:-1]
-                    line = "%s %s" % (line.rstrip(), nxt.strip())
-                    index += 1
-                m = _GEM_START.match(line)
             args = m.group(2).strip()
             if m.group(1):
                 if not args.endswith(")"):
                     raise ParseError("the gem call on line %d does not close on its line" % lineno)
                 args = args[:-1].strip()
             lm = _GEM_LITERAL.match(args)
-            if not lm:
+            if not lm or _literal(lm.group(1)) is None:
                 raise ParseError("gem name on line %d is not a string literal" % lineno)
             name = lm.group(1).lower()
-            r.add(name, lm.group(2), lineno)
+            version = _literal(lm.group(2))
+            r.add(name, version, lineno)
             source, ref = None, None
             for om in _GEM_OPTION.finditer(args[lm.end():]):
                 key = om.group(1) or om.group(2)
-                value = om.group(4)
+                value = _literal(om.group(4))
                 if key in _GEM_SOURCE_KEYS:
                     if value is None:
                         raise ParseError("the %s: of gem %s on line %d is not a string literal" % (key, name, lineno))
@@ -917,7 +1008,7 @@ def parse_gemfile(text):
             if source is None:
                 source = next((b for b in reversed(blocks) if b), None)
             if source is not None:
-                r.replaces.append((name, source, ref or lm.group(2), lineno))
+                r.replaces.append((name, source, ref or version, lineno))
             if _DO.search(line):
                 blocks.append(None)
             continue
