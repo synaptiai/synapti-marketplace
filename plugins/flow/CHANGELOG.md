@@ -15,14 +15,16 @@ Each entry below describes the change against 3.14.0.
     `/flow:address`, `/flow:review`, `/flow:commit`, `/flow:resolve`,
     `/flow:merge`, `/flow:setup`, `/flow:goal` and `/flow:resume` prints it
     (`ASK_POLICY=...`).
-  - Every place in `commands/` and `skills/` that asks carries a class:
+  - Every place in `commands/` and `skills/` that asks, asks the user or
+    escalates, whether or not it names `AskUserQuestion`, carries a class:
     `[ask: decision]` (a product or scope decision), `[ask: permission]` (a
     Tier 3 action, or a skip outside the runtime-verification list) or
     `[ask: default]`; `[ask: none]` marks a mention that is not a place to
     ask. A decision or permission place names the `metadata.source` to pass
     (`flow:decision` or `flow:permission`). A default place says what to take
     under the autonomous policy, and the choice is recorded as a
-    `default-taken` journal artifact.
+    `default-taken` journal artifact. `tests/e2e-ask-policy.test.sh` fails on
+    an untagged place, pseudocode fences included.
   - `hooks/scripts/ask-policy.sh`, a `PreToolUse` hook on `AskUserQuestion`,
     denies a question whose `metadata.source` is not `flow:decision` or
     `flow:permission` while the policy is autonomous, with a reason telling
@@ -48,16 +50,23 @@ Each entry below describes the change against 3.14.0.
     `bin/_journal_atomic.py`; a new record is created exclusively, so
     concurrent adds never share an id. A missing field, one option or more
     than three, or another blocking level is refused with the field named.
+    `add` takes the class of the place that asks (`--class decision|
+    permission|default`), which `list` shows and the `escalation-asked`
+    artifact records. `answer`, `withdraw` and `get` exit 3 for a question
+    that does not exist, also before any was stored.
     The directory ignores itself, so the questions are not committed.
     `get <id> --prompt` renders the six-field body.
-  - `references/escalation-format.md`: store before asking, record the
-    answer after (`escalation-asked` and `escalation-resolved` journal
+  - Store before asking, record the answer after: the
+    `llm-operator-principles` skill says so for the commands that inline it,
+    and `references/escalation-format.md` for the others (`escalation-asked` and `escalation-resolved` journal
     artifacts with `--journal`); where `AskUserQuestion` is not available, a
     `Blocking: yes` question stops the pipeline naming its id, and a `soft`
     one goes on with the recommendation, recorded and listed in the pull
     request body under `## Decisions taken on a recommendation`.
   - `/flow:status` has an Open Questions section; `/flow:resume` shows the
-    open questions of the run it resumes and of its goal's issue.
+    open questions of the run it resumes and of its goal's issue, and asks
+    each with the class it was stored with, so under `autonomous: true` a
+    default question takes its recommendation.
 
 ### Changed
 
@@ -102,10 +111,12 @@ Each entry below describes the change against 3.14.0.
   happened to be checked out; and with a goal-less branch checked out, a pull
   request whose own goal was not achieved passed. The gate now takes the pull
   request's `headRefName` and `headRefOid` from `gh pr view` and looks up the
-  goal owning that branch: in the working tree when the branch is checked
-  out, and in the head commit otherwise (`bin/flow-active-goal.sh --commit
-  <rev>`, which applies the same symlink refusals), fetched from origin when
-  the clone lacks it. When the head cannot be read the gate blocks and says
+  goal owning that branch: in the working tree when the checked-out branch
+  is at the pull request's head commit, and in the head commit otherwise
+  (`bin/flow-active-goal.sh --commit <rev>`, which applies the same symlink
+  refusals), fetched from origin when the clone lacks it. A local branch
+  that has the head branch's name but is ahead of or has diverged from it,
+  and a fork's branch that shares the name, are not judged in its place. When the head cannot be read the gate blocks and says
   why. The block now needs the pull request number, as the finding-ledger
   gate does.
 - The goal Stop hook judges the goal that owns the current branch, not the
@@ -146,6 +157,22 @@ Each entry below describes the change against 3.14.0.
     status. An existing goal whose `lifecycle.status` is missing, not text or
     not a status is refused with exit 2, saying its lifecycle cannot be read,
     instead of being overwritten.
+  - Everything else that reads or writes the repository's settings files
+    uses the same top: `bin/cascade-resolve.sh --project-settings-path` and
+    `--repo-settings-paths` name the files the cascade reads.
+    `bin/journal-dir.sh` judges where a `journal.dir` came from by those
+    files, so from a subdirectory a committed `journal.dir` outside the
+    checkout is refused and never counts as the user's own (`--user-owned`).
+    `/flow:setup` and `bin/flow-migrate-settings.sh` detect, write and
+    upgrade the file at the top, and setup names a Flow settings file left in
+    a subdirectory as not read (`UNREAD_SETTINGS`). The marker trust list of
+    `/flow:merge`, `/flow:status` and `/flow:address`, and `/flow:review`'s
+    `agentTeams` gate, read the top's files.
+  - Upgrading from 3.14.0 or earlier: those versions put a goal created from
+    a subdirectory (say `packages/app`) in `packages/app/.flow/goals/`, which
+    no reader looks at now, so such a goal no longer gates the merge.
+    `/flow:status` lists each one as a `STRAY_GOAL` line; move it to the top
+    with `git mv` (`references/flow-goals.md`, Where goals are kept).
 - `/flow:pr` no longer asks on most runs (#338). `/flow:start` created a goal
   but never evaluated it, so the goal was still `active` when `/flow:pr`'s
   gate looked, and the gate asked even when VERIFY had passed every
@@ -159,8 +186,10 @@ Each entry below describes the change against 3.14.0.
   `flow.goals.executeVerificationCommands: true` ran its commands. A goal that
   is not active (paused, blocked, failed) is reported and not evaluated. The
   move to `achieved` asks no question; `references/goal-lifecycle-transitions.md`
-  says why. When the evaluation is not a pass the goal stays `active` and
-  `/flow:pr` asks as before. `bin/flow-goal-record.sh` takes `--patch` as
+  says why. A criterion whose verification command could not be started (a
+  NUL byte in it, no bash) makes the result `incomplete`, never a pass. When
+  the evaluation is not a pass the goal stays `active` and `/flow:pr` asks as
+  before. `bin/flow-goal-record.sh` takes `--patch` as
   another name for `--merge`.
 - The pattern checks no longer miss a command hidden after an escaped
   separator and a `#` (#304). `ls x\ #y ; rm -rf ~` and `ls x\;#y ; git push
@@ -168,13 +197,17 @@ Each entry below describes the change against 3.14.0.
   destructive-command and force-push checks read the rest of the line as a
   comment: the space or `;` before the `#` is escaped, so it is part of the
   word and the `#` opens no comment. The same held for `ls /(#|tmp) ; …`,
-  where zsh reads `(#` as part of a glob, and for `echo $(true)#x ; rm -rf ~`
-  and `echo $((1))#x ; …`, where the `)` closing a substitution leaves the
-  word going on. In `lib/command-parse.sh` (the destructive-command check,
-  the merge check and the tier gate) and `block-force-push.sh`, a `#` now
-  opens a comment only after an unescaped space, tab or separator; after a
-  `(` only when that `(` opens a word itself; and after a `)` only when that
-  `)` closes a subshell or a `((`, not a `$( )`, `$(( ))` or `<( )`.
+  where zsh reads `(#` as part of a glob, for `echo $(true)#x ; rm -rf ~` and
+  `echo $((1))#x ; …`, where the `)` closing a substitution leaves the word
+  going on, and for `(( x = (1)#2 )) ; …` and `[[ a =~ (a)#x ]] ; …`, where
+  the `#` belongs to the arithmetic or the regex. In `lib/command-parse.sh`
+  (the destructive-command check, the merge check and the tier gate) and
+  `block-force-push.sh`, a `#` now opens a comment only after an unescaped
+  space, tab or separator, and never inside `(( ))` or `[[ ]]`; after a `(`
+  only when that `(` opens a word itself; and after a `)` only when that `)`
+  closes a subshell and no `$`, backquote, `((`, `[[` or in-word `(` came
+  before it on that line or on an earlier line still open, since the scan
+  cannot always tell which `(` such a `)` closes.
   `ask-issue-create.sh` removes a comment only at the start of a line or after
   an unescaped space or tab, a narrower rule that keeps more text as code, so
   it errs toward asking. A real comment, `ls # rm -rf ~`, `ls x\\;#y` or
@@ -200,6 +233,28 @@ Each entry below describes the change against 3.14.0.
     searches), including what reaches it in a here-string or through a pipe;
     a `gh api` field whose name is secret-shaped (`-f token=…`, `-f
     encrypted_value=…`); and the same inside a script run with `bash -c`.
+  - Refused as well, because the program runs what it is given: a secret
+    given to `eval`, `source`, a shell, `find`/`fd` with `-exec`/`-execdir`/
+    `-ok`, `awk` whose program can run one (`system()`, a pipe, `getline`),
+    `sed` whose script can (the `e` command or flag), or a command whose words
+    name a sender, a shell or an interpreter (`watch "curl …"`, `"!curl …"`);
+    a secret in any git option before the subcommand (`git -c …`,
+    `--config-env`), in `git grep -O<pager>` or `--open-files-in-pager`, and
+    in any value `git config` sets (an alias, `credential.helper`,
+    `core.pager`, `core.sshCommand` and every other key: several run their
+    value, and the guard does not list them).
+  - Refused when the secret can reach another program: when the command has
+    a pipe, a command or process substitution, a heredoc body a command reads,
+    or a command holding a secret that writes a file, a secret held by one
+    simple command refuses the whole command unless every other simple
+    command is a text command or shell syntax that runs nothing. So
+    `{ echo token=…; } | curl -d @-`, `curl -d "$(echo token=…)" …`, `curl -d
+    @- … <<EOF` with the secret in the body, and `echo token=… > f; curl -d @f
+    …` are refused, while `echo … | grep` and `git commit -m "$(printf …)"`
+    are not. A command that writes to or reads from a device (`/dev/tcp`,
+    `/dev/udp`, `/dev/fd/N`, any `/dev/` path but `/dev/null`, `/dev/stdout`
+    and `/dev/stderr`, or a target held in a variable), also after a
+    subshell's `)`, is refused when any part of it holds a secret.
   - A URL with a secret-shaped query parameter (`?token=…`) or a literal
     password in its userinfo is refused in every command but a text command
     (`echo`, `printf`, `cat`, `tee`, `grep`, `sed`, `jq` and the like, `git
@@ -214,8 +269,10 @@ Each entry below describes the change against 3.14.0.
     scripts, and words after it, belong to the script.
   - Allowed: the same text given to a text command (`gh issue create --body`,
     a `gh api` field such as `body`, `echo`, `printf >> README`, `grep`, `git
-    commit -m`), including a secret written to a file by `echo`, `printf` or
-    `tee`; `gcloud --set-secrets`/`--update-secrets`, which name stored
+    commit -m`), also glued to its option (`git commit --message="…"`,
+    `gh issue create --body="…"`), including a secret written to a file by
+    `echo`, `printf` or `tee` when nothing else in the command is more than
+    text; `gcloud --set-secrets`/`--update-secrets`, which name stored
     secrets. It does not catch a secret passed as two separate words (`aws
     configure set aws_secret_access_key <value>`) or one that appears only
     when a variable or `$(...)` is expanded; the README lists what the guard
@@ -223,13 +280,16 @@ Each entry below describes the change against 3.14.0.
 - A dependency redirected away from its registry is reported the same way in
   every ecosystem `bin/flow-dep-diff.sh` reads, and a manifest it cannot read
   says so (#248). The header of `bin/flow-dep-diff.sh` lists every form.
-  - Ruby: a Gemfile gem with a `git:`, `github:`, `gitlab:`, `bitbucket:` or
-    `path:` source (either hash syntax, also on continued lines), or inside a
-    `git`/`github`/`path … do` block, and a gem resolved in a `Gemfile.lock`
-    GIT or PATH section, print `DEP_REPLACED`; in 3.14.0 each read as an
-    unpinned gem from rubygems.org. The project's own gem (`PATH` with
-    `remote: .`) is not a redirect, and a path gem's redirect carries no
-    version, so a version bump is not a new redirect.
+  - Ruby: a Gemfile gem with a `git:`, `github:`, `gitlab:`, `bitbucket:`,
+    `gist:` or `path:` source (either hash syntax, also on continued lines),
+    or inside a `git`/`github`/`gitlab`/`bitbucket`/`gist`/`path` block
+    (`do … end` or `{ … }`, also when the opening call runs over several
+    lines), and a gem resolved in a `Gemfile.lock` GIT or PATH section, print
+    `DEP_REPLACED`; in 3.14.0 each read as an unpinned gem from rubygems.org.
+    The project's own gem (`PATH` with `remote: .`) is not a redirect. A
+    redirect's version is its ref, tag or branch (none for a path), so a
+    change to the gem's version constraint is a `DEP_CHANGED`, not a new
+    redirect.
   - The Gemfile is read as Ruby statements rather than one line at a time:
     `gem("x")` and calls continued over several lines are read, the `end` of
     an `if`/`def`/`class`/… block inside a `git` block closes that block and
@@ -244,18 +304,24 @@ Each entry below describes the change against 3.14.0.
     does not close, an `end` that closes nothing, a `=begin` without `=end`.
     An option keyed by a string (`"git" => url`) is read as an option, and a
     `git_source(:name)` makes `name:` a source.
-  - npm: a `package.json` spec that is a URL, a hosted-git shorthand
-    (`github:user/repo`, `user/repo`) or a `file:`/`link:` path prints
-    `DEP_REPLACED`.
+  - npm: a `package.json` spec npm installs from outside the registry prints
+    `DEP_REPLACED`, read as npm-package-arg reads it: a URL, a hosted-git
+    shorthand (`github:user/repo`, `user/repo`), an scp-style git spec
+    (`git@host:path`), a `file:`/`link:` spec, a path (`../a`, `~/x`, `/abs`,
+    `C:/x`), a tarball file name, and an `npm:` alias, with prefixes and
+    tarball extensions matched in any case.
   - Python: a direct reference is recognised by any URL scheme, not a fixed
     list, so `pkg @ sftp://…` is a redirect rather than a version string, and
     an environment marker after `;` is no longer part of the target. A
     `requirements*.txt` VCS or URL requirement and an editable or local path
     (`-e …`) are a redirect when a name can be read (`#egg=name`, a wheel file
     name), and make the file `MANIFEST_UNPARSED` when none can; 3.14.0
-    reported nothing for them. Comments are cut by pip's rule (a `#` at the
-    start of a line or after whitespace), so a URL fragment is kept; the
-    project itself (`.`, `-e .`) is not a dependency. Other option lines
+    reported nothing for them. Lines ending in a backslash are joined first,
+    as pip joins them, and an option line is split as pip splits it, so a
+    quoted `-e ".[dev]"` or `-e "git+…"` is read. Comments are cut by pip's
+    rule (a `#` at the start of a line or after whitespace), so a URL fragment
+    is kept; the project itself (`.`, `-e .`, `-e ".[dev]"`) is not a
+    dependency. Other option lines
     (`-r`, `-c`, `--index-url`, `--find-links`) are still not read.
   - Python names are compared PEP 503 normalised where one is matched against
     another: `[tool.uv.sources] my_pkg` redirects the dependency `my-pkg`,
