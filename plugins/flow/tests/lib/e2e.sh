@@ -60,10 +60,7 @@ _e2e_plugin_digest() {
 # One scratch root, created in the calling shell so the EXIT trap can remove
 # it. Helpers called as $(...) run in a subshell and cannot add to a cleanup
 # list, so everything goes under this root instead.
-# run.sh points TMPDIR at a directory it removes when the file ends, so the
-# root goes to FLOW_E2E_TMPDIR, the run's own temporary directory, where a
-# failed file's artifacts stay for the person reading the failure.
-E2E_ROOT=$(mktemp -d "${FLOW_E2E_TMPDIR:-${TMPDIR:-/tmp}}/flow-e2e.XXXXXX" 2>/dev/null) || E2E_ROOT=""
+E2E_ROOT=$(mktemp -d -t flow-e2e.XXXXXX 2>/dev/null) || E2E_ROOT=""
 if [ -z "$E2E_ROOT" ] || [ ! -d "$E2E_ROOT" ]; then
   _flow_assert_fail "mktemp -d failed; cannot create the e2e scratch root"
   return 1

@@ -8,9 +8,8 @@
 # Each scenario writes a small test file into its scratch directory and runs
 # it the way tests/run.sh runs a file (assert.sh sourced, then the file), with
 # TMPDIR pointing at a directory of the scenario, so the inner file's scratch
-# root lands where this file can look at it. The hs-runner scenarios run
-# tests/run.sh itself on a small file, for what the runner removes when a file
-# ends. The artifact for each scenario is written to $FLOW_E2E_ARTIFACT_DIR.
+# root lands where this file can look at it. The artifact for each scenario is
+# written to $FLOW_E2E_ARTIFACT_DIR.
 #
 # Ways it can be wrong, written down before the scenarios:
 #   H1 the plugin copy lacks code the plugin runs (its digest differs from the
@@ -31,13 +30,6 @@
 #      every case against the first one)
 #   H10 a path named to e2e_copy_plugin (a recorded eval run whose scripts a
 #      scenario runs from the copy) is missing from the copy
-#   H11 tests/run.sh lets a test file leave the temporary directories it
-#      made (most files that are not e2e files never remove theirs)
-#   H12 run.sh removes the artifacts the e2e harness keeps for a failed file,
-#      or a file sees the run's own TMPDIR instead of a directory of its own
-#   H13 a run.sh started by a test file and killed with SIGKILL (as
-#      run-parallel.test.sh does) leaves its directories in the outer run's
-#      TMPDIR, where nothing removes them
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -81,7 +73,7 @@ INNER
 _hs_run() {
   HS_OUT="$E2E_DIR/out-inner"
   mkdir -p "$HS_OUT"
-  ( cd "$E2E_DIR" && env HOME="$E2E_HOME" TMPDIR="$E2E_DIR/tmp" FLOW_E2E_TMPDIR="$E2E_DIR/tmp" REPO_ROOT="$REPO_ROOT" \
+  ( cd "$E2E_DIR" && env HOME="$E2E_HOME" TMPDIR="$E2E_DIR/tmp" REPO_ROOT="$REPO_ROOT" \
       FLOW_E2E_ARTIFACT_DIR= FLOW_E2E_KEEP_SCRATCH= HS_OUT="$HS_OUT" "$@" \
       bash -c 'source "$1" || exit 98; source "$2"' _ "$REPO_ROOT/plugins/flow/tests/lib/assert.sh" "$E2E_DIR/inner.test.sh" ) \
     > "$E2E_DIR/inner.out" 2> "$E2E_DIR/inner.err"
@@ -195,66 +187,4 @@ if _want hs-copy-keeps-named; then
   _hs_ok '[ ! -e "$E2E_DIR/copy/$other" ]' "another recorded run is not copied"
   if e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_DIR/copy2" ../outside; then rc=0; else rc=$?; fi
   _hs_ok '[ "$rc" != 0 ]' "a path that leaves the plugin is refused"
-fi
-
-# _hs_runner <name of the inner file> — runs tests/run.sh on one file, alone
-# (FLOW_TEST_JOBS=1), with TMPDIR at the scenario's tmp directory and no
-# FLOW_E2E_TMPDIR, as a run started from a shell has.
-_hs_runner() {
-  HS_OUT="$E2E_DIR/out-inner"
-  mkdir -p "$HS_OUT"
-  ( cd "$E2E_DIR" && env -u FLOW_E2E_TMPDIR HOME="$E2E_HOME" TMPDIR="$E2E_DIR/tmp" FLOW_TEST_JOBS=1 \
-      FLOW_TEST_TIMES="$E2E_DIR/times" FLOW_E2E_ARTIFACT_DIR= FLOW_E2E_KEEP_SCRATCH= HS_OUT="$HS_OUT" \
-      "$REPO_ROOT/plugins/flow/tests/run.sh" "$E2E_DIR/$1" ) > "$E2E_DIR/inner.out" 2> "$E2E_DIR/inner.err"
-  HS_RC=$?
-  { printf -- '--- run.sh exit status: %s\n' "$HS_RC"
-    printf -- '--- run.sh output\n'; sed "s#$E2E_ROOT_REAL#<scratch>#g; s#$E2E_ROOT#<scratch>#g" "$E2E_DIR/inner.out" "$E2E_DIR/inner.err"
-    printf -- '--- what the run left in TMPDIR\n'
-    ( cd "$E2E_DIR/tmp" && find . -mindepth 1 -maxdepth 3 | sed -E 's#\.[A-Za-z0-9]{6}#.<id>#g' | LC_ALL=C sort ); } | _e2e_art
-}
-
-if _want hs-runner-file-tmp; then
-  _hs_case hs-runner-file-tmp "H11 H12: a test file run by run.sh gets a TMPDIR of its own inside the run's, and what it leaves there is removed when the file ends"
-  cat > "$E2E_DIR/leaky.test.sh" <<'LEAKY'
-d=$(mktemp -d "${TMPDIR:-/tmp}/leaky.XXXXXX") && printf 'x\n' > "$d/f"
-mktemp "${TMPDIR:-/tmp}/leaky-file.XXXXXX" >/dev/null
-printf '%s\n' "$TMPDIR" > "$HS_OUT/file-tmpdir"
-_flow_test_begin leaky
-_flow_assert_pass "made a directory and a file in TMPDIR and left them"
-LEAKY
-  _hs_runner leaky.test.sh
-  e2e_expect_equal 0 "$HS_RC" "run.sh exit status"
-  ft=$(cat "$HS_OUT/file-tmpdir" 2>/dev/null)
-  _hs_ok 'case "$ft" in "$E2E_DIR/tmp/flow-test-tmp."*) true ;; *) false ;; esac' "the file saw a TMPDIR of its own inside the run's ($ft)"
-  e2e_expect_equal "" "$(cd "$E2E_DIR/tmp" && ls -A)" "what the run left in TMPDIR"
-fi
-
-if _want hs-runner-failed-artifacts; then
-  _hs_case hs-runner-failed-artifacts "H12: a failed e2e file run by run.sh keeps its artifacts in the run's TMPDIR, at the path it prints, while what the file left in its own TMPDIR is removed"
-  cat > "$E2E_DIR/failing.test.sh" <<'FAILING'
-source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh" || exit 97
-mktemp -d "${TMPDIR:-/tmp}/leaky.XXXXXX" >/dev/null
-_flow_test_begin failing
-e2e_new failing
-e2e_expect_equal expected actual "an expectation that fails"
-FAILING
-  _hs_runner failing.test.sh
-  e2e_expect_equal 1 "$HS_RC" "run.sh exit status"
-  kept=$(sed -n 's/^e2e: an expectation failed; artifacts kept in \([^ ]*\).*/\1/p' "$E2E_DIR/inner.err" "$E2E_DIR/inner.out" | head -n 1)
-  _hs_ok 'case "$kept" in "$E2E_DIR/tmp/flow-e2e."*/artifacts) true ;; *) false ;; esac' "the printed artifacts path is in the run's TMPDIR ($kept)"
-  _hs_ok '[ -s "$kept/failing.txt" ]' "the artifact is there"
-  e2e_expect_equal "flow-e2e" "$(cd "$E2E_DIR/tmp" && ls -A | sed 's/\..*//')" "what the run left in TMPDIR"
-fi
-
-if _want hs-runner-nested-killed; then
-  _hs_case hs-runner-nested-killed "H13: a test file that starts run.sh on a file which kills that run.sh with SIGKILL leaves nothing in the outer run's TMPDIR"
-  printf '%s\n' 'kill -9 $$' > "$E2E_DIR/killer.test.sh"
-  cat > "$E2E_DIR/outer.test.sh" <<OUTER
-"\$REPO_ROOT/plugins/flow/tests/run.sh" "$E2E_DIR/killer.test.sh" >/dev/null 2>&1
-_flow_test_begin outer
-_flow_assert_pass "started run.sh on a file that kills it"
-OUTER
-  _hs_runner outer.test.sh
-  e2e_expect_equal 0 "$HS_RC" "run.sh exit status"
-  e2e_expect_equal "" "$(cd "$E2E_DIR/tmp" && ls -A)" "what the run left in TMPDIR"
 fi

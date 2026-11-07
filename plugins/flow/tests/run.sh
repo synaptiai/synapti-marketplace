@@ -107,21 +107,7 @@ _flow_run_state=$(mktemp -d "${TMPDIR:-/tmp}/flow-run-state.XXXXXX") || {
   exit 2
 }
 export FLOW_STATE_DIR="$_flow_run_state"
-# Each test file runs with TMPDIR set to a directory of its own, removed when
-# the file ends, so a file that creates temporary directories and never
-# removes them leaves nothing behind (dozens did, every run). The e2e harness
-# keeps a failed file's artifacts for the person reading the failure, so it
-# makes its scratch root in the run's own temporary directory,
-# FLOW_E2E_TMPDIR, which run.sh sets to TMPDIR as it was when the run started.
-# The per-file directories go in TMPDIR as this run.sh found it: a run.sh that
-# a test file starts (run-parallel.test.sh kills one with SIGKILL, which no
-# trap survives) then leaves what it could not remove inside that file's own
-# directory, which the outer run.sh removes.
-export FLOW_E2E_TMPDIR="${FLOW_E2E_TMPDIR:-${TMPDIR:-/tmp}}"
-_flow_tmp_base="${TMPDIR:-/tmp}"
-_flow_file_tmp=""
-_flow_rm_tree() { [ -n "$1" ] && [ -d "$1" ] || return 0; chmod -R u+rwx "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; }
-trap '_flow_rm_tree "$_flow_file_tmp"; _flow_rm_tree "$_flow_run_state"' EXIT
+trap 'chmod -R u+rwx "$_flow_run_state" 2>/dev/null; rm -r "$_flow_run_state" 2>/dev/null' EXIT
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$TESTS_DIR/lib/assert.sh"
@@ -238,7 +224,7 @@ if [ "$_flow_jobs" -gt 1 ] && [ "${#TEST_FILES[@]}" -gt 1 ]; then
   _flow_par_cleanup() {
     [ -z "${_flow_xargs_pid:-}" ] || _flow_killtree "$_flow_xargs_pid"
     rm -rf "$_flow_par" 2>/dev/null
-    _flow_rm_tree "$_flow_run_state"
+    chmod -R u+rwx "$_flow_run_state" 2>/dev/null; rm -r "$_flow_run_state" 2>/dev/null
   }
   trap '_flow_par_cleanup' EXIT
   trap '_flow_par_cleanup; trap - INT; kill -INT $$' INT
@@ -436,15 +422,8 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   # only when the file ends, so a CI job cut off inside a file says nothing
   # about where).
   exec 3>&1
-  _flow_file_tmp=$(mktemp -d "${_flow_tmp_base}/flow-test-tmp.XXXXXX") || {
-    echo "run.sh: cannot create a temporary directory for $(basename "$TEST_FILE")" >&2
-    RUNNER_ERR=1
-    FAILED_FILES+=("$(basename "$TEST_FILE")")
-    continue
-  }
   OUTPUT=$({
     set +e
-    export TMPDIR="$_flow_file_tmp"
     # shellcheck source=lib/assert.sh
     source "$LIB"
     # shellcheck disable=SC1090
@@ -452,7 +431,6 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
     _flow_test_summary
   } 2>&1)
   RC=$?
-  _flow_rm_tree "$_flow_file_tmp"; _flow_file_tmp=""
   printf '%s\n' "$OUTPUT"
   _flow_s=$(( $(_flow_secs) - _flow_file_start ))
   echo "run.sh: $(basename "$TEST_FILE") took ${_flow_s}s"

@@ -46,6 +46,19 @@ PR_MD="$E2E_PLUGIN_DIR/commands/pr.md"
 BRANCH=feature/issue-42-search-fix
 
 # _section <heading> — the lines of one ### section of the last output.
+# GOAL_EVALUATE_BLOCK writes the goal's lifecycle and appends to the journal,
+# so it runs once, under the shell Claude Code uses (the first in
+# E2E_FENCE_SHELLS), as e2e-command-blocks.test.sh runs its recording block: a
+# second shell would find the goal already evaluated and skip it. The pr.md
+# fences only read, and still run under every shell.
+E2E_ALL_SHELLS="$E2E_FENCE_SHELLS"
+_eval_block() {
+  local all="$E2E_FENCE_SHELLS"
+  E2E_FENCE_SHELLS="${E2E_ALL_SHELLS%% *}"
+  e2e_run_block "$@"
+  E2E_FENCE_SHELLS="$all"
+}
+
 _section() {
   printf '%s\n' "$E2E_OUT" | awk -v h="### $1" '$0 == h { f = 1; next } /^### / { f = 0 } f'
 }
@@ -100,7 +113,7 @@ print(v)' "$E2E_REPO/.flow/goals/issue-42.goal.yaml" "$1"
 
 _start_repo start-goal-pass "every criterion passes in VERIFY: the goal is achieved, and /flow:pr's gate passes without asking (V1, V3)"
 _trusted_goal true
-e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=ok"
 e2e_expect_line "GOAL_ID=issue-42"
 e2e_expect_line "GOAL_EVAL_RESULT=pass"
@@ -116,7 +129,7 @@ e2e_expect_clean_edges
 
 _start_repo start-goal-fail "a verification command fails: the goal stays active, the failing criterion is named, and /flow:pr's gate still asks (V2, V3)"
 _trusted_goal false
-e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=ok"
 e2e_expect_line "GOAL_EVAL_RESULT=fail"
 e2e_expect_line "GOAL_LIFECYCLE=active"
@@ -130,7 +143,7 @@ e2e_expect_clean_edges
 
 _start_repo start-goal-no-command "a criterion with no verification command, and the verdict judge could not decide it: incomplete, still active (V4)"
 _trusted_goal ""
-e2e_run_block GOAL_EVAL_VERDICT=NEEDS-HUMAN-REVIEW "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block GOAL_EVAL_VERDICT=NEEDS-HUMAN-REVIEW "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "GOAL_EVAL_RESULT=incomplete"
 e2e_expect_line "GOAL_LIFECYCLE=active"
 e2e_expect_out "were not passed by the verdict judge (NEEDS-HUMAN-REVIEW): AC1"
@@ -138,14 +151,14 @@ e2e_expect_clean_edges
 
 _start_repo start-goal-no-command-pass "a criterion with no verification command that the verdict judge passed: achieved (V4)"
 _trusted_goal ""
-e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "GOAL_EVAL_RESULT=pass"
 e2e_expect_line "GOAL_LIFECYCLE=achieved"
 e2e_expect_clean_edges
 
 _start_repo start-goal-untrusted "a goal that is not in the trust ledger: its command is not run, so it is not achieved (V5)"
 e2e_goal issue-42 "$BRANCH" active true
-e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "GOAL_EVAL_RESULT=incomplete"
 e2e_expect_line "GOAL_LIFECYCLE=active"
 e2e_expect_out "because the goal is not trusted: AC1"
@@ -153,7 +166,7 @@ e2e_expect_clean_edges
 
 _start_repo start-goal-keeps-lifecycle "a goal three Stop-hook turns in that stays active: turns_evaluated, current_phase and current_activity are kept (V7)"
 _trusted_goal false '{"status":"active","current_phase":"verify","current_activity":"verdict","turns_evaluated":3}'
-e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=ok"
 e2e_expect_line "GOAL_LIFECYCLE=active"
 e2e_expect_equal fail "$(_goal_field lifecycle.last_evaluation.result)" "the goal file's last_evaluation.result"
@@ -166,7 +179,7 @@ _start_repo start-goal-untrusted-exec-on "executeVerificationCommands: true and 
 e2e_goal issue-42 "$BRANCH" active true
 mkdir -p "$E2E_REPO/.claude"
 printf '%s\n' '{"flow":{"goals":{"executeVerificationCommands":true}}}' > "$E2E_REPO/.claude/settings.flow.json"
-e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=ok"
 e2e_expect_line "GOAL_EVAL_RESULT=incomplete"
 e2e_expect_line "GOAL_LIFECYCLE=active"
@@ -178,7 +191,7 @@ e2e_expect_equal "$(printf 'STATE=ok\nGOAL_ID=issue-42\nGOAL_LIFECYCLE=active\nG
 e2e_expect_clean_edges
 
 _start_repo start-goal-none "no goal on this branch: nothing is evaluated or written (V6)"
-e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=none"
 e2e_expect_equal 0 "$([ -d "$E2E_REPO/.flow/goals" ] && echo 1 || echo 0)" "a goals directory was created"
 e2e_expect_clean_edges
@@ -186,7 +199,7 @@ e2e_expect_clean_edges
 for status in waiting_for_user blocked failed; do
   _start_repo "start-goal-$status" "the branch's goal is $status: it is reported with its status, not as no goal, and is not evaluated or changed (V9)"
   _trusted_goal true "{\"status\":\"$status\"}"
-  e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+  _eval_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
   e2e_expect_line "STATE=skipped"
   e2e_expect_line "GOAL_ID=issue-42"
   e2e_expect_line "GOAL_LIFECYCLE=$status"
@@ -198,7 +211,7 @@ done
 
 _start_repo start-goal-bad-verdict "GOAL_EVAL_VERDICT not set: the block refuses rather than guessing"
 _trusted_goal true
-e2e_run_block "$START_MD" GOAL_EVALUATE_BLOCK
+_eval_block "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=blocked"
 e2e_expect_equal active "$(_goal_field lifecycle.status)" "the goal file's lifecycle.status"
 e2e_expect_clean_edges
