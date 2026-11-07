@@ -33,6 +33,17 @@
   evaluator and the merge gate use, and with no goal for the branch it
   approves with `no active flow goal`. Two active goals owning the branch
   are reported (`FLOW_GOAL_UNCHECKED`), not one picked.
+- `/flow:pr` no longer asks on most runs (#338). `/flow:start` created a goal
+  but never evaluated it, so the goal was still `active` when `/flow:pr`'s
+  gate looked, and the gate asked even when VERIFY had passed every
+  criterion. `/flow:start` Phase 4 now ends with a goal evaluation
+  (`GOAL_EVALUATE_BLOCK`): it runs the goal's verification commands, combines
+  them with the verdict judge's result, records the result and the criteria
+  not met in `lifecycle.last_evaluation` and a `goal-evaluation` journal
+  artifact, and moves the goal to `achieved` when everything passed. That
+  transition asks no question; `references/goal-lifecycle-transitions.md`
+  says why. When the evaluation is not a pass the goal stays `active` and
+  `/flow:pr` asks as before.
 - A repository's settings are read from its top, whatever directory a command
   or hook runs in (#337). `bin/cascade-resolve.sh` looked for
   `.claude/settings.flow.json` and `.claude/settings.flow.local.json` relative

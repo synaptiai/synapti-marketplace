@@ -1157,12 +1157,90 @@ Prove everything works with fix-forward:
    - Option 1 → `TaskUpdate` visual tasks with result "SKIP_USER_APPROVED"
    - Option 2 → `TaskUpdate` visual tasks with result "MANUAL — user will verify"
    - Option 3 → Provide Playwright MCP installation guidance, then retry browser tool cascade
+9a. **Goal evaluation** — when this run has a FlowGoal, evaluate it now, on this run's evidence, so `/flow:pr` finds it already decided. Run the block below once the completion gate holds, with `GOAL_EVAL_VERDICT` set to the verdict judge's result from step 6: `PASS` (or the criteria the user approved there under `verdict.requireAllPass: false`), `FAIL`, `NEEDS-HUMAN-REVIEW`, or `DISABLED` when `VERDICT_JUDGE_STATE=disabled`.
+
+   The block runs the goal's verification commands (`hooks/scripts/flow-run-deterministic-checks.sh`, which runs them for a goal in the trust ledger, as every goal `/flow:start` creates is) and records the result in the goal's `lifecycle.last_evaluation`. It is `pass` only when every command that ran exited 0, nothing is outside the goal's allowed paths, no command was skipped, and every criterion without a command was passed by the verdict judge. On `pass` the goal moves to `achieved` without a question: why no confirmation is needed here is written in `references/goal-lifecycle-transitions.md`. On anything else the goal stays `active`, and the block names the criteria that are not met; report them in the summary, and `/flow:pr`'s goal gate asks about them as before.
+
+   ```bash
+   # GOAL_EVALUATE_BLOCK_BEGIN
+   printf '%s\n' "### Goal evaluation"
+   FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+   case "${GOAL_EVAL_VERDICT:-}" in
+     PASS|FAIL|NEEDS-HUMAN-REVIEW|DISABLED) ;;
+     *)
+       printf '%s\n' "STATE=blocked" "ERROR=GOAL_EVAL_VERDICT must be PASS, FAIL, NEEDS-HUMAN-REVIEW or DISABLED, got '${GOAL_EVAL_VERDICT:-}'"
+       exit 0 ;;
+   esac
+   GOAL_PATH=$("$FLOW_ROOT/bin/flow-active-goal.sh" --path --branch-strict 2>/dev/null); GOAL_RC=$?
+   case "$GOAL_RC" in
+     0) ;;
+     1) printf '%s\n' "STATE=none" "REASON=no active FlowGoal for this branch"; exit 0 ;;
+     *) printf '%s\n' "STATE=unavailable" "REASON=flow-active-goal.sh exited $GOAL_RC"; exit 0 ;;
+   esac
+   GOAL_ID=$("$FLOW_ROOT/bin/flow-active-goal.sh" --id --branch-strict 2>/dev/null)
+   printf '%s\n' "GOAL_ID=$GOAL_ID"
+   REPORT=$("$FLOW_ROOT/hooks/scripts/flow-run-deterministic-checks.sh" "$GOAL_PATH" 2>/dev/null)
+   if ! printf '%s' "$REPORT" | jq -e 'type == "object" and has("checked")' >/dev/null 2>&1; then
+     printf '%s\n' "STATE=unavailable" "REASON=the goal's verification commands could not be run (the goal could not be read, or the checks could not start)"
+     exit 0
+   fi
+   _ids() { printf '%s' "$REPORT" | jq -r --arg k "$1" '[.[$k][]?] | join(", ")'; }
+   FAILING=$(_ids failing)
+   VIOLATIONS=$(_ids path_violations)
+   NOT_EXECUTED=$(_ids not_executed)
+   NO_COMMAND=$(_ids no_command)
+   if [ -n "$FAILING" ]; then
+     RESULT=fail; REASON="verification commands failed for: $FAILING"
+   elif [ -n "$VIOLATIONS" ]; then
+     RESULT=fail; REASON="files changed outside the goal's allowed paths: $VIOLATIONS"
+   elif [ -n "$NOT_EXECUTED" ]; then
+     RESULT=incomplete; REASON="verification commands were not run, because the goal is not trusted: $NOT_EXECUTED"
+   elif [ "$GOAL_EVAL_VERDICT" = FAIL ]; then
+     RESULT=fail; REASON="the verdict judge failed one or more acceptance criteria"
+   elif [ -n "$NO_COMMAND" ] && [ "$GOAL_EVAL_VERDICT" != PASS ]; then
+     RESULT=incomplete; REASON="criteria without a verification command were not passed by the verdict judge ($GOAL_EVAL_VERDICT): $NO_COMMAND"
+   elif [ "$GOAL_EVAL_VERDICT" = NEEDS-HUMAN-REVIEW ]; then
+     RESULT=incomplete; REASON="the verdict judge could not decide every criterion"
+   else
+     RESULT=pass; REASON="every verification command passed and the verdict judge passed the criteria ($GOAL_EVAL_VERDICT)"
+   fi
+   NEW_STATUS=active
+   [ "$RESULT" = pass ] && NEW_STATUS=achieved
+   LIFE_TMP=$(mktemp -t flow-lifecycle.XXXXXX) || { printf '%s\n' "STATE=unavailable" "REASON=mktemp failed"; exit 0; }
+   jq -n --arg status "$NEW_STATUS" --arg result "$RESULT" --arg reason "$REASON" \
+     --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     '{lifecycle: {status: $status, last_evaluation: {result: $result, reason: $reason, at: $at}}}' > "$LIFE_TMP"
+   if "$FLOW_ROOT/bin/flow-goal-record.sh" --update-lifecycle --goal-id "$GOAL_ID" \
+        --lifecycle-file "$LIFE_TMP" --from-status active >/dev/null 2>"$LIFE_TMP.err"; then
+     printf '%s\n' "STATE=ok" "GOAL_EVAL_RESULT=$RESULT" "GOAL_LIFECYCLE=$NEW_STATUS" "GOAL_EVAL_REASON=$REASON"
+     # The audit trail every lifecycle write leaves (skills/goal-lifecycle):
+     # a goal-evaluation artifact in the issue journal, or the session journal
+     # for a goal with no issue.
+     GOAL_ISSUE=$("$FLOW_ROOT/bin/flow-active-goal.sh" --json --branch-strict --allow-terminal 2>/dev/null | jq -r '.scope.issue // empty' 2>/dev/null)
+     case "$GOAL_ISSUE" in ''|0*|*[!0-9]*) JOURNAL_SCOPE=--session; GOAL_ISSUE="" ;; *) JOURNAL_SCOPE=--issue ;; esac
+     if "$FLOW_ROOT/bin/journal-record.sh" "$JOURNAL_SCOPE" ${GOAL_ISSUE:+"$GOAL_ISSUE"} --type goal-evaluation \
+          --metadata goal_id="$GOAL_ID" --metadata result="$RESULT" --metadata status="$NEW_STATUS" \
+          ${FAILING:+--metadata failures="$(printf '%s' "$FAILING" | tr -d ' ')"} >/dev/null 2>&1; then
+       printf '%s\n' "JOURNAL=recorded"
+     else
+       printf '%s\n' "JOURNAL=failed"
+     fi
+   else
+     printf '%s\n' "STATE=unavailable" "GOAL_EVAL_RESULT=$RESULT" "REASON=the goal could not be updated: $(head -1 "$LIFE_TMP.err" | LC_ALL=C tr '\000-\037\177' ' ')"
+   fi
+   rm -f "$LIFE_TMP" "$LIFE_TMP.err"
+   # GOAL_EVALUATE_BLOCK_END
+   ```
+
+   `STATE=none` means the run has no goal (an issue with no verifiable criterion, or `goalCreation: off`): nothing to do. On `STATE=unavailable`, say so in the summary with its `REASON`; the goal stays as it was, and `/flow:pr` asks. `JOURNAL=failed` means the goal was updated but its `goal-evaluation` artifact could not be written to the decision journal: say so in the summary.
+
 10. **Display summary**:
    - Tasks completed: N/N
    - Quality checks: pass/fail
    - Self-review findings: P1: X, P2: Y, P3: Z (all P1/P2 fixed via fix-forward)
    - Holdout validation: PASS / FINDINGS (P1: X, P2: Y, P3: Z — all P1/P2 fixed)
    - Verdict: PASS (N/N criteria) / FAIL / NEEDS-HUMAN-REVIEW / N/A (spec-free task)
+   - Goal: achieved / active — not met: {GOAL_EVAL_REASON} / no goal
    - Runtime verification: pass/fail/skip
    - Visual verification: PASS / FAIL / SKIP / SKIP_WARN / SKIP_USER_APPROVED / MANUAL
    - Branch: ready for PR
