@@ -25,6 +25,16 @@
 #   Q11 a question added from a subdirectory (packages/app) is stored under
 #      packages/app/.flow, so list, /flow:status and /flow:resume at the
 #      repository top do not see it
+#   Q12 add stores no class, or stores a question with none or with one
+#      outside decision, permission and default, so nobody can tell later
+#      how it may be asked
+#   Q13 /flow:resume asks a stored question with another class than the one
+#      it was stored with: a default question asked as a decision gets past
+#      the autonomous policy, a permission asked as a decision is labeled
+#      wrong, and a record with no class is lifted past the policy
+#   Q14 answer or withdraw in a repository where no question was ever stored
+#      exits 2 (a broken store) instead of 3 (no such question), so a caller
+#      cannot tell a mistyped id from a broken store
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -42,13 +52,15 @@ Q=bin/flow-question.sh
 
 _q_case() { _flow_test_begin "$1"; e2e_new "$1"; e2e_describe "$2"; e2e_repo feature/issue-340-e2e; }
 
-# _add [extra args...] — a well-formed question for issue $Q_ISSUE (340).
+# _add [extra args...] — a well-formed question for issue $Q_ISSUE (340), of
+# class $Q_CLASS (decision).
 Q_ISSUE=340
+Q_CLASS=decision
 _add() {
   e2e_run_bin "$Q" add --situation "Two API versions fit" --tried "Read both changelogs" \
     --option "Target v2 (Recommended)" --option "Target v1" \
     --recommendation "v2 is the supported one" --blocking yes --risk "v1 is deprecated" \
-    --command "/flow:start Phase 1" --issue "$Q_ISSUE" "$@"
+    --command "/flow:start Phase 1" --class "$Q_CLASS" --issue "$Q_ISSUE" "$@"
 }
 _id() { printf '%s\n' "$E2E_OUT" | sed -n 's/^QUESTION_ID=//p'; }
 _field() { python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1])).get(sys.argv[2]))' "$E2E_REPO/.flow/questions/$1.yaml" "$2"; }
@@ -59,13 +71,13 @@ _add --pr 12 --run run-1
 e2e_expect_equal 0 "$E2E_RC" "add exit status"
 QID=$(_id)
 e2e_expect_line "STATUS=open"
-for f in situation tried recommendation blocking risk command issue pr run asked_at; do
+for f in situation tried recommendation blocking risk command class issue pr run asked_at; do
   [ "$(_field "$QID" "$f")" != None ] && _e2e_result pass "the record has $f" || _e2e_result fail "the record has $f"
 done
 e2e_expect_equal "['Target v2 (Recommended)', 'Target v1']" "$(_field "$QID" options)" "the options, the recommended one first"
 e2e_expect_equal "*" "$(cat "$E2E_REPO/.flow/questions/.gitignore" 2>/dev/null)" "the questions directory ignores itself"
 e2e_run_bin "$Q" list
-e2e_expect_line "$QID|open|yes|340|12|/flow:start Phase 1|Two API versions fit"
+e2e_expect_line "$QID|open|decision|yes|340|12|/flow:start Phase 1|Two API versions fit"
 e2e_run_bin "$Q" answer "$QID" --choice 2
 e2e_expect_equal 0 "$E2E_RC" "answer exit status"
 e2e_expect_line "ANSWER=Target v1"
@@ -117,7 +129,7 @@ cd "$E2E_REPO" || exit 1
 : > "$E2E_DIR/sync/ready.\$1"
 while [ ! -e "$E2E_DIR/sync/ready.a" ] || [ ! -e "$E2E_DIR/sync/ready.b" ]; do :; done
 FLOW_QUESTION_ID_HINT=$HINT "$E2E_ACTIVE_PLUGIN/$Q" add --situation "from \$1" --tried t \
-  --option "one (Recommended)" --option two --recommendation r --blocking soft --risk k --command "proc \$1" > "$E2E_DIR/out.\$1" 2>&1
+  --option "one (Recommended)" --option two --recommendation r --blocking soft --risk k --command "proc \$1" --class default > "$E2E_DIR/out.\$1" 2>&1
 SH
 chmod +x "$E2E_DIR/add.sh"
 ( _e2e_git_env; "$E2E_DIR/add.sh" a & "$E2E_DIR/add.sh" b & wait )
@@ -131,27 +143,27 @@ e2e_expect_clean_edges
 
 # --- malformed questions are refused (Q5) ------------------------------------
 _q_case q-missing-field "a question without its risk is refused with the field named, and nothing is stored (Q5)"
-e2e_run_bin "$Q" add --situation s --tried t --option "a (Recommended)" --option b --recommendation r --blocking yes --command c
+e2e_run_bin "$Q" add --situation s --tried t --option "a (Recommended)" --option b --recommendation r --blocking yes --command c --class decision
 e2e_expect_equal 1 "$E2E_RC" "add exit status"
 e2e_expect_err "missing required field: risk"
 e2e_expect_equal 0 "$(ls "$E2E_REPO/.flow/questions" 2>/dev/null | grep -c '\.yaml$')" "stored records"
 e2e_expect_clean_edges
 
 _q_case q-four-options "a question with four options is refused (Q5)"
-e2e_run_bin "$Q" add --situation s --tried t --option "a (Recommended)" --option b --option c --option d --recommendation r --blocking yes --risk k --command c
+e2e_run_bin "$Q" add --situation s --tried t --option "a (Recommended)" --option b --option c --option d --recommendation r --blocking yes --risk k --command c --class decision
 e2e_expect_equal 1 "$E2E_RC" "add exit status"
 e2e_expect_err "options: at most three (got 4)"
 e2e_expect_equal 0 "$(ls "$E2E_REPO/.flow/questions" 2>/dev/null | grep -c '\.yaml$')" "stored records"
 e2e_expect_clean_edges
 
 _q_case q-one-option "a question with one option is refused (Q5)"
-e2e_run_bin "$Q" add --situation s --tried t --option "a" --recommendation r --blocking yes --risk k --command c
+e2e_run_bin "$Q" add --situation s --tried t --option "a" --recommendation r --blocking yes --risk k --command c --class decision
 e2e_expect_equal 1 "$E2E_RC" "add exit status"
 e2e_expect_err "two or three are required"
 e2e_expect_clean_edges
 
 _q_case q-bad-blocking "a blocking level outside yes, soft and no is refused (Q5)"
-e2e_run_bin "$Q" add --situation s --tried t --option "a (Recommended)" --option b --recommendation r --blocking "by Friday" --risk k --command c
+e2e_run_bin "$Q" add --situation s --tried t --option "a (Recommended)" --option b --recommendation r --blocking "by Friday" --risk k --command c --class decision
 e2e_expect_equal 1 "$E2E_RC" "add exit status"
 e2e_expect_err "blocking must be yes, soft or no"
 e2e_expect_clean_edges
@@ -190,7 +202,7 @@ e2e_run_bin "$Q" answer "$DONE_ID" --choice 1
 e2e_run_block commands/status.md OPEN_QUESTIONS_BLOCK
 e2e_expect_line "STATE=open"
 e2e_expect_line "COUNT=1"
-e2e_expect_out "QUESTION=$OPEN_ID|open|yes|340"
+e2e_expect_out "QUESTION=$OPEN_ID|open|decision|yes|340"
 e2e_expect_no_out "$DONE_ID"
 e2e_expect_clean_edges
 
@@ -230,16 +242,91 @@ _q_case q-subdir "a question added in packages/app is stored at the repository t
 _in_app "$Q" add --situation "Two API versions fit" --tried "Read both changelogs" \
   --option "Target v2 (Recommended)" --option "Target v1" \
   --recommendation "v2 is the supported one" --blocking yes --risk "v1 is deprecated" \
-  --command "/flow:start Phase 1" --issue 344
+  --command "/flow:start Phase 1" --class decision --issue 344
 e2e_expect_equal 0 "$E2E_RC" "add exit status in packages/app"
 QID=$(_id)
 e2e_expect_equal yes "$([ -f "$E2E_REPO/.flow/questions/$QID.yaml" ] && echo yes || echo no)" "the record at the top"
 e2e_expect_equal no "$([ -e "$E2E_REPO/packages/app/.flow" ] && echo yes || echo no)" "a .flow in packages/app"
 e2e_run_bin "$Q" list
-e2e_expect_line "$QID|open|yes|344|-|/flow:start Phase 1|Two API versions fit"
+e2e_expect_line "$QID|open|decision|yes|344|-|/flow:start Phase 1|Two API versions fit"
 e2e_run_block commands/status.md OPEN_QUESTIONS_BLOCK
-e2e_expect_out "QUESTION=$QID|open|yes|344"
+e2e_expect_out "QUESTION=$QID|open|decision|yes|344"
 _in_app "$Q" answer "$QID" --choice 1
 e2e_expect_equal 0 "$E2E_RC" "answer exit status in packages/app"
 e2e_expect_equal answered "$(_field "$QID" status)" "the record's status at the top"
+e2e_expect_clean_edges
+
+# --- the class a question is stored with (Q12) --------------------------------
+_q_case q-class-missing "a question without its class is refused with the field named, and nothing is stored (Q12)"
+e2e_run_bin "$Q" add --situation s --tried t --option "a (Recommended)" --option b --recommendation r --blocking yes --risk k --command c
+e2e_expect_equal 1 "$E2E_RC" "add exit status"
+e2e_expect_err "missing required field: class (--class)"
+e2e_expect_equal 0 "$(ls "$E2E_REPO/.flow/questions" 2>/dev/null | grep -c '\.yaml$')" "stored records"
+e2e_expect_clean_edges
+
+_q_case q-class-unknown "a class outside decision, permission and default is refused (Q12)"
+e2e_run_bin "$Q" add --situation s --tried t --option "a (Recommended)" --option b --recommendation r --blocking yes --risk k --command c --class urgent
+e2e_expect_equal 1 "$E2E_RC" "add exit status"
+e2e_expect_err "class must be decision, permission or default"
+e2e_expect_equal 0 "$(ls "$E2E_REPO/.flow/questions" 2>/dev/null | grep -c '\.yaml$')" "stored records"
+e2e_expect_clean_edges
+
+_q_case q-class-journal "the class is stored and written to the escalation-asked artifact (Q12)"
+Q_CLASS=permission _add --journal
+QID=$(_id)
+e2e_expect_equal permission "$(_field "$QID" class)" "the record's class"
+e2e_expect_file_has .decisions/issue-340.md "class: permission"
+e2e_expect_clean_edges
+
+# --- /flow:resume asks with the stored class (Q13) ----------------------------
+# _resume_classes <true|unset> — four open questions of one run: a decision, a
+# permission, a default, and a record whose class was removed; then the resume
+# block, with autonomous set in the repository's settings unless "unset".
+_resume_classes() {
+  if [ "$1" != unset ]; then
+    mkdir -p "$E2E_REPO/.claude"
+    printf '{"autonomous":%s}\n' "$1" > "$E2E_REPO/.claude/settings.flow.json"
+  fi
+  Q_CLASS=decision _add --run 2026-11-07T00-00-00Z-r; C_DEC=$(_id)
+  Q_CLASS=permission _add --run 2026-11-07T00-00-00Z-r; C_PERM=$(_id)
+  Q_CLASS=default _add --run 2026-11-07T00-00-00Z-r; C_DEF=$(_id)
+  Q_CLASS=decision _add --run 2026-11-07T00-00-00Z-r; C_NONE=$(_id)
+  python3 -c 'import sys, yaml
+p = sys.argv[1]
+r = yaml.safe_load(open(p))
+r.pop("class", None)
+open(p, "w").write(yaml.safe_dump(r, sort_keys=False))' "$E2E_REPO/.flow/questions/$C_NONE.yaml"
+  printf 'four questions of run 2026-11-07T00-00-00Z-r: %s decision, %s permission, %s default, %s with its class removed; autonomous: %s\n' \
+    "$C_DEC" "$C_PERM" "$C_DEF" "$C_NONE" "$1" | _e2e_art
+  e2e_run_block RUN_ID=2026-11-07T00-00-00Z-r GOAL_ID= commands/resume.md RESUME_QUESTIONS_BLOCK
+}
+
+_q_case q-resume-class-autonomous "/flow:resume under autonomous: true asks a decision as flow:decision and a permission as flow:permission, takes the recommendation of a default, and leaves a record with no class open (Q13)"
+_resume_classes true
+e2e_expect_line "STATE=open"
+e2e_expect_line "ASK=$C_DEC|flow:decision"
+e2e_expect_line "ASK=$C_PERM|flow:permission"
+e2e_expect_line "ASK=$C_DEF|take-recommendation"
+e2e_expect_line "ASK=$C_NONE|leave-open"
+e2e_expect_clean_edges
+
+_q_case q-resume-class-attended "/flow:resume while attended asks a default, and a record with no class, with no class; decisions and permissions keep theirs (Q13)"
+_resume_classes unset
+e2e_expect_line "ASK=$C_DEC|flow:decision"
+e2e_expect_line "ASK=$C_PERM|flow:permission"
+e2e_expect_line "ASK=$C_DEF|ask"
+e2e_expect_line "ASK=$C_NONE|ask"
+e2e_expect_clean_edges
+
+# --- answer and withdraw on an empty store (Q14) ------------------------------
+_q_case q-empty-store "answer and withdraw where no question was ever stored exit 3 (no such question) and create nothing; a malformed id is still refused input (Q14)"
+e2e_run_bin "$Q" answer q-20261107T000000Z-abcdef --choice 1
+e2e_expect_equal 3 "$E2E_RC" "answer exit status"
+e2e_expect_err "no question q-20261107T000000Z-abcdef"
+e2e_run_bin "$Q" withdraw q-20261107T000000Z-abcdef --reason "no longer relevant"
+e2e_expect_equal 3 "$E2E_RC" "withdraw exit status"
+e2e_expect_err "no question q-20261107T000000Z-abcdef"
+e2e_expect_equal no "$([ -e "$E2E_REPO/.flow/questions" ] && echo yes || echo no)" "a questions directory created"
+e2e_run_bin "$Q" answer not-an-id --choice 1
+e2e_expect_equal 1 "$E2E_RC" "answer exit status for a malformed id"
 e2e_expect_clean_edges

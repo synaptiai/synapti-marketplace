@@ -332,7 +332,7 @@ if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&
       "$B/journal-record.sh" --issue 42 --type smoke --metadata note=windows
     _helper "flow-question.sh stores a question and leaves slash text alone" 'case "$(cd "$HREPO" && "$B/flow-question.sh" list)" in *"|/flow:start Phase 1|"*) true ;; *) false ;; esac' -- \
       "$B/flow-question.sh" add --situation s --tried t --option "a (Recommended)" --option b \
-        --recommendation r --blocking soft --risk k --command "/flow:start Phase 1"
+        --recommendation r --blocking soft --risk k --command "/flow:start Phase 1" --class default
     printf '<!-- auto-log: smoke -->\n' >> "$HREPO/.decisions/issue-42.md"
     _helper "flow-strip-auto-log.sh reads a journal directory given absolutely" 'case "$HOUT" in *"STRIP_AUTO_LOG=1 files, 1 lines"*) true ;; *) false ;; esac' -- \
       "$B/flow-strip-auto-log.sh" "$HREPO/.decisions"

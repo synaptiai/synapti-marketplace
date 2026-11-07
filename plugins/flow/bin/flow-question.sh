@@ -6,21 +6,27 @@
 #   add      --situation T --tried T --option T --option T [--option T]
 #            --recommendation T --blocking yes|soft|no --risk T
 #            --command <who asked, e.g. "/flow:pr step 7a">
+#            --class decision|permission|default
 #            [--issue N] [--pr N] [--run <FlowRun id>] [--journal]
 #            Stores an open question and prints QUESTION_ID=<id>. The first
 #            --option is the recommended one (escalation-format.md: two or
-#            three options, the recommendation first). A missing field, more
-#            than three options or fewer than two, or a blocking level other
-#            than yes, soft or no is refused with the field named.
+#            three options, the recommendation first). --class is the
+#            [ask: ...] tag of the place that asks (references/ask-policy.md),
+#            so whoever asks it later (/flow:resume) asks it the same way. A
+#            missing field, more than three options or fewer than two, a
+#            blocking level other than yes, soft or no, or a class other than
+#            decision, permission or default is refused with the field named.
 #   answer   <id> --choice <option number or its exact text> [--by T] [--journal]
 #            Records the answer; only an open question can be answered, and
-#            only with one of its options.
+#            only with one of its options. An id that names no stored question
+#            exits 3, also where no question was ever stored.
 #   withdraw <id> --reason T [--journal]
 #            Withdraws an open question (asked again in another form, or no
 #            longer relevant).
 #   list     [--status open|answered|withdrawn|all] [--issue N] [--pr N] [--run ID]
 #            One line per question, oldest first:
-#            <id>|<status>|<blocking>|<issue>|<pr>|<command>|<situation>
+#            <id>|<status>|<class>|<blocking>|<issue>|<pr>|<command>|<situation>
+#            (class - for a record that has none)
 #            Default --status open.
 #   get      <id> [--json|--prompt]   the record (YAML, JSON with --json), or
 #            with --prompt the six-field body for AskUserQuestion's question
@@ -98,6 +104,8 @@ ARGS = sys.argv[2:]
 PLUGIN_BIN = sys.argv[1]
 ID_RE = re.compile(r"^q-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
 STATUSES = ("open", "answered", "withdrawn")
+# The [ask: ...] tags of references/ask-policy.md that ask a person.
+CLASSES = ("decision", "permission", "default")
 FIELD_LIMIT = 4000
 
 
@@ -233,7 +241,8 @@ def journal(rec, jtype, meta):
 
 def cmd_add(args):
     opts, pos = parse(args, ("--situation", "--tried", "--recommendation", "--blocking", "--risk",
-                             "--command", "--issue", "--pr", "--run"), multi=("--option",), switches=("--journal",))
+                             "--command", "--class", "--issue", "--pr", "--run"), multi=("--option",),
+                      switches=("--journal",))
     if pos:
         die(f"unexpected argument: {pos[0]}", 1)
     rec = {
@@ -260,6 +269,10 @@ def cmd_add(args):
     rec["blocking"] = blocking
     rec["risk"] = text(opts, "--risk", "risk")
     rec["command"] = text(opts, "--command", "the command that asked")
+    qclass = text(opts, "--class", "class").lower()
+    if qclass not in CLASSES:
+        die(f"class must be decision, permission or default, not {opts['--class']!r}", 1)
+    rec["class"] = qclass
     rec["issue"] = number(opts, "--issue")
     rec["pr"] = number(opts, "--pr")
     rec["run"] = run_id(opts)
@@ -284,7 +297,7 @@ def cmd_add(args):
         print("STATUS=open")
         if opts.get("--journal"):
             journal(record, "escalation-asked", [("question_id", qid), ("blocking", blocking),
-                    ("command", rec["command"]), ("situation", rec["situation"][:200])])
+                    ("class", qclass), ("command", rec["command"]), ("situation", rec["situation"][:200])])
         return 0
     die("could not find a free question id", 2)
 
@@ -292,6 +305,11 @@ def cmd_add(args):
 def update(qid, change):
     prepare(create=False)
     path = path_of(qid)
+    # A store where no question was ever kept has no directory, so no lock to
+    # take: the id names no question (3), as get says, not a broken store (2).
+    # The record is looked up again under the lock.
+    if not os.path.isdir(QDIR) or not os.path.lexists(path):
+        die(f"no question {qid}", 3)
     try:
         fd = acquire_lock(RMW_LOCK, timeout=30)
     except JournalAtomicError as exc:
@@ -385,8 +403,8 @@ def cmd_list(args):
             continue
         if run is not None and r.get("run") != run:
             continue
-        cells = [r.get("id"), r.get("status"), r.get("blocking"), r.get("issue") or "-", r.get("pr") or "-",
-                 r.get("command"), r.get("situation")]
+        cells = [r.get("id"), r.get("status"), r.get("class") or "-", r.get("blocking"), r.get("issue") or "-",
+                 r.get("pr") or "-", r.get("command"), r.get("situation")]
         print("|".join(one_line(c).replace("|", "\u2502") for c in cells))
         n += 1
     return 0

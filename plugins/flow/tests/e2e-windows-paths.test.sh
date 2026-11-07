@@ -82,7 +82,7 @@ e2e_expect_clean_edges
 
 _win_case win-question-text "flow-question.sh under Git Bash: a --command that starts with a slash is text, not a path (W3, W6)"
 e2e_run_bin FLOW_PY_PATH_PLATFORM=$WIN bin/flow-question.sh add --situation s --tried t \
-  --option "a (Recommended)" --option b --recommendation r --blocking soft --risk k --command "/flow:start Phase 1"
+  --option "a (Recommended)" --option b --recommendation r --blocking soft --risk k --command "/flow:start Phase 1" --class default
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 _expect_converted "$(cd "$BIN_DIR" && pwd)" "the bin directory"
 _expect_not_converted "/flow:start" "the --command text"

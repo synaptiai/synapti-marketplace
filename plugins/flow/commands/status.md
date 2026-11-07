@@ -229,7 +229,7 @@ printf '%s\n' "RUNTIME_DIR=$RT"
 
 # Section: Open Questions — escalations stored with bin/flow-question.sh that
 # nobody has answered or withdrawn (references/escalation-format.md). One
-# QUESTION= line each: id|status|blocking|issue|pr|command|situation.
+# QUESTION= line each: id|status|class|blocking|issue|pr|command|situation.
 printf '%s\n' ""
 printf '%s\n' "### Open Questions"
 # OPEN_QUESTIONS_BLOCK_BEGIN
@@ -706,9 +706,9 @@ The complete verbose dashboard (every section):
 {When STATE=unavailable: render "Unavailable: {REASON}"}
 {When STATE=open: render a table, one row per QUESTION= line, blocking ones first}
 
-| Question | Blocking | Issue | PR | Asked by | Situation |
-|----------|----------|-------|----|----------|-----------|
-| `{id}` | {blocking} | {issue} | {pr} | {command} | {situation} |
+| Question | Class | Blocking | Issue | PR | Asked by | Situation |
+|----------|-------|----------|-------|----|----------|-----------|
+| `{id}` | {class} | {blocking} | {issue} | {pr} | {command} | {situation} |
 
 Answer one with `bin/flow-question.sh answer <id> --choice <n>`, or `withdraw <id> --reason ...`.
 

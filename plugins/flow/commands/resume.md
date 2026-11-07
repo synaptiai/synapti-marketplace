@@ -296,11 +296,24 @@ elif [ -z "$Q_LIST" ]; then
 else
   printf '%s\n' "STATE=open"
   printf '%s\n' "$Q_LIST" | sed 's/^/QUESTION=/'
+  # How each one is asked: with the class it was stored with, under the ask
+  # policy of this session (references/ask-policy.md). A default is not asked
+  # under the autonomous policy; a record with no class is never lifted past
+  # it, so it is shown and left open.
+  Q_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || Q_POLICY=attended
+  printf '%s\n' "$Q_LIST" | while IFS='|' read -r Q_ID Q_STATE Q_CLASS Q_REST; do
+    case "$Q_CLASS" in
+      decision|permission) Q_HOW="flow:$Q_CLASS" ;;
+      default) if [ "$Q_POLICY" = autonomous ]; then Q_HOW=take-recommendation; else Q_HOW=ask; fi ;;
+      *) if [ "$Q_POLICY" = autonomous ]; then Q_HOW=leave-open; else Q_HOW=ask; fi ;;
+    esac
+    printf '%s\n' "ASK=$Q_ID|$Q_HOW"
+  done
 fi
 # RESUME_QUESTIONS_BLOCK_END
 ```
 
-[ask: decision] With `STATE=open`, show each question in the report (Step 4) with `bin/flow-question.sh get <id> --prompt`, and make the next safe action answering the blocking one: ask it with `AskUserQuestion` when the session can (a stored escalation is a decision or a permission: pass `metadata.source` `flow:decision`, or `flow:permission` for a Tier 3 action or a skip), then record the answer with `bin/flow-question.sh answer <id> --choice <n> --journal`.
+[ask: decision] [ask: permission] [ask: default] With `STATE=open`, show each question in the report (Step 4) with `bin/flow-question.sh get <id> --prompt`, and make the next safe action answering the blocking one, the way its `ASK=<id>|<how>` line says, which is the class it was stored with: `flow:decision` or `flow:permission` — ask it with `AskUserQuestion` when the session can, passing that as `metadata.source`; `ask` (a default, or a record with no class, while attended) — ask it with no `metadata`; `take-recommendation` (a default under `ASK_POLICY=autonomous`) — do not ask: record option 1 with `bin/flow-question.sh answer <id> --choice 1 --by recommendation --journal` and list it in the summary; `leave-open` (a record with no class under `ASK_POLICY=autonomous`) — do not ask and do not answer it: show it as waiting for a person. Record an answer the person gave with `bin/flow-question.sh answer <id> --choice <n> --journal`.
 
 ### Step 3.5: Detect unlinked working-tree changes
 
