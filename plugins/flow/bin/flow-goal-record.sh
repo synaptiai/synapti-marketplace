@@ -456,12 +456,14 @@ if mode == "create":
     # Record the freshly created goal in the per-user trust ledger. Best-effort:
     # the goal is already on disk and valid; a ledger problem is a note, not a
     # failure (the Stop hook simply treats the goal as untrusted until recorded).
-    # A ledger script that cannot be started (not executable, gone, or a .sh
-    # a native Windows python3 cannot run) is the same note: the goal stands.
+    # The script runs through bash, not by its own name: a native Windows
+    # python3 cannot start a .sh file, so the goal was never recorded there.
+    # A ledger script that cannot be started (gone, or no bash) is the same
+    # note: the goal stands.
     trust = os.path.join(script_dir, "flow-goal-trust.sh")
     try:
         ledger = subprocess.run(
-            [trust, "record", "--goal-file", target],
+            ["bash", trust, "record", "--goal-file", target],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace",
         )
         problem = None if ledger.returncode == 0 else shown(ledger.stderr.strip())

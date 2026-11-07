@@ -285,8 +285,12 @@ Each entry below describes the change against 3.14.0.
   `bin/lib/py-path.sh`'s header names them. `docs/windows-support.md` names
   the helpers `tests/windows-hooks-smoke.sh` calls on the Windows runner
   (`flow-dep-diff.sh` among them) and what it checks for each.
-- Two Windows faults the new helper checks in `tests/windows-hooks-smoke.sh`
-  found (#246). A journal could not be rewritten: `bin/_journal_atomic.py`
+- Three Windows faults the new helper checks in `tests/windows-hooks-smoke.sh`
+  found (#246). `flow-goal-record.sh --create` never recorded the goal in the
+  trust ledger, because a native Windows `python3` cannot start
+  `flow-goal-trust.sh` by its name; it runs it through `bash`, so the Stop
+  hook can run that goal's verification commands. A journal could not be
+  rewritten: `bin/_journal_atomic.py`
   published with `os.rename`, which on Windows refuses a target that exists,
   so `journal-record.sh` failed on every journal that already had an entry;
   it uses `os.replace`, the same atomic rename on Linux and macOS. And under

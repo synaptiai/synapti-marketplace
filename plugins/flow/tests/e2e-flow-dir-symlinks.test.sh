@@ -5508,10 +5508,11 @@ if python3 -c 'import jsonschema' 2>/dev/null && _want goal-writer-refusals; the
   e2e_expect_file_has .flow/goals/g-unread.goal.yaml "turns_evaluated: many"
 
   # A trust ledger script that cannot be started: the goal is created, and
-  # the ledger is a note, exit 0, as for a ledger that fails.
+  # the ledger is a note, exit 0, as for a ledger that fails. The script runs
+  # through bash, so a missing script is what cannot be started.
   e2e_plugin_copy bin/flow-goal-trust.sh "$(cat "$E2E_PLUGIN_DIR/bin/flow-goal-trust.sh")"
-  chmod -x "$E2E_ACTIVE_PLUGIN/bin/flow-goal-trust.sh"
-  printf 'plugin for this scenario: flow-goal-trust.sh is not executable\n' >> "$E2E_ARTIFACT"
+  rm -f "$E2E_ACTIVE_PLUGIN/bin/flow-goal-trust.sh"
+  printf 'plugin for this scenario: flow-goal-trust.sh is missing\n' >> "$E2E_ARTIFACT"
   sed 's/^  id: .*/  id: g-no-ledger/' "$FIXTURES/goal/valid.yaml" > "$E2E_REPO/goal-no-ledger.yaml"
   _run_bin bin/flow-goal-record.sh --create --goal-file goal-no-ledger.yaml
   e2e_expect_equal 0 "$E2E_RC" "no-ledger: the exit status"
