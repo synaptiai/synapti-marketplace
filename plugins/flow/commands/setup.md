@@ -42,8 +42,23 @@ true
 **Parallel operations:**
 
 ```bash
-# 1. Check for existing flow settings
-[ -f ".claude/settings.flow.json" ] && printf '%s\n' "EXISTING_SETTINGS=true" || printf '%s\n' "EXISTING_SETTINGS=false"
+# 1. The project settings file Flow reads: .claude/settings.flow.json at the
+# repository top, whatever directory this runs in. Settings files in the
+# working directory or in CLAUDE_PROJECT_DIR below the top are not read.
+RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+SETTINGS_FILE=$("$RESOLVER" --project-settings-path 2>/dev/null) || SETTINGS_FILE=""
+[ -n "$SETTINGS_FILE" ] || SETTINGS_FILE=".claude/settings.flow.json"
+printf '%s\n' "SETTINGS_FILE=$SETTINGS_FILE"
+[ -f "$SETTINGS_FILE" ] && printf '%s\n' "EXISTING_SETTINGS=true" || printf '%s\n' "EXISTING_SETTINGS=false"
+for SETTINGS_DIR in . "${CLAUDE_PROJECT_DIR:-.}"; do
+  [ "$SETTINGS_DIR" != . ] && [ "$SETTINGS_DIR" -ef . ] && continue
+  for UNREAD in "$SETTINGS_DIR/.claude/settings.flow.json" "$SETTINGS_DIR/.claude/settings.flow.local.json"; do
+    [ -f "$UNREAD" ] || continue
+    [ "$UNREAD" -ef "$SETTINGS_FILE" ] && continue
+    [ "$UNREAD" -ef "${SETTINGS_FILE%settings.flow.json}settings.flow.local.json" ] && continue
+    printf '%s\n' "UNREAD_SETTINGS=$UNREAD"
+  done
+done
 
 # 2. Check for gh-workflow: prints the line only when this repository holds
 # both plugins/gh-workflow/.claude-plugin/plugin.json and
@@ -68,16 +83,18 @@ else
 fi
 ```
 
+`SETTINGS_FILE` is the project settings file every Flow hook and command reads: `.claude/settings.flow.json` at the repository top (relative when setup runs at the top, absolute when it runs in a subdirectory). Setup writes and upgrades that file and no other. Each `UNREAD_SETTINGS` line names a Flow settings file in the working directory (or in `CLAUDE_PROJECT_DIR`) below the top, which Flow does not read: list it under **Manual Steps Required** in the Phase 7 summary, saying its keys take effect only once moved into `SETTINGS_FILE` (or, for a `.local` file, into `settings.flow.local.json` beside it).
+
 On `TIMEOUT_BIN=missing`, add the coreutils install to **Manual Steps Required** in the Phase 7 summary: without it the verdict judge and the goal judge report that they could not start (exit 4).
 
 **Skill(capability-discovery)**: Detect tech stack, quality commands, existing agents/skills, and LSP capabilities.
 
 ## Phase 2: Generate Settings
 
-Based on detection, create `.claude/settings.flow.json` (project-shared, committed with team) with sensible defaults:
+Based on detection, create the file `SETTINGS_FILE` names (`.claude/settings.flow.json` at the repository top; project-shared, committed with team) with sensible defaults:
 
 ```bash
-mkdir -p .claude
+SETTINGS_FILE=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --project-settings-path) && mkdir -p "${SETTINGS_FILE%/*}"
 ```
 
 **Ensure `.claude/settings.flow.local.json` is gitignored** (idempotent — adds the line only if missing). Without this, a downstream user creating a personal-pin file as documented in Phase 7 below would commit it accidentally, leaking their machine-local preferences and weakening the project-local override layer:
@@ -88,23 +105,36 @@ Also ignore the auto-log trail, `<journal.dir>/auto-log/`. The PostToolUse hooks
 
 Also ignore `<runtime dir>/watch/` (the runtime directory, `flow.runtime.stateDir`, default `.flow`, as `bin/flow-runtime-dir.sh` resolves it), where `/flow:watch issue <N>` keeps the issue snapshot of each loop iteration. It is local state; `/flow:watch` also writes a `.gitignore` of `*` inside it.
 
+The lines go in the `.gitignore` at the repository top, beside the `.claude` directory `SETTINGS_FILE` is in, so they name the files Flow reads wherever setup runs.
+
 ```bash
-JOURNAL_DIR=".decisions"
 RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+# The directory holding the .claude directory Flow reads: the repository top.
+SETTINGS_FILE=$("$RESOLVER" --project-settings-path 2>/dev/null) || SETTINGS_FILE=""
+case "$SETTINGS_FILE" in
+  /*) cd "${SETTINGS_FILE%/.claude/settings.flow.json}" || SETTINGS_FILE="" ;;
+esac
+JOURNAL_DIR=".decisions"
 [ -x "$RESOLVER" ] && JOURNAL_DIR=$("${RESOLVER%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
 [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
 RUNTIME_DIR=".flow"
 [ -x "$RESOLVER" ] && RUNTIME_DIR=$("${RESOLVER%/cascade-resolve.sh}/flow-runtime-dir.sh")
 RUNTIME_DIR=${RUNTIME_DIR#./}
 [ -n "$RUNTIME_DIR" ] || RUNTIME_DIR=".flow"
-for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$RUNTIME_DIR/watch/" "$JOURNAL_DIR/auto-log/"; do
-  if [ -f .gitignore ]; then
-    grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
-  else
-    printf '%s\n' "$IGNORE" > .gitignore
-  fi
-done
+if [ -z "$SETTINGS_FILE" ]; then
+  printf '%s\n' "GITIGNORE=skipped (the repository top could not be found)"
+else
+  for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$RUNTIME_DIR/watch/" "$JOURNAL_DIR/auto-log/"; do
+    if [ -f .gitignore ]; then
+      grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
+    else
+      printf '%s\n' "$IGNORE" > .gitignore
+    fi
+  done
+fi
 ```
+
+On `GITIGNORE=skipped`, list the four lines under **Manual Steps Required** in the Phase 7 summary, for the `.gitignore` at the repository top.
 
 Flow settings follow the standard Claude Code cascade — `local > project > user > plugin default`. Setup writes the project-shared file, which gives the whole team a baseline. Any user can then override locally via `.claude/settings.flow.local.json` (gitignored), set cross-project preferences in `$HOME/.claude/settings.flow.json`, or rely on the plugin's bundled defaults.
 
@@ -117,7 +147,7 @@ Flow settings follow the standard Claude Code cascade — `local > project > use
 > 2. Write the team baseline anyway (overrides your user-global preference for this repo only; you can re-override locally via `.claude/settings.flow.local.json`)
 > 3. Cancel — let me edit my user-global file first
 
-Write `.claude/settings.flow.json` with:
+Write the file `SETTINGS_FILE` names with:
 
 - Quality commands discovered from tech stack (`timeouts.qualityCheckMaxIterations`, `closedLoop.*`, etc.)
 - `conventions.branchPatterns` and `conventions.commitTypes` matching existing repository conventions
@@ -134,12 +164,13 @@ The runtime settings (`flow.goals`, `flow.runtime`, `flow.workflows`, `flow.trig
 
 ### Upgrade deprecated settings (re-run only)
 
-When existing settings are detected, check whether the committed `.claude/settings.flow.json` carries any deprecated keys and offer to upgrade it to the current schema. The runtime already honors deprecated keys read-only (via `cascade-resolve`), so this is a **hygiene upgrade — nothing breaks if declined**. Current migrations: `flow.goals.requireGoalForStart` → `flow.goals.goalCreation` (`true`→`always`, `false`→`off`).
+When existing settings are detected, check whether the committed `.claude/settings.flow.json` at the repository top (`SETTINGS_FILE`) carries any deprecated keys and offer to upgrade it to the current schema. The runtime already honors deprecated keys read-only (via `cascade-resolve`), so this is a **hygiene upgrade — nothing breaks if declined**. Current migrations: `flow.goals.requireGoalForStart` → `flow.goals.goalCreation` (`true`→`always`, `false`→`off`).
 
 ```!
-SETTINGS=".claude/settings.flow.json"
 MIGRATOR="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-migrate-settings.sh"
-if [ -f "$SETTINGS" ] && [ -x "$MIGRATOR" ]; then
+# The file the settings cascade reads, at the repository top.
+SETTINGS=$("${MIGRATOR%/flow-migrate-settings.sh}/cascade-resolve.sh" --project-settings-path 2>/dev/null) || SETTINGS=""
+if [ -n "$SETTINGS" ] && [ -f "$SETTINGS" ] && [ -x "$MIGRATOR" ]; then
   "$MIGRATOR" "$SETTINGS"   # dry-run — emits MIGRATE=... lines (MIGRATE=none when clean)
 else
   printf '%s\n' "MIGRATE=skip (no committed settings or migrator unavailable)"
@@ -161,10 +192,10 @@ true
 On **Upgrade now**, apply the rewrite. This block re-resolves the helper path inline — shell variables from the detection `!`-block above do NOT persist into a separately-executed `bash` block:
 
 ```bash
-"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-migrate-settings.sh" --apply ".claude/settings.flow.json"
+"$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-migrate-settings.sh" --apply
 ```
 
-It writes atomically and preserves all other keys. Note the change in the Phase 7 summary so the user reviews the one-line diff before committing.
+With no file named it upgrades the file the settings cascade reads, `.claude/settings.flow.json` at the repository top. It writes atomically and preserves all other keys. Note the change in the Phase 7 summary so the user reviews the one-line diff before committing.
 
 ### Strip legacy auto-log lines (re-run only)
 
@@ -485,13 +516,13 @@ If yes, append the workflow section from `templates/CLAUDE-flow.md` to the exist
 
 ### Settings
 
-**Project-shared** (`.claude/settings.flow.json` — committed with team):
+**Project-shared** (`.claude/settings.flow.json` at the repository top — committed with team):
 - Tech stack: {detected}
 - Quality commands: {lint}, {test}, {typecheck}
 - Branch patterns, commit types, tiers, timeouts, LSP, learning, journal, etc.
 - Agent teams: disabled. To enable paired review, set `agentTeams: true` (in this file for team-wide, or in `.claude/settings.flow.local.json` for personal-pin) AND `export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in your shell.
 
-**Override layers** (standard Claude Code cascade — highest precedence first):
+**Override layers** (standard Claude Code cascade — highest precedence first; the first two are read at the repository top, whatever directory a command runs in):
 1. `.claude/settings.flow.local.json` — gitignored, your machine-local pin
 2. `.claude/settings.flow.json` — committed, team-shared (the file just written)
 3. `$HOME/.claude/settings.flow.json` (or `$FLOW_USER_SETTINGS`) — your cross-project default
@@ -514,6 +545,8 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 
 {If any servers need manual steps, Phase 1 printed TIMEOUT_BIN=missing, or Phase 5 printed RULESETS=unavailable, RULESETS=unreadable or a FAILED= line:}
 ### Manual Steps Required
+- [ ] {each UNREAD_SETTINGS only} `{path}` is not read: Flow reads its settings at the repository top; move its keys into `{SETTINGS_FILE}` (a `.local` file's into `settings.flow.local.json` beside it)
+- [ ] {GITIGNORE=skipped only} Add `.claude/settings.flow.local.json`, `.claude/*.lock`, `<runtime dir>/watch/` and `<journal dir>/auto-log/` to the `.gitignore` at the repository top
 - [ ] {TIMEOUT_BIN=missing only} Install GNU coreutils (`brew install coreutils` on macOS) so the verdict judge and the goal judge can run
 - [ ] Add `export ENABLE_LSP_TOOL=1` to shell profile and restart Claude Code
 - [ ] Run `{install command}` to install {server}

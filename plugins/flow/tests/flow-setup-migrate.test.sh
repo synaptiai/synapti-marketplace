@@ -10,7 +10,7 @@ if [ ! -f "$SETUP_CMD" ]; then
 else
   CONTENT=$(cat "$SETUP_CMD")
   assert_contains "flow-migrate-settings.sh" "$CONTENT" "setup invokes the migrator"
-  assert_contains 'flow-migrate-settings.sh" --apply ".claude/settings.flow.json"' "$CONTENT" "apply path present (resolver inlined in the bash block, not a cross-block \$MIGRATOR)"
+  assert_contains 'flow-migrate-settings.sh" --apply' "$CONTENT" "apply path present (resolver inlined in the bash block, not a cross-block \$MIGRATOR; with no file named it upgrades the file the cascade reads)"
   assert_contains "AskUserQuestion" "$CONTENT" "rewrite is gated behind a confirmation prompt"
   assert_contains "requireGoalForStart" "$CONTENT" "documents the deprecated key being migrated"
   assert_contains "nothing breaks if declined" "$CONTENT" "frames it as optional hygiene (read-only migration still works)"

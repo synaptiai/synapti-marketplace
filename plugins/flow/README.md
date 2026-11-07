@@ -273,7 +273,7 @@ HOOKS (20 scripts; 18 registered in hooks/hooks.json, the other two run from flo
 BIN/ HELPER SCRIPTS (most print usage with --help)
   Settings and skills
   ├── cascade-resolve.sh    — reads one setting through the settings cascade (see Configuration)
-  ├── flow-migrate-settings.sh — upgrades a settings file that still uses a deprecated key (dry-run unless --apply)
+  ├── flow-migrate-settings.sh — upgrades a settings file that still uses a deprecated key (dry-run unless --apply); by default the project file at the repository top
   ├── flow-load-skills.sh   — inlines a command's Required Skills (ambient bodies, dispatched contracts)
   ├── flow-skill-manifests.sh — regenerates the tables in references/skill-manifests.md (--write)
   └── validate-skill-input.sh — validates skill inputs against the JSON Schemas under schemas/
@@ -537,7 +537,7 @@ Settings cascade in priority order; later layers override earlier ones:
 3. `.claude/settings.flow.json` — project settings (committed)
 4. `.claude/settings.flow.local.json` — local overrides (gitignored, highest priority)
 
-The project files (3 and 4) are read at the repository's top, wherever in the repository a command or hook runs.
+The project files (3 and 4) are read at the repository's top, wherever in the repository a command or hook runs, and `/flow:setup` writes the project file there.
 
 ### Per-user locations
 

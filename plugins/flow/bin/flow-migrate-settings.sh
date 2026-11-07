@@ -15,7 +15,10 @@
 # Usage:
 #   flow-migrate-settings.sh [--apply] [<settings-file>]
 #
-#   default file: .claude/settings.flow.json
+#   default file: the project settings file the settings cascade reads,
+#                 .claude/settings.flow.json at the repository top, from
+#                 whatever directory in the repository this runs
+#                 (cascade-resolve.sh --project-settings-path)
 #   without --apply: dry-run — prints `MIGRATE=...` lines describing pending
 #                    changes (or `MIGRATE=none`) and exits 0 without writing.
 #   with --apply:    rewrites the file atomically (tmpfile + validate + mv),
@@ -47,7 +50,7 @@ one_line() {
 }
 
 APPLY=0
-SETTINGS=".claude/settings.flow.json"
+SETTINGS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -57,6 +60,17 @@ while [ $# -gt 0 ]; do
     *) SETTINGS="$1"; shift ;;
   esac
 done
+
+# No file named: the one the cascade reads, at the repository top. A
+# .claude/settings.flow.json in a subdirectory is not read, so upgrading it
+# would change nothing.
+if [ -z "$SETTINGS" ]; then
+  SETTINGS=$("${BASH:-bash}" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cascade-resolve.sh" --project-settings-path 2>/dev/null) || SETTINGS=""
+  if [ -z "$SETTINGS" ]; then
+    echo "flow-migrate-settings.sh: cannot tell which settings file the cascade reads" >&2
+    exit 2
+  fi
+fi
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "flow-migrate-settings.sh: jq required but not installed" >&2
