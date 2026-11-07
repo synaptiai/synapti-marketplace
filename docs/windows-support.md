@@ -101,7 +101,7 @@ installs it.
 
 | Plugin | Ships | Strategy | Evidence |
 |---|---|---|---|
-| `flow` | 19 hook scripts, 2 `git`/`gh` wrappers, 53 `bin/` shell scripts, `` ```! `` blocks in 23 files | Git Bash required | `.github/workflows/windows-hooks.yml` runs `plugins/flow/tests/windows-hooks-smoke.sh` on `windows-latest` every time the hooks or `bin/` change. Known gap: several `bin/` helpers pass Git Bash paths (`/c/...`) to a native Windows `python3`, which cannot resolve them, so on Windows they do nothing and say nothing. Only the auto-log write and the dependency diff convert their paths today (issue #246). Known gap: a native Windows `python3` ends the lines it writes to a pipe in `\r\n`, and `$(...)` in Git Bash keeps the `\r`; the refusal readers of the symlink check drop it, but the goal evaluator reads its turn budget from a `python3` line as `N\r`, which is not a number, so under the evaluator loop every stop is allowed with "the goal turn budget could not be read" before the goal is evaluated |
+| `flow` | 20 hook scripts, 2 `git`/`gh` wrappers, 57 `bin/` shell scripts, `` ```! `` blocks in 23 files | Git Bash required | `.github/workflows/windows-hooks.yml` runs `plugins/flow/tests/windows-hooks-smoke.sh` on `windows-latest` every time the hooks or `bin/` change. Every `bin/` helper and hook that hands `python3` a path sources `bin/lib/py-path.sh`, which converts the Git Bash paths (`/c/...`) a native Windows `python3` cannot resolve, with `cygpath -m`, at that one boundary (issue #246); the smoke test calls each such helper and checks its work. Known gap: a native Windows `python3` ends the lines it writes to a pipe in `\r\n`, and `$(...)` in Git Bash keeps the `\r`; the refusal readers of the symlink check drop it, but the goal evaluator reads its turn budget from a `python3` line as `N\r`, which is not a number, so under the evaluator loop every stop is allowed with "the goal turn budget could not be read" before the goal is evaluated |
 | `dossier` | 5 hooks, 20 `bin/` scripts, `` ```! `` blocks in 9 files | Git Bash required | None yet: the Windows workflow runs flow's hooks only |
 | `thanos` | 1 `bin/` script, a `` ```! `` block in 1 file | Git Bash required | None yet: its tests run on Linux and macOS only, and the Windows workflow runs flow's hooks only |
 | `agent-capability-standard` | 2 hooks | Undeclared | Sourced from its own repository (`synaptiai/agent-capability-standard`), not from this tree, so the change belongs there |
@@ -144,7 +144,8 @@ should copy:
   or a colon.
 - **Degrades loudly.** Each hook checks for the tools it needs, such as `jq`
   and `python3`, and says what it cannot do without them. The `bin/` helpers
-  named in the table above do not yet meet this on Windows.
+  that run `python3` with a path hand it one it can open (`bin/lib/py-path.sh`),
+  so they do their work rather than failing an import silently.
 
 ## Adding a plugin
 

@@ -55,6 +55,23 @@
 
 ### Fixed
 
+- The `bin/` helpers that run `python3` with a path do their work on Windows
+  (#246). Git Bash hands a script POSIX paths (`/d/a/proj/...`), and a native
+  Windows `python3` reads them as another place, so a helper importing the
+  module beside it failed before doing anything, and a hook swallowed the
+  failure. `bin/lib/py-path.sh` is now the one conversion: `py_path` (which
+  replaces the three copies in `journal-append.sh`, `flow-mkdir.sh` and
+  `flow-dep-diff.sh`), and, under Git Bash, MSYS2 or Cygwin only, a `python3`
+  function that runs `cygpath -m` on each argument naming an existing path
+  (or a file about to be written in an existing directory) and on
+  `FLOW_PY_BIN`, `FLOW_DEP_BIN` and `FLOW_BIN_LIB`, then runs the real
+  interpreter. Text that only starts with a slash is left alone. Every
+  helper and hook that puts a directory on `sys.path`, and
+  `flow-eval-run.sh`, `flow-mine-corrections.sh` and `flow-quality-ledger.sh`,
+  source it; on Linux and macOS nothing changes. `tests/windows-hooks-smoke.sh`
+  calls each of those helpers against a scratch repository and checks the
+  file, id or record it should produce.
+
 - A dependency redirected away from its registry is reported the same way in
   every ecosystem `bin/flow-dep-diff.sh` reads (#248). A Gemfile gem built
   from a fork (`git:`, `github:`, `gitlab:`, `bitbucket:`, `path:`, in either

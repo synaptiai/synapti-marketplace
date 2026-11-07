@@ -122,6 +122,8 @@ set -uo pipefail
 # cd prints the directory it found through an exported CDPATH, which turns a
 # captured `cd X && pwd -P` into two lines and sends a relative path elsewhere.
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
 # imports sitecustomize from each element at startup. An isolated python3 (-I:
 # it reads neither PYTHONPATH nor the working directory) keeps only elements

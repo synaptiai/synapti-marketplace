@@ -69,6 +69,8 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
 # imports sitecustomize from each element at startup. An isolated python3 (-I:
 # it reads neither PYTHONPATH nor the working directory) keeps only elements
@@ -153,18 +155,7 @@ fi
 # import of the parser module beside this script fails before any work starts.
 # `cygpath -m` renders a path in the one form bash, git and a native Python all
 # resolve. On POSIX this is the identity and the conversion is unreachable.
-# Shape copied from bin/journal-append.sh; issue #246 consolidates the copies.
-py_path() {
-  case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*)
-      if command -v cygpath >/dev/null 2>&1; then
-        cygpath -m "$1" 2>/dev/null || printf '%s' "$1"
-      else
-        printf '%s' "$1"
-      fi ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
+# py_path comes from lib/py-path.sh, sourced above, the one copy (#246).
 
 PYTHONSAFEPATH=1 FLOW_DEP_BASE="$BASE" FLOW_DEP_HEAD="$HEAD_REF" FLOW_DEP_TREE="$DEP_TREE" \
   FLOW_DEP_BIN="$(py_path "$BIN_DIR")" python3 - <<'PYEOF'
