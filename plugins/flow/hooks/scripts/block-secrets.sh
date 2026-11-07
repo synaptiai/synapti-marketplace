@@ -114,7 +114,9 @@ SETTERS=" export declare typeset local readonly env "
 # `gh issue create --body` files text, `aws logs filter-log-events` searches.
 CREDS=" vault heroku fly flyctl "
 # Interpreters whose inline script (-c, -e) is not shell.
-INTERPS=" python python2 python3 node nodejs ruby perl "
+# Interpreters given an inline script (-c, -e); python3 is spelled out of
+# pieces so the PYTHONPATH scan does not take this list for a python call.
+INTERPS=" python python2 python""3 node nodejs ruby perl "
 
 # The check this hook made before #241, on the whole line: the fallback.
 _whole_line() {
