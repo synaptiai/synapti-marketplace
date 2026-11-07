@@ -126,6 +126,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     BT = sprintf("%c", 96)          # backtick
     verdict = 0; unmodelled = 0; any_token = 0; hd = ""; hd_safe = 1
     pushforce = 0; risky = 0; q_owner = ""; push_word = 0; unverified = 0
+    nosub = 0
     push_via_other = 0
     delete assign
     # Commands that cannot execute their arguments as a command. A force flag
@@ -154,7 +155,11 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
   # once the line holds a `$` or a backquote (the `)` inside `${x:-)}`, an
   # escaped or case-pattern `)` inside a `$( )`) or a `(` inside a word, so
   # after either (`nosub`) no `)` opens a comment and the rest of the line
-  # is read as code.
+  # is read as code. `nosub` is not reset at a line break: a `${`, `$(` or
+  # backquote opened on one line can still be open on the next (`${x:-`
+  # then `(a)#}` on the next line is one word to bash), and quotes nest
+  # inside a `$( )` in a way this scan does not follow, so once a line has
+  # held one no `)` on any later line opens a comment either.
   function is_comment_start(line, i, escat,   p, pp) {
     if (i == 1) return 1
     if (escat == i - 1) return 0
@@ -372,7 +377,8 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
 
     # `ps` holds one letter per `(` open on this line: s for one that opens a
     # word (a subshell, a `((`), w for one inside a word (`<(`, `@(`).
-    n = length(line); i = 1; escat = 0; ps = ""; subat = 0; nosub = 0
+    # `nosub` carries over from the lines before (is_comment_start).
+    n = length(line); i = 1; escat = 0; ps = ""; subat = 0
     while (i <= n) {
       c = substr(line, i, 1)
       # An escaped character is stepped over, so a `$` or a backquote reached

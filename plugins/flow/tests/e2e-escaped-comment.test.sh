@@ -30,6 +30,11 @@
 #      escaped `\)` inside a `$( )` that the force-push scanner's span
 #      skipper takes for the end of the substitution. When the count cannot
 #      be trusted the rest of the line must stay code.
+#   C9 the same across a line break: a `${`, a `$(` inside double quotes or
+#      a backquote opened on one line is still open on the next, where a
+#      `)#` is part of its word to bash, but a reader that forgets the open
+#      span at the line break reads the `#` as a comment and never checks
+#      the command after the span closes
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -105,6 +110,22 @@ _case esc-push-case-subst "$PUSH_HOOK" '( echo $(case y in y) true;; esac)#x ; g
 _case esc-push-param-paren "$PUSH_HOOK" '( echo ${x:-)#} ; git push --force origin main )' refused "a ) inside \${x:-)} (C8, C5)"
 _case esc-gate-param-paren "$GATE_HOOK" '( echo ${x:-)#} ; gh pr merge 5 )' asks "a merge after \${x:-)#} is asked about (C8, C5)"
 _case esc-merge-case-subst "$MERGE_HOOK" '( echo $(case y in y) true;; esac)#x ; gh pr merge 5 )' refused "an unchecked merge after a case pattern inside \$( ) is refused (C8, C5)"
+
+# --- a span opened on one line and still open on the next (C9) ---------------
+NL='
+'
+BQ='`'
+_case esc-rm-param-nl "$DELETE_HOOK" "( echo \${x:-${NL}(a)#} ; rm -rf ~ )" refused "a \${x:- still open on the next line keeps (a)#} one word (C9)"
+_case esc-rm-backquote-nl "$DELETE_HOOK" "( echo ${BQ}echo${NL}(a)#x${BQ} ; rm -rf ~ )" refused "a backquote still open on the next line (C9)"
+_case esc-rm-quoted-subst-nl "$DELETE_HOOK" "echo \"\$(echo \"${NL}(a)#x\" ; rm -rf ~ )\"" refused "a \$( inside double quotes, whose quotes nest, still open on the next line (C9)"
+_case esc-push-param-nl "$PUSH_HOOK" "( echo \${x:-${NL}(a)#} ; git push --force origin main )" refused "a \${x:- still open on the next line (C9, C5)"
+_case esc-push-backquote-nl "$PUSH_HOOK" "( echo ${BQ}echo${NL}(a)#x${BQ} ; git push --force origin main )" refused "a backquote still open on the next line (C9, C5)"
+_case esc-gate-param-nl "$GATE_HOOK" "( echo \${x:-${NL}(a)#} ; gh pr merge 5 )" asks "a merge after a \${x:- still open on the next line is asked about (C9, C5)"
+_case esc-gate-backquote-nl "$GATE_HOOK" "( echo ${BQ}echo${NL}(a)#x${BQ} ; gh pr merge 5 )" asks "a merge after a backquote still open on the next line is asked about (C9, C5)"
+_case esc-merge-param-nl "$MERGE_HOOK" "( echo \${x:-${NL}(a)#} ; gh pr merge 5 )" refused "an unchecked merge after a \${x:- still open on the next line is refused (C9, C5)"
+_case esc-merge-backquote-nl "$MERGE_HOOK" "( echo ${BQ}echo${NL}(a)#x${BQ} ; gh pr merge 5 )" refused "an unchecked merge after a backquote still open on the next line is refused (C9, C5)"
+_case esc-rm-subshell-close-nl "$DELETE_HOOK" "ls${NL}(ls)#x ; rm -rf ~" allowed "a # after a subshell on a line after one with no span is still a comment (C7, C9)"
+_case esc-push-subshell-close-nl "$PUSH_HOOK" "ls${NL}(ls)#x ; git push --force origin main" allowed "the same for the force-push check (C7, C9)"
 
 # --- gh issue create during an active goal (ask-issue-create.sh) ------------
 _issue_goal() { e2e_goal issue-304 feature/issue-304-e2e active true; }

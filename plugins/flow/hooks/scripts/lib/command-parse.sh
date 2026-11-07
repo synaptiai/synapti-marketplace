@@ -555,7 +555,7 @@ _bd_strip_noncode() {
       }
       return 1
     }
-    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = ""
+    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = ""; nos = 0
             shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$" }
     {
       line = $0
@@ -603,9 +603,13 @@ _bd_strip_noncode() {
       # the line holds a `$` or a backquote (the `)` inside `${x:-)}`, or a
       # case pattern inside a `$( )`, pops the wrong `(`), or a `(` inside a
       # word, so after either (`nos`) no `)` opens a comment and the rest of
-      # the line stays code. When in doubt the text is kept, which only ever
-      # makes a rule see more.
-      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0; ps = ""; sc = 0; nos = 0
+      # the line stays code. `nos` is not reset at a line break: a `${`, `$(`
+      # or backquote opened on one line can still be open on the next (`${x:-`
+      # then `(a)#}` is one word to bash), and quotes nest inside a `$( )` in
+      # a way this scan does not follow, so once a line has held one no `)`
+      # on a later line opens a comment either. When in doubt the text is
+      # kept, which only ever makes a rule see more.
+      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0; ps = ""; sc = 0
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
