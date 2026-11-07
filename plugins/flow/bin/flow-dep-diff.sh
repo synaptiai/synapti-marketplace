@@ -101,11 +101,36 @@
 #     call does not close on its line or carries a trailing modifier
 #     (`gem("x") if c`); a continued call, or a git/github/path block's
 #     continued opening call, runs past the end of the file or into another
-#     statement; a git/github/path block call does not start its statement
-#     (`x = 1; path("v") {`, `x = 1; git "u" do`); a line holds a character
-#     literal of a quote (`?"`), which can pair with the strings around it
-#     (a special global named by a quote, `$"`, `$'` or `` $` ``, is read as
-#     the variable it is, and hides nothing); an `end` closes no block it has seen, or closes a `{`
+#     statement; a git/github/path or gem call does not start its statement
+#     (`x = 1; path("v") {`, `x = 1; git "u" do`, glued to its string as
+#     `x = 1; path"v" do`, `x = 1; git"u" do` or `x = 1; gem"x"`, or called
+#     on self as `self.path("v") do`), or starts its line but is not read as
+#     the block call it is (`path ::File.join("v") do`); a line anywhere in
+#     the file holds code whose quote, `#` or brace the parser's quote and
+#     brace pairing could misread, so a gem call, source option or block
+#     call after it could be lost. The parser does not lex Ruby, so it
+#     refuses each of these wherever it appears outside a string, in a
+#     line's code or in an interpolation's:
+#       - a character literal: a `?` followed by anything but a space or the
+#         line's end (`?"`, `?$`, `?#`, `?}`), other than the `?` ending a
+#         method name before `( ) [ ] { } , . ; & | = !` (`key?(x)`); a
+#         ternary written without its space is refused with it
+#       - a regex literal or a division: any `/`, but a regex of plain
+#         characters (letters, digits, `_`, spaces, `^ $ . * + ? | -`, a `\`
+#         before a letter or digit) right after `=~`, `!~`, `when`, `(` or
+#         `,` (`if RUBY_PLATFORM =~ /darwin/`, `when /^3/`)
+#       - a %-literal (`%w %q %Q %i %I %W %r %s %x %(...)`) or a modulo:
+#         any `%`, but a `%w` or `%i` array of plain words (letters, digits,
+#         `_ . -`, spaces) closed on its line (`platforms: %i[ windows jruby ]`)
+#       - a special global: `$` followed by anything but a letter or `_`
+#         (`$" $' $` $~ $! $; $, $/ $\ $. $< $> $0 $* $$ $? $: $@ $& $+ $1`,
+#         `$-w`), `$_` alone, and `#$` before one of those in a
+#         double-quoted string or backtick command (`"#$""`)
+#       - a heredoc: `<<` followed by `~`, `-`, a quote, a letter or `_`
+#       - a `#` inside an interpolation's code, which comments out its `}`
+#       - a string, backtick command or interpolation still open at the end
+#         of its line;
+#     an `end` closes no block it has seen, or closes a `{`
 #     block; inside a `{` block, the only place a `}` is counted, a `}`
 #     closes no block it has seen or closes a `do` block, or a line holds a
 #     regex, a %-literal, a character literal, a heredoc, an interpolation

@@ -100,8 +100,9 @@
 #      redirect
 #   R30 a Gemfile Bundler reads, and this parser read before brace blocks
 #      were tracked, becomes unreadable: a git block whose options are a
-#      hash literal (`git "u", { branch: "x" } do`), or a lone { or } in a
-#      regex or character literal inside a do block or at the top level
+#      hash literal (`git "u", { branch: "x" } do`). (A lone { or } in a
+#      regex or character literal around do blocks was read here until R36
+#      made every such literal refused.)
 #   R31 an -e line continued with a trailing backslash, which pip joins with
 #      the next line before splitting it, is refused as an unclosed quote
 #      instead of read
@@ -110,8 +111,8 @@
 #      block it pairs over is hidden, its } closes the path block early, and
 #      the gems after it read as from the registry with STATE=ok; the same
 #      pairing hides a gem call written after one at the top level, as does
-#      a character literal of a quote (?"), and a # after one is kept as code
-#      instead of read as the comment it is
+#      a character literal of a quote (?"). (These globals were read as the
+#      variables they are until R36 made every special global refused.)
 #   R33 a git/github/path block opened after another statement on the same
 #      line (`x = 1; path("vendor/x") {`, `x = 1; git "u" do`) is not
 #      recognised, so its gems read as from the registry with STATE=ok; or,
@@ -129,6 +130,20 @@
 #      named e or able; or an -e after another option on its line, an
 #      abbreviated --edit, a second -e on one line (pip installs the first
 #      only) or a requirement continued onto a --hash line is misread
+#   R36 a Gemfile token whose quote, # or brace the parser's quote and brace
+#      pairing misreads hides a gem call, a source option or a block call
+#      after it, at the top level or in a do block, with STATE=ok: a
+#      character literal of any character (?$ before a string, ?# read as
+#      a comment), a regex (/"/), a %-literal (%w(")), a special global
+#      ($", $~, $0, $_, $-w), a string open at the end of its line, a
+#      heredoc, a # in an interpolation; or a git/path/gem call glued to its
+#      string (path"x", git"u", gem"x"), given a ::Constant argument
+#      (path ::File.join(...)) or called on self (self.path("x")) after
+#      another statement, or at the start of its line where it is not
+#      read as the block call it is; or, once these are refused, an
+#      ordinary Gemfile (rails new's %i[ ] platforms, a =~ /darwin/
+#      modifier, a when /^3/ branch, a key?(x) predicate, a # comment, a
+#      #{repo} interpolation) becomes unreadable
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -657,25 +672,25 @@ _dep dep-gem-brace-char-literal "a } and a { in character literals inside a path
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = ?}\n  gem "activesupport"\n  y = ?{\n}\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+MANIFEST_UNPARSED=Gemfile reason=line 3 holds a ? with no space after it (a character literal), which this does not read: it can hide a gem call or a source at head'
 
 _dep dep-gem-brace-regex "a } and a { in regexes inside a path { block make the file unreadable (R28)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = /}/\n  gem "activesupport"\n  y = /{/\n}\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+MANIFEST_UNPARSED=Gemfile reason=line 3 holds a / (a regex literal or a division), which this does not read: it can hide a gem call or a source at head'
 
 _dep dep-gem-brace-percent "a } and a { in %-literals inside a git { block make the file unreadable (R28)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\ngit("https://evil.example/r.git") {\n  x = %q(})\n  gem "activesupport"\n  y = %q({)\n}\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+MANIFEST_UNPARSED=Gemfile reason=line 3 holds a % (a %-literal or a modulo), which this does not read: it can hide a gem call or a source at head'
 
 _dep dep-gem-brace-heredoc "a heredoc whose body holds a } inside a path { block makes the file unreadable (R28)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = <<~E\n}\nE\n  gem "activesupport"\n  y = <<~E\n{\nE\n}\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+MANIFEST_UNPARSED=Gemfile reason=line 3 holds a heredoc, which this does not read: it can hide a gem call or a source at head'
 
 _dep dep-gem-brace-interpolation "a } and a { in string interpolations inside a path { block make the file unreadable (R28)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
@@ -687,7 +702,7 @@ _dep dep-gem-brace-gem-literal "a gem line inside a path { block whose %-literal
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\npath("vendor/x") {\n  gem "a", require: %q<\n}\n>\n  gem "activesupport"\n  gem "b", require: %q<\n{\n>\n}\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+MANIFEST_UNPARSED=Gemfile reason=line 3 holds a % (a %-literal or a modulo), which this does not read: it can hide a gem call or a source at head'
 
 # --- npm tarball names in any case (R29) ---------------------------------------
 _dep dep-npm-tarball-case "a tarball file name is a redirect in upper or mixed case, as npm-package-arg reads it (R29)" package.json \
@@ -702,15 +717,15 @@ DEP_REPLACED=evil -> evil-1.0.0.TGZ@(unpinned) manifest=package.json
 DEP_REPLACED=mixed -> foo.Tar@(unpinned) manifest=package.json'
 
 # --- Gemfiles Bundler reads that stay readable (R30) ---------------------------
-_dep dep-gem-do-block-literals "a git block with a hash of options, and lone braces in literals around do blocks, are read (R30)" Gemfile \
+_dep dep-gem-do-block-literals "a git block with a hash of options is read (R30)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
-$'gem "rails", "7.0.0"\nx = ?}\ngit "https://evil.example/r.git", { branch: "x" } do\n  gem "activesupport"\n  y = /\\{/\n  gem "actionpack"\nend\ngroup :test do\n  z = ?{\n  gem "rspec", "3.12.0"\nend\n' \
+$'gem "rails", "7.0.0"\ngit "https://evil.example/r.git", { branch: "x" } do\n  gem "activesupport"\n  gem "actionpack"\nend\ngroup :test do\n  gem "rspec", "3.12.0"\nend\n' \
 'STATE=ok
-DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:6
-DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:4
-DEP_ADDED=rspec@3.12.0 manifest=Gemfile:10
-DEP_REPLACED=actionpack -> https://evil.example/r.git@x manifest=Gemfile:6
-DEP_REPLACED=activesupport -> https://evil.example/r.git@x manifest=Gemfile:4'
+DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:4
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:3
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:7
+DEP_REPLACED=actionpack -> https://evil.example/r.git@x manifest=Gemfile:4
+DEP_REPLACED=activesupport -> https://evil.example/r.git@x manifest=Gemfile:3'
 
 # --- a continued editable line (R31) -------------------------------------------
 _dep dep-req-editable-continued "an -e line continued with a backslash is joined with the next line, as pip joins it (R31)" requirements.txt \
@@ -723,44 +738,35 @@ DEP_REPLACED=b -> git+https://evil.example/x.git#egg=b@(unpinned) manifest=requi
 DEP_REPLACED=y -> ../y#egg=y@(unpinned) manifest=requirements.txt:4'
 
 # --- Ruby special globals named by a quote (R32) -------------------------------
-_dep dep-gem-brace-special-global "a \$\" global inside a path { block does not hide the brace of the block it pairs over (R32)" Gemfile \
+_dep dep-gem-brace-special-global "a \$\" global inside a path { block makes the file unreadable rather than hide the brace it pairs over (R32, R36)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\npath("vendor/x") {\n  y = $"; [1].each { |q| $"\n  gem "activesupport"\n  }\n  gem "actionpack"\n}\n' \
-'STATE=ok
-DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:6
-DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:4
-DEP_REPLACED=actionpack -> vendor/x@(unpinned) manifest=Gemfile:6
-DEP_REPLACED=activesupport -> vendor/x@(unpinned) manifest=Gemfile:4'
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3 holds a special global ($ and a punctuation mark or digit, or $_ alone), which this does not read: it can hide a gem call or a source at head'
 
-_dep dep-gem-brace-special-globals "\$' and \$\` globals inside a path { block hide no brace, and a # after \$\" is a comment (R32)" Gemfile \
+_dep dep-gem-brace-special-globals "\$' and \$\` globals inside a path { block make the file unreadable (R32, R36)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
-$'gem "rails", "7.0.0"\npath("vendor/x") {\n  a = $\'; [1].each { |q| $\'\n  gem "activesupport"\n  }\n  b = $`; [2].each { |q| $`\n  gem "actionpack"\n  }\n  c = $" # }\n  gem "railties"\n}\ngem "rspec", "3.12.0"\n' \
-'STATE=ok
-DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:7
-DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:4
-DEP_ADDED=railties@(unpinned) manifest=Gemfile:10
-DEP_ADDED=rspec@3.12.0 manifest=Gemfile:12
-DEP_REPLACED=actionpack -> vendor/x@(unpinned) manifest=Gemfile:7
-DEP_REPLACED=activesupport -> vendor/x@(unpinned) manifest=Gemfile:4
-DEP_REPLACED=railties -> vendor/x@(unpinned) manifest=Gemfile:10'
+$'gem "rails", "7.0.0"\npath("vendor/x") {\n  a = $\'; [1].each { |q| $\'\n  gem "activesupport"\n  }\n  b = $`; [2].each { |q| $`\n  gem "actionpack"\n  }\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=line 3 holds a special global ($ and a punctuation mark or digit, or $_ alone), which this does not read: it can hide a gem call or a source at head'
 
 _dep dep-gem-brace-interpolated-global "a string interpolating \$\" (#\$\") inside a path { block makes the file unreadable (R32)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\npath("vendor/x") {\n  x = "#$""; [1].each { |q| "#$""\n  gem "activesupport"\n  }\n  gem "actionpack"\n}\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=line 3, inside the { block on line 2, holds a regex, %-literal, character literal, heredoc, interpolation or unclosed string, whose braces this cannot count at head'
+MANIFEST_UNPARSED=Gemfile reason=line 3 holds a string interpolating a special global (#$ and a punctuation mark or digit), which this does not read: it can hide a gem call or a source at head'
 
 _dep dep-gem-global-hides-gem "a gem call after a \$\" global on its line is seen, so the file is unreadable rather than missing it (R32)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\nx = $"; gem "evil", git: "https://evil.example/e.git"; y = $"\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 is not at the start of its statement at head'
+MANIFEST_UNPARSED=Gemfile reason=line 2 holds a special global ($ and a punctuation mark or digit, or $_ alone), which this does not read: it can hide a gem call or a source at head'
 
 _dep dep-gem-char-literal-quote "a character literal of a quote (?\") makes the file unreadable: it hides the gem call after it (R32)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\nx = ?"; gem "evil", git: "https://evil.example/e.git"; y = ?"\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=line 2 holds a character literal of a quote, which this cannot pair with the strings around it at head'
+MANIFEST_UNPARSED=Gemfile reason=line 2 holds a ? with no space after it (a character literal), which this does not read: it can hide a gem call or a source at head'
 
 # --- a block opened after another statement (R33) ------------------------------
 _dep dep-gem-block-after-statement-brace "a path { block opened after another statement on its line makes the file unreadable (R33)" Gemfile \
@@ -823,3 +829,102 @@ DEP_REPLACED=k -> git+https://evil.example/x.git#egg=k@(unpinned) manifest=requi
 DEP_REPLACED=l -> git+https://evil.example/x.git#egg=l@(unpinned) manifest=requirements.txt:4
 DEP_REPLACED=m -> git+https://evil.example/y.git#egg=m@(unpinned) manifest=requirements.txt:8
 DEP_REPLACED=z -> ../z#egg=z@(unpinned) manifest=requirements.txt:12'
+
+# --- Gemfile code the quote and brace pairing cannot read (R36) ----------------
+# Each Gemfile below hides a gem call, a source option or a block call from a
+# parser that pairs quotes and braces without lexing Ruby; Bundler loads the
+# gem from the git URL or the path in every one. Each must be refused.
+_gem_refused() {
+  _dep "$1" "$2" Gemfile $'gem "rails", "7.0.0"\n' "$3" "STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=$4 at head"
+}
+_holds() { printf 'line %s holds %s, which this does not read: it can hide a gem call or a source' "$1" "$2"; }
+
+_gem_refused dep-gem-refused-char-dollar "a character literal ?\$ before a string makes the file unreadable: the scanner pairs \$\" over the gem call (R36)" \
+$'gem "rails", "7.0.0"\nx = ?$"a"; gem "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a ? with no space after it (a character literal)')"
+
+_gem_refused dep-gem-refused-char-hash "a character literal ?# makes the file unreadable rather than read as a comment hiding the gem call (R36)" \
+$'gem "rails", "7.0.0"\nx = ?#; gem "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a ? with no space after it (a character literal)')"
+
+_gem_refused dep-gem-refused-regex "a regex holding a quote makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = /"/; gem "evil", git: "https://evil.example/e.git"; y = /"/\n' \
+"$(_holds 2 'a / (a regex literal or a division)')"
+
+_gem_refused dep-gem-refused-regex-block "a regex before a path { block on its line makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = /"/; path("vendor/x") {\n  gem "evil"\n}\n' \
+"$(_holds 2 'a / (a regex literal or a division)')"
+
+_gem_refused dep-gem-refused-percent "a %-literal holding a quote makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = %w(");gem "evil", git: "https://evil.example/e.git"; y = %w(")\n' \
+"$(_holds 2 'a % (a %-literal or a modulo)')"
+
+_gem_refused dep-gem-refused-string-lines "a string that runs past the end of its line makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = "\n"; gem "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a string or interpolation that runs past the end of its line')"
+
+_gem_refused dep-gem-refused-string-lines-block "a string that runs over the line opening a git block makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = "\n"; git "https://evil.example/e.git" do\n  gem "evil"\nend\n' \
+"$(_holds 2 'a string or interpolation that runs past the end of its line')"
+
+_gem_refused dep-gem-refused-heredoc "a heredoc makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = <<~E\n  "\nE\ngem "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a heredoc')"
+
+_gem_refused dep-gem-refused-global "a special global named by punctuation makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = $~; gem "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a special global ($ and a punctuation mark or digit, or $_ alone)')"
+
+_gem_refused dep-gem-refused-global-underscore "\$_ alone is a special global and makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nputs $_\n' \
+"$(_holds 2 'a special global ($ and a punctuation mark or digit, or $_ alone)')"
+
+_gem_refused dep-gem-refused-interpolation-comment "a # inside an interpolation, which comments out its }, makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = "#{1 # }"\n"; gem "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a # inside an interpolation')"
+
+_gem_refused dep-gem-refused-glued-path "a path call glued to its string after another statement makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = 1; path"vendor/x" do\n  gem "evil"\nend\n' \
+'the path call on line 2 is not at the start of its statement'
+
+_gem_refused dep-gem-refused-glued-git "a git call glued to its string after another statement makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = 1; git"https://evil.example/e.git" do\n  gem "evil"\nend\n' \
+'the git call on line 2 is not at the start of its statement'
+
+_gem_refused dep-gem-refused-glued-gem "a gem call glued to its string after another statement makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nx = 1; gem"evil", git: "https://evil.example/e.git"\n' \
+'the gem call on line 2 is not at the start of its statement'
+
+_gem_refused dep-gem-refused-path-constant "a path call whose argument starts with :: makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\npath ::File.join("vendor", "x") do\n  gem "evil"\nend\n' \
+'the path call on line 2 does not name its target as a string this reads'
+
+_gem_refused dep-gem-refused-self-path "a path call on self makes the file unreadable (R36)" \
+$'gem "rails", "7.0.0"\nself.path("vendor/x") do\n  gem "evil"\nend\n' \
+'the path call on line 2 is not at the start of its statement'
+
+_dep dep-gem-glued-at-start "a git, path or gem call glued to its string at the start of its line is read as the call it is (R36)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath"vendor/x" do\n  gem "a"\nend\ngit\'https://evil.example/e.git\' do\n  gem "b"\nend\ngem"c", git: "https://evil.example/c.git"\n' \
+'STATE=ok
+DEP_ADDED=a@(unpinned) manifest=Gemfile:3
+DEP_ADDED=b@(unpinned) manifest=Gemfile:6
+DEP_ADDED=c@(unpinned) manifest=Gemfile:8
+DEP_REPLACED=a -> vendor/x@(unpinned) manifest=Gemfile:3
+DEP_REPLACED=b -> https://evil.example/e.git@(unpinned) manifest=Gemfile:6
+DEP_REPLACED=c -> https://evil.example/c.git@(unpinned) manifest=Gemfile:8'
+
+_dep dep-gem-ordinary-stays-read "an ordinary Rails-style Gemfile stays readable: comments, an interpolating git_source, ruby, %i[] platforms, a =~ /darwin/ modifier, predicates, platforms, group and source blocks, gemspec (R36)" Gemfile \
+$'source "https://rubygems.org"\ngem "rails", "~> 7.1.0"\n' \
+$'source "https://rubygems.org"\ngit_source(:github) { |repo| "https://github.com/#{repo}.git" }\n\nruby "3.2.2"\n\n# Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"\ngem "rails", "~> 7.1.3", ">= 7.1.3.2"\ngem "puma", ">= 5.0" # the web server\ngem "tzinfo-data", platforms: %i[ windows jruby ]\ngem "bootsnap", require: false\ngem "rb-fsevent", require: false if RUBY_PLATFORM =~ /darwin|mac os/i\ngem "wdm", ">= 0.1.0" if Gem.win_platform?\n\nplatforms :mri, :windows do\n  gem "debug"\nend\n\ngroup :development, :test do\n  gem "rspec-rails", "~> 6.1"\nend\n\nsource "https://gems.example.com" do\n  gem "internal-kit", "1.2.0"\nend\n\ngemspec\neval_gemfile "Gemfile.local" if File.exist?("Gemfile.local") && $stdout.tty?\n' \
+'STATE=ok
+DEP_ADDED=bootsnap@(unpinned) manifest=Gemfile:10
+DEP_ADDED=debug@(unpinned) manifest=Gemfile:15
+DEP_ADDED=internal-kit@1.2.0 manifest=Gemfile:23
+DEP_ADDED=puma@">= 5.0" manifest=Gemfile:8
+DEP_ADDED=rb-fsevent@(unpinned) manifest=Gemfile:11
+DEP_ADDED=rspec-rails@"~> 6.1" manifest=Gemfile:19
+DEP_ADDED=tzinfo-data@(unpinned) manifest=Gemfile:9
+DEP_ADDED=wdm@">= 0.1.0" manifest=Gemfile:12
+DEP_CHANGED=rails "~> 7.1.0"->"~> 7.1.3" manifest=Gemfile:7'

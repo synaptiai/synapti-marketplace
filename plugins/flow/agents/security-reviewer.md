@@ -226,8 +226,13 @@ gemspec gem, is not reported). A Gemfile target is always one written as a
 literal: a gem name, source or `git` block target in double quotes that
 interpolates (`#{...}`, `#@ivar`, `#@@cvar`, `#$gvar`) is decided only when
 the Gemfile runs, so the Gemfile is reported `MANIFEST_UNPARSED=` instead, as
-it is for a gem argument passed through a variable or a `**` splat and for a
-second statement after a `;` on a gem line. A registry change is not a
+it is for a gem argument passed through a variable or a `**` splat, for a
+second statement after a `;` on a gem line, and for a Gemfile holding code
+the parser does not lex anywhere in it (a character literal, a regex or
+%-literal other than the plain forms `bin/flow-dep-diff.sh` lists, a special
+global such as `$"`, a heredoc, a string that runs past its line, or a
+`path`/`git`/`gem` call glued to its string after another statement): read
+such a Gemfile in the diff yourself. A registry change is not a
 `DEP_REPLACED=`: a `requirements*.txt` `--index-url` or `--extra-index-url`
 line, a Gemfile `source:` option or `source` block, and a `Gemfile.lock` GEM
 remote are not reported, so read those lines in the diff yourself. The

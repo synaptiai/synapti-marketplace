@@ -1049,44 +1049,103 @@ _DOC_BEGIN = re.compile(r"^=begin(?:\s|$)")
 _DOC_END = re.compile(r"^=end(?:\s|$)")
 
 
-# A `gem` call anywhere in a line's code: not `gemspec`, `gem_group`,
+# What a call is made on when it is still a Gemfile DSL call: nothing
+# (`gem "x"`), or `self` (`self.gem "x"`, `self&.path("v")`, `self::git "u"`).
+_DSL_RECEIVER = r"(?:(?<![A-Za-z0-9_.:@$])|(?<=\bself\.)|(?<=\bself&\.)|(?<=\bself::))"
+# A `gem` call anywhere in a line's code, its argument after a space, in
+# parentheses or glued to its string (`gem"x"`): not `gemspec`, `gem_group`,
 # `Gem::Version`, `.gem` or `:gem`. Read on the line with its strings blanked.
-_GEM_CALL_ANYWHERE = re.compile(r"(?<![A-Za-z0-9_.:@$])gem(?=[ \t(])")
+_GEM_CALL_ANYWHERE = re.compile(_DSL_RECEIVER + r"gem(?=[ \t(\"'`])")
 # A git/github/path block call anywhere in a line's code: the keyword called
-# with an argument, in parentheses or after a space (`x = 1; path("v") {`,
-# `x = 1; git "u" do`). Not a label (`path:`), a symbol (`:path`), a method
-# on a receiver (`File.path`, `path.each`), an assignment (`path = ...`), or
-# a local variable named path or git read as a value (`eval_gemfile path`,
+# with an argument, in parentheses, glued to its string, or after a space
+# (`x = 1; path("v") {`, `x = 1; path"v" do`, `x = 1; git "u" do`,
+# `path ::File.join("v") do`, `self.path("v") do`). Not a label (`path:`), a
+# symbol (`:path`), a method on another receiver (`File.path`, `path.each`),
+# a constant under it (`path::X`), an assignment (`path = ...`), or a local
+# variable named path or git read as a value (`eval_gemfile path`,
 # `File.exist?(path)`, `path if c`, `puts git, path`). Read on the line with
 # its strings blanked.
 _BLOCK_CALL_ANYWHERE = re.compile(
-    r"(?<![A-Za-z0-9_.:@$])(git|github|gitlab|bitbucket|gist|path)(?![A-Za-z0-9_?!:])"
-    r"(?=\s*\(|[ \t]+(?!(?:and|or|if|unless|while|until|then|rescue|do|end)(?![A-Za-z0-9_]))"
+    _DSL_RECEIVER + r"(git|github|gitlab|bitbucket|gist|path)(?![A-Za-z0-9_?!:])"
+    r"(?=\s*\(|[ \t]*[\"'`]|[ \t]+::"
+    r"|[ \t]+(?!(?:and|or|if|unless|while|until|then|rescue|do|end)(?![A-Za-z0-9_]))"
     r"(?:[A-Za-z0-9_\"'`@$%\[]|:[A-Za-z_\"']))"
 )
 _RUBY_STRING = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`')
 
 
-# The punctuation that names one of Ruby's special globals after a `$`
-# (`$"`, `$'`, `` $` ``, `$;`, `$\`, `$/`, `$?`, `$~`, `$!`, ...): Ruby's
-# own list. The token is the `$` and that one character, so a quote in it
-# opens no string, a `\` in it continues no line and a `;` in it ends no
-# statement.
-_GLOBAL_PUNCT = "~*$?!@/\\;,.=:<>\"&`'+0"
-_IDENT = re.compile(r"[A-Za-z0-9_]")
+# The Gemfile code this parser refuses wherever it appears, rather than
+# reading it. Ruby is not lexed here: strings are paired by their quotes and
+# braces counted, and each of these is a token whose quote, `#`, `{` or `}`
+# that pairing would misread, so a gem call, a source option or a block call
+# after it could be hidden with the file still read. Each is found outside
+# strings, in the code of a line or of an interpolation:
+#   a `?` followed by anything but a space or the end of the line, other
+#     than one ending a method name (`key?(x)`, `x.nil?)`): a character
+#     literal (`?"`, `?$`, `?#`, `?}`), or a ternary written without its
+#     space, which this does not tell apart;
+#   a `/`: a regex literal, or a division, which this does not tell apart.
+#     The one exception is a regex of plain characters where Ruby can only
+#     read a regex, after `=~`, `!~`, `when`, `(` or `,`
+#     (`if RUBY_PLATFORM =~ /darwin|linux/`, `when /^3/`): its body holds
+#     only letters, digits, `_`, spaces and `^ $ . * + ? | -`, or a `\`
+#     before a letter or digit, so no `/`, quote, `#` or brace;
+#   a `%`: a %-literal (`%w()`, `%q()`, `%Q()`, `%i()`, `%r{}`, `%s()`,
+#     `%x()`, `%()`), or a modulo or a format, which this does not tell
+#     apart. The one exception is a word or symbol array of plain words
+#     closed on its line (`platforms: %i[ mingw mswin x64_mingw jruby ]`,
+#     what `rails new` writes): its body holds only letters, digits, `_`,
+#     `.`, `-` and spaces, so no quote, `#` or brace that could pair wrongly;
+#   a special global: a `$` followed by anything but a letter or `_`, or
+#     `$_` alone (`$"`, `$'`, `` $` ``, `$~`, `$!`, `$;`, `$,`, `$/`, `$\`,
+#     `$.`, `$<`, `$>`, `$_`, `$0`, `$*`, `$$`, `$?`, `$:`, `$@`, `$&`,
+#     `$+`, `$1`, `$-w`), and the same after `#` in a double-quoted string or
+#     a backtick command (`"#$""`), which interpolates it;
+#   a `<<` followed by `~`, `-`, a quote, a letter or `_`: a heredoc (`<<~X`,
+#     `<<-X`, `<<X`, `<<"X"`), whose body runs over the lines after it;
+#   a `#` inside an interpolation's code, which comments out its `}`;
+#   a string, backtick command or interpolation still open at the end of its
+#     line.
+_SAFE_AFTER_PREDICATE = frozenset("()[]{},.;&|=!")
+_IDENT_CHAR = re.compile(r"[A-Za-z0-9_]")
+# A global named by a word (`$stdout`, `$LOAD_PATH`, `$_x`), not `$_` alone.
+_GVAR_NAME = re.compile(r"[A-Za-z]|_[A-Za-z0-9_]")
+_HEREDOC = re.compile(r"<<[~\-A-Za-z_\"'`]")
+_WORD_ARRAY = re.compile(r"%[wi]([\[(<{])[A-Za-z0-9_ \t.-]*([\])>}])")
+_CLOSES = {"[": "]", "(": ")", "<": ">", "{": "}"}
+_PLAIN_REGEX = re.compile(r"/(?:[A-Za-z0-9_ \t^$.*+?|-]|\\[A-Za-z0-9])*/[imxo]*")
+_REGEX_POSITION = re.compile(r"(?:[=!]~|(?<![A-Za-z0-9_.:@$])when|[(,])[ \t]*$")
+
+
+def _refused_code(raw, i):
+    """What the code character at `raw[i]` starts that this refuses (see the
+    list above), or None."""
+    c = raw[i]
+    nxt = raw[i + 1:i + 2]
+    if c == "?":
+        if not nxt or nxt.isspace():
+            return None
+        if i and _IDENT_CHAR.match(raw[i - 1]) and nxt in _SAFE_AFTER_PREDICATE:
+            return None
+        return "a ? with no space after it (a character literal)"
+    if c == "/":
+        return "a / (a regex literal or a division)"
+    if c == "%":
+        return "a % (a %-literal or a modulo)"
+    if c == "$" and not _GVAR_NAME.match(raw, i + 1):
+        return "a special global ($ and a punctuation mark or digit, or $_ alone)"
+    if c == "<" and _HEREDOC.match(raw, i):
+        return "a heredoc"
+    return None
 
 
 def _ruby_scan(raw):
-    """(code, quote_char_at) for a Gemfile line: the line without its
-    comment, with every special global named by punctuation written `$_`,
-    in code and where a double-quoted string or backtick command
-    interpolates one (`"#$""`), and the position of a character literal of
-    a quote (`?"`, `?'`, `` ?` ``, `?\\"`) outside a string, or None. A `#`
+    """(code, refused) for a Gemfile line: the line without its comment,
+    and what it holds that this refuses (see _refused_code), or None. A `#`
     inside a quoted string or a backtick command (a URL fragment, a `#{...}`
     interpolation) is not a comment, so the rest of the line is kept."""
     stack = []  # open quotes, and `{` for the code of an interpolation
     out = []
-    quote_char_at = None
     i, n = 0, len(raw)
     while i < n:
         c = raw[i]
@@ -1103,22 +1162,29 @@ def _ruby_scan(raw):
                 out.append("#{")
                 i += 2
                 continue
-            elif top != "'" and raw.startswith("#$", i) and i + 2 < n and raw[i + 2] in _GLOBAL_PUNCT:
-                out.append("#$_")
-                i += 3
-                continue
-        elif c == "#" and not stack:
-            return "".join(out).rstrip(), quote_char_at
-        elif c == "$" and i + 1 < n and raw[i + 1] in _GLOBAL_PUNCT:
-            out.append("$_")
-            i += 2
+            elif top != "'" and raw.startswith("#$", i) and not _GVAR_NAME.match(raw, i + 2):
+                return "".join(out).rstrip(), "a string interpolating a special global (#$ and a punctuation mark or digit)"
+            out.append(c)
+            i += 1
             continue
-        elif (c == "?" and quote_char_at is None
-              and not (i and _IDENT.match(raw[i - 1]))
-              and (raw[i + 1:i + 2] in ('"', "'", "`")
-                   or (raw[i + 1:i + 2] == "\\" and raw[i + 2:i + 3] in ('"', "'", "`")))):
-            quote_char_at = i
-        elif c in "\"'`":
+        if c == "#":
+            if not stack:
+                return "".join(out).rstrip(), None
+            return "".join(out).rstrip(), "a # inside an interpolation"
+        wm = _WORD_ARRAY.match(raw, i) if c == "%" else None
+        if wm and _CLOSES[wm.group(1)] == wm.group(2):
+            out.append(wm.group(0))
+            i = wm.end()
+            continue
+        rm = _PLAIN_REGEX.match(raw, i) if c == "/" else None
+        if rm and _REGEX_POSITION.search(raw, 0, i):
+            out.append(rm.group(0))
+            i = rm.end()
+            continue
+        refused = _refused_code(raw, i)
+        if refused:
+            return "".join(out).rstrip(), refused
+        if c in "\"'`":
             stack.append(c)
         elif top == "{" and c in "{}":
             if c == "{":
@@ -1127,7 +1193,9 @@ def _ruby_scan(raw):
                 stack.pop()
         out.append(c)
         i += 1
-    return "".join(out).rstrip(), quote_char_at
+    if stack:
+        return "".join(out).rstrip(), "a string or interpolation that runs past the end of its line"
+    return "".join(out).rstrip(), None
 
 
 def _ruby_code(raw):
@@ -1156,10 +1224,11 @@ def _literal(quote, value):
 def _ruby_lines(text):
     """The Gemfile's lines as code (see _ruby_scan), with each line of a
     `=begin` ... `=end` block comment blank, so it is read as the comment it
-    is. A character literal of a quote (`?"`) makes the file unreadable:
-    whether a `?` starts one or is a ternary depends on what precedes it,
-    and read the wrong way its quote pairs with the strings around it and
-    can hide a gem call or a brace."""
+    is. A line holding code this refuses (see _refused_code: a character
+    literal, a regex, a %-literal, a special global, a heredoc, a `#` in an
+    interpolation, a string open at the end of its line) makes the file
+    unreadable: read the wrong way, its quote, `#` or brace pairs with the
+    code around it and can hide a gem call, a source option or a block."""
     lines = text.splitlines()
     begun = None
     for index, raw in enumerate(lines):
@@ -1171,11 +1240,11 @@ def _ruby_lines(text):
             begun = index + 1
             lines[index] = ""
         else:
-            lines[index], quote_char_at = _ruby_scan(raw)
-            if quote_char_at is not None:
+            lines[index], refused = _ruby_scan(raw)
+            if refused:
                 raise ParseError(
-                    "line %d holds a character literal of a quote, which "
-                    "this cannot pair with the strings around it" % (index + 1))
+                    "line %d holds %s, which this does not read: it can "
+                    "hide a gem call or a source" % (index + 1, refused))
     if begun is not None:
         raise ParseError("the =begin on line %d has no =end" % begun)
     return lines
@@ -1385,9 +1454,7 @@ def _close_block(blocks, closer, lineno):
 def _brace_frame(blocks):
     """The innermost `{` frame open, or None. Braces are counted only while
     there is one: a `}` can close only a `{`, so where no `{` frame is open
-    a brace changes nothing this tracks, and a lone `{` or `}` in a regex
-    or a character literal (`x = /\\{/`, `?}`) around a `do` block is not
-    read as one."""
+    a brace changes nothing this tracks."""
     return next((b for b in reversed(blocks) if b[0] == "{"), None)
 
 
@@ -1445,9 +1512,16 @@ def parse_gemfile(text):
     which can carry a source option; a `gem(` call that does not close on
     its line; a call without parentheses, or a git/github/path block's
     opening call, whose continuation runs past the end of the file or into
-    another statement; a git/github/path block call that does not start
-    its statement (`x = 1; path("v") {`, `x = 1; git "u" do`); a character
-    literal of a quote (`?"`), which can pair with the strings around it;
+    another statement; a git/github/path or gem call that does not start
+    its statement (`x = 1; path("v") {`, `x = 1; git "u" do`,
+    `x = 1; path"v" do`, `self.path("v") do`), or that starts its line but
+    is not read as the call it is (`path ::File.join("v") do`); anywhere in
+    the file, code this refuses rather than lexes (see _refused_code: a
+    character literal of any character, a regex other than a plain one
+    after `=~`, `!~`, `when`, `(` or `,`, a %-literal other than a `%w`/`%i`
+    array of plain words, a special global, a heredoc, a `#` inside an
+    interpolation, a string open at the end of its line), whose quote, `#`
+    or brace the quote and brace pairing here would misread;
     a source option or block target whose value is not
     a literal; a `git_source` whose name is not a literal; an `end` that
     closes no block this has seen, or closes a `{` block; inside a `{`
@@ -1462,9 +1536,7 @@ def parse_gemfile(text):
     together with the lines that continue it, so options written one per
     line are read like options written on one. Any statement continued with
     a backslash onto a modifier (`if`, `unless`, ...) ends there, so the
-    modifier opens no block. A special global named by punctuation (`$"`,
-    `$'`, `` $` ``, `$;`, `$\\`, ...) is read as the one token it is, so its
-    quote opens no string and hides no brace or gem call. A `#` starts a
+    modifier opens no block. A `#` starts a
     comment only outside a string or
     a backtick command, a double-quoted value that interpolates (`"#{x}"`,
     `"#@ivar"`, `"#@@cvar"`, `"#$gvar"`) is not a literal while a
@@ -1490,9 +1562,7 @@ def parse_gemfile(text):
     every `{` a later line's `}` closes (a hash literal, an `.each { |g|`
     block) inside a `{` block, is tracked too, so its closer does not close
     the git block around it. Braces are counted only inside a `{` block,
-    since only there can a `}` close anything tracked: around `do` blocks
-    alone a lone `{` or `}` in a regex or a character literal is not read
-    as one.
+    since only there can a `}` close anything tracked.
     """
     r = ParseResult()
     blocks = []
@@ -1510,13 +1580,21 @@ def parse_gemfile(text):
         kind = "gem call" if m and not m.group(1) else ("%s block" % bk.group(1) if bk else None)
         line, index = _statement(lines, index, line, lineno, kind)
         # A git/github/path block opened after another statement on its line
-        # (`x = 1; path("v") {`) or inside an expression is one this would
+        # (`x = 1; path("v") {`, `x = 1; path"v" do`), on `self`
+        # (`self.path("v") do`) or inside an expression is one this would
         # read as an anonymous block or not at all, losing the redirect of
         # every gem in it: the file is unreadable instead.
+        # One at the start of its line that is still not read as a block
+        # call (`path ::File.join("v") do`) is refused the same way.
         for cm in _BLOCK_CALL_ANYWHERE.finditer(_blank_strings(line)):
-            if not (bk and cm.start() == bk.start(1)):
+            if bk and cm.start() == bk.start(1):
+                continue
+            if cm.start() == len(line) - len(line.lstrip()):
                 raise ParseError(
-                    "the %s call on line %d is not at the start of its statement" % (cm.group(1), lineno))
+                    "the %s call on line %d does not name its target as a "
+                    "string this reads" % (cm.group(1), lineno))
+            raise ParseError(
+                "the %s call on line %d is not at the start of its statement" % (cm.group(1), lineno))
         # Inside a `{` block, a `}` closes it, so a `}` or `{` this cannot
         # be sure is a brace (one in a regex, a %-literal, a character
         # literal, a heredoc's body or an interpolation) could end the block
