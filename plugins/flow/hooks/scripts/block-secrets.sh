@@ -31,19 +31,35 @@
 #   - any secret-shaped word, or a literal auth header, given to a command
 #     that sends data or sets another process's environment (curl, wget,
 #     httpie, nc, ssh, mysql, psql, docker, kubectl and the others in
-#     SENDERS below), or that stores or sends a credential (gh api, gh
-#     secret, gh variable, vault, heroku, fly, flyctl, aws, gcloud, az, and
-#     npm, yarn or pnpm `config set`), in its arguments, in a here-string
-#     (`<<<`) it reads, or in the words of the commands piped into it
-#     (`echo ... | curl -d @-`);
+#     SENDERS below), or that stores or sends a credential (gh secret, gh
+#     variable, vault, heroku, fly, flyctl, npm, yarn or pnpm `config set`,
+#     and only their secret-storing subcommands for aws (secretsmanager
+#     create-secret, put-secret-value, update-secret; ssm put-parameter;
+#     configure set), gcloud (secrets) and az (keyvault secret set)), in its
+#     arguments, in a here-string (`<<<`) it reads, or in the words of the
+#     commands piped into it (`echo ... | curl -d @-`). The subcommand is
+#     found past the global options in front of it (`gh -R o/r secret set`,
+#     `npm --location project config set`);
+#   - for gh api, a field (`-f`, `-F`, `--field`, `--raw-field` name=value)
+#     whose name is secret-shaped or one a secrets endpoint takes
+#     (encrypted_value, key_id) with a literal value of 8 or more characters;
+#     a field named anything else (`-f body="... token=..."`) is text;
 #   - a word that is a URL (or an assignment or option holding one) with a
 #     secret-shaped query parameter (`?token=abcdefghij`) or a literal
-#     password in its userinfo (`https://user:abcdefghij@host`), whatever
-#     the command;
-#   - a script given inline to python, node, ruby or perl (`-c`, `-e`,
-#     `--eval`) whose text holds a secret-shaped assignment or a literal
+#     password in its userinfo (`https://user:abcdefghij@host`), given to
+#     one of the commands above that sends or sets, to git clone, fetch,
+#     pull, push, remote add or set-url, or submodule add, or to a program
+#     a wrapper runs that this hook does not name (`sudo git push`), or
+#     assigned in command position; `echo URL >> README.md` is text;
+#   - a script given inline to python (`-c`), perl (`-e`, `-E`, also in a
+#     bundle such as `-ne` or `-pie`), ruby (`-e`) or node (`-e`, `-p`,
+#     `--eval`, `--print`) whose text holds a secret-shaped assignment
+#     (also with a quoted key, `os.environ['API_TOKEN']='...'`) or a literal
 #     auth header: a script is not shell, so its words cannot be read as
-#     arguments, and the whole simple command is checked as before #241.
+#     arguments, and its whole text is checked, as before #241. Only the
+#     interpreter's own options before the script file are read
+#     (_inline_scripts): `python3 -Wignore x.py "token=..."` and
+#     `python3 x.py -e prod` pass their words to the script.
 # Allowed: the same text as an argument of any other command: echo, printf,
 # grep, git commit -m, gh issue create --body, and so on. That is the policy
 # #241 asked to settle: text that names a secret-shaped assignment is not a
@@ -73,6 +89,13 @@ COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
 
 SECRET_NAMES='password|token|api_key|secret|private_key|aws_secret|credentials'
 SECRET_RE='('"$SECRET_NAMES"')\s*=\s*['\''"]?[A-Za-z0-9+/=_-]{8,}'
+# In an inline script a name is often a quoted key or an index, which closes
+# before the `=` or `:`: os.environ['API_TOKEN']='...', {'Authorization':
+# 'Bearer ...'}.
+SCRIPT_RE='('"$SECRET_NAMES"')[]'\''"]*\s*=\s*['\''"]?[A-Za-z0-9+/=_-]{8,}'
+SCRIPT_HEADER_RE='(Authorization|X-API-Key)['\''"]?\s*:\s*['\''"]?(Bearer\s+)?[A-Za-z0-9+/=_-]{20,}'
+# The fields a secrets endpoint of the GitHub API takes (gh api -f name=value).
+FIELD_RE='^[^=]*('"$SECRET_NAMES"'|encrypted_value|key_id)[^=]*=[A-Za-z0-9+/=_-]{8,}'
 HEADER_RE='^\s*(Authorization|X-API-Key):\s*(Bearer\s+)?[A-Za-z0-9+/=_-]{20,}'
 # A URL with a password in its userinfo, or a secret-shaped query parameter.
 # A value with a `$` in it is read from the environment, as above.
@@ -86,9 +109,10 @@ HEADER_MSG="BLOCKED: Literal auth token detected in curl command. Use environmen
 SENDERS=" curl wget http https xh httpie nc ncat netcat telnet ftp sftp scp ssh rsync mysql mysqladmin mysqldump psql pg_dump pg_restore mongo mongosh redis-cli sqlcmd docker podman kubectl helm "
 SETTERS=" export declare typeset local readonly env "
 # Commands that store a credential or send it to a service. gh only with
-# api, secret or variable, and npm, yarn and pnpm only with `config set`
-# (_judge): `gh issue create --body` files text.
-CREDS=" vault heroku fly flyctl aws gcloud az "
+# api, secret or variable, npm, yarn and pnpm only with `config set`, and
+# aws, gcloud and az only with a subcommand that stores a secret (_judge):
+# `gh issue create --body` files text, `aws logs filter-log-events` searches.
+CREDS=" vault heroku fly flyctl "
 # Interpreters whose inline script (-c, -e) is not shell.
 INTERPS=" python python2 python3 node nodejs ruby perl "
 
@@ -106,7 +130,7 @@ _whole_line() {
 }
 
 # Fast path: nothing secret-shaped anywhere, nothing to judge.
-if ! printf '%s\n' "$COMMAND" | grep -qiE "$SECRET_RE|(Authorization|X-API-Key):|$USERINFO_RE"; then
+if ! printf '%s\n' "$COMMAND" | grep -qiE "$SCRIPT_RE|(encrypted_value|key_id)[^=[:space:]]*=|(Authorization|X-API-Key)['\"]?\s*:|$USERINFO_RE"; then
   exit 0
 fi
 
@@ -142,7 +166,7 @@ _target() {
   case "$b" in ''|*[[:space:]]*) return 1 ;; esac
   shopt -q nocasematch && nc=1
   shopt -s nocasematch
-  case "$SENDERS$SETTERS$CREDS$INTERPS gh npm yarn pnpm " in *" $b "*) r=0 ;; esac
+  case "$SENDERS$SETTERS$CREDS$INTERPS gh npm yarn pnpm aws gcloud az " in *" $b "*) r=0 ;; esac
   case "$b" in python[0-9]*) r=0 ;; esac
   [ "$nc" = 1 ] || shopt -u nocasematch
   return "$r"
@@ -167,28 +191,107 @@ _fed_secret() {
   return 1
 }
 
+# _positional <value-options>: fills POS with the words after the program
+# (TOK[BD_CMDI]) that are not options, up to `--`, stepping over the word
+# after each option named in <value-options> (" -R --repo "), its value. A
+# global option before a subcommand (`gh -R o/r secret set`) then does not
+# hide it. The caller declares POS and n.
+_positional() {
+  local j w
+  POS=()
+  for ((j = BD_CMDI + 1; j < n; j++)); do
+    w=${TOK[j]}
+    case "$w" in
+      --) break ;;
+      -*) case "$1" in *" $w "*) j=$((j + 1)) ;; esac ;;
+      *) POS+=("$w") ;;
+    esac
+  done
+}
+
+# _in_order <word>...: are these words among POS, in this order? Options
+# whose values are not known (`aws --profile prod ssm put-parameter`) only
+# add words between them.
+_in_order() {
+  local k
+  for ((k = 0; k < ${#POS[@]}; k++)); do
+    [ "${POS[k]}" = "$1" ] && shift
+    [ "$#" -gt 0 ] || return 0
+  done
+  return 1
+}
+
+# _inline_scripts <python|perl|ruby|node>: fills SCRIPTS with the scripts
+# the interpreter TOK[BD_CMDI] is given inline, read from its own options up
+# to the script file (a word after the script file, or after `--`, is the
+# script's): python -c, also ending a bundle (-Bc), which ends the options;
+# perl -e and -E, also in a bundle (-ne, -le, and -pie, read as -p -i -e);
+# ruby -e (-ne); node -e, -p, -pe, --eval, --print. An option that takes the
+# next word as its value (python -W, -X; perl -I; ruby -I, -r; node -r,
+# --require, ...) steps over it, and an attached value (-Wignore, -Mstrict,
+# -i.bak) is not read as options. The caller declares SCRIPTS and n.
+_inline_scripts() {
+  local kind=$1 j=$((BD_CMDI + 1)) w rest c
+  SCRIPTS=()
+  while [ "$j" -lt "$n" ]; do
+    w=${TOK[j]}
+    case "$w" in ''|-|--|[!-]*) return 0 ;; esac
+    if [ "$kind" = node ]; then
+      case "$w" in
+        -e|-p|-pe|--eval|--print) j=$((j + 1)); SCRIPTS+=("${TOK[j]:-}") ;;
+        --eval=*|--print=*) SCRIPTS+=("${w#*=}") ;;
+        -r|--require|--import|--loader|--experimental-loader|-C|--conditions|--input-type|--title|--env-file|--env-file-if-exists|--inspect-port|--debug-port|--redirect-warnings|--disable-warning|--stack-trace-limit|--watch-path|--test-reporter|--test-reporter-destination|--test-name-pattern|--test-skip-pattern|--unhandled-rejections|--dns-result-order|--icu-data-dir|--openssl-config)
+          j=$((j + 1)) ;;
+      esac
+      j=$((j + 1))
+      continue
+    fi
+    case "$kind:$w" in
+      python:--check-hash-based-pycs|ruby:--encoding|ruby:--external-encoding|ruby:--internal-encoding|ruby:--enable|ruby:--disable|ruby:--dump)
+        j=$((j + 2)); continue ;;
+      *:--*) j=$((j + 1)); continue ;;
+    esac
+    rest=${w#-}
+    while [ -n "$rest" ]; do
+      c=${rest:0:1}
+      rest=${rest:1}
+      case "$kind:$c" in
+        python:c|perl:e|perl:E|ruby:e)
+          if [ -n "$rest" ]; then SCRIPTS+=("$rest"); else j=$((j + 1)); SCRIPTS+=("${TOK[j]:-}"); fi
+          [ "$kind" != python ] || return 0
+          rest="" ;;
+        python:m) return 0 ;;
+        python:[WXQ]|perl:I|ruby:[IrCE])
+          [ -n "$rest" ] || j=$((j + 1))
+          rest="" ;;
+        perl:[0l]|ruby:0)
+          case "$c:$rest" in 0:[xX]*) rest=${rest:1}; while case "$rest" in [0-9A-Fa-f]*) true ;; *) false ;; esac; do rest=${rest:1}; done ;; esac
+          while case "$rest" in [0-9]*) true ;; *) false ;; esac; do rest=${rest:1}; done ;;
+        perl:[MmxdDCFV]|ruby:[xFWTK]) rest="" ;;
+      esac
+    done
+    j=$((j + 1))
+  done
+}
+
 # _judge <simple command> <piped>: exits 2 with the reason when it passes a
 # secret. <piped> is 1 when a pipe feeds it the output of FEED.
 _judge() {
   # shellcheck disable=SC2034
-  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=() POS=() SCRIPTS=()
   # shellcheck disable=SC2034
   local BD_RIN=0 BD_CMDI=0
   _bd_words "$1"
-  local n=${#TOK[@]} i=0 j k w first cmd="" sender=0 setter=0 interp=0 a1="" a2=""
-  # A URL holding a secret, in any word.
-  for ((j = 0; j < n; j++)); do
-    _url_word "${TOK[j]}" && _refuse "$SECRET_MSG"
-  done
+  local n=${#TOK[@]} i=0 j k w f first cmd="" sender=0 setter=0 urls=0 ghapi=0
   # Keywords and assignments in command position are set in the shell or the
-  # command's environment.
+  # command's environment, a URL holding a secret among them.
   while [ "$i" -lt "$n" ]; do
     w=${TOK[i]}
     case " $_BD_KEYWORDS " in *" $w "*) i=$((i + 1)); continue ;; esac
     case "$w" in
       [A-Za-z_]*=*)
         case "${w%%=*}" in *[!A-Za-z0-9_]*) break ;; esac
-        _secret_word "$w" && _refuse "$SECRET_MSG"
+        if _secret_word "$w" || _url_word "$w"; then _refuse "$SECRET_MSG"; fi
         i=$((i + 1)) ;;
       *) break ;;
     esac
@@ -206,7 +309,7 @@ _judge() {
         -*) ;;
         [A-Za-z_]*=*)
           case "${w%%=*}" in *[!A-Za-z0-9_]*) break ;; esac
-          _secret_word "$w" && _refuse "$SECRET_MSG" ;;
+          if _secret_word "$w" || _url_word "$w"; then _refuse "$SECRET_MSG"; fi ;;
         *) break ;;
       esac
       j=$((j + 1))
@@ -216,32 +319,67 @@ _judge() {
   done
   if [ "$BD_CMDI" -lt "$n" ]; then
     cmd=$(printf '%s' "${TOK[BD_CMDI]##*/}" | tr 'A-Z' 'a-z')
-    # The first two words after the program that are not options: the
-    # subcommand that decides what gh, npm, yarn and pnpm do.
-    for ((j = BD_CMDI + 1; j < n; j++)); do
-      case "${TOK[j]}" in -*) continue ;; esac
-      if [ -z "$a1" ]; then a1=${TOK[j]}; else a2=${TOK[j]}; break; fi
-    done
+  elif [ "${#BD_WRAPI[@]}" -gt 0 ]; then
+    # A wrapper runs a program this hook does not name (`sudo git push`,
+    # `xargs ./deploy.sh`): its URLs are judged as a sender's.
+    urls=1
   fi
   case "$SENDERS" in *" $cmd "*) sender=1 ;; esac
   case "$SETTERS" in *" $cmd "*) setter=1 ;; esac
   case "$CREDS" in *" $cmd "*) sender=1 ;; esac
+  # The subcommand decides what gh, npm, yarn, pnpm, aws, gcloud, az and git
+  # do, read past the options in front of it (_positional).
   case "$cmd" in
-    gh) case "$a1" in api|secret|variable) sender=1 ;; esac ;;
-    npm|yarn|pnpm) [ "$a1" = config ] && [ "$a2" = set ] && sender=1 ;;
-    python|python[0-9]*|node|nodejs|ruby|perl)
-      for ((j = BD_CMDI + 1; j < n; j++)); do
-        # -c, -e, -E, or a bundle of short options ending in one (`-ne`).
-        case "${TOK[j]}" in --eval|--eval=*|--print|--print=*|-[ceE]|-[A-Za-z]*[ceE]) interp=1; break ;; esac
-      done ;;
+    gh)
+      _positional " -R --repo "
+      case "${POS[0]:-}" in api) sender=1; ghapi=1 ;; secret|variable) sender=1 ;; esac ;;
+    npm|yarn|pnpm) _positional " "; if _in_order config set; then sender=1; fi ;;
+    aws)
+      _positional " "
+      if _in_order secretsmanager create-secret || _in_order secretsmanager put-secret-value \
+        || _in_order secretsmanager update-secret || _in_order ssm put-parameter \
+        || _in_order configure set; then sender=1; fi ;;
+    gcloud) _positional " "; if _in_order secrets; then sender=1; fi ;;
+    az) _positional " "; if _in_order keyvault secret set; then sender=1; fi ;;
+    git)
+      # The subcommands that take a URL to fetch from or push to.
+      _positional " -C -c --git-dir --work-tree --namespace --exec-path --config-env "
+      case "${POS[0]:-}" in
+        clone|fetch|pull|push) urls=1 ;;
+        remote) case "${POS[1]:-}" in add|set-url) urls=1 ;; esac ;;
+        submodule) [ "${POS[1]:-}" != add ] || urls=1 ;;
+      esac ;;
+    python|python[0-9]*) _inline_scripts python ;;
+    perl) _inline_scripts perl ;;
+    ruby) _inline_scripts ruby ;;
+    node|nodejs) _inline_scripts node ;;
   esac
-  # An inline script is not shell: the whole simple command is checked.
-  if [ "$interp" = 1 ]; then
-    printf '%s\n' "$1" | grep -qiE "$SECRET_RE" && _refuse "$SECRET_MSG"
-    printf '%s\n' "$1" | grep -qiE '(Authorization|X-API-Key):\s*(Bearer\s+)?[A-Za-z0-9+/=_-]{20,}' && _refuse "$HEADER_MSG"
-  fi
+  if [ "$sender" = 1 ] || [ "$setter" = 1 ]; then urls=1; fi
+  # An inline script is not shell: its words cannot be read as arguments, so
+  # its whole text is checked.
+  for ((k = 0; k < ${#SCRIPTS[@]}; k++)); do
+    printf '%s\n' "${SCRIPTS[k]}" | grep -qiE "$SCRIPT_RE" && _refuse "$SECRET_MSG"
+    printf '%s\n' "${SCRIPTS[k]}" | grep -qiE "$SCRIPT_HEADER_RE" && _refuse "$HEADER_MSG"
+  done
   for ((j = first + 1; j < n; j++)); do
     w=${TOK[j]}
+    # gh api judges a field (-f/-F/--field/--raw-field name=value) by its
+    # name: a secrets endpoint takes token, encrypted_value, key_id; a
+    # comment body that names a token is text.
+    if [ "$ghapi" = 1 ] && [ "$j" -gt "$BD_CMDI" ]; then
+      f=1
+      case "$w" in
+        -f|-F|--field|--raw-field) j=$((j + 1)); w=${TOK[j]:-} ;;
+        --field=*|--raw-field=*) w=${w#*=} ;;
+        -f?*|-F?*) w=${w:2} ;;
+        *) f=0 ;;
+      esac
+      if [ "$f" = 1 ]; then
+        printf '%s\n' "$w" | grep -qiE "$FIELD_RE" && _refuse "$SECRET_MSG"
+        continue
+      fi
+    fi
+    if [ "$urls" = 1 ] && _url_word "$w"; then _refuse "$SECRET_MSG"; fi
     if _secret_word "$w"; then
       if [ "$sender" = 1 ] || [ "$setter" = 1 ]; then _refuse "$SECRET_MSG"; fi
       case "$w" in -*) _refuse "$SECRET_MSG" ;; esac

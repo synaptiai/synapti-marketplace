@@ -33,6 +33,22 @@
 #      a secret in a URL's query or userinfo, or a secret in an inline
 #      python/node/ruby/perl script is allowed; or gh issue create, which
 #      only files text, is refused
+#   K11 an interpreter option that is not an inline script (-Wignore, -u), or
+#      a word after the script file (`script.py -e prod`), is read as an
+#      inline script, so a script's argument is refused; or an inline script
+#      reached through a bundle (-pie, -ne), after -pi or after an option
+#      value (-I lib) is missed, or one holding a literal secret is allowed
+#   K12 a URL in a text command (echo into a README or an .env.example) is
+#      refused, or one with a secret given to a sender, a setter or a git
+#      URL subcommand (clone, remote add, fetch) is allowed
+#   K13 gh api is judged on a field's value instead of its name, so a
+#      comment body naming a token is refused, or a secrets endpoint field
+#      (encrypted_value, token) is allowed; or aws, gcloud and az are
+#      senders for every subcommand, so a log search for the pattern is
+#      refused, while their secret-storing subcommands are allowed
+#   K14 a global option before the subcommand (gh -R o/r, gh --repo o/r, npm
+#      --location project) is read as the subcommand, so gh secret set, gh
+#      api and npm config set are no longer judged as senders
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -133,3 +149,53 @@ _case sec-gh-secret-env 'gh secret set DEPLOY --body "$DEPLOY_TOKEN"' allowed "g
 _case sec-url-env 'git push "https://deploy:${DEPLOY_TOKEN}@x.example/repo.git" main' allowed "a URL whose password comes from the environment (K10)"
 _case sec-npm-get 'npm config get registry' allowed "npm config get sets nothing (K10)"
 _case sec-gh-pr 'gh pr create --title t --body "rotated the token=abcdefghij"' allowed "gh pr create only files text (K10)"
+
+# --- an interpreter's own inline-script options only (K11) -------------------
+_case sec-python-wopt 'python3 -Wignore scripts/scan_logs.py "token=abcdefghij"' allowed "-Wignore is a warning filter, not an inline script (K11)"
+_case sec-python-u 'python3 -u scripts/scan_logs.py --note "token=abcdefghij"' allowed "-u is not an inline script (K11)"
+_case sec-python-after-file 'python3 scripts/scan_logs.py -e prod --pattern "token=abcdefghij"' allowed "a -e after the script file belongs to the script (K11)"
+_case sec-python-c-argv 'python3 -c "import sys; print(sys.argv)" "token=abcdefghij"' allowed "a word after an inline script is the script's argument (K11)"
+_case sec-python-environ "python3 -c \"import os; os.environ['API_TOKEN']='abcdefghijk'\"" refused "a literal token set in an inline python script (K11)"
+_case sec-python-header-key "python3 -c \"h={'Authorization': 'Bearer abcdefghijklmnopqrstuvwxyz'}\"" refused "a literal auth header as a dict key in an inline python script (K11)"
+_case sec-python-bundle "python3 -Bc \"x='password=abcdefghijk'\"" refused "an inline script after a bundle ending in c (K11)"
+_case sec-node-e-body "node -e \"fetch(u,{body:'password=abcdefghijk'})\"" refused "a literal password in an inline node script (K11)"
+_case sec-node-require-print "node -r dotenv/config --print \"process.env.X='token=abcdefghijk'\"" refused "an inline node script after -r and its module (K11)"
+_case sec-perl-pi-e 'perl -pi -e "s/token=abcdefghij/token=REDACTED/" config.ini' refused "a literal token in a perl -pi -e redaction (K11)"
+_case sec-perl-pie 'perl -pie "s/token=abcdefghij/token=REDACTED/" config.ini' refused "a literal token after the -pie bundle (K11)"
+_case sec-perl-ne "perl -ne 'print if /password=abcdefghij/' app.log" refused "a literal password in a perl -ne script (K11)"
+_case sec-perl-include 'perl -I lib -e "print q(token=abcdefghijk)"' refused "an inline perl script after -I and its directory (K11)"
+_case sec-ruby-e "ruby -r json -e \"x='password=abcdefghijk'\"" refused "an inline ruby script after -r and its library (K11)"
+_case sec-ruby-file 'ruby tools/check.rb -e "token=abcdefghij"' allowed "a -e after the ruby script file belongs to the script (K11)"
+_case sec-sed-redact 'sed -i "s/token=abcdefghij/token=REDACTED/" config.ini' allowed "sed, the redaction the README suggests (K11)"
+
+# --- the URL rule, for commands that send or set only (K12) ------------------
+_case sec-echo-env-example 'echo "DATABASE_URL=postgres://user:password@localhost:5432/app" >> .env.example' allowed "an example URL echoed into .env.example (K12)"
+_case sec-echo-readme-url 'echo https://deploy:YOUR_TOKEN@github.com/org/repo.git >> README.md' allowed "a placeholder URL documented in a README (K12)"
+_case sec-git-log-url 'git log --grep "https://deploy:abcdefghijk@x.example"' allowed "git log searching for a URL sends nothing (K12)"
+_case sec-psql-url 'psql postgres://admin:abcdefghijk@db.example/app' refused "a password in the URL psql connects to (K12)"
+_case sec-curl-url 'curl "https://x.example/api?access_token=abcdefghijk"' refused "a token in the query of a URL curl fetches (K12)"
+_case sec-git-remote-add 'git remote add origin https://deploy:abcdefghijk@x.example/repo.git' refused "git remote add with a password in the URL (K12)"
+_case sec-git-C-fetch 'git -C app fetch "https://x.example/repo.git?token=abcdefghijk"' refused "git fetch after -C with a token in the URL (K12)"
+_case sec-export-url 'export DATABASE_URL=postgres://admin:abcdefghijk@db.example/app' refused "export of a URL with a password (K12)"
+_case sec-assign-url 'DATABASE_URL=postgres://admin:abcdefghijk@db.example/app ./run.sh' refused "an assignment of a URL with a password in command position (K12)"
+
+# --- gh api fields by name; aws, gcloud and az by subcommand (K13) -----------
+_case sec-gh-api-body 'gh api repos/o/r/issues/5/comments -f body="rotated the token=abcdefghij"' allowed "a comment body that names a token (K13)"
+_case sec-gh-api-encrypted 'gh api -X PUT repos/o/r/actions/secrets/X -f encrypted_value=abcdefghijklmnop -f key_id=0123456789012345' refused "gh api with a literal encrypted_value (K13)"
+_case sec-gh-api-token-field 'gh api repos/o/r/hooks -f token=abcdefghijk' refused "gh api with a literal token field (K13)"
+_case sec-gh-api-raw-field 'gh api repos/o/r/hooks --raw-field password=abcdefghijk' refused "gh api with a literal password --raw-field (K13)"
+_case sec-gh-api-field-env 'gh api repos/o/r/hooks -f token="$HOOK_TOKEN"' allowed "gh api reading the field from the environment (K13)"
+_case sec-aws-logs 'aws logs filter-log-events --log-group-name app --filter-pattern "token=abcdefghij"' allowed "aws searching logs for the pattern stores nothing (K13)"
+_case sec-aws-secretsmanager 'aws --profile prod secretsmanager create-secret --name db --secret-string "password=abcdefghijk"' refused "aws secretsmanager create-secret with a literal password (K13)"
+_case sec-aws-ssm-region 'aws --region eu-west-1 ssm put-parameter --name db --type SecureString --value "token=abcdefghijk"' refused "aws ssm put-parameter after a global option, with a literal token (K13)"
+_case sec-gcloud-logging 'gcloud logging read "textPayload:token=abcdefghij"' allowed "gcloud reading logs for the pattern stores nothing (K13)"
+_case sec-gcloud-secrets 'printf "token=abcdefghijk" | gcloud secrets versions add db --data-file=-' refused "text piped into gcloud secrets (K13)"
+_case sec-az-keyvault 'az keyvault secret set --vault-name v --name db --value "password=abcdefghijk"' refused "az keyvault secret set with a literal password (K13)"
+_case sec-az-monitor 'az monitor log-analytics query -w w --analytics-query "token=abcdefghij"' allowed "az querying logs for the pattern stores nothing (K13)"
+_case sec-fly-secrets 'fly secrets set API_TOKEN=abcdefghijk' refused "fly secrets set stays a sender (K13)"
+
+# --- global options before the subcommand (K14) ------------------------------
+_case sec-gh-R-secret 'gh -R o/r secret set DEPLOY --body "token=abcdefghijklmnop"' refused "gh secret set after -R o/r (K14)"
+_case sec-gh-repo-api 'gh --repo o/r api repos/o/r/actions/secrets -f token=abcdefghijk' refused "gh api after --repo o/r (K14)"
+_case sec-npm-location 'npm --location project config set //r/:_authToken=abcdefghijk' refused "npm config set after --location project (K14)"
+_case sec-gh-R-issue 'gh -R o/r issue create --title leak --body "the token=abcdefghij was committed"' allowed "gh issue create after -R o/r only files text (K14)"
