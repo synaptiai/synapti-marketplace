@@ -520,18 +520,22 @@ fi
 
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
+_cr_home_check
 # The repository's settings files are at its top, wherever in it the command
 # runs. A relative path made the answer depend on the working directory: from
 # a subdirectory, a repository's tiers.push: confirm read as the default
 # journal, and the git shim let a push from a script there run unasked. At the
 # top the paths stay relative, so messages name them as before; outside a
-# repository nothing changes.
+# repository nothing changes. A home directory kept in git is not a
+# repository (_cr_find_tops): its .claude/settings.flow.json is the user's own
+# file, so under it the working directory's files are read, as before.
 _cr_repo_top=$(git rev-parse --show-toplevel 2>/dev/null) || _cr_repo_top=""
-if [ -n "$_cr_repo_top" ] && [ -d "$_cr_repo_top" ] && ! [ "$_cr_repo_top" -ef . ]; then
+if [ -n "$_cr_repo_top" ] && [ -d "$_cr_repo_top" ] && ! [ "$_cr_repo_top" -ef . ] &&
+   ! { [ -n "${_cr_home:-}" ] && [ "$_cr_repo_top" -ef "$_cr_home" ]; } &&
+   ! { [ -n "${_cr_user_home:-}" ] && [ "$_cr_repo_top" -ef "$_cr_user_home" ]; }; then
   LOCAL_SETTINGS="$_cr_repo_top/$LOCAL_SETTINGS"
   PROJECT_SETTINGS="$_cr_repo_top/$PROJECT_SETTINGS"
 fi
-_cr_home_check
 USER_SETTINGS="${_cr_user_home}/.claude/settings.flow.json"
 # FLOW_USER_SETTINGS names a different user settings file. The review-precision
 # eval uses it to give each session its own settings, because changing HOME
