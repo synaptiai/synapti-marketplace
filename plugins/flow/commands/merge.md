@@ -263,7 +263,8 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 
 # MARKERTRUST_GATE_BEGIN
 # Resolve trust list from the standard Claude Code settings cascade.
-# Precedence (highest first — first valid value wins):
+# Precedence (highest first — first valid value wins; 1 and 2 are read at
+# the repository top, whatever directory this runs in):
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json — project-shared; committed (visible in PR review)
 #   3. the user settings file (cascade-resolve.sh --user-settings-path) — user-global default
@@ -291,6 +292,10 @@ PLUGIN_SETTINGS=""
 # the helper cannot answer there is none: HOME, which a repository can set,
 # does not choose it.
 [ -n "$FLOW_INSTALL" ] && __us=$("$FLOW_INSTALL/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
+# The two repository files are read at the repository top, where the
+# settings cascade reads them (cascade-resolve.sh --project-settings-path),
+# wherever in the repository this runs.
+[ -n "$FLOW_INSTALL" ] && __ps=$("$FLOW_INSTALL/bin/cascade-resolve.sh" --project-settings-path 2>/dev/null) && [ -n "$__ps" ] && { PROJECT_SETTINGS="$__ps"; LOCAL_SETTINGS="${__ps%settings.flow.json}settings.flow.local.json"; }
 for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue
   # Capture jq stderr/exit so a parse error in $HOME does not silently mask

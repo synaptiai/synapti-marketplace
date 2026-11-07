@@ -248,8 +248,14 @@ else
   # The user tier is the file cascade-resolve.sh --user-settings-path names. When
   # the helper cannot answer there is none: HOME, which a repository can set,
   # does not choose it.
-  __us=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
-  for SETTINGS_PATH in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$USER_SETTINGS"; do
+  __cr="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+  __us=$("$__cr" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
+  # The two repository files are read at the repository top, where the
+  # settings cascade reads them, wherever in the repository this runs.
+  PROJECT_SETTINGS=".claude/settings.flow.json"
+  __ps=$("$__cr" --project-settings-path 2>/dev/null) && [ -n "$__ps" ] && PROJECT_SETTINGS="$__ps"
+  LOCAL_SETTINGS="${PROJECT_SETTINGS%settings.flow.json}settings.flow.local.json"
+  for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS"; do
     [ -f "$SETTINGS_PATH" ] || continue
     # `.merge...`, not `.flow.merge...`: commands/merge.md and
     # references/gate-configuration.md both use the top-level key, and this

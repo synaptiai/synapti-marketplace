@@ -849,7 +849,8 @@ Implements the paired-reviewer + challenge-round protocol. The `team-coordinatio
 printf '%s\n' "### Path A Gate"
 # AGENTTEAMS_GATE_BEGIN
 # Resolve agentTeams from the standard Claude Code settings cascade.
-# Precedence (highest first — first non-empty value wins):
+# Precedence (highest first — first non-empty value wins; 1 and 2 are read at
+# the repository top, whatever directory this runs in):
 #   1. .claude/settings.flow.local.json — project-local override; gitignored
 #      so a hostile fork PR via `gh pr checkout` cannot inject it (it is the
 #      machine-local pin belonging to the user).
@@ -898,6 +899,9 @@ fi
 # does not choose it.
 if [ -n "$PLUGIN_ROOT" ] && [ -x "${PLUGIN_ROOT%/}/bin/cascade-resolve.sh" ]; then
   __us=$("${PLUGIN_ROOT%/}/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
+  # The two repository files are read at the repository top, where the
+  # settings cascade reads them, wherever in the repository this runs.
+  __ps=$("${PLUGIN_ROOT%/}/bin/cascade-resolve.sh" --project-settings-path 2>/dev/null) && [ -n "$__ps" ] && { PROJECT_SETTINGS="$__ps"; LOCAL_SETTINGS="${__ps%settings.flow.json}settings.flow.local.json"; }
 fi
 AGENT_TEAMS=""
 SOURCE_USED=""
