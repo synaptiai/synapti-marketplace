@@ -209,15 +209,25 @@ A `DEP_REPLACED=<module> -> <target>@<version>` line is a dependency redirected
 away from
 the registry it normally comes from — a `go.mod` replace, a Cargo `[patch]` or
 `[replace]` entry, a `tool.uv.sources` or poetry `git =` entry, a PEP 508
-direct reference (`requests @ https://...`), a `package.json` spec that is a
-URL, a GitHub shorthand (`github:user/repo`, `user/repo`) or a `file:`/`link:`
-path, a Gemfile `git:`, `github:` or `path:` source (or a gem inside a `git`
-block), or a gem resolved in a `Gemfile.lock` GIT section or in a PATH
-section other than the project's own (`remote: .`, the gemspec gem, is not
-reported). A Gemfile target is always one written as a literal: a gem name,
-source or `git` block target in double quotes that interpolates (`#{...}`,
-`#@ivar`, `#@@cvar`, `#$gvar`) is decided only when the Gemfile runs, so the
-Gemfile is reported `MANIFEST_UNPARSED=` instead. The
+direct reference (`requests @ https://...`), a `requirements*.txt` line that
+is a URL, a local path or an `-e` editable install named by its `#egg=`
+fragment or wheel file name (one that names neither makes the file
+`MANIFEST_UNPARSED=`; the project itself, `-e .`, is not reported), a
+`package.json` spec that is a URL, a GitHub shorthand (`github:user/repo`,
+`user/repo`) or a `file:`/`link:` path, a Gemfile `git:`, `github:`,
+`gitlab:`, `bitbucket:` or `path:` source or an option a `git_source(:name)`
+line declared, keyed by a label, a symbol or a string (or a gem inside a
+`git`, `github` or `path` block), or a gem resolved in a `Gemfile.lock` GIT
+section or in a PATH section other than the project's own (`remote: .`, the
+gemspec gem, is not reported). A Gemfile target is always one written as a
+literal: a gem name, source or `git` block target in double quotes that
+interpolates (`#{...}`, `#@ivar`, `#@@cvar`, `#$gvar`) is decided only when
+the Gemfile runs, so the Gemfile is reported `MANIFEST_UNPARSED=` instead, as
+it is for a gem argument passed through a variable or a `**` splat and for a
+second statement after a `;` on a gem line. A registry change is not a
+`DEP_REPLACED=`: a `requirements*.txt` `--index-url` or `--extra-index-url`
+line, a Gemfile `source:` option or `source` block, and a `Gemfile.lock` GEM
+remote are not reported, so read those lines in the diff yourself. The
 `<version>` is a ref or revision when the manifest names one. A `<version>` of `(unpinned)` is
 normal: most redirect forms name a place, not a version, and a `Gemfile.lock`
 PATH redirect always reads `(unpinned)`. **Judge the target exactly as you would an added

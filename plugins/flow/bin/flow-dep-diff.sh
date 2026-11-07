@@ -38,34 +38,56 @@
 #   DEP_BASELINE_TRUNCATED=<n> name(s) not printed
 #   DEP_INSTALL_HOOK=<name> manifest=<path>:<line>
 #   DEP_REPLACED=<module> -> <target>@<version> manifest=<path>:<line>
-#     the named package no longer comes from its registry, in every
-#     ecosystem read here: a go.mod replace; a Cargo [patch] or [replace]
-#     table; a Python direct reference (`name @ <any scheme>://...`, cut at
-#     an environment marker's `;`), a tool.uv.sources or poetry git/url/path
-#     entry (names matched PEP 503 normalised); a package.json spec that is
-#     a URL, a hosted-git shorthand (github:, user/repo), or file:/link:; a
-#     Gemfile git:, github:, gitlab:, bitbucket: or path: option (also on
-#     the lines a gem call continues onto), or a gem inside a
-#     git/github/path block; a Gemfile.lock GIT section, at its revision;
-#     and a Gemfile.lock PATH section other than the project's own
-#     (remote: . is the gemspec gem, not a redirect), with no version, so
-#     a version bump of a path gem is not a new redirect. A Gemfile target
-#     is reported only as a literal: a double-quoted gem name, source option
-#     or block target that interpolates (#{...}, #@ivar, #@@cvar, #$gvar)
-#     makes the Gemfile MANIFEST_UNPARSED; a single-quoted one is as written
+#     the named package no longer comes from its registry. These forms are
+#     reported: a go.mod replace; a Cargo [patch] or [replace] table; a
+#     Python direct reference (`name @ <any scheme>://...`, cut at an
+#     environment marker's `;`), a tool.uv.sources or poetry git/url/path
+#     entry (names matched PEP 503 normalised); a requirements*.txt line
+#     that is a URL (`git+https://...#egg=x`, `https://.../x-1.0-py3-none-any.whl`),
+#     a local path (`../x#egg=x`, `./dist/x-1.0-py3-none-any.whl`) or an
+#     editable install (`-e ...`, `--editable ...`), named by its #egg=
+#     fragment or wheel file name, with the target as written; a
+#     package.json spec that is a URL, a hosted-git shorthand (github:,
+#     user/repo), or file:/link:; a Gemfile git:, github:, gitlab:,
+#     bitbucket: or path: option, or an option a `git_source(:name)` line
+#     declared, keyed by a label, a symbol or a string (`git: url`,
+#     `:git => url`, `"git" => url`, also on the lines a gem call continues
+#     onto), or a gem inside a git/github/path block; a Gemfile.lock GIT
+#     section, at its revision; and a Gemfile.lock PATH section other than
+#     the project's own (remote: . or ./ is the gemspec gem, not a
+#     redirect), with no version, so a version bump of a path gem is not a
+#     new redirect. The project itself in requirements*.txt (`.`, `-e .`,
+#     `-e .[dev]`) is not a redirect either. A Gemfile target is reported
+#     only as a literal: a double-quoted gem name, source option or block
+#     target that interpolates (#{...}, #@ivar, #@@cvar, #$gvar) makes the
+#     Gemfile MANIFEST_UNPARSED; a single-quoted one is as written.
+#     Not reported, because they change the registry rather than name a
+#     package's source: a requirements*.txt option line other than -e and
+#     --editable (`-r`, `-c`, `--index-url`, `--extra-index-url`,
+#     `--find-links`: nothing in a file -r names is read either), a
+#     Gemfile `source:` option or `source "url" do` block, and a
+#     Gemfile.lock GEM section's remote
 #   DEP_NEAR_NAME=<added> ~ <baseline> distance=<n>
 #     two Python names are compared PEP 503 normalised (my_pkg is my-pkg);
 #     names from other ecosystems as written
 #   MANIFEST_UNPARSED=<path> reason=<why>
-#     a Gemfile is Ruby, and is unreadable rather than guessed at when: a gem
-#     name, source option or git/path block target is not a string literal
-#     (a variable, a method call, a `%q()` string, or a double-quoted string
-#     that interpolates); a gem call is not at the start of its statement
-#     (`%w(a b).each { |g| gem g }`, `group :test do gem "x" end`); a
-#     parenthesised gem call does not close on its line or carries a trailing
-#     modifier (`gem("x") if c`); a continued call runs past the end of the
-#     file or into another statement; an `end` closes no block it has seen;
-#     or a `=begin` has no `=end`
+#     a requirements*.txt URL, path or editable line that names no package
+#     (no #egg= fragment and no wheel file name: `-e ../x`, an sdist URL)
+#     makes the file unreadable rather than guessed at. A Gemfile is Ruby,
+#     and is unreadable rather than guessed at when: a gem name, source
+#     option or git/path block target is not a string literal (a variable,
+#     a method call, a `%q()` string, or a double-quoted string that
+#     interpolates); a gem argument after the name is neither a string nor
+#     an option (a variable, a method call such as `ENV["V"]`, a hash
+#     literal, a `*args` or `**opts` splat: each can carry a source option);
+#     a gem call is not at the start of its statement
+#     (`%w(a b).each { |g| gem g }`, `group :test do gem "x" end`); a gem
+#     line holds a second statement after a `;`, or another gem call in its
+#     arguments; a `git_source` name is not a literal; a parenthesised gem
+#     call does not close on its line or carries a trailing modifier
+#     (`gem("x") if c`); a continued call runs past the end of the file or
+#     into another statement; an `end` closes no block it has seen; or a
+#     `=begin` has no `=end`
 #
 # MANIFESTS_EXAMINED=0 with STATE=none means no manifest was in the diff.
 # MANIFESTS_EXAMINED=1 with no DEP_ lines means a manifest was read and nothing

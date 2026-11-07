@@ -73,11 +73,18 @@ specification:
   - STATE=ok|none|unavailable, REASON=, MANIFESTS_EXAMINED=<n>, DIFF_BASE=<sha>
   - DEP_ADDED / DEP_CHANGED / DEP_REMOVED / DEP_BASELINE / DEP_BASELINE_TRUNCATED
     / DEP_NEAR_NAME / DEP_INSTALL_HOOK / DEP_REPLACED / MANIFEST_UNPARSED
-  - 'DEP_REPLACED covers the redirect class in every ecosystem: a go.mod replace,
-    a Cargo patch or replace table, a tool.uv.sources or poetry git entry, a PEP
-    508 direct reference, a package.json URL, git shorthand or file: spec, a Gemfile
-    git:, github: or path: source or git block, and a Gemfile.lock GIT or PATH section
-    (#248). The target is judged as an added package.'
+  - 'DEP_REPLACED covers these redirect forms: a go.mod replace, a Cargo patch or
+    replace table, a tool.uv.sources or poetry git entry, a PEP 508 direct reference
+    (name @ url), a requirements*.txt URL, local path or -e line named by its #egg=
+    fragment or wheel file name (one that names neither is MANIFEST_UNPARSED; the
+    project itself, -e ., is not a redirect), a package.json URL, git shorthand or
+    file: spec, a Gemfile git:, github:, gitlab:, bitbucket:, path: or git_source-declared
+    option keyed by a label, symbol or string, or a git, github or path block, and
+    a Gemfile.lock GIT section or a PATH section other than the project''s own (remote:
+    . is the gemspec gem, not a redirect) (#248). A gem argument passed through a
+    variable or splat, or a second statement after a ; on a gem line, is MANIFEST_UNPARSED.
+    A registry change (--index-url, --extra-index-url, a Gemfile source: option
+    or source block) is not a DEP_REPLACED. The target is judged as an added package.'
   - A TOML entry carries no line number; the location is the file, which finding-schema.md
     permits. A line-oriented manifest carries its real line.
   - DEP- findings use finding-schema.md with category=dependency and manifest file:line.

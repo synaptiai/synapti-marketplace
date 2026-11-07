@@ -67,8 +67,8 @@ The plugin ships a `.ps1` alongside each script and declares
 
 - **Cost to the user:** none.
 - **Cost to the maintainer:** two implementations of every guard, kept in step
-  forever. For flow that would be 19 hook scripts, the 5 files of their shared
-  library, the `git` and `gh` wrappers, and 53 `bin/` scripts, and the
+  forever. For flow that would be 20 hook scripts, the 5 files of their shared
+  library, the `git` and `gh` wrappers, and 57 `bin/` scripts, and the
   `` ```! `` blocks inside 23 files would still assume a POSIX shell.
 - **What it loses:** anything a SessionStart hook sets up through
   `CLAUDE_ENV_FILE` other than a variable assignment, since PowerShell reads
@@ -101,7 +101,7 @@ installs it.
 
 | Plugin | Ships | Strategy | Evidence |
 |---|---|---|---|
-| `flow` | 20 hook scripts, 2 `git`/`gh` wrappers, 57 `bin/` shell scripts, `` ```! `` blocks in 23 files | Git Bash required | `.github/workflows/windows-hooks.yml` runs `plugins/flow/tests/windows-hooks-smoke.sh` on `windows-latest` every time the hooks or `bin/` change. Every `bin/` helper and hook that hands `python3` a path sources `bin/lib/py-path.sh`, which converts the Git Bash paths (`/c/...`) a native Windows `python3` cannot resolve, with `cygpath -m`, at that one boundary (issue #246); the smoke test calls each such helper and checks its work. Known gap: a native Windows `python3` ends the lines it writes to a pipe in `\r\n`, and `$(...)` in Git Bash keeps the `\r`; the refusal readers of the symlink check drop it, but the goal evaluator reads its turn budget from a `python3` line as `N\r`, which is not a number, so under the evaluator loop every stop is allowed with "the goal turn budget could not be read" before the goal is evaluated |
+| `flow` | 20 hook scripts, 2 `git`/`gh` wrappers, 57 `bin/` shell scripts, `` ```! `` blocks in 23 files | Git Bash required | `.github/workflows/windows-hooks.yml` runs `plugins/flow/tests/windows-hooks-smoke.sh` on `windows-latest` every time the hooks or `bin/` change. Every `bin/` helper and hook that puts a directory on `sys.path`, and `flow-eval-run.sh`, `flow-mine-corrections.sh` and `flow-quality-ledger.sh`, source `bin/lib/py-path.sh`, which converts the Git Bash paths (`/c/...`) a native Windows `python3` cannot resolve, with `cygpath -m`, at that one boundary (issue #246); other helpers that hand `python3` a path argument, such as `flow-finding-state.sh` and `validate-skill-input.sh`, do not. `tests/e2e-windows-paths.test.sh` checks that every helper that puts a directory on `sys.path` sources the library. The smoke test calls the goal, run-record, journal, question, auto-log, quality-ledger, correction-mining, eval and dependency-diff helpers (`flow-goal-record.sh`, `flow-active-goal.sh`, `flow-goal-trust.sh`, `flow-record-activity.sh`, `flow-record-evidence.sh`, `flow-record-verdict.sh`, `journal-record.sh`, `flow-question.sh`, `flow-strip-auto-log.sh`, `flow-quality-ledger.sh`, `flow-mine-corrections.sh`, `flow-eval-run.sh`, `flow-dep-diff.sh`) against a scratch repository and checks the file, id or record each should produce; it does not call `promote-proposal.sh`, the three `flow-trigger-*` checks, or the `flow-goal-evaluator.sh` and `flow-run-deterministic-checks.sh` hooks, which source the library too. Known gap: a native Windows `python3` ends the lines it writes to a pipe in `\r\n`, and `$(...)` in Git Bash keeps the `\r`; the refusal readers of the symlink check drop it, but the goal evaluator reads its turn budget from a `python3` line as `N\r`, which is not a number, so under the evaluator loop every stop is allowed with "the goal turn budget could not be read" before the goal is evaluated |
 | `dossier` | 5 hooks, 20 `bin/` scripts, `` ```! `` blocks in 9 files | Git Bash required | None yet: the Windows workflow runs flow's hooks only |
 | `thanos` | 1 `bin/` script, a `` ```! `` block in 1 file | Git Bash required | None yet: its tests run on Linux and macOS only, and the Windows workflow runs flow's hooks only |
 | `agent-capability-standard` | 2 hooks | Undeclared | Sourced from its own repository (`synaptiai/agent-capability-standard`), not from this tree, so the change belongs there |
@@ -126,7 +126,8 @@ should copy:
   SessionStart hook must write the line that puts flow's `git` and `gh`
   wrappers first on PATH to `CLAUDE_ENV_FILE`, `git` must then run through the
   wrapper, the Stop and SessionEnd hooks must answer an empty session, and the
-  settings resolver must return its default. It runs on `windows-latest` under Git Bash,
+  settings resolver must return its default; the `bin/` helpers the table
+  above names must do their work. It runs on `windows-latest` under Git Bash,
   and on Ubuntu and macOS in the same job matrix so a regression is attributed
   to the platform rather than to the change.
 - **Checks the inline blocks separately.** Validity is not portability;
@@ -144,8 +145,8 @@ should copy:
   or a colon.
 - **Degrades loudly.** Each hook checks for the tools it needs, such as `jq`
   and `python3`, and says what it cannot do without them. The `bin/` helpers
-  that run `python3` with a path hand it one it can open (`bin/lib/py-path.sh`),
-  so they do their work rather than failing an import silently.
+  that put a directory on `sys.path` hand `python3` one it can open
+  (`bin/lib/py-path.sh`), so their imports do not fail silently.
 
 ## Adding a plugin
 

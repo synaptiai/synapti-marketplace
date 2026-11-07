@@ -244,13 +244,24 @@ if [ -f "$HOOKS/tier-session-start.sh" ] && command -v jq >/dev/null 2>&1; then
 fi
 printf '\n'
 
-# --- every bin/ helper that hands python3 a path does its work ----------------
+# --- the bin/ helpers that source lib/py-path.sh do their work ----------------
 # Issue #246. Git Bash hands a script POSIX paths, and a native Windows python3
 # reads /d/a/... as another place, so a helper whose module sits beside it
-# imported nothing and did nothing, silently. Each helper is called once,
-# against a scratch repository at an ordinary path, with the absolute paths it
-# is usually given, and what it was asked to do is checked: a file written, an
-# id printed, a record listed. lib/py-path.sh does the conversion.
+# imported nothing and did nothing, silently. Each helper below is called
+# once, against a scratch repository at an ordinary path, with the absolute
+# paths it is usually given, and what it was asked to do is checked: a file
+# written, an id printed, a record listed. lib/py-path.sh does the conversion.
+# Called here: flow-goal-record, flow-active-goal, flow-goal-trust,
+# flow-record-activity, flow-record-evidence, flow-record-verdict,
+# journal-record, flow-question, flow-strip-auto-log, flow-quality-ledger,
+# flow-mine-corrections, flow-eval-run and flow-dep-diff (flow-runtime-dir,
+# flow-mkdir and journal-dir run inside them; journal-append inside the
+# logging hooks above). The hooks flow-goal-stop, reply-style-check and
+# session-end-state are run above on an empty session only. Not called
+# anywhere in this file, though they source the library: promote-proposal,
+# the three flow-trigger-* checks, and the hooks flow-goal-evaluator and
+# flow-run-deterministic-checks. tests/e2e-windows-paths.test.sh checks that
+# every helper that puts a directory on sys.path sources the library.
 _helper_dir() {
   local d="" _b _p
   case "$(uname -s)" in
@@ -331,6 +342,15 @@ if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&
       "$B/flow-mine-corrections.sh" --project-dir "$HREPO" --transcript-dir "$HWORK/transcripts" --format jsonl
     _helper "flow-eval-run.sh runs its Python helper (case check)" 'case "$HOUT" in *'"'"'"problems": []'"'"'*) true ;; *) false ;; esac' -- \
       "$B/flow-eval-run.sh" --check-cases
+    (
+      cd "$HREPO" || exit 1
+      printf 'flask==2.0.0\n' > requirements.txt
+      git add requirements.txt >/dev/null 2>&1 && git commit -qm "deps base" >/dev/null 2>&1
+      printf 'flask==2.0.0\nredis==5.0.1\n' > requirements.txt
+      git add requirements.txt >/dev/null 2>&1 && git commit -qm "deps head" >/dev/null 2>&1
+    )
+    _helper "flow-dep-diff.sh imports its parser and reads the range" 'case "$HOUT" in *"STATE=ok"*"DEP_ADDED=redis@5.0.1 manifest=requirements.txt:2"*) true ;; *) false ;; esac' -- \
+      "$B/flow-dep-diff.sh" HEAD~1..HEAD --tree "$HREPO"
     unset FLOW_STATE_DIR
     rm -rf "$HWORK"
   else

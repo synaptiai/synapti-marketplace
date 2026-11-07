@@ -9,9 +9,14 @@
 # renders a path in the one form bash, git and a native Python all resolve
 # (D:/a/proj/...).
 #
-# Sourced by every bin/ helper and hook that runs python3 with a path, so the
-# conversion is made once, here, at the boundary between the shell and the
-# interpreter:
+# Sourced by every bin/ helper and hook that puts a directory on sys.path
+# (tests/e2e-windows-paths.test.sh checks that), and by flow-eval-run.sh,
+# flow-mine-corrections.sh and flow-quality-ledger.sh, so the conversion is
+# made once, here, at the boundary between the shell and the interpreter.
+# Other helpers that run python3 with a path argument (flow-finding-state.sh,
+# flow-skill-manifests.sh, validate-skill-input.sh, flow-goal-judge-run.sh,
+# flow-learn-verdict.sh, flow-release-versions.sh among them) do not source
+# it, and hand python3 their paths unconverted. It defines:
 #
 #   py_path <path>   the path as python3 on this platform reads it (unchanged
 #                    off Windows, or when cygpath is missing)

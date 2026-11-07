@@ -463,18 +463,80 @@ _REQ_LINE = re.compile(
     r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*([^;#]*)"
 )
 _URL_REQ = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*(\+[A-Za-z][A-Za-z0-9+.-]*)?://")
+# pip's own comment rule: a `#` at the start of a line or after whitespace.
+# A `#` inside a token is part of it: `git+https://h/x.git#egg=x` names its
+# package in that fragment.
+_REQ_COMMENT = re.compile(r"(?:^|\s)#.*$")
+# `-e <target>`, `-e<target>`, `--editable <target>`, `--editable=<target>`.
+_REQ_EDITABLE = re.compile(r"^(?:-e|--editable(?=[\s=]))\s*=?\s*(\S+)")
+# A requirement given as a local path rather than a name: it starts with `.`,
+# `/` or `~`, carries a path separator, or is an archive file.
+_REQ_PATH = re.compile(
+    r"^(?:[.~/\\]|[^\s;]*[/\\]"
+    r"|[^\s;]*\.(?:whl|zip|tar|tgz|tar\.gz|tar\.bz2|tar\.xz)(?:\s|$))"
+)
+# The project itself (`.`, `./`, `.[dev]`), what `pip install -e .` installs:
+# the code under review, not a package fetched from somewhere else.
+_REQ_PROJECT_ITSELF = re.compile(r"^\.[/\\]?(?:\[[^\]]*\])?$")
+_REQ_EGG = re.compile(r"[#&]egg=([^&]*)")
+_REQ_NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
+
+
+def _requirement_target_name(target, lineno):
+    """The package a URL or path requirement installs, read from what the
+    line itself says: an `#egg=name` fragment, or a wheel file name
+    (`name-1.0-py3-none-any.whl`). A target naming neither is NOT guessed
+    at: the file is unreadable, because the package it installs is one a
+    reviewer would otherwise be told is not there."""
+    egg = _REQ_EGG.search(target)
+    if egg:
+        name = re.sub(r"\[[^\]]*\]$", "", egg.group(1))
+        if _REQ_NAME.match(name):
+            return name.lower()
+        raise ParseError(
+            "the egg fragment of the requirement on line %d is not a package name" % lineno)
+    base = re.split(r"[/\\]", re.split(r"[?#]", target, 1)[0].rstrip("/\\"))[-1]
+    # {name}-{version}(-{build})?-{python}-{abi}-{platform}.whl
+    parts = base[:-4].split("-") if base.lower().endswith(".whl") else []
+    if len(parts) in (5, 6) and _REQ_NAME.match(parts[0]):
+        return parts[0].lower()
+    raise ParseError(
+        "the requirement on line %d is a URL or path that names no package "
+        "(no egg fragment and no wheel file name)" % lineno)
 
 
 def parse_requirements(text):
+    """requirements*.txt, line by line.
+
+    A requirement is a name (`flask==2.0`), a direct reference
+    (`name @ url`), a URL (`git+https://h/x.git#egg=x`, `https://h/x.whl`),
+    a local path (`../x`, `./dist/x.whl`) or an editable install
+    (`-e ../x`, `-e git+https://...#egg=x`). Each of the last three installs
+    a package from somewhere other than the index, so it is a redirect as
+    well as a dependency, named by its `#egg=` fragment or its wheel file
+    name; one that names neither makes the file unreadable. The project
+    itself (`.`, `-e .`, `-e .[dev]`) is the code under review and is not
+    read. No other option line (`-r`, `-c`, `--index-url`,
+    `--extra-index-url`, `--find-links`, ...) is read."""
     r = ParseResult()
     for lineno, raw in enumerate(text.splitlines(), 1):
-        line = raw.split("#", 1)[0].strip()
-        if not line or line.startswith("-"):
+        line = _REQ_COMMENT.sub("", raw).strip()
+        if not line:
             continue
-        # A VCS or URL requirement would otherwise match the name pattern as
-        # the package "git" or "https". The real name lives in an optional
-        # fragment, so this reports nothing rather than inventing one.
-        if _URL_REQ.match(line):
+        target = None
+        if line.startswith("-"):
+            em = _REQ_EDITABLE.match(line)
+            if not em:
+                continue
+            target = em.group(1)
+        elif _URL_REQ.match(line) or _REQ_PATH.match(line):
+            target = line.split()[0]
+        if target is not None:
+            if _REQ_PROJECT_ITSELF.match(target):
+                continue
+            name = _requirement_target_name(target, lineno)
+            r.add(name, None, lineno)
+            r.replaces.append((name, target, None, lineno))
             continue
         # A direct reference here is the same redirect as in pyproject.toml;
         # the two Python formats must not disagree about what it means.
@@ -775,12 +837,19 @@ def parse_pnpm_lock(text):
 
 # `gem` as a method call: `gem "x"`, `gem("x")`. Not `gemspec` or `gem_group`.
 _GEM_START = re.compile(r"^\s*gem(?![A-Za-z0-9_?!])\s*(\(?)(.*)$")
-_GEM_LITERAL = re.compile(r"^(['\"])([^'\"]+)\1\s*(?:,\s*(['\"])([^'\"]+)\3)?")
-# The options that fetch a gem from somewhere other than its registry, in
-# either hash syntax: `git: "url"` or `:git => "url"`.
+_GEM_LITERAL = re.compile(r"^(['\"])([^'\"]+)\1")
+# The options that fetch a gem from somewhere other than its registry, with
+# the key written as a label (`git: "url"`, `"git": "url"`), a symbol
+# (`:git => "url"`) or a string (`"git" => "url"`): Bundler reads them all
+# alike. A `git_source(:name)` line adds `name` to them.
 _GEM_SOURCE_KEYS = ("git", "github", "gitlab", "bitbucket", "path")
-_GEM_OPTION = re.compile(
-    r"(?:(?<![A-Za-z0-9_:])([a-z_]+):(?!:)|:([a-z_]+)\s*=>)\s*(?:(['\"])(.*?)\3)?"
+_GEM_ARG_LABEL = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):(?!:)")
+_GEM_ARG_SYMBOL_KEY = re.compile(r"^:([A-Za-z_][A-Za-z0-9_]*)\s*=>")
+_GEM_ARG_STRING_KEY = re.compile(r"^\s*(?:=>|:(?!:))")
+# `git_source(:mine) { |repo| ... }` declares the gem option `mine:`.
+_GIT_SOURCE = re.compile(r"^\s*git_source(?![A-Za-z0-9_?!])")
+_GIT_SOURCE_NAME = re.compile(
+    r"^\s*git_source\s*\(?\s*(?::([A-Za-z_][A-Za-z0-9_]*)|(['\"])([A-Za-z_][A-Za-z0-9_]*)\2)"
 )
 # A block whose gems all come from one place: `git "url" do`, `path "dir" do`,
 # `github "user/repo" do`.
@@ -951,17 +1020,95 @@ def _gem_source(kind, value):
     return value if kind in ("git", "path") else "%s:%s" % (kind, value)
 
 
+def _blank_strings(code):
+    """`code` with the text inside each quoted string or backtick command
+    replaced by spaces, so brackets, commas and `;` in it are not read as
+    code. Every character keeps its position."""
+    return _RUBY_STRING.sub(
+        lambda m: m.group(0)[0] + " " * (len(m.group(0)) - 2) + m.group(0)[-1], code)
+
+
+def _top_level_semicolon(code):
+    """The position of the first `;` outside brackets and strings, or None."""
+    depth = 0
+    for i, c in enumerate(_blank_strings(code)):
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == ";" and depth == 0:
+            return i
+    return None
+
+
+def _string_at(text):
+    """(quote, value) of the quoted string `text` starts with, or None. A
+    backtick command is not a string literal."""
+    sm = _RUBY_STRING.match(text)
+    if not sm or sm.group(0)[0] == "`":
+        return None
+    return sm.group(0)[0], sm.group(0)[1:-1], text[sm.end():]
+
+
+def _gem_args(code, lineno):
+    """The arguments of a gem call after its name, split at the commas
+    outside brackets and strings: [("version", quote, value)] for a string,
+    [("option", key, quote, value)] for an option (quote and value None when
+    the value is not a string). An argument this cannot read as either (a
+    variable, a method call, a hash literal, a `*`/`**` splat: any of them
+    can carry a `git:` option) makes the file unreadable."""
+    blank = _blank_strings(code)
+    spans, depth, start = [], 0, 0
+    for i, c in enumerate(blank):
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "," and depth == 0:
+            spans.append((start, i))
+            start = i + 1
+    spans.append((start, len(blank)))
+    out = []
+    for a, b in spans[1:]:
+        arg = code[a:b].strip()
+        if not arg:
+            continue
+        lm = _GEM_ARG_LABEL.match(arg) or _GEM_ARG_SYMBOL_KEY.match(arg)
+        key, rest = (lm.group(1), arg[lm.end():]) if lm else (None, None)
+        if key is None:
+            st = _string_at(arg)
+            if st is None:
+                if arg.startswith("*"):
+                    raise ParseError("the gem call on line %d passes arguments through a splat" % lineno)
+                raise ParseError("the gem call on line %d passes an argument that is not a string literal or an option" % lineno)
+            km = _GEM_ARG_STRING_KEY.match(st[2])
+            if not km:
+                out.append(("version", st[0], st[1]))
+                continue
+            key, rest = st[1], st[2][km.end():]
+        val = _string_at(rest.strip())
+        out.append(("option", key) + ((val[0], val[1]) if val else (None, None)))
+    return out
+
+
 def parse_gemfile(text):
     """A Gemfile is Ruby, not a data format.
 
-    A `gem` call whose name is a literal is read, written `gem "x"` or
-    `gem("x")`. A `gem` line this cannot read (the name a variable, a method
-    call or an interpolation; a `gem(` call that does not close on its line;
-    a call without parentheses whose continuation runs past the end of the
-    file or into another statement; a source option whose value is not a
-    literal; an `end` that closes no block this has seen) is NOT guessed at:
-    the file is reported unreadable, because a dependency this cannot see is
-    one a reviewer would be told does not exist. A call without parentheses
+    A `gem` call that starts its statement and whose name is a literal is
+    read, written `gem "x"` or `gem("x")`, with its arguments: string
+    versions, and options keyed by a label (`git:`, `"git":`), a symbol
+    (`:git =>`) or a string (`"git" =>`). A `gem` line this cannot read (the
+    name a variable, a method call or an interpolation; a gem call that does
+    not start its statement; a second statement after a `;`; another gem
+    call inside its arguments; an argument that is neither a string nor an
+    option, such as a variable, a hash literal or a `*`/`**` splat, any of
+    which can carry a source option; a `gem(` call that does not close on
+    its line; a call without parentheses whose continuation runs past the
+    end of the file or into another statement; a source option whose value
+    is not a literal; a `git_source` whose name is not a literal; an `end`
+    that closes no block this has seen) is NOT guessed at: the file is
+    reported unreadable, because a dependency this cannot see is one a
+    reviewer would be told does not exist. A call without parentheses
     whose line ends with a comma, a backslash or an open bracket is read
     together with the lines that continue it, so options written one per
     line are read like options written on one. Any statement continued with
@@ -974,7 +1121,8 @@ def parse_gemfile(text):
     with no `=end` makes the file unreadable).
 
     A gem fetched from somewhere other than its registry, by a `git:`,
-    `github:`, `gitlab:`, `bitbucket:` or `path:` option or inside a
+    `github:`, `gitlab:`, `bitbucket:` or `path:` option, an option a
+    `git_source(:name)` line declared earlier, or inside a
     `git`/`github`/`path ... do` block, is also a redirect: the same record a
     go.mod replace makes, so a gem built from a fork does not read as an
     unpinned gem from rubygems.org. Every other block a later `end` closes
@@ -986,6 +1134,7 @@ def parse_gemfile(text):
     """
     r = ParseResult()
     blocks = []
+    source_keys = set(_GEM_SOURCE_KEYS)
     lines = _ruby_lines(text)
     index = 0
     while index < len(lines):
@@ -1004,6 +1153,15 @@ def parse_gemfile(text):
             continue
         m = _GEM_START.match(line)
         if m:
+            # One statement per gem line: a second one after a `;` (another
+            # gem call, say) is not read, so the file is unreadable rather
+            # than missing it. A `;` inside brackets or a string is not one.
+            semi = _top_level_semicolon(line)
+            if semi is not None:
+                if line[semi + 1:].strip():
+                    raise ParseError("the gem call on line %d is followed by another statement after a ;" % lineno)
+                line = line[:semi].rstrip()
+                m = _GEM_START.match(line)
             args = m.group(2).strip()
             if m.group(1):
                 if not args.endswith(")"):
@@ -1013,18 +1171,22 @@ def parse_gemfile(text):
             if not lm or _literal(lm.group(1), lm.group(2)) is None:
                 raise ParseError("gem name on line %d is not a string literal" % lineno)
             name = lm.group(2).lower()
-            version = _literal(lm.group(3), lm.group(4))
-            r.add(name, version, lineno)
-            source, ref = None, None
-            for om in _GEM_OPTION.finditer(args[lm.end():]):
-                key = om.group(1) or om.group(2)
-                value = _literal(om.group(3), om.group(4))
-                if key in _GEM_SOURCE_KEYS:
+            if _GEM_CALL_ANYWHERE.search(_blank_strings(args[lm.end():])):
+                raise ParseError("the gem call on line %d holds another gem call" % lineno)
+            version, source, ref = None, None, None
+            for arg in _gem_args(args, lineno):
+                if arg[0] == "version":
+                    if version is None:
+                        version = _literal(arg[1], arg[2]) or None
+                    continue
+                key, value = arg[1], _literal(arg[2], arg[3])
+                if key in source_keys:
                     if value is None:
                         raise ParseError("the %s: of gem %s on line %d is not a string literal" % (key, name, lineno))
                     source = _gem_source(key, value)
                 elif key in ("ref", "tag", "branch") and value is not None:
                     ref = value
+            r.add(name, version, lineno)
             if source is None:
                 source = next((b for b in reversed(blocks) if b), None)
             if source is not None:
@@ -1032,6 +1194,13 @@ def parse_gemfile(text):
             if _DO.search(line):
                 blocks.append(None)
             continue
+        # `git_source(:mine) { |repo| ... }` makes `mine:` a gem source
+        # option like `github:`.
+        if _GIT_SOURCE.match(line):
+            gm = _GIT_SOURCE_NAME.match(line)
+            if not gm:
+                raise ParseError("the git_source on line %d does not name a literal symbol or string" % lineno)
+            source_keys.add(gm.group(1) or gm.group(3))
         # A gem call that does not start its statement (`%w(a b).each { |g|
         # gem g }`, `group :test do gem "x" end`) is one this reads nothing
         # from: the Gemfile is unreadable rather than missing a dependency.

