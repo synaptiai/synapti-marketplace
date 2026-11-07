@@ -44,11 +44,27 @@
 #   K13 gh api is judged on a field's value instead of its name, so a
 #      comment body naming a token is refused, or a secrets endpoint field
 #      (encrypted_value, token) is allowed; or aws, gcloud and az are
-#      senders for every subcommand, so a log search for the pattern is
-#      refused, while their secret-storing subcommands are allowed
+#      senders in their log searches, so a search for the pattern is
+#      refused, or their secret-storing subcommands are allowed
 #   K14 a global option before the subcommand (gh -R o/r, gh --repo o/r, npm
 #      --location project) is read as the subcommand, so gh secret set, gh
 #      api and npm config set are no longer judged as senders
+#   K15 perl's or ruby's -i backup extension (-i.save, -pi.bak, -i.pre) is
+#      read as option letters, so its `e` takes the next word as the inline
+#      script and the real script after it is never checked
+#   K16 the URL rule is kept to senders, setters and git's fetch and push
+#      subcommands, so a URL with a password given to git ls-remote, git
+#      config, pip, npm install or svn, or as a gh api field value, is
+#      allowed; or it is applied to a text command (echo into a README or an
+#      .env.example, git log --grep) or to a line of a heredoc body nothing
+#      runs (cat <<EOF > notes.md), which only names the URL; or a body
+#      piped into a shell is read as text
+#   K17 aws, gcloud and az are senders only for their secret-storing
+#      subcommands, so a literal password set as a function's or an app's
+#      environment (lambda, run deploy, functions deploy, webapp appsettings)
+#      is allowed; or they are senders in their log and monitoring searches,
+#      where the value is a pattern; or npm set, npm's alias for config set,
+#      is not a sender
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -199,3 +215,45 @@ _case sec-gh-R-secret 'gh -R o/r secret set DEPLOY --body "token=abcdefghijklmno
 _case sec-gh-repo-api 'gh --repo o/r api repos/o/r/actions/secrets -f token=abcdefghijk' refused "gh api after --repo o/r (K14)"
 _case sec-npm-location 'npm --location project config set //r/:_authToken=abcdefghijk' refused "npm config set after --location project (K14)"
 _case sec-gh-R-issue 'gh -R o/r issue create --title leak --body "the token=abcdefghij was committed"' allowed "gh issue create after -R o/r only files text (K14)"
+
+# --- perl's and ruby's -i backup extension (K15) ----------------------------
+_case sec-perl-pi-ext "perl -pi.save -e 's/password=abcdefghij/x/' f" refused "an inline perl script after -pi.save (K15)"
+_case sec-perl-i-ext-pe "perl -i.save -pe 's/password=abcdefghij/x/' f" refused "an inline perl script in the -pe after -i.save (K15)"
+_case sec-perl-i-pre "perl -i.pre -pe 's/password=abcdefghij/x/' f" refused "the e of -i.pre is the extension's, not -e (K15)"
+_case sec-ruby-i-ext "ruby -i.save -pe 'sub(/password=abcdefghij/,\"x\")' f" refused "an inline ruby script in the -pe after -i.save (K15)"
+_case sec-perl-i-ext-file 'perl -i.bak tools/redact.pl "token=abcdefghij" f' allowed "a word after the perl script file belongs to the script (K15)"
+
+# --- the URL rule for every command but a text command (K16) ----------------
+_case sec-git-log-userinfo 'git log --grep "https://u:abcdefghijk@x"' allowed "git log searching for a URL with a password sends nothing (K16)"
+_case sec-git-ls-remote 'git ls-remote https://deploy:abcdefghijk@x.example/repo.git' refused "git ls-remote with a password in the URL (K16)"
+_case sec-git-config-url 'git config remote.origin.url https://deploy:abcdefghijk@x.example/r.git' refused "git config storing a URL with a password (K16)"
+_case sec-pip-index 'pip install --index-url https://user:abcdefghijk@pypi.example/simple pkg' refused "pip with a password in its index URL (K16)"
+_case sec-pip-git 'pip install git+https://deploy:abcdefghijk@github.com/o/r.git' refused "pip installing from a git URL with a password (K16)"
+_case sec-npm-install-url 'npm install https://deploy:abcdefghijk@x.example/pkg.tgz' refused "npm install from a URL with a password (K16)"
+_case sec-svn-checkout 'svn checkout https://deploy:abcdefghijk@svn.example/r' refused "svn checkout with a password in the URL (K16)"
+_case sec-gh-api-url-query 'gh api repos/o/r/hooks -f config[url]="https://hook.example/in?token=abcdefghijk"' refused "a gh api field value that is a URL with a token in its query (K16)"
+_case sec-gh-api-url-userinfo 'gh api repos/o/r/hooks -f config[url]=https://u:abcdefghijk@hook.example/in' refused "a gh api field value that is a URL with a password (K16)"
+_case sec-cat-url 'cat docs/setup.md | grep "https://deploy:abcdefghijk@x.example"' allowed "cat and grep only read and search for a URL (K16)"
+_case sec-gh-issue-url 'gh issue comment 5 --body "it was cloned from https://deploy:abcdefghijk@x.example"' allowed "gh issue comment only files text naming a URL (K16)"
+_case sec-sudo-git-log 'sudo git log --grep "https://u:abcdefghijk@x"' allowed "git log through sudo only searches (K16)"
+_case sec-heredoc-notes "cat <<'EOF' > notes.md
+cloned from https://deploy:abcdefghijk@x.example
+EOF" allowed "a heredoc body cat writes to a file is text, not a command (K16)"
+_case sec-heredoc-commit "git commit -F - <<'EOF'
+fix: rotate the deploy URL https://deploy:abcdefghijk@x.example
+EOF" allowed "a commit message read from a heredoc is text (K16)"
+_case sec-heredoc-bash "cat <<'EOF' | bash
+pip install https://deploy:abcdefghijk@x.example/pkg.tgz
+EOF" refused "a heredoc body piped into bash is run, so its pip install is judged (K16)"
+
+# --- aws, gcloud and az send, but for their log searches (K17) --------------
+_case sec-aws-lambda-env 'aws lambda update-function-configuration --environment "Variables={DB_PASSWORD=abcdefghijk}"' refused "a literal password set as a lambda's environment (K17)"
+_case sec-gcloud-run-env 'gcloud run deploy api --set-env-vars DB_PASSWORD=abcdefghijk' refused "a literal password set as a Cloud Run service's environment (K17)"
+_case sec-gcloud-functions-env 'gcloud functions deploy f --set-env-vars API_TOKEN=abcdefghijk' refused "a literal token set as a function's environment (K17)"
+_case sec-az-appsettings 'az webapp config appsettings set --settings DB_PASSWORD=abcdefghijk' refused "a literal password set as a web app's settings (K17)"
+_case sec-aws-region-logs 'aws --region eu-west-1 logs filter-log-events --log-group-name app --filter-pattern "token=abcdefghij"' allowed "aws searching logs after --region and its value (K17)"
+_case sec-aws-cloudwatch 'aws cloudwatch get-metric-data --cli-input-json "token=abcdefghij"' allowed "aws cloudwatch is a monitoring search (K17)"
+_case sec-gcloud-project-logging 'gcloud --project p logging read "textPayload:token=abcdefghij"' allowed "gcloud reading logs after --project and its value (K17)"
+_case sec-az-monitor-q "az monitor log-analytics query -q \"x | where m has 'token=abcdefghij'\"" allowed "az querying logs with -q for the pattern (K17)"
+_case sec-npm-set 'npm set //registry.example/:_authToken=abcdefghijk' refused "npm set, the alias of npm config set (K17)"
+_case sec-npm-location-set 'npm --location project set //r/:_authToken=abcdefghijk' refused "npm set after --location project (K17)"

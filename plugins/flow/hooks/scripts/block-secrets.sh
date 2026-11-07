@@ -33,26 +33,35 @@
 #     httpie, nc, ssh, mysql, psql, docker, kubectl and the others in
 #     SENDERS below), or that stores or sends a credential (gh secret, gh
 #     variable, vault, heroku, fly, flyctl, npm, yarn or pnpm `config set`,
-#     and only their secret-storing subcommands for aws (secretsmanager
-#     create-secret, put-secret-value, update-secret; ssm put-parameter;
-#     configure set), gcloud (secrets) and az (keyvault secret set)), in its
-#     arguments, in a here-string (`<<<`) it reads, or in the words of the
-#     commands piped into it (`echo ... | curl -d @-`). The subcommand is
-#     found past the global options in front of it (`gh -R o/r secret set`,
-#     `npm --location project config set`);
+#     `npm set`, and aws, gcloud and az with every subcommand but their log
+#     and monitoring searches, aws logs and cloudwatch, gcloud logging and az
+#     monitor, whose values are search patterns), in its arguments, in a
+#     here-string (`<<<`) it reads, or in the words of the commands piped
+#     into it (`echo ... | curl -d @-`). The subcommand is found past the
+#     global options in front of it (`gh -R o/r secret set`, `npm --location
+#     project set`, `aws --region eu-west-1 logs`);
 #   - for gh api, a field (`-f`, `-F`, `--field`, `--raw-field` name=value)
 #     whose name is secret-shaped or one a secrets endpoint takes
-#     (encrypted_value, key_id) with a literal value of 8 or more characters;
+#     (encrypted_value, key_id) with a literal value of 8 or more characters,
+#     or whose value is a URL the next rule refuses (`-f config[url]=URL`);
 #     a field named anything else (`-f body="... token=..."`) is text;
 #   - a word that is a URL (or an assignment or option holding one) with a
 #     secret-shaped query parameter (`?token=abcdefghij`) or a literal
 #     password in its userinfo (`https://user:abcdefghij@host`), given to
-#     one of the commands above that sends or sets, to git clone, fetch,
-#     pull, push, remote add or set-url, or submodule add, or to a program
-#     a wrapper runs that this hook does not name (`sudo git push`), or
-#     assigned in command position; `echo URL >> README.md` is text;
+#     any command but a text command (TEXTS below: echo, printf, cat, grep,
+#     sed and the like; git commit, log, show, diff, tag and notes; gh
+#     issue create, edit and comment, gh pr create, edit, comment and
+#     review, gh release create and edit), or assigned in command position:
+#     `git ls-remote URL`, `pip install --index-url URL` and `svn checkout
+#     URL` are refused, `echo URL >> README.md` and `git log --grep URL`
+#     are text. A line of a heredoc body that nothing on its line runs
+#     (`cat <<EOF > notes.md`, `git commit -F - <<EOF`) is not a command:
+#     it gets the URL rule only when its first word is a sender, a setter,
+#     git clone, fetch, pull, push, remote add or set-url, or submodule add,
+#     or a program a wrapper runs that this hook does not name (_body_line);
 #   - a script given inline to python (`-c`), perl (`-e`, `-E`, also in a
-#     bundle such as `-ne` or `-pie`), ruby (`-e`) or node (`-e`, `-p`,
+#     bundle such as `-ne` or `-pie`, and after `-i` and its attached backup
+#     extension, `-pi.bak -e`, `-i.pre -pe`), ruby (`-e`) or node (`-e`, `-p`,
 #     `--eval`, `--print`) whose text holds a secret-shaped assignment
 #     (also with a quoted key, `os.environ['API_TOKEN']='...'`) or a literal
 #     auth header: a script is not shell, so its words cannot be read as
@@ -109,10 +118,15 @@ HEADER_MSG="BLOCKED: Literal auth token detected in curl command. Use environmen
 SENDERS=" curl wget http https xh httpie nc ncat netcat telnet ftp sftp scp ssh rsync mysql mysqladmin mysqldump psql pg_dump pg_restore mongo mongosh redis-cli sqlcmd docker podman kubectl helm "
 SETTERS=" export declare typeset local readonly env "
 # Commands that store a credential or send it to a service. gh only with
-# api, secret or variable, npm, yarn and pnpm only with `config set`, and
-# aws, gcloud and az only with a subcommand that stores a secret (_judge):
-# `gh issue create --body` files text, `aws logs filter-log-events` searches.
+# api, secret or variable, npm, yarn and pnpm only with `config set` (and
+# npm's alias `npm set`), and aws, gcloud and az with every subcommand but
+# their log and monitoring searches (_judge): `gh issue create --body` files
+# text, `aws logs filter-log-events` searches.
 CREDS=" vault heroku fly flyctl "
+# Commands that print, search or file text: a URL given to them is named,
+# not used (`echo URL >> README.md`). The text-carrying subcommands of git
+# and gh are read in _judge. Every other command gets the URL rule.
+TEXTS=" echo printf cat tee grep egrep fgrep rg ag sed awk head tail less more wc sort uniq cut tr diff jq yq "
 # Interpreters whose inline script (-c, -e) is not shell.
 # Interpreters given an inline script (-c, -e); python3 is spelled out of
 # pieces so the PYTHONPATH scan does not take this list for a python call.
@@ -168,7 +182,7 @@ _target() {
   case "$b" in ''|*[[:space:]]*) return 1 ;; esac
   shopt -q nocasematch && nc=1
   shopt -s nocasematch
-  case "$SENDERS$SETTERS$CREDS$INTERPS gh npm yarn pnpm aws gcloud az " in *" $b "*) r=0 ;; esac
+  case "$SENDERS$SETTERS$CREDS$INTERPS$TEXTS gh npm yarn pnpm aws gcloud az git " in *" $b "*) r=0 ;; esac
   case "$b" in python[0-9]*) r=0 ;; esac
   [ "$nc" = 1 ] || shopt -u nocasematch
   return "$r"
@@ -230,8 +244,11 @@ _in_order() {
 # perl -e and -E, also in a bundle (-ne, -le, and -pie, read as -p -i -e);
 # ruby -e (-ne); node -e, -p, -pe, --eval, --print. An option that takes the
 # next word as its value (python -W, -X; perl -I; ruby -I, -r; node -r,
-# --require, ...) steps over it, and an attached value (-Wignore, -Mstrict,
-# -i.bak) is not read as options. The caller declares SCRIPTS and n.
+# --require, ...) steps over it, and an attached value (-Wignore, -Mstrict)
+# is not read as options. perl's and ruby's -i takes its backup extension
+# attached (-i.bak, -pi.save, -i.pre): the rest of the word is the
+# extension, not option letters, except a lone `e` (-pie), read as -i -e.
+# The caller declares SCRIPTS and n.
 _inline_scripts() {
   local kind=$1 j=$((BD_CMDI + 1)) w rest c
   SCRIPTS=()
@@ -263,6 +280,7 @@ _inline_scripts() {
           [ "$kind" != python ] || return 0
           rest="" ;;
         python:m) return 0 ;;
+        perl:i|ruby:i) case "$kind:$rest" in perl:e|perl:E|ruby:e) ;; *) rest="" ;; esac ;;
         python:[WXQ]|perl:I|ruby:[IrCE])
           [ -n "$rest" ] || j=$((j + 1))
           rest="" ;;
@@ -276,15 +294,43 @@ _inline_scripts() {
   done
 }
 
-# _judge <simple command> <piped>: exits 2 with the reason when it passes a
-# secret. <piped> is 1 when a pipe feeds it the output of FEED.
+# _body_line <simple command>: is it a line of a heredoc body that no shell
+# or interpreter on its line reads (`cat <<EOF > notes.md`, `git commit -F -
+# <<EOF`), and not also a command outside such a body? Only when
+# _bd_strip_noncode kept a body (BD_KEPT_BODY=1): the command is read again
+# with those bodies left out (BD_BLANK_BODIES=1), once, as tier-gate.sh does,
+# and a simple command that reading still has is a command. A reading that
+# fails counts it as one.
+BODYFREE=""
+BODYFREE_DONE=0
+_body_line() {
+  local s l
+  [ "${BD_KEPT_BODY:-0}" = 1 ] || return 1
+  if [ "$BODYFREE_DONE" = 0 ]; then
+    BODYFREE=$(BD_BLANK_BODIES=1; _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE") \
+      || BODYFREE=__BD_SEG_FAIL__
+    BODYFREE_DONE=1
+  fi
+  case "$BODYFREE" in *__BD_SEG_FAIL__*) return 1 ;; esac
+  s="${1#"${1%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
+  while IFS= read -r l; do
+    l="${l#__BD_ALT__}"; l="${l#__BD_PIPE__}"
+    l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"
+    [ "$l" = "$s" ] && return 1
+  done <<< "$BODYFREE"
+  return 0
+}
+
+# _judge <simple command> <piped> <body>: exits 2 with the reason when it
+# passes a secret. <piped> is 1 when a pipe feeds it the output of FEED,
+# <body> 1 when it is a line of a heredoc body (_body_line).
 _judge() {
   # shellcheck disable=SC2034
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=() POS=() SCRIPTS=()
   # shellcheck disable=SC2034
   local BD_RIN=0 BD_CMDI=0
   _bd_words "$1"
-  local n=${#TOK[@]} i=0 j k w f first cmd="" sender=0 setter=0 urls=0 ghapi=0
+  local n=${#TOK[@]} i=0 j k w f first cmd="" sender=0 setter=0 text=0 urls=0 gitnet=0 ghapi=0
   # Keywords and assignments in command position are set in the shell or the
   # command's environment, a URL holding a secret among them.
   while [ "$i" -lt "$n" ]; do
@@ -319,44 +365,70 @@ _judge() {
     w=${TOK[BD_WRAPI[k]]}
     [ "$(printf '%s' "${w##*/}" | tr 'A-Z' 'a-z')" = env ] && setter=1
   done
+  # A wrapper running a program this hook does not name (`sudo pip install`,
+  # `xargs ./deploy.sh`) leaves cmd empty: not a text command.
   if [ "$BD_CMDI" -lt "$n" ]; then
     cmd=$(printf '%s' "${TOK[BD_CMDI]##*/}" | tr 'A-Z' 'a-z')
-  elif [ "${#BD_WRAPI[@]}" -gt 0 ]; then
-    # A wrapper runs a program this hook does not name (`sudo git push`,
-    # `xargs ./deploy.sh`): its URLs are judged as a sender's.
-    urls=1
   fi
   case "$SENDERS" in *" $cmd "*) sender=1 ;; esac
   case "$SETTERS" in *" $cmd "*) setter=1 ;; esac
   case "$CREDS" in *" $cmd "*) sender=1 ;; esac
+  case "$TEXTS" in *" $cmd "*) text=1 ;; esac
   # The subcommand decides what gh, npm, yarn, pnpm, aws, gcloud, az and git
-  # do, read past the options in front of it (_positional).
+  # do, read past the global options in front of it (_positional). A global
+  # option whose value is not listed leaves the value as the subcommand, so
+  # aws, gcloud and az stay senders.
   case "$cmd" in
     gh)
       _positional " -R --repo "
-      case "${POS[0]:-}" in api) sender=1; ghapi=1 ;; secret|variable) sender=1 ;; esac ;;
-    npm|yarn|pnpm) _positional " "; if _in_order config set; then sender=1; fi ;;
+      case "${POS[0]:-}" in
+        api) sender=1; ghapi=1 ;;
+        secret|variable) sender=1 ;;
+        # The subcommands that file text: a title, a body, notes.
+        issue) case "${POS[1]:-}" in create|edit|comment) text=1 ;; esac ;;
+        pr) case "${POS[1]:-}" in create|edit|comment|review) text=1 ;; esac ;;
+        release) case "${POS[1]:-}" in create|edit) text=1 ;; esac ;;
+      esac ;;
+    npm)
+      _positional " --location --prefix --userconfig --globalconfig --registry --cache --workspace -w --loglevel "
+      if _in_order config set || [ "${POS[0]:-}" = set ]; then sender=1; fi ;;
+    yarn|pnpm) _positional " "; if _in_order config set; then sender=1; fi ;;
     aws)
-      _positional " "
-      if _in_order secretsmanager create-secret || _in_order secretsmanager put-secret-value \
-        || _in_order secretsmanager update-secret || _in_order ssm put-parameter \
-        || _in_order configure set; then sender=1; fi ;;
-    gcloud) _positional " "; if _in_order secrets; then sender=1; fi ;;
-    az) _positional " "; if _in_order keyvault secret set; then sender=1; fi ;;
+      # A log or metric search takes a pattern as its value.
+      _positional " --profile --region --output --endpoint-url --query --ca-bundle --cli-read-timeout --cli-connect-timeout --color --cli-binary-format "
+      case "${POS[0]:-}" in logs|cloudwatch) ;; *) sender=1 ;; esac ;;
+    gcloud)
+      _positional " --project --account --configuration --format --verbosity --impersonate-service-account --billing-project --flags-file --flatten --trace-token --access-token-file "
+      case "${POS[0]:-}" in alpha|beta) POS=("${POS[@]:1}") ;; esac
+      case "${POS[0]:-}" in logging) ;; *) sender=1 ;; esac ;;
+    az)
+      _positional " --subscription --output -o --query "
+      case "${POS[0]:-}" in monitor) ;; *) sender=1 ;; esac ;;
     git)
-      # The subcommands that take a URL to fetch from or push to.
+      # The subcommands that carry a message or show history are text; those
+      # that take a URL to fetch from or push to, network ones.
       _positional " -C -c --git-dir --work-tree --namespace --exec-path --config-env "
       case "${POS[0]:-}" in
-        clone|fetch|pull|push) urls=1 ;;
-        remote) case "${POS[1]:-}" in add|set-url) urls=1 ;; esac ;;
-        submodule) [ "${POS[1]:-}" != add ] || urls=1 ;;
+        commit|log|show|diff|tag|notes) text=1 ;;
+        clone|fetch|pull|push) gitnet=1 ;;
+        remote) case "${POS[1]:-}" in add|set-url) gitnet=1 ;; esac ;;
+        submodule) [ "${POS[1]:-}" != add ] || gitnet=1 ;;
       esac ;;
     python|python[0-9]*) _inline_scripts python ;;
     perl) _inline_scripts perl ;;
     ruby) _inline_scripts ruby ;;
     node|nodejs) _inline_scripts node ;;
   esac
-  if [ "$sender" = 1 ] || [ "$setter" = 1 ]; then urls=1; fi
+  # The URL rule: every command but a text command. A line of a heredoc body
+  # that nothing on its line runs (<body> 1, `cat <<EOF > notes.md`) is not
+  # a command, and keeps the narrower rule it had before: a sender, a setter,
+  # git's fetch and push subcommands, or a program a wrapper runs that this
+  # hook does not name.
+  if [ "$text" = 0 ]; then
+    if [ "${3:-0}" = 0 ] || [ "$sender" = 1 ] || [ "$setter" = 1 ] || [ "$gitnet" = 1 ] || [ -z "$cmd" ]; then
+      urls=1
+    fi
+  fi
   # An inline script is not shell: its words cannot be read as arguments, so
   # its whole text is checked.
   for ((k = 0; k < ${#SCRIPTS[@]}; k++)); do
@@ -378,6 +450,8 @@ _judge() {
       esac
       if [ "$f" = 1 ]; then
         printf '%s\n' "$w" | grep -qiE "$FIELD_RE" && _refuse "$SECRET_MSG"
+        # A field holding a URL gets the URL rule: `-f config[url]=URL`.
+        _url_word "$w" && _refuse "$SECRET_MSG"
         continue
       fi
     fi
@@ -412,7 +486,9 @@ while IFS= read -r SEG; do
   PIPED=0
   case "$SEG" in __BD_PIPE__*) SEG=${SEG:11}; PIPED=1 ;; esac
   case "$SEG" in __BD_*) continue ;; esac
-  _judge "$SEG" "$PIPED"
+  BODY=0
+  if _body_line "$SEG"; then BODY=1; fi
+  _judge "$SEG" "$PIPED" "$BODY"
   if [ "$PIPED" = 1 ]; then FEED="$FEED
 $SEG"; else FEED=$SEG; fi
 done <<< "$BD_SEGS"
