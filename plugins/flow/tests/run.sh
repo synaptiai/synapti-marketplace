@@ -113,7 +113,12 @@ export FLOW_STATE_DIR="$_flow_run_state"
 # keeps a failed file's artifacts for the person reading the failure, so it
 # makes its scratch root in the run's own temporary directory,
 # FLOW_E2E_TMPDIR, which run.sh sets to TMPDIR as it was when the run started.
+# The per-file directories go in TMPDIR as this run.sh found it: a run.sh that
+# a test file starts (run-parallel.test.sh kills one with SIGKILL, which no
+# trap survives) then leaves what it could not remove inside that file's own
+# directory, which the outer run.sh removes.
 export FLOW_E2E_TMPDIR="${FLOW_E2E_TMPDIR:-${TMPDIR:-/tmp}}"
+_flow_tmp_base="${TMPDIR:-/tmp}"
 _flow_file_tmp=""
 _flow_rm_tree() { [ -n "$1" ] && [ -d "$1" ] || return 0; chmod -R u+rwx "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; }
 trap '_flow_rm_tree "$_flow_file_tmp"; _flow_rm_tree "$_flow_run_state"' EXIT
@@ -431,7 +436,7 @@ for TEST_FILE in "${TEST_FILES[@]}"; do
   # only when the file ends, so a CI job cut off inside a file says nothing
   # about where).
   exec 3>&1
-  _flow_file_tmp=$(mktemp -d "${FLOW_E2E_TMPDIR}/flow-test-tmp.XXXXXX") || {
+  _flow_file_tmp=$(mktemp -d "${_flow_tmp_base}/flow-test-tmp.XXXXXX") || {
     echo "run.sh: cannot create a temporary directory for $(basename "$TEST_FILE")" >&2
     RUNNER_ERR=1
     FAILED_FILES+=("$(basename "$TEST_FILE")")

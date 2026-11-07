@@ -35,6 +35,9 @@
 #      made (most files that are not e2e files never remove theirs)
 #   H12 run.sh removes the artifacts the e2e harness keeps for a failed file,
 #      or a file sees the run's own TMPDIR instead of a directory of its own
+#   H13 a run.sh started by a test file and killed with SIGKILL (as
+#      run-parallel.test.sh does) leaves its directories in the outer run's
+#      TMPDIR, where nothing removes them
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -241,4 +244,17 @@ FAILING
   _hs_ok 'case "$kept" in "$E2E_DIR/tmp/flow-e2e."*/artifacts) true ;; *) false ;; esac' "the printed artifacts path is in the run's TMPDIR ($kept)"
   _hs_ok '[ -s "$kept/failing.txt" ]' "the artifact is there"
   e2e_expect_equal "flow-e2e" "$(cd "$E2E_DIR/tmp" && ls -A | sed 's/\..*//')" "what the run left in TMPDIR"
+fi
+
+if _want hs-runner-nested-killed; then
+  _hs_case hs-runner-nested-killed "H13: a test file that starts run.sh on a file which kills that run.sh with SIGKILL leaves nothing in the outer run's TMPDIR"
+  printf '%s\n' 'kill -9 $$' > "$E2E_DIR/killer.test.sh"
+  cat > "$E2E_DIR/outer.test.sh" <<OUTER
+"\$REPO_ROOT/plugins/flow/tests/run.sh" "$E2E_DIR/killer.test.sh" >/dev/null 2>&1
+_flow_test_begin outer
+_flow_assert_pass "started run.sh on a file that kills it"
+OUTER
+  _hs_runner outer.test.sh
+  e2e_expect_equal 0 "$HS_RC" "run.sh exit status"
+  e2e_expect_equal "" "$(cd "$E2E_DIR/tmp" && ls -A)" "what the run left in TMPDIR"
 fi
