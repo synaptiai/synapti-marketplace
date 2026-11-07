@@ -65,6 +65,29 @@
 #      read as the version "git", so the gem reads as from the registry
 #   R21 a source option passed through a **splat or a hash variable, or a
 #      custom git_source option (mine: "r"), reads as a gem from the registry
+#   R22 a git/github/path block whose opening call runs over several lines
+#      (a trailing comma, a label, an open parenthesis) is read from its first
+#      line only: the do on a later line opens an anonymous block, and every
+#      gem inside reads as from the registry with STATE=ok; or a continued
+#      opener that runs into another statement or past the end of the file is
+#      read as if it were whole
+#   R23 gist:, one of Bundler's built-in git sources beside github:, is read
+#      as an ordinary option, so the gem reads as from the registry
+#   R24 a git/path block written with braces (`path("x") {` ... `}`) is not
+#      tracked, so its gems read as from the registry; or the } of a hash
+#      literal inside it closes it; or an end that closes a { block, or a }
+#      that closes a do block, is read instead of making the file unreadable
+#   R25 a package.json spec npm installs from outside the registry is missed:
+#      a relative, home or absolute path without file: (../a/b, ~/x, /abs,
+#      C:/x, ./c.tgz) or an scp-style git spec (git@host:path); or a semver
+#      range (~1.2.3, ^2.0.0) or a dist-tag is taken for one
+#   R26 a version bump of a Gemfile path: or git: gem (option or block),
+#      whose source stays the same, is reported as a new redirect; or a git
+#      gem whose branch or tag moves is not
+#   R27 a quoted editable target (-e ".[dev]", --editable "git+...#egg=x"),
+#      which pip reads with shell quoting, keeps its quotes, so the project
+#      itself makes the file unreadable and a quoted VCS target is misnamed;
+#      or an unclosed quote is skipped instead of making the file unreadable
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -121,12 +144,12 @@ DEP_ADDED=rake@(unpinned) manifest=Gemfile:3
 DEP_REPLACED=rack -> github:evil/rack@main manifest=Gemfile:2
 DEP_REPLACED=rake -> github:evil/rake@(unpinned) manifest=Gemfile:3'
 
-_dep dep-gem-path "path: in the hash-rocket syntax (R1)" Gemfile \
+_dep dep-gem-path "path: in the hash-rocket syntax, with no version: a path names no revision (R1, R26)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\ngem "local", "0.1.0", :path => "../local"\n' \
 'STATE=ok
 DEP_ADDED=local@0.1.0 manifest=Gemfile:2
-DEP_REPLACED=local -> ../local@0.1.0 manifest=Gemfile:2'
+DEP_REPLACED=local -> ../local@(unpinned) manifest=Gemfile:2'
 
 _dep dep-gem-git-block "a gem inside a git block; a gem in a group block after it is not redirected (R1)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
@@ -169,12 +192,12 @@ DEP_ADDED=devise@(unpinned) manifest=Gemfile:2
 DEP_ADDED=rspec@3.12.0 manifest=Gemfile:5
 DEP_REPLACED=devise -> https://github.com/attacker/devise@main manifest=Gemfile:2'
 
-_dep dep-gem-multiline-backslash "a gem call continued with a backslash keeps its github: source (R10)" Gemfile \
+_dep dep-gem-multiline-backslash "a gem call continued with a backslash keeps its github: source; its version constraint is not a ref (R10, R26)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\ngem "rack", "3.0.0", \\\n  github: "evil/rack" # a fork\n' \
 'STATE=ok
 DEP_ADDED=rack@3.0.0 manifest=Gemfile:2
-DEP_REPLACED=rack -> github:evil/rack@3.0.0 manifest=Gemfile:2'
+DEP_REPLACED=rack -> github:evil/rack@(unpinned) manifest=Gemfile:2'
 
 _dep dep-gem-multiline-eof "a gem call whose continuation runs past the end of the file makes it unreadable (R10)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
@@ -487,3 +510,103 @@ $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\ngit_source(SOURCE_NAME) { |repo| "https://evil.example/#{repo}.git" }\n' \
 'STATE=unavailable
 MANIFEST_UNPARSED=Gemfile reason=the git_source on line 2 does not name a literal symbol or string at head'
+
+# --- Gemfile blocks and sources Bundler reads that the parser missed (R22-R24, R26)
+_dep dep-gem-block-continued "a git, github or git( block whose opening call runs over several lines keeps its gems redirected (R22)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://example.invalid/fork/rails.git",\n    branch: "main" do\n  gem "activesupport"\nend\ngithub "evil/rails",\n  branch: "edge" do\n  gem "railties"\nend\ngit(\n  "https://evil.example/r.git",\n  tag: "v1"\n) do\n  gem "actionpack"\nend\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:14
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:4
+DEP_ADDED=railties@(unpinned) manifest=Gemfile:8
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:16
+DEP_REPLACED=actionpack -> https://evil.example/r.git@v1 manifest=Gemfile:14
+DEP_REPLACED=activesupport -> https://example.invalid/fork/rails.git@main manifest=Gemfile:4
+DEP_REPLACED=railties -> github:evil/rails@edge manifest=Gemfile:8'
+
+_dep dep-gem-block-continued-into-gem "a continued git block opener that runs into a gem line makes the file unreadable (R22)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://evil.example/r.git",\ngem "activesupport"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the git block on line 2 continues into line 3, which is not part of it at head'
+
+_dep dep-gem-block-continued-eof "a continued path block opener that runs past the end of the file makes it unreadable (R22)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath "vendor/engines",\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the path block on line 2 continues past the end of the file at head'
+
+_dep dep-gem-gist "gist:, a built-in Bundler git source, is a redirect in either hash syntax (R23)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "nokogiri", gist: "deadbeef"\ngem "rake", :gist => "cafe01", ref: "abc"\n' \
+'STATE=ok
+DEP_ADDED=nokogiri@(unpinned) manifest=Gemfile:2
+DEP_ADDED=rake@(unpinned) manifest=Gemfile:3
+DEP_REPLACED=nokogiri -> gist:deadbeef@(unpinned) manifest=Gemfile:2
+DEP_REPLACED=rake -> gist:cafe01@abc manifest=Gemfile:3'
+
+_dep dep-gem-brace-block "a path or git block written with braces redirects its gems; a hash literal inside it does not close it (R24)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\npath("vendor/engines") {\n  SETTINGS = {\n    a: 1,\n  }\n  gem "engine"\n}\ngit("https://evil.example/r.git", branch: "x") { |g|\n  gem "activesupport"\n}\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:9
+DEP_ADDED=engine@(unpinned) manifest=Gemfile:6
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:11
+DEP_REPLACED=activesupport -> https://evil.example/r.git@x manifest=Gemfile:9
+DEP_REPLACED=engine -> vendor/engines@(unpinned) manifest=Gemfile:6'
+
+_dep dep-gem-brace-end "an end that closes a { block makes the file unreadable (R24)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit("https://evil.example/r.git") {\n  gem "activesupport"\nend\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the end on line 4 closes the { on line 2 at head'
+
+_dep dep-gem-brace-closes-do "a } that closes a do block makes the file unreadable (R24)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://evil.example/r.git" do\n  gem "activesupport"\n}\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the } on line 4 closes the do on line 2 at head'
+
+_dep dep-gem-redirect-version-bump "a path or git gem whose version moves is not a new redirect; a git gem whose tag moves is (R26)" Gemfile \
+$'gem "engine", "~> 1.0", path: "engines/engine"\ngem "fork", "~> 2.0", git: "https://evil.example/fork.git", tag: "v2"\ngem "pinned", git: "https://evil.example/pinned.git", tag: "v1"\npath "vendor" do\n  gem "inner", "1.0"\nend\n' \
+$'gem "engine", "~> 1.1", path: "engines/engine"\ngem "fork", "~> 2.1", git: "https://evil.example/fork.git", tag: "v2"\ngem "pinned", git: "https://evil.example/pinned.git", tag: "v2"\npath "vendor" do\n  gem "inner", "1.1"\nend\n' \
+'STATE=ok
+DEP_CHANGED=engine "~> 1.0"->"~> 1.1" manifest=Gemfile:1
+DEP_CHANGED=fork "~> 2.0"->"~> 2.1" manifest=Gemfile:2
+DEP_CHANGED=inner 1.0->1.1 manifest=Gemfile:5
+DEP_REPLACED=pinned -> https://evil.example/pinned.git@v2 manifest=Gemfile:3'
+
+# --- package.json paths and scp-style git (R25) -------------------------------
+_dep dep-npm-paths "package.json paths without file: and scp-style git specs are redirects; ranges and tags are not (R25)" package.json \
+'{"dependencies":{"express":"4.18.0"}}' \
+'{"dependencies":{"express":"4.18.0","rel-path":"../foo/bar","home-path":"~/x/y","abs-path":"/abs/p","tarball":"./vendor/c.tgz","drive-path":"C:/x/y","scp-host":"git@host.example:team/r.git","tilde-range":"~1.2.3","caret-range":"^2.0.0","dist-tag":"latest"}}' \
+'STATE=ok
+DEP_ADDED=abs-path@/abs/p manifest=package.json
+DEP_ADDED=caret-range@^2.0.0 manifest=package.json
+DEP_ADDED=dist-tag@latest manifest=package.json
+DEP_ADDED=drive-path@C:/x/y manifest=package.json
+DEP_ADDED=home-path@~/x/y manifest=package.json
+DEP_ADDED=rel-path@../foo/bar manifest=package.json
+DEP_ADDED=scp-host@git@host.example:team/r.git manifest=package.json
+DEP_ADDED=tarball@./vendor/c.tgz manifest=package.json
+DEP_ADDED=tilde-range@~1.2.3 manifest=package.json
+DEP_REPLACED=abs-path -> /abs/p@(unpinned) manifest=package.json
+DEP_REPLACED=drive-path -> C:/x/y@(unpinned) manifest=package.json
+DEP_REPLACED=home-path -> ~/x/y@(unpinned) manifest=package.json
+DEP_REPLACED=rel-path -> ../foo/bar@(unpinned) manifest=package.json
+DEP_REPLACED=scp-host -> git@host.example:team/r.git@(unpinned) manifest=package.json
+DEP_REPLACED=tarball -> ./vendor/c.tgz@(unpinned) manifest=package.json'
+
+# --- quoted editable targets (R27) ---------------------------------------------
+_dep dep-req-editable-quoted "a quoted -e target is read as pip reads it: -e \".[dev]\" is the project, a quoted VCS target is a redirect (R27)" requirements.txt \
+$'flask==2.0\n' \
+$'flask==2.0\n-e ".[dev]"\n--editable \'git+https://evil.example/x.git#egg=xpkg\'\n' \
+'STATE=ok
+DEP_ADDED=xpkg@(unpinned) manifest=requirements.txt:3
+DEP_REPLACED=xpkg -> git+https://evil.example/x.git#egg=xpkg@(unpinned) manifest=requirements.txt:3'
+
+_dep dep-req-editable-unclosed-quote "an -e line with an unclosed quote makes the file unreadable (R27)" requirements.txt \
+$'flask==2.0\n' \
+$'flask==2.0\n-e "../x#egg=x\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=requirements.txt reason=the option on line 2 has an unclosed quote at head'

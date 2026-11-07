@@ -45,19 +45,26 @@
 #     entry (names matched PEP 503 normalised); a requirements*.txt line
 #     that is a URL (`git+https://...#egg=x`, `https://.../x-1.0-py3-none-any.whl`),
 #     a local path (`../x#egg=x`, `./dist/x-1.0-py3-none-any.whl`) or an
-#     editable install (`-e ...`, `--editable ...`), named by its #egg=
+#     editable install (`-e ...`, `--editable ...`, its target read with
+#     shell quoting as pip reads it: `-e "../x#egg=x"`), named by its #egg=
 #     fragment or wheel file name, with the target as written; a
 #     package.json spec that is a URL, a hosted-git shorthand (github:,
-#     user/repo), or file:/link:; a Gemfile git:, github:, gitlab:,
-#     bitbucket: or path: option, or an option a `git_source(:name)` line
-#     declared, keyed by a label, a symbol or a string (`git: url`,
-#     `:git => url`, `"git" => url`, also on the lines a gem call continues
-#     onto), or a gem inside a git/github/path block; a Gemfile.lock GIT
-#     section, at its revision; and a Gemfile.lock PATH section other than
-#     the project's own (remote: . or ./ is the gemspec gem, not a
-#     redirect), with no version, so a version bump of a path gem is not a
-#     new redirect. The project itself in requirements*.txt (`.`, `-e .`,
-#     `-e .[dev]`) is not a redirect either. A Gemfile target is reported
+#     user/repo), an scp-style git spec (git@host:path), file:/link:, or a
+#     path without them (one starting with ., ~/, / or \, a drive letter,
+#     any other spec holding a slash, a .tgz/.tar.gz/.tar file name); a
+#     Gemfile git:, github:, gitlab:, bitbucket:, gist: or path: option, or
+#     an option a `git_source(:name)` line declared, keyed by a label, a
+#     symbol or a string (`git: url`, `:git => url`, `"git" => url`, also on
+#     the lines a gem call continues onto), or a gem inside a git/github/path
+#     block, written `do ... end` or `{ ... }`, also when its opening call
+#     runs over several lines; a Gemfile.lock GIT section, at its revision;
+#     and a Gemfile.lock PATH section other than the project's own
+#     (remote: . or ./ is the gemspec gem, not a redirect). A Gemfile git
+#     redirect's version is its ref, tag or branch (the gem's own, or its
+#     block's), and a path redirect, in either file, has none, so a version
+#     bump of a path or git gem is a DEP_CHANGED, not a new redirect. The
+#     project itself in requirements*.txt (`.`, `-e .`, `-e ".[dev]"`) is
+#     not a redirect either. A Gemfile target is reported
 #     only as a literal: a double-quoted gem name, source option or block
 #     target that interpolates (#{...}, #@ivar, #@@cvar, #$gvar) makes the
 #     Gemfile MANIFEST_UNPARSED; a single-quoted one is as written.
@@ -85,9 +92,12 @@
 #     line holds a second statement after a `;`, or another gem call in its
 #     arguments; a `git_source` name is not a literal; a parenthesised gem
 #     call does not close on its line or carries a trailing modifier
-#     (`gem("x") if c`); a continued call runs past the end of the file or
-#     into another statement; an `end` closes no block it has seen; or a
-#     `=begin` has no `=end`
+#     (`gem("x") if c`); a continued call, or a git/github/path block's
+#     continued opening call, runs past the end of the file or into another
+#     statement; an `end` or `}` closes no block it has seen, or closes a
+#     block the other one belongs to (an `end` for a `{`, a `}` for a `do`);
+#     or a `=begin` has no `=end`. A requirements*.txt -e line with an
+#     unclosed quote is unreadable too
 #
 # MANIFESTS_EXAMINED=0 with STATE=none means no manifest was in the diff.
 # MANIFESTS_EXAMINED=1 with no DEP_ lines means a manifest was read and nothing

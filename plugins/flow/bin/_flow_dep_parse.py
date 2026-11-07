@@ -38,6 +38,7 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 import json
 import os
 import re
+import shlex
 
 # The record separator in the output. A value carrying one would split a line
 # into two records, so it is refused rather than escaped: a dependency name is
@@ -505,6 +506,26 @@ def _requirement_target_name(target, lineno):
         "(no egg fragment and no wheel file name)" % lineno)
 
 
+def _editable_target(line, lineno):
+    """The target of an `-e`/`--editable` line, read as pip reads an option
+    line: split with shell quoting, so `-e ".[dev]"` is `.[dev]`. None when
+    the line names no target. An unclosed quote makes the file unreadable:
+    the target cannot be told."""
+    try:
+        words = shlex.split(line)
+    except ValueError:
+        raise ParseError("the option on line %d has an unclosed quote" % lineno)
+    if not words:
+        return None
+    first = words[0]
+    if first in ("-e", "--editable"):
+        return words[1] if len(words) > 1 else None
+    for prefix in ("--editable=", "-e"):
+        if first.startswith(prefix):
+            return first[len(prefix):].lstrip("=") or (words[1] if len(words) > 1 else None)
+    return None
+
+
 def parse_requirements(text):
     """requirements*.txt, line by line.
 
@@ -514,7 +535,9 @@ def parse_requirements(text):
     (`-e ../x`, `-e git+https://...#egg=x`). Each of the last three installs
     a package from somewhere other than the index, so it is a redirect as
     well as a dependency, named by its `#egg=` fragment or its wheel file
-    name; one that names neither makes the file unreadable. The project
+    name; one that names neither makes the file unreadable. An editable
+    line is split with shell quoting, as pip splits it (`-e ".[dev]"`), and
+    one with an unclosed quote makes the file unreadable. The project
     itself (`.`, `-e .`, `-e .[dev]`) is the code under review and is not
     read. No other option line (`-r`, `-c`, `--index-url`,
     `--extra-index-url`, `--find-links`, ...) is read."""
@@ -525,10 +548,11 @@ def parse_requirements(text):
             continue
         target = None
         if line.startswith("-"):
-            em = _REQ_EDITABLE.match(line)
-            if not em:
+            if not _REQ_EDITABLE.match(line):
                 continue
-            target = em.group(1)
+            target = _editable_target(line, lineno)
+            if target is None:
+                continue
         elif _URL_REQ.match(line) or _REQ_PATH.match(line):
             target = line.split()[0]
         if target is not None:
@@ -628,13 +652,18 @@ _NPM_DEP_SECTIONS = (
     "optionalDependencies",
 )
 _NPM_ALIAS = re.compile(r"^npm:(.+)@([^@]+)$")
-# A package.json spec that fetches the package from somewhere other than the
-# registry: a URL (git+https://, git://, https://...tgz), a hosted-git
-# shorthand (github:, gitlab:, bitbucket:, gist:), a local path (file:,
-# link:), or the bare GitHub shorthand `user/repo[#ref]`.
+# A package.json spec that npm fetches from somewhere other than the
+# registry, as npm-package-arg reads it: a URL (git+https://, git+ssh://,
+# git://, https://...tgz), a hosted-git shorthand (github:, gitlab:,
+# bitbucket:, gist:), a local path with file: or link:, or without one (one
+# starting with `.`, `~/`, `/` or `\`, or a drive letter: `../x`, `~/x`,
+# `/abs`, `C:/x`), an scp-style git spec (`git@host:path`), any other spec
+# holding a slash (the GitHub shorthand `user/repo[#ref]`, a path `a/b/c`),
+# and a tarball file name (`x.tgz`). A semver range (`~1.2.3`, `^2.0.0`) or a
+# dist-tag (`latest`) is none of these, and an `npm:` alias is read apart.
 _NPM_REDIRECT = re.compile(
-    r"^(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:github|gitlab|bitbucket|gist|file|link):"
-    r"|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:#.*)?$)"
+    r"^(?!npm:)(?:[A-Za-z][A-Za-z0-9+.-]*://|(?:github|gitlab|bitbucket|gist|file|link):"
+    r"|[.]|~/|[/\\]|[A-Za-z]:|[^@\s/:]+@[^:\s/]+:|.*[/\\]|.*\.(?:tgz|tar\.gz|tar)$)"
 )
 
 
@@ -841,8 +870,9 @@ _GEM_LITERAL = re.compile(r"^(['\"])([^'\"]+)\1")
 # The options that fetch a gem from somewhere other than its registry, with
 # the key written as a label (`git: "url"`, `"git": "url"`), a symbol
 # (`:git => "url"`) or a string (`"git" => "url"`): Bundler reads them all
-# alike. A `git_source(:name)` line adds `name` to them.
-_GEM_SOURCE_KEYS = ("git", "github", "gitlab", "bitbucket", "path")
+# alike. A `git_source(:name)` line adds `name` to them. `gist` is one of
+# Bundler's built-in git sources, beside `github`, `gitlab` and `bitbucket`.
+_GEM_SOURCE_KEYS = ("git", "github", "gitlab", "bitbucket", "gist", "path")
 _GEM_ARG_LABEL = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):(?!:)")
 _GEM_ARG_SYMBOL_KEY = re.compile(r"^:([A-Za-z_][A-Za-z0-9_]*)\s*=>")
 _GEM_ARG_STRING_KEY = re.compile(r"^\s*(?:=>|:(?!:))")
@@ -851,10 +881,18 @@ _GIT_SOURCE = re.compile(r"^\s*git_source(?![A-Za-z0-9_?!])")
 _GIT_SOURCE_NAME = re.compile(
     r"^\s*git_source\s*\(?\s*(?::([A-Za-z_][A-Za-z0-9_]*)|(['\"])([A-Za-z_][A-Za-z0-9_]*)\2)"
 )
-# A block whose gems all come from one place: `git "url" do`, `path "dir" do`,
-# `github "user/repo" do`.
-_GEM_BLOCK = re.compile(r"^\s*(git|github|gitlab|bitbucket|path)\b\s*\(?\s*(?:(['\"])(.*?)\2)?.*\bdo\s*(\|[^|]*\|)?\s*$")
+# A statement that starts a block whose gems all come from one place:
+# `git "url" do`, `path "dir" do`, `github "user/repo" do`, also written
+# `git("url") { ... }`, and with its options over several lines. Not
+# `git_source`, a label (`git:`), a method call on a variable named `path`
+# (`path.each`) or an assignment to one (`path = ...`).
+_GEM_BLOCK_START = re.compile(
+    r"^\s*(git|github|gitlab|bitbucket|gist|path)(?![A-Za-z0-9_?!:])(?!\s*(?:\.|::|=))"
+)
 _DO = re.compile(r"\bdo\s*(\|[^|]*\|)?\s*$")
+# A `{` that ends a line and opens a block (`path("x") {`, `{ |g|`): one
+# after a comma, a bracket, `=`, `=>`, a label, `|` or `&` opens a hash.
+_BRACE_OPEN = re.compile(r"(\S)\s*(\{)\s*(?:\|[^|]*\|)?\s*$")
 _END = re.compile(r"^\s*end\b")
 # A line that opens a keyword block closed by `end`: the keyword starts the
 # statement (`if ENV["X"]`) or is the value of an assignment
@@ -862,7 +900,7 @@ _END = re.compile(r"^\s*end\b")
 # expression instead and opens nothing. A label (`if:`) is not the keyword.
 _KEYWORD_OPEN = re.compile(
     r"(?:^\s*|(?<![=!<>])=(?![=~>])\s*)"
-    r"(?:if|unless|case|while|until|for|begin|def|class|module)(?![A-Za-z0-9_?!:])"
+    r"(if|unless|case|while|until|for|begin|def|class|module)(?![A-Za-z0-9_?!:])"
 )
 # A keyword block that also closes on its line (`def x; end`,
 # `if c then y end`), and an endless method (`def x = 1`, `def x(a) = a`),
@@ -877,7 +915,7 @@ _GEM_CONTINUES = re.compile(r"(?:,|\\|=>|[A-Za-z0-9_]:|\|\||&&|[(\[{])\s*$")
 _RUBY_STRING = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`")
 # A line a continued gem call cannot run into: a statement of its own.
 _GEMFILE_STATEMENT = re.compile(
-    r"^\s*(?:gem|gemspec|git|github|gitlab|bitbucket|path|group|platforms?"
+    r"^\s*(?:gem|gemspec|git|github|gitlab|bitbucket|gist|path|group|platforms?"
     r"|source|ruby|git_source|install_if|eval_gemfile|end|else|elsif|when"
     r"|if|unless|case|while|until|for|begin|def|class|module)(?![A-Za-z0-9_?!:])"
 )
@@ -967,35 +1005,42 @@ def _ruby_lines(text):
     return lines
 
 
-def _statement(lines, index, line, lineno, gem):
+def _statement(lines, index, line, lineno, kind=None):
     """The statement that starts with `line` (line `lineno`), read with the
-    lines that continue it, and the index of the line after it. A statement
-    continues past a trailing backslash; a gem call without parentheses also
-    past a trailing comma, hash rocket, label, `||`/`&&` or open bracket, and
-    over blank lines. A continuation line that is a statement of its own makes
-    the file unreadable, except a modifier (`if`, `unless`, ...) right after
-    a backslash, which ends the statement it follows, and, for a statement
-    other than a gem call, a keyword that is the value it assigns."""
-    kind = "gem call" if gem else "statement"
+    lines that continue it, and the index of the line after it. `kind` is
+    "gem call" for a gem call without parentheses, "<keyword> block" for a
+    statement starting with a git/github/path block keyword, and None for any
+    other. A statement continues past a trailing backslash; a gem call or a
+    block keyword's call also past a trailing comma, hash rocket, label,
+    `||`/`&&` or open bracket, and over blank lines, until the block
+    keyword's line ends by opening its block (`do`, `{`). A continuation
+    line that is a statement of its own makes the file unreadable, except a
+    modifier (`if`, `unless`, ...) right after a backslash, which ends the
+    statement it follows, and, for any other statement, a keyword that is
+    the value it assigns."""
+    joined = kind is not None
+    what = kind or "statement"
     while True:
         backslash = line.endswith("\\")
         head = line[:-1].rstrip() if backslash else line
-        if not backslash and not (gem and _gem_call_continues(line)):
+        continues = joined and _gem_call_continues(line) and not (
+            kind != "gem call" and _block_opener(line))
+        if not backslash and not continues:
             return line, index
         start = index
-        if gem:
+        if joined:
             while index < len(lines) and not _ruby_code(lines[index]).strip():
                 index += 1
         if index >= len(lines):
-            if gem:
-                raise ParseError("the gem call on line %d continues past the end of the file" % lineno)
+            if joined:
+                raise ParseError("the %s on line %d continues past the end of the file" % (what, lineno))
             return head, index
         nxt = _ruby_code(lines[index])
         if _GEMFILE_STATEMENT.match(nxt):
             modifier = backslash and index == start and _MODIFIER.match(nxt) and not _gem_call_continues(head)
-            value = backslash and not gem and _KEYWORD_VALUE.match(nxt)
+            value = backslash and not joined and _KEYWORD_VALUE.match(nxt)
             if not (modifier or value):
-                raise ParseError("the %s on line %d continues into line %d, which is not part of it" % (kind, lineno, index + 1))
+                raise ParseError("the %s on line %d continues into line %d, which is not part of it" % (what, lineno, index + 1))
         line = ("%s %s" % (head, nxt.strip())).rstrip()
         index += 1
 
@@ -1050,8 +1095,9 @@ def _string_at(text):
     return sm.group(0)[0], sm.group(0)[1:-1], text[sm.end():]
 
 
-def _gem_args(code, lineno):
-    """The arguments of a gem call after its name, split at the commas
+def _gem_args(code, lineno, what="the gem call"):
+    """The arguments of a gem call (or a block keyword's call, named by
+    `what`) after its first, split at the commas
     outside brackets and strings: [("version", quote, value)] for a string,
     [("option", key, quote, value)] for an option (quote and value None when
     the value is not a string). An argument this cannot read as either (a
@@ -1079,8 +1125,8 @@ def _gem_args(code, lineno):
             st = _string_at(arg)
             if st is None:
                 if arg.startswith("*"):
-                    raise ParseError("the gem call on line %d passes arguments through a splat" % lineno)
-                raise ParseError("the gem call on line %d passes an argument that is not a string literal or an option" % lineno)
+                    raise ParseError("%s on line %d passes arguments through a splat" % (what, lineno))
+                raise ParseError("%s on line %d passes an argument that is not a string literal or an option" % (what, lineno))
             km = _GEM_ARG_STRING_KEY.match(st[2])
             if not km:
                 out.append(("version", st[0], st[1]))
@@ -1089,6 +1135,78 @@ def _gem_args(code, lineno):
         val = _string_at(rest.strip())
         out.append(("option", key) + ((val[0], val[1]) if val else (None, None)))
     return out
+
+
+def _block_opener(line):
+    """("do" or "{", position) when `line` ends by opening a block, else
+    None. Read with its strings blanked, so a `do` or `{` inside one is not
+    an opener. A `{` after a comma, a bracket, `=`, `=>`, a label, `|` or `&`
+    opens a hash, not a block."""
+    blank = _blank_strings(line)
+    m = _DO.search(blank)
+    if m:
+        return "do", m.start()
+    m = _BRACE_OPEN.search(blank)
+    if m and m.group(1) not in ",([{=>:|&":
+        return "{", m.start(2)
+    return None
+
+
+def _block_source(keyword, line, start, lineno):
+    """(target, ref) of the git/github/path block that `line` opens, its
+    opener (`do` or `{`) at `start`. The target is the first argument, a
+    string literal and nothing more (`git "u" + x do` is not one); the ref
+    is a literal `ref:`, `tag:` or `branch:` option, or None."""
+    what = "the %s block" % keyword
+    args = line[_GEM_BLOCK_START.match(line).end():start].strip()
+    if args.startswith("("):
+        if not args.endswith(")"):
+            raise ParseError("%s on line %d does not name a string literal" % (what, lineno))
+        args = args[1:-1].strip()
+    st = _string_at(args)
+    if (st is None or _literal(st[0], st[1]) is None
+            or (st[2].strip() and not st[2].lstrip().startswith(","))):
+        raise ParseError("%s on line %d does not name a string literal" % (what, lineno))
+    ref = None
+    for arg in _gem_args(args, lineno, what):
+        if arg[0] == "option" and arg[1] in ("ref", "tag", "branch"):
+            ref = _literal(arg[2], arg[3]) or ref
+    return st[1], ref
+
+
+# What a block frame's closer is called in a message, by what opened it.
+_CLOSER = {"do": "end", "{": "}"}
+
+
+def _close_block(blocks, closer, lineno):
+    """Pop the innermost block, which `closer` (`end` or `}`) on line
+    `lineno` closes. One that closes nothing, or a block the other closer
+    belongs to (`end` for a `{`, `}` for a `do`), makes the file
+    unreadable: Ruby would not read it as this parser would."""
+    if not blocks:
+        raise ParseError("the %s on line %d closes no block this can see" % (closer, lineno))
+    opener, _source, opened = blocks[-1]
+    if _CLOSER.get(opener, "end") != closer:
+        raise ParseError("the %s on line %d closes the %s on line %d" % (closer, lineno, opener, opened))
+    blocks.pop()
+
+
+def _close_and_open_braces(blocks, code, lineno):
+    """Close a block for each `}` in `code` that no earlier `{` on the line
+    opened, then open one for each `{` left open: a multi-line hash literal
+    or a brace block (`.each { |g|`), whose `}` must not close a git block
+    around it."""
+    opened = 0
+    for c in _blank_strings(code):
+        if c == "{":
+            opened += 1
+        elif c == "}":
+            if opened:
+                opened -= 1
+            else:
+                _close_block(blocks, "}", lineno)
+    for _ in range(opened):
+        blocks.append(("{", None, lineno))
 
 
 def parse_gemfile(text):
@@ -1103,10 +1221,12 @@ def parse_gemfile(text):
     call inside its arguments; an argument that is neither a string nor an
     option, such as a variable, a hash literal or a `*`/`**` splat, any of
     which can carry a source option; a `gem(` call that does not close on
-    its line; a call without parentheses whose continuation runs past the
-    end of the file or into another statement; a source option whose value
-    is not a literal; a `git_source` whose name is not a literal; an `end`
-    that closes no block this has seen) is NOT guessed at: the file is
+    its line; a call without parentheses, or a git/github/path block's
+    opening call, whose continuation runs past the end of the file or into
+    another statement; a source option or block target whose value is not
+    a literal; a `git_source` whose name is not a literal; an `end` or `}`
+    that closes no block this has seen, or closes one the other belongs to)
+    is NOT guessed at: the file is
     reported unreadable, because a dependency this cannot see is one a
     reviewer would be told does not exist. A call without parentheses
     whose line ends with a comma, a backslash or an open bracket is read
@@ -1121,16 +1241,22 @@ def parse_gemfile(text):
     with no `=end` makes the file unreadable).
 
     A gem fetched from somewhere other than its registry, by a `git:`,
-    `github:`, `gitlab:`, `bitbucket:` or `path:` option, an option a
-    `git_source(:name)` line declared earlier, or inside a
-    `git`/`github`/`path ... do` block, is also a redirect: the same record a
-    go.mod replace makes, so a gem built from a fork does not read as an
-    unpinned gem from rubygems.org. Every other block a later `end` closes
-    (`group ... do`, and `if`, `unless`, `case`, `while`, `until`, `for`,
-    `begin`, `def`, `class` and `module` other than their modifier and
-    one-line forms, and other than an endless `def x = expr`; a setter or
-    operator `def mode=(v)` takes an end) is tracked too, so its `end` does
-    not close the git block around it.
+    `github:`, `gitlab:`, `bitbucket:`, `gist:` or `path:` option, an
+    option a `git_source(:name)` line declared earlier, or inside a
+    `git`/`github`/`path` block (`... do` ... `end` or `(...) {` ... `}`,
+    its opening call continued over lines like a gem call's), is also a
+    redirect: the same record a go.mod replace makes, so a gem built from a
+    fork does not read as an unpinned gem from rubygems.org. The redirect's
+    version is the git ref, tag or branch (the gem's, else its block's) and
+    None for a path, never the version constraint: a version bump is a
+    changed dependency, not a new place to fetch it from. Every other block
+    a later `end` closes (`group ... do`, and `if`, `unless`, `case`,
+    `while`, `until`, `for`, `begin`, `def`, `class` and `module` other than
+    their modifier and one-line forms, and other than an endless
+    `def x = expr`; a setter or operator `def mode=(v)` takes an end), and
+    every `{` a later line's `}` closes (a hash literal, an `.each { |g|`
+    block), is tracked too, so its closer does not close the git block
+    around it.
     """
     r = ParseResult()
     blocks = []
@@ -1144,12 +1270,14 @@ def parse_gemfile(text):
         if not line.strip():
             continue
         m = _GEM_START.match(line)
-        line, index = _statement(lines, index, line, lineno, bool(m and not m.group(1)))
-        bm = _GEM_BLOCK.match(line)
-        if bm:
-            if _literal(bm.group(2), bm.group(3)) is None:
-                raise ParseError("the %s block on line %d does not name a string literal" % (bm.group(1), lineno))
-            blocks.append(_gem_source(bm.group(1), bm.group(3)))
+        bk = None if m else _GEM_BLOCK_START.match(line)
+        kind = "gem call" if m and not m.group(1) else ("%s block" % bk.group(1) if bk else None)
+        line, index = _statement(lines, index, line, lineno, kind)
+        opener = _block_opener(line) if bk else None
+        if opener:
+            keyword = bk.group(1)
+            target, ref = _block_source(keyword, line, opener[1], lineno)
+            blocks.append((opener[0], (_gem_source(keyword, target), ref, keyword), lineno))
             continue
         m = _GEM_START.match(line)
         if m:
@@ -1173,7 +1301,7 @@ def parse_gemfile(text):
             name = lm.group(2).lower()
             if _GEM_CALL_ANYWHERE.search(_blank_strings(args[lm.end():])):
                 raise ParseError("the gem call on line %d holds another gem call" % lineno)
-            version, source, ref = None, None, None
+            version, source, ref, source_key = None, None, None, None
             for arg in _gem_args(args, lineno):
                 if arg[0] == "version":
                     if version is None:
@@ -1183,16 +1311,23 @@ def parse_gemfile(text):
                 if key in source_keys:
                     if value is None:
                         raise ParseError("the %s: of gem %s on line %d is not a string literal" % (key, name, lineno))
-                    source = _gem_source(key, value)
+                    source, source_key = _gem_source(key, value), key
                 elif key in ("ref", "tag", "branch") and value is not None:
                     ref = value
             r.add(name, version, lineno)
             if source is None:
-                source = next((b for b in reversed(blocks) if b), None)
+                frame = next((b[1] for b in reversed(blocks) if b[1]), None)
+                if frame is not None:
+                    source, block_ref, source_key = frame
+                    ref = ref or block_ref
+            # The redirect is the place a gem is fetched from: a path, or a
+            # git source at its ref. The version constraint is not part of
+            # it, so a version bump there is DEP_CHANGED, not a new
+            # redirect, as in Gemfile.lock.
             if source is not None:
-                r.replaces.append((name, source, ref or version, lineno))
+                r.replaces.append((name, source, None if source_key == "path" else ref, lineno))
             if _DO.search(line):
-                blocks.append(None)
+                blocks.append(("do", None, lineno))
             continue
         # `git_source(:mine) { |repo| ... }` makes `mine:` a gem source
         # option like `github:`.
@@ -1206,14 +1341,16 @@ def parse_gemfile(text):
         # from: the Gemfile is unreadable rather than missing a dependency.
         if _GEM_CALL_ANYWHERE.search(_RUBY_STRING.sub('""', line)):
             raise ParseError("the gem call on line %d is not at the start of its statement" % lineno)
-        if _END.match(line):
-            if not blocks:
-                raise ParseError("the end on line %d closes no block this can see" % lineno)
-            blocks.pop()
+        em = _END.match(line)
+        if em:
+            _close_block(blocks, "end", lineno)
+            _close_and_open_braces(blocks, line[em.end():], lineno)
             continue
+        _close_and_open_braces(blocks, line, lineno)
+        km = _KEYWORD_OPEN.search(line)
         if _keyword_block_opens(line) or _DO.search(line):
             # One frame even for `while c do`: its do is part of the loop.
-            blocks.append(None)
+            blocks.append((km.group(1) if km and _keyword_block_opens(line) else "do", None, lineno))
     return r
 
 

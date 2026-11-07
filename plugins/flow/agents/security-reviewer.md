@@ -212,12 +212,14 @@ the registry it normally comes from — a `go.mod` replace, a Cargo `[patch]` or
 direct reference (`requests @ https://...`), a `requirements*.txt` line that
 is a URL, a local path or an `-e` editable install named by its `#egg=`
 fragment or wheel file name (one that names neither makes the file
-`MANIFEST_UNPARSED=`; the project itself, `-e .`, is not reported), a
-`package.json` spec that is a URL, a GitHub shorthand (`github:user/repo`,
-`user/repo`) or a `file:`/`link:` path, a Gemfile `git:`, `github:`,
-`gitlab:`, `bitbucket:` or `path:` source or an option a `git_source(:name)`
-line declared, keyed by a label, a symbol or a string (or a gem inside a
-`git`, `github` or `path` block), or a gem resolved in a `Gemfile.lock` GIT
+`MANIFEST_UNPARSED=`; the project itself, `-e .` or `-e ".[dev]"`, is not
+reported), a `package.json` spec that is a URL, a GitHub shorthand
+(`github:user/repo`, `user/repo`), an scp-style git spec (`git@host:path`)
+or a local path (`file:`/`link:`, or a bare `../x`, `~/x`, `/x`, `C:/x`,
+`x.tgz`), a Gemfile `git:`, `github:`, `gitlab:`, `bitbucket:`, `gist:` or
+`path:` source or an option a `git_source(:name)` line declared, keyed by a
+label, a symbol or a string (or a gem inside a `git`, `github` or `path`
+block, `do`/`end` or `{`/`}`), or a gem resolved in a `Gemfile.lock` GIT
 section or in a PATH section other than the project's own (`remote: .`, the
 gemspec gem, is not reported). A Gemfile target is always one written as a
 literal: a gem name, source or `git` block target in double quotes that
@@ -229,8 +231,9 @@ second statement after a `;` on a gem line. A registry change is not a
 line, a Gemfile `source:` option or `source` block, and a `Gemfile.lock` GEM
 remote are not reported, so read those lines in the diff yourself. The
 `<version>` is a ref or revision when the manifest names one. A `<version>` of `(unpinned)` is
-normal: most redirect forms name a place, not a version, and a `Gemfile.lock`
-PATH redirect always reads `(unpinned)`. **Judge the target exactly as you would an added
+normal: most redirect forms name a place, not a version, and a Gemfile or
+`Gemfile.lock` path redirect always reads `(unpinned)`; a version bump of a
+path or git gem is a `DEP_CHANGED=`, not a new redirect. **Judge the target exactly as you would an added
 package**, because that is what it is: code this change starts fetching that it
 did not before, from somewhere the index does not vouch for. Name the module in
 the finding, not only the target, so a reader can see which dependency stopped
