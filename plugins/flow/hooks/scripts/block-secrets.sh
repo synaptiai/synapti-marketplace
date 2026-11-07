@@ -90,7 +90,9 @@
 #     any subcommand, when it is given configuration before the subcommand
 #     (-c, --config-env, --exec-path=: `git -c core.pager=... status`, `git
 #     -c alias.x=!... x`, `git -c core.sshCommand=... fetch`) or a word
-#     there holds the secret (-C and its directory excepted); git grep
+#     there holds the secret (-C and its directory excepted); git config
+#     storing an alias (`git config [--local|--global|set] alias.x
+#     "!curl ..."`), which the next `git x` runs; git grep
 #     given a pager to run (-O"cmd", -nO"cmd", --open-files-in-pager=cmd,
 #     _grep_pager); or a command this hook does not name, or a wrapper with
 #     no program it names, whose words name a sender, a setter, a shell, an
@@ -102,8 +104,11 @@
 #     /dev/null, /dev/stdout and /dev/stderr (`echo ... > /dev/tcp/host/80`,
 #     `cat <<EOF > /dev/tcp/host/80`, `> /dev/fd/3`), a redirection whose
 #     target holds an expansion (`> $D/tcp/host/80`), or tee given such a
-#     path (DEVSINK). A /dev/tcp or /dev/udp path is a connection, so a text
-#     command writing to one sends what it writes;
+#     path (DEVSINK), also the redirection of a subshell or a group (`( echo
+#     ... ) > /dev/tcp/host/80`, `>>`, `1<>`). A /dev/tcp or /dev/udp path is
+#     a connection, so a text command writing to one sends what it writes.
+#     The whole text of such a command is read for a secret, a heredoc body
+#     the parser dropped as text included;
 #   - the flow rule: when the command has a pipe, a command or process
 #     substitution, a kept heredoc body, a /dev/tcp or /dev/udp path, or a
 #     simple command holding a secret that writes to a file (a redirection
@@ -312,9 +317,10 @@ RUNNERS=$(_wordlist "$SENDERS" "$SETTERS" "$CREDS" "$INTERPS" eval exec source g
 # _names_runner: does a word of TOK after the command's first word (but the
 # program itself), or a space-separated piece of one (`sh -c "curl ..."`),
 # name a program in RUNNERS or a shell? Read loosely: a piece that only looks
-# like one counts. A piece ending in `/` (`out/`, `tests/`) names a
-# directory, no program, and its empty basename is skipped. The caller
-# declares first and n.
+# like one counts. A `!` ends a piece as a quote or a separator does: a git
+# alias `!curl ...` runs curl. A piece ending in `/` (`out/`, `tests/`)
+# names a directory, no program, and its empty basename is skipped. The
+# caller declares first and n.
 _names_runner() {
   local j p b nc=0 r=1
   local -a P=()
@@ -323,7 +329,7 @@ _names_runner() {
   for ((j = first + 1; j < n && r == 1; j++)); do
     [ "$j" != "$BD_CMDI" ] || continue
     [ "${#TOK[j]}" -le 65536 ] || { r=0; break; }
-    read -r -a P <<< "${TOK[j]//[\(\)\{\}\;\&\|\`\"\']/ }"
+    read -r -a P <<< "${TOK[j]//[\(\)\{\}\;\&\|\`\"\'\!]/ }"
     for p in "${P[@]}"; do
       b=${p##*/}
       [ -n "$b" ] || continue
@@ -531,13 +537,11 @@ _dev_target() {
 # _flow_record <held> <body>: called by _judge for each simple command, with
 # its cmd, text, TOK, n, BD_CMDI, BD_RDIR and BD_WRAPI. A simple command that
 # holds a secret and writes to a file (any redirection but to /dev/null,
-# /dev/stdout, /dev/stderr or a file descriptor), or is tee, sets FLOW. Any
-# simple command with a device target sets DEVSINK.
+# /dev/stdout, /dev/stderr or a file descriptor), or is tee, sets FLOW. A tee
+# given a device path sets DEVSINK; a device redirection has set it already,
+# in _judge.
 _flow_record() {
   local t k
-  for t in ${BD_RDIR[@]+"${BD_RDIR[@]}"}; do
-    if _dev_target "$t"; then DEVSINK=1; fi
-  done
   if [ "$cmd" = tee ]; then
     for ((k = BD_CMDI + 1; k < n; k++)); do
       if _dev_target "${TOK[k]}"; then DEVSINK=1; fi
@@ -568,6 +572,13 @@ _judge() {
   local BD_RIN=0 BD_CMDI=0
   _bd_words "$1"
   local n=${#TOK[@]} i=0 j k w f first cmd="" sender=0 setter=0 text=0 urls=0 gitnet=0 ghapi=0 runs=0 held=0
+  # A device target counts before anything else is read. The redirection
+  # after a subshell's `)` (`( echo ... ) > /dev/tcp/host/80`) is a simple
+  # command with no words, which returns below before _flow_record, and the
+  # subshell still sends what it writes.
+  for w in ${BD_RDIR[@]+"${BD_RDIR[@]}"}; do
+    if _dev_target "$w"; then DEVSINK=1; fi
+  done
   # Keywords and assignments in command position are set in the shell or the
   # command's environment, a URL holding a secret among them.
   while [ "$i" -lt "$n" ]; do
@@ -703,6 +714,15 @@ _judge() {
           [ "${TOK[k]}" != -- ] || break
           if _grep_pager "${TOK[k]}"; then runs=1; text=0; fi
         done
+      fi
+      # git config storing an alias (`git config [--local|--global|set]
+      # alias.x "!curl ..."`): the next `git x` runs it, a value starting
+      # with `!` as a shell command and any other as git with options that
+      # may run one (`-c core.sshCommand=...`).
+      if [ "${POS[0]:-}" = config ]; then
+        for ((k = POSI[0] + 1; k < n; k++)); do
+          case "${TOK[k]}" in [Aa][Ll][Ii][Aa][Ss].*) runs=1; text=0 ;; esac
+        done
       fi ;;
   esac
   if [ -n "$cmd" ] && _bd_is_shell "$cmd"; then runs=1; fi
@@ -812,7 +832,14 @@ while IFS= read -r SEG; do
 $SEG"; else FEED=$SEG; fi
 done <<< "$BD_SEGS"
 
-if [ "$DEVSINK" = 1 ] && [ "${#HELD[@]}" -gt 0 ]; then _refuse "$SECRET_MSG"; fi
+# With a device target the whole text of the command is read too: a heredoc
+# body the parser removed as text (`(cat <<EOF` ... `EOF` then `) >
+# /dev/tcp/host/80`, where the body belongs to cat and the redirection to the
+# subshell) is what the connection is sent.
+if [ "$DEVSINK" = 1 ]; then
+  [ "${#HELD[@]}" = 0 ] || _refuse "$SECRET_MSG"
+  if printf '%s\n' "$COMMAND" | grep -qiE "$HELD_RE"; then _refuse "$SECRET_MSG"; fi
+fi
 if [ "$FLOW" = 1 ] && [ "${#HELD[@]}" -gt 0 ] && [ "${#RISKY[@]}" -gt 0 ]; then
   for H in "${HELD[@]}"; do
     for R in "${RISKY[@]}"; do
