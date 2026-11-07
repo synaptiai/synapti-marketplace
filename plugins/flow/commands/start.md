@@ -1179,7 +1179,7 @@ Prove everything works with fix-forward:
    - Option 1 → `TaskUpdate` visual tasks with result "SKIP_USER_APPROVED"
    - Option 2 → `TaskUpdate` visual tasks with result "MANUAL — user will verify"
    - Option 3 → Provide Playwright MCP installation guidance, then retry browser tool cascade
-9a. **Goal evaluation** — when this run has a FlowGoal, evaluate it now, on this run's evidence, so `/flow:pr` finds it already decided. Run the block below once the completion gate holds, with `GOAL_EVAL_VERDICT` set to the verdict judge's result from step 6: `PASS` (or the criteria the user approved there under `verdict.requireAllPass: false`), `FAIL`, `NEEDS-HUMAN-REVIEW`, or `DISABLED` when `VERDICT_JUDGE_STATE=disabled`.
+9a. **Goal evaluation** — when this branch has a FlowGoal that is `active`, evaluate it now, on this run's evidence, so `/flow:pr` finds it already decided. Run the block below once the completion gate holds, with `GOAL_EVAL_VERDICT` set to the verdict judge's result from step 6: `PASS` (or the criteria the user approved there under `verdict.requireAllPass: false`), `FAIL`, `NEEDS-HUMAN-REVIEW`, or `DISABLED` when `VERDICT_JUDGE_STATE=disabled`.
 
    The block runs the goal's verification commands (`hooks/scripts/flow-run-deterministic-checks.sh`, which runs them for a goal in the trust ledger, as every goal `/flow:start` creates is) and records the result in the goal's `lifecycle.last_evaluation`, keeping the rest of the lifecycle (`turns_evaluated`, `current_phase`, `current_activity`). It is `pass` only when the goal is in the trust ledger, every command that ran exited 0, nothing is outside the goal's allowed paths, no command was skipped, and every criterion without a command was passed by the verdict judge. A goal outside the ledger is `incomplete` even when `flow.goals.executeVerificationCommands: true` ran its commands and they passed. On `pass` the goal moves to `achieved` without a question: why no confirmation is needed here is written in `references/goal-lifecycle-transitions.md`. On anything else the goal stays `active`, and the block names the criteria that are not met; report them in the summary, and `/flow:pr`'s goal gate asks about them as before.
 
@@ -1193,14 +1193,24 @@ Prove everything works with fix-forward:
        printf '%s\n' "STATE=blocked" "ERROR=GOAL_EVAL_VERDICT must be PASS, FAIL, NEEDS-HUMAN-REVIEW or DISABLED, got '${GOAL_EVAL_VERDICT:-}'"
        exit 0 ;;
    esac
-   GOAL_PATH=$("$FLOW_ROOT/bin/flow-active-goal.sh" --path --branch-strict 2>/dev/null); GOAL_RC=$?
+   # --any-status: the goal of this branch whatever its status, so a goal that
+   # waits, is blocked, failed or was cancelled is reported as such and not as
+   # no goal. Only an active goal is evaluated.
+   GOAL_ARGS=(--any-status --branch-strict)
+   GOAL_STATUS=$("$FLOW_ROOT/bin/flow-active-goal.sh" --status "${GOAL_ARGS[@]}" 2>/dev/null); GOAL_RC=$?
    case "$GOAL_RC" in
      0) ;;
-     1) printf '%s\n' "STATE=none" "REASON=no active FlowGoal for this branch"; exit 0 ;;
+     1) printf '%s\n' "STATE=none" "REASON=no FlowGoal for this branch"; exit 0 ;;
      *) printf '%s\n' "STATE=unavailable" "REASON=flow-active-goal.sh exited $GOAL_RC"; exit 0 ;;
    esac
-   GOAL_ID=$("$FLOW_ROOT/bin/flow-active-goal.sh" --id --branch-strict 2>/dev/null)
+   GOAL_ID=$("$FLOW_ROOT/bin/flow-active-goal.sh" --id "${GOAL_ARGS[@]}" 2>/dev/null)
    printf '%s\n' "GOAL_ID=$GOAL_ID"
+   if [ "$GOAL_STATUS" != active ]; then
+     printf '%s\n' "STATE=skipped" "GOAL_LIFECYCLE=$GOAL_STATUS" "REASON=FlowGoal $GOAL_ID is $GOAL_STATUS, not active, so it is not evaluated"
+     exit 0
+   fi
+   GOAL_PATH=$("$FLOW_ROOT/bin/flow-active-goal.sh" --path "${GOAL_ARGS[@]}" 2>/dev/null) || {
+     printf '%s\n' "STATE=unavailable" "REASON=the path of FlowGoal $GOAL_ID could not be read"; exit 0; }
    REPORT=$("$FLOW_ROOT/hooks/scripts/flow-run-deterministic-checks.sh" "$GOAL_PATH" 2>/dev/null)
    if ! printf '%s' "$REPORT" | jq -e 'type == "object" and has("checked")' >/dev/null 2>&1; then
      printf '%s\n' "STATE=unavailable" "REASON=the goal's verification commands could not be run (the goal could not be read, or the checks could not start)"
@@ -1262,7 +1272,7 @@ Prove everything works with fix-forward:
    # GOAL_EVALUATE_BLOCK_END
    ```
 
-   `STATE=none` means the run has no goal (an issue with no verifiable criterion, or `goalCreation: off`): nothing to do. On `STATE=unavailable`, say so in the summary with its `REASON`; the goal stays as it was, and `/flow:pr` asks. `JOURNAL=failed` means the goal was updated but its `goal-evaluation` artifact could not be written to the decision journal: say so in the summary.
+   `STATE=none` means no goal, in any status, owns this branch: the run has no goal (an issue with no verifiable criterion, or `goalCreation: off`), and there is nothing to do. `STATE=skipped` means the branch's goal is not `active` (`GOAL_LIFECYCLE` names its status: `waiting_for_user`, `waiting_for_ci`, `blocked`, `draft`, `failed`, `cancelled` or an already `achieved` goal), so it is not evaluated or changed: report that status in the summary, not `no goal`. On `STATE=unavailable`, say so in the summary with its `REASON`; the goal stays as it was, and `/flow:pr` asks. `JOURNAL=failed` means the goal was updated but its `goal-evaluation` artifact could not be written to the decision journal: say so in the summary.
 
 10. **Display summary**:
    - Tasks completed: N/N
@@ -1270,7 +1280,7 @@ Prove everything works with fix-forward:
    - Self-review findings: P1: X, P2: Y, P3: Z (all P1/P2 fixed via fix-forward)
    - Holdout validation: PASS / FINDINGS (P1: X, P2: Y, P3: Z — all P1/P2 fixed)
    - Verdict: PASS (N/N criteria) / FAIL / NEEDS-HUMAN-REVIEW / N/A (spec-free task)
-   - Goal: achieved / active — not met: {GOAL_EVAL_REASON} / no goal
+   - Goal: achieved / active — not met: {GOAL_EVAL_REASON} / {GOAL_LIFECYCLE}, not evaluated / no goal
    - Runtime verification: pass/fail/skip
    - Visual verification: PASS / FAIL / SKIP / SKIP_WARN / SKIP_USER_APPROVED / MANUAL
    - Branch: ready for PR

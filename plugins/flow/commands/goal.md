@@ -370,7 +370,7 @@ Transition `{waiting_for_user, waiting_for_ci, blocked} → active` via `Skill(g
 
 Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `<runtime dir>/goals/` with its terminal status until it is removed (below); the `goal-evaluation` artifact `goal-lifecycle` writes to the decision journal keeps the record of the cancellation.
 
-A cancelled goal keeps `/flow:merge` blocked while its file is on the branch: the merge gate blocks a pull request whose branch carries a goal that is not `achieved`, cancelled and failed included, even next to an achieved goal on the same branch. So the cancelled goal's file is always removed from the branch before merging. When the branch still ships the goal's work, finish that work under a new goal (`/flow:goal create`) and remove the cancelled goal's file; when it no longer ships the work, just remove the file.
+A cancelled goal keeps `/flow:merge` blocked while its file is on the branch: the merge gate blocks a pull request whose branch carries a goal that is not `achieved`, cancelled and failed included, even next to an achieved goal with another id on the same branch. When the branch still ships the goal's work, finish it under a new goal with the same id (`/flow:goal create` or `/flow:start` replaces the cancelled goal), or under another id and remove the cancelled goal's file. When the branch no longer ships the work, remove the file.
 
 [ask: permission] Confirmation via AskUserQuestion (with `metadata: {"source": "flow:permission"}`) is mandatory (Tier 3 action: cancels potentially in-flight work).
 
@@ -388,7 +388,7 @@ Filter via flag:
 
 ## Stop hook interaction
 
-This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `<runtime dir>/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no goal has `status: active`.
+This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `<runtime dir>/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no active goal owns the current branch (active goals on other branches are never judged).
 
 When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates the active goal after every turn, with throttling and budget enforcement: it runs the deterministic checks and, when criteria without a command remain, runs the same judge `/flow:goal evaluate` runs, through the same helper. It cannot ask, so it never writes `achieved`; run `/flow:goal evaluate <id>` to finalize.
 

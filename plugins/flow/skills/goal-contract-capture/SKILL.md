@@ -20,7 +20,7 @@ Iron law: no goal file without an evaluator binding, and no contract element inv
 
 ## Outputs
 
-`<runtime dir>/goals/<id>.goal.yaml` (`<runtime dir>`: what `bin/flow-runtime-dir.sh` prints) conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated). This skill writes no journal artifact: `goal-lifecycle` records `goal-created` on `draft → active`, in the session journal when the goal has no linked issue.
+`<runtime dir>/goals/<id>.goal.yaml` at the repository top (`bin/flow-runtime-dir.sh --goals` prints its path from the working directory; steps 1 and 10 read it there), conforming to `plugins/flow/schemas/v1/goal.schema.json`, written only through `bin/flow-goal-record.sh --create --goal-file <composed.yaml>` (atomic, O_NOFOLLOW-defended, schema-validated). This skill writes no journal artifact: `goal-lifecycle` records `goal-created` on `draft → active`, in the session journal when the goal has no linked issue.
 
 ## Workflow
 

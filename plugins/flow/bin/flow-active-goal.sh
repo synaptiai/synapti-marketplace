@@ -11,7 +11,8 @@
 #
 # Output modes (exactly one allowed, default --status):
 #   --path             path to <runtime dir>/goals/<id>.goal.yaml: relative at
-#                      the repository top, absolute below it
+#                      the repository top, absolute below it; with --commit
+#                      <rev>, <rev>:<path relative to the top>
 #   --id               metadata.id
 #   --status           lifecycle.status (e.g., active, waiting_for_user)
 #   --reason           lifecycle.last_evaluation.reason on one line (empty when

@@ -25,6 +25,9 @@
 #      in the trust ledger has its commands run, and a pass moves it to
 #      achieved without the question references/goal-lifecycle-transitions.md
 #      says only a trusted goal skips
+#   V9 a goal on this branch that is no longer active (waiting, blocked,
+#      failed) is reported as no goal, so the summary says there is nothing
+#      to do, or it is evaluated and changed
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -179,6 +182,19 @@ e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=none"
 e2e_expect_equal 0 "$([ -d "$E2E_REPO/.flow/goals" ] && echo 1 || echo 0)" "a goals directory was created"
 e2e_expect_clean_edges
+
+for status in waiting_for_user blocked failed; do
+  _start_repo "start-goal-$status" "the branch's goal is $status: it is reported with its status, not as no goal, and is not evaluated or changed (V9)"
+  _trusted_goal true "{\"status\":\"$status\"}"
+  e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+  e2e_expect_line "STATE=skipped"
+  e2e_expect_line "GOAL_ID=issue-42"
+  e2e_expect_line "GOAL_LIFECYCLE=$status"
+  e2e_expect_line "REASON=FlowGoal issue-42 is $status, not active, so it is not evaluated"
+  e2e_expect_equal "$status" "$(_goal_field lifecycle.status)" "the goal file's lifecycle.status"
+  e2e_expect_equal None "$(_goal_field lifecycle.last_evaluation)" "the goal file's lifecycle.last_evaluation"
+  e2e_expect_clean_edges
+done
 
 _start_repo start-goal-bad-verdict "GOAL_EVAL_VERDICT not set: the block refuses rather than guessing"
 _trusted_goal true

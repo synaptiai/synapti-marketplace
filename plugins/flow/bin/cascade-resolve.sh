@@ -10,7 +10,9 @@
 #      Both are read at the top of the repository the working directory is in
 #      (git rev-parse --show-toplevel), so a command or hook run from a
 #      subdirectory reads the same settings as one run at the top. Outside a
-#      repository they are read in the working directory, as before.
+#      repository, or when git's top is the user's home kept in git (the
+#      user's, not a repository; see _cr_find_tops), they are read in the
+#      working directory, as before.
 #   3. the user settings file — user-global: $FLOW_USER_SETTINGS when it is
 #      set to an absolute path, otherwise .claude/settings.flow.json in the
 #      user's home (HOME when Flow keeps it, see _cr_home_check, otherwise

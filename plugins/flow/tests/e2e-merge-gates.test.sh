@@ -278,7 +278,7 @@ _retry_case() {
   e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
   e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
   e2e_expect_line "FLOW_GOAL_ID=issue-5"
-  e2e_expect_out "FlowGoal issue-5 lifecycle is '$status' — a $status goal does not merge, and the merge stays blocked while .flow/goals/issue-5.goal.yaml is on the branch: if this PR still ships the work, finish it under a new goal (/flow:goal create) and remove .flow/goals/issue-5.goal.yaml from the branch; if it does not, remove .flow/goals/issue-5.goal.yaml from the branch"
+  e2e_expect_out "FlowGoal issue-5 lifecycle is '$status' — a $status goal does not merge, and the merge stays blocked while .flow/goals/issue-5.goal.yaml is on the branch: if this PR still ships the work, finish it under a new goal with the same id (/flow:goal create replaces .flow/goals/issue-5.goal.yaml), or under another id and remove .flow/goals/issue-5.goal.yaml from the branch; if it does not, remove .flow/goals/issue-5.goal.yaml from the branch"
   e2e_expect_clean_edges
   # The remedy, followed: the file leaves the branch and the retry decides.
   rm "$E2E_REPO/.flow/goals/issue-5.goal.yaml"

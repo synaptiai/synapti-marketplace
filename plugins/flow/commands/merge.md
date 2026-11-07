@@ -427,7 +427,7 @@ true
 
 ### FlowGoal Gate
 
-Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**. It judges the pull request being merged, whatever branch is checked out: the goal whose `scope.branch` is the pull request's head branch, read from the working tree when that branch is checked out and from the pull request's head commit otherwise (fetched from origin when it is not in the clone; when it cannot be read, the gate blocks). When that goal exists, in any status, it must have reached `lifecycle.status == achieved` to merge. A goal that is `active`, `draft`, `waiting_for_user`, `waiting_for_ci`, `blocked`, `failed` or `cancelled` blocks, and the reason names the goal, its status and what it waits for. A `failed` or `cancelled` goal decides over an `achieved` one on the same branch, so the merge stays blocked while its file is on the branch: if the pull request still ships the work, finish it under a new goal and remove the failed or cancelled goal file from the branch; if it does not, remove the file. When the pull request's branch has **no** goal the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
+Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**. It judges the pull request being merged, whatever branch is checked out: the goal whose `scope.branch` is the pull request's head branch, read from the working tree when that branch is checked out and from the pull request's head commit otherwise (fetched from origin when it is not in the clone; when it cannot be read, the gate blocks). When that goal exists, in any status, it must have reached `lifecycle.status == achieved` to merge. A goal that is `active`, `draft`, `waiting_for_user`, `waiting_for_ci`, `blocked`, `failed` or `cancelled` blocks, and the reason names the goal, its status and what it waits for. A `failed` or `cancelled` goal decides over an `achieved` goal with another id on the same branch, so the merge stays blocked while its file is on the branch. If the pull request still ships the work, finish it under a new goal with the same id (`/flow:goal create` or `/flow:start` replaces a failed or cancelled goal), or under another id and remove the failed or cancelled goal's file from the branch. If it does not, remove the file. When the pull request's branch has **no** goal the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
 
 ```!
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -519,14 +519,16 @@ else
             active)
               GOAL_NEXT="run /flow:goal evaluate $GOAL_ID to advance" ;;
             failed|cancelled)
-              # A failed or cancelled goal wins over an achieved one on the
-              # same branch, so a new goal alone never unblocks the merge: the
-              # file has to leave the branch either way. Read from the head
-              # commit, the path is <commit>:<path>; the path is what to remove.
+              # A failed or cancelled goal wins over an achieved goal with
+              # another id on the same branch. A new goal under the same id
+              # replaces the file (flow-goal-record.sh --create), and that
+              # alone unblocks the merge; under another id the old file has to
+              # leave the branch. Read from the head commit, the path is
+              # <commit>:<path>; the path is what to name.
               GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path "${GOAL_ARGS[@]}" 2>/dev/null | head -1)
               [ -z "$PR_HEAD_OID" ] || GOAL_PATH=${GOAL_PATH#"$PR_HEAD_OID":}
               GOAL_PATH=${GOAL_PATH:-the goal file}
-              GOAL_NEXT="a $GOAL_STATUS goal does not merge, and the merge stays blocked while $GOAL_PATH is on the branch: if this PR still ships the work, finish it under a new goal (/flow:goal create) and remove $GOAL_PATH from the branch; if it does not, remove $GOAL_PATH from the branch" ;;
+              GOAL_NEXT="a $GOAL_STATUS goal does not merge, and the merge stays blocked while $GOAL_PATH is on the branch: if this PR still ships the work, finish it under a new goal with the same id (/flow:goal create replaces $GOAL_PATH), or under another id and remove $GOAL_PATH from the branch; if it does not, remove $GOAL_PATH from the branch" ;;
             waiting_for_user)
               GOAL_NEXT="it waits for a person's answer; answer it, then /flow:goal resume $GOAL_ID and /flow:goal evaluate $GOAL_ID" ;;
             waiting_for_ci)
@@ -591,7 +593,7 @@ PR #$PR_NUM cannot be merged — one or more gates report unresolved items.
 1. Run `/flow:address $PR_NUM` to resolve remaining findings
 2. Ensure every finding in `FLOW_REVIEW_CYCLE:FINDINGS` has a matching `RESOLVED` entry in `FLOW_RESOLUTION_CYCLE`
 3. Ensure `ESCALATED:[]` is empty (all escalated items must be resolved or have explicit human override)
-4. If the FlowGoal gate blocks, run `/flow:goal evaluate $FLOW_GOAL_ID` and verify the verdict reaches `achieved`
+4. If the FlowGoal gate blocks, follow `FLOW_GOAL_BLOCK_REASON` for the goal's status: an `active` goal is advanced with `/flow:goal evaluate $FLOW_GOAL_ID` until the verdict reaches `achieved`; a `waiting_for_user`, `waiting_for_ci` or `blocked` goal is resumed (`/flow:goal resume $FLOW_GOAL_ID`) once what it waits for is done, then evaluated; a `failed` or `cancelled` goal cannot be evaluated, so finish the work under a new goal with the same id (`/flow:goal create` replaces it) or under another id and remove the old goal's file from the branch, or remove the file when the pull request no longer ships the work; a `draft` goal is activated and evaluated; when the gate could not read the pull request's head (no `FLOW_GOAL_ID`), the reason says why: fix that (`gh` access, or a head commit the clone can fetch) and re-run
 5. Re-run `/flow:merge $PR_NUM`
 
 This gate enforces the "no incomplete shipments" hard boundary.

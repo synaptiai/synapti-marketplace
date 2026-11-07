@@ -9,7 +9,11 @@ agent: general-purpose
 
 ## Contract
 
-Iron law: no `lifecycle.status` transition without an audit-trail entry — the goal file changes only through `bin/flow-goal-record.sh --update-lifecycle`, and every transition writes a `goal-created` (draft → active) or `goal-evaluation` journal artifact. Invoked by `/flow:goal create`, `/flow:start` Phase 1, and `/flow:debug` for draft → active after `goal-contract-capture`; by `/flow:goal pause | resume | clear`; after `/flow:goal evaluate` confirms a terminal verdict; and by `goal-evaluator` for non-terminal updates. Inputs: goal id, from-state, to-state, reason, trigger (`evaluator | command | hook | user`). Returns the new status once the write and the artifact both succeed. Permitted skips: the run event when `scope.run_id` is unset; the journal artifact for the Stop hook's own `failed` writes (stuck, budget), audited by their run event. Nothing else.
+Iron law: no `lifecycle.status` transition without an audit-trail entry — the goal file changes only through `bin/flow-goal-record.sh --update-lifecycle`, and every transition writes a `goal-created` (draft → active) or `goal-evaluation` journal artifact. Invoked by `/flow:goal create`, `/flow:start` Phase 1, and `/flow:debug` for draft → active after `goal-contract-capture`; by `/flow:goal pause | resume | clear`; after `/flow:goal evaluate` confirms a terminal verdict; and by `goal-evaluator` for non-terminal updates. Inputs: goal id, from-state, to-state, reason, trigger (`evaluator | command | hook | user`). Returns the new status once both succeed. Permitted skips: the run event when `scope.run_id` is unset; the journal artifact for the Stop hook's own `failed` writes (stuck, budget), audited by their run event; `/flow:start` step 9a (below). Nothing else.
+
+## Exception: `/flow:start` step 9a
+
+`GOAL_EVALUATE_BLOCK` writes `active → achieved`, or `active` with a new `last_evaluation`, through `bin/flow-goal-record.sh --update-lifecycle --patch`, and records the `goal-evaluation` artifact. It writes no run event; when the artifact cannot be written the transition stands (`JOURNAL=failed`).
 
 ## State machine
 
