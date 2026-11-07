@@ -1003,10 +1003,10 @@ if _want merge-gate-flow-link; then
   e2e_repo feature/issue-42-e2e
   e2e_goal g-link feature/issue-42-e2e achieved true
   _plant .flow
-  # PR #7, whose head is the checked-out branch: the gate reads its goals
-  # from the working tree.
+  # PR #7, whose head is the checked-out branch at the commit checked out:
+  # the gate reads its goals from the working tree.
   e2e_gh_fixture repo '{"nameWithOwner":"o/r"}'
-  e2e_gh_fixture pr-head-7 '{"headRefName":"feature/issue-42-e2e","headRefOid":"0123456789abcdef0123456789abcdef01234567"}'
+  e2e_gh_fixture pr-head-7 "$(jq -nc --arg o "$(_e2e_git_env; cd "$E2E_REPO" && git rev-parse HEAD)" '{headRefName:"feature/issue-42-e2e",headRefOid:$o}')"
   e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/merge.md" "$MERGE_GOAL_FENCE" 7
   e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
   # The gate says which path was refused, not only the exit status (L37).

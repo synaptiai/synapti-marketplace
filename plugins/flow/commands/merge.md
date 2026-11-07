@@ -442,7 +442,7 @@ true
 
 ### FlowGoal Gate
 
-Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**. It judges the pull request being merged, whatever branch is checked out: the goal whose `scope.branch` is the pull request's head branch, read from the working tree when that branch is checked out and from the pull request's head commit otherwise (fetched from origin when it is not in the clone; when it cannot be read, the gate blocks). When that goal exists, in any status, it must have reached `lifecycle.status == achieved` to merge. A goal that is `active`, `draft`, `waiting_for_user`, `waiting_for_ci`, `blocked`, `failed` or `cancelled` blocks, and the reason names the goal, its status and what it waits for. A `failed` or `cancelled` goal decides over an `achieved` goal with another id on the same branch, so the merge stays blocked while its file is on the branch. If the pull request still ships the work, finish it under a new goal with the same id (`/flow:goal create` or `/flow:start` replaces a failed or cancelled goal), or under another id and remove the failed or cancelled goal's file from the branch. If it does not, remove the file. When the pull request's branch has **no** goal the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
+Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**. It judges the pull request being merged, whatever branch is checked out: the goal whose `scope.branch` is the pull request's head branch, read from the working tree when that branch is checked out at the pull request's head commit, and from that head commit otherwise (a local branch of the same name that is behind, ahead or diverged, or a fork's branch that shares its name, is not the pull request) (fetched from origin when it is not in the clone; when it cannot be read, the gate blocks). When that goal exists, in any status, it must have reached `lifecycle.status == achieved` to merge. A goal that is `active`, `draft`, `waiting_for_user`, `waiting_for_ci`, `blocked`, `failed` or `cancelled` blocks, and the reason names the goal, its status and what it waits for. A `failed` or `cancelled` goal decides over an `achieved` goal with another id on the same branch, so the merge stays blocked while its file is on the branch. If the pull request still ships the work, finish it under a new goal with the same id (`/flow:goal create` or `/flow:start` replaces a failed or cancelled goal), or under another id and remove the failed or cancelled goal's file from the branch. If it does not, remove the file. When the pull request's branch has **no** goal the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
 
 ```!
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -473,24 +473,29 @@ else
   ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh"
   # The goal judged is the goal of the pull request, not of the checked-out
   # branch: the goal whose scope.branch is the head branch of the pull request.
-  # When that branch is checked out here, its goals are read from the working
-  # tree (a goal just evaluated but not yet committed counts). Otherwise they
-  # are read from the head commit of the pull request, fetched from origin
-  # when it is not here yet, so the goal of another issue on the checked-out
-  # branch neither blocks this merge nor stands in for the goal of this one.
+  # When that branch is checked out here at the head commit of the pull
+  # request, its goals are read from the working tree (a goal just evaluated
+  # but not yet committed counts). Otherwise they are read from the head
+  # commit of the pull request, fetched from origin when it is not here yet,
+  # so the goal of another issue on the checked-out branch neither blocks this
+  # merge nor stands in for the goal of this one. A branch name alone is not
+  # enough: a local branch of that name that is behind or has diverged holds
+  # a goal the merge does not land, and a fork's pull request can carry the
+  # name of a branch here.
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   PR_HEAD=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefName,headRefOid --jq '"\(.headRefName) \(.headRefOid)"' 2>/dev/null) || PR_HEAD=""
   PR_HEAD_BRANCH=${PR_HEAD%% *}
   PR_HEAD_OID=${PR_HEAD##* }
   case "$PR_HEAD_OID" in *[!0-9a-f]*|'') PR_HEAD_OID="" ;; esac
   CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+  CURRENT_OID=$(git rev-parse --verify --quiet HEAD 2>/dev/null) || CURRENT_OID=""
   GOAL_SOURCE=()
   GOAL_SOURCE_ERR=""
   if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
     GOAL_SOURCE_ERR="flow-active-goal.sh missing or non-executable"
   elif [ -z "$REPO" ] || [ -z "$PR_HEAD_BRANCH" ] || [ -z "$PR_HEAD_OID" ]; then
     GOAL_SOURCE_ERR="could not read pull request #$PR_NUM's head branch and commit (gh pr view failed); its goal is unknown"
-  elif [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" = "$PR_HEAD_BRANCH" ]; then
+  elif [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" = "$PR_HEAD_BRANCH" ] && [ "$CURRENT_OID" = "$PR_HEAD_OID" ]; then
     printf '%s\n' "FLOW_GOAL_SOURCE=working tree of $PR_HEAD_BRANCH"
   else
     if ! git cat-file -e "$PR_HEAD_OID^{commit}" 2>/dev/null; then
