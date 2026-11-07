@@ -427,7 +427,7 @@ true
 
 ### FlowGoal Gate
 
-Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**: when an active goal exists for this branch it must have reached `lifecycle.status == achieved` to merge; when **no** active goal exists the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
+Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**: when a goal exists for this branch, in any status, it must have reached `lifecycle.status == achieved` to merge. A goal that is `active`, `draft`, `waiting_for_user`, `waiting_for_ci`, `blocked`, `failed` or `cancelled` blocks, and the reason names the goal, its status and what it waits for. When **no** goal exists for this branch the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
 
 ```!
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -449,35 +449,55 @@ else
     printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
     printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh missing or non-executable"
   else
-    # --allow-terminal: surface a goal that already reached `achieved` so the
-    # success branch below is reachable (without it the helper is active-only,
-    # exits 1, and an achieved goal is mislabeled "no active FlowGoal").
+    # --any-status: the goal that owns this branch, whatever its status. A goal
+    # that failed, was cancelled, is blocked, a draft, or waits on a person or
+    # CI is still this branch's goal: without the flag the helper sees only
+    # active and achieved goals, exits 1 for the rest, and the gate below read
+    # that as "no goal, not applicable" and let the merge through.
     # --branch-strict: resolve ONLY a goal owning the current branch — never a
-    # stale active goal on another branch, which would falsely block this merge.
-    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict 2>/dev/null); GOAL_EXIT=$?
+    # stale goal on another branch, which would falsely block this merge.
+    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --any-status --branch-strict 2>/dev/null); GOAL_EXIT=$?
     case "$GOAL_EXIT" in
       0)
-        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal --branch-strict 2>/dev/null)
+        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --any-status --branch-strict 2>/dev/null)
         printf '%s\n' "FLOW_GOAL_ID=$GOAL_ID"
         printf '%s\n' "FLOW_GOAL_LIFECYCLE=$GOAL_STATUS"
         if [ "$GOAL_STATUS" = "achieved" ]; then
           printf '%s\n' "FLOW_GOAL_GATE_STATE=ok"
         else
-          # Active goal exists but is not achieved — fail closed.
-          # The "no incomplete shipments" hard boundary applies: merging a
-          # PR whose own contract reports incomplete is exactly what the
-          # "no incomplete shipments" boundary is designed to prevent.
+          # The branch has a goal and it is not achieved — fail closed. The
+          # "no incomplete shipments" hard boundary applies: merging a PR whose
+          # own contract reports incomplete is what it is designed to prevent.
+          # The reason names the goal, its status, and what it waits for.
+          GOAL_WHY=$("$ACTIVE_GOAL_HELPER" --reason --any-status --branch-strict 2>/dev/null | head -1)
+          case "$GOAL_STATUS" in
+            active)
+              GOAL_NEXT="run /flow:goal evaluate $GOAL_ID to advance" ;;
+            failed|cancelled)
+              GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path --any-status --branch-strict 2>/dev/null | head -1)
+              GOAL_NEXT="a $GOAL_STATUS goal does not merge; if this PR still ships the work, finish it under a new goal (/flow:goal create), and if it no longer does, remove ${GOAL_PATH:-the goal file} from the branch" ;;
+            waiting_for_user)
+              GOAL_NEXT="it waits for a person's answer; answer it, then /flow:goal resume $GOAL_ID and /flow:goal evaluate $GOAL_ID" ;;
+            waiting_for_ci)
+              GOAL_NEXT="it waits for CI; when CI has finished, /flow:goal resume $GOAL_ID and /flow:goal evaluate $GOAL_ID" ;;
+            blocked)
+              GOAL_NEXT="it is blocked; clear what blocks it, then /flow:goal resume $GOAL_ID and /flow:goal evaluate $GOAL_ID" ;;
+            draft)
+              GOAL_NEXT="it is a draft that was never activated; activate and evaluate it before merging" ;;
+            *)
+              GOAL_NEXT="the status is not one flow knows; inspect it with /flow:goal inspect $GOAL_ID" ;;
+          esac
           printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
-          printf '%s\n' "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — run /flow:goal evaluate $GOAL_ID to advance"
+          printf '%s\n' "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — $GOAL_NEXT${GOAL_WHY:+ (last evaluation: $GOAL_WHY)}"
         fi
         ;;
       1)
-        # No active goal on this branch — gate not applicable: the gate keys
-        # on goal existence. A PR without a FlowGoal is not blocked; the PR
-        # own review state remains the durable record, so default installs
+        # No goal on this branch, in any status — gate not applicable: the gate
+        # keys on goal existence. A PR without a FlowGoal is not blocked; the
+        # PR's own review state remains the durable record, so default installs
         # (goalCreation:auto) do not block goal-less merges.
         printf '%s\n' "FLOW_GOAL_GATE_STATE=ok"
-        printf '%s\n' "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
+        printf '%s\n' "FLOW_GOAL_GATE_NOTE=no FlowGoal for this branch — gate not applicable"
         ;;
       3)
         # >1 active goal on the current branch (after branch-scoping).
@@ -488,7 +508,7 @@ else
         # The helper says why on stderr, which the call above discards. Its first
         # line is asked for again here, so the reason names what was refused (a
         # symlinked runtime directory, say) and not only the exit status.
-        GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+        GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status --any-status --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
         GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
         printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
         printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited $GOAL_EXIT${GOAL_ERR:+: $GOAL_ERR}"

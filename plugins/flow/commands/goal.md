@@ -355,7 +355,7 @@ Print the resulting verdict + per-AC table. If lifecycle transitioned to `achiev
 
 ### `/flow:goal pause <id>`
 
-Transition `active → waiting_for_user` via `Skill(goal-lifecycle)`. Use when stepping away mid-flow and the Stop hook should fall silent.
+Transition `active → waiting_for_user` via `Skill(goal-lifecycle)`. Use when stepping away mid-flow and the Stop hook should fall silent. A paused goal keeps `/flow:merge` blocked until it is resumed and achieved.
 
 Reason for the lifecycle transition is collected via AskUserQuestion if not provided as `--reason "..."`.
 
@@ -366,6 +366,8 @@ Transition `{waiting_for_user, waiting_for_ci, blocked} → active` via `Skill(g
 ### `/flow:goal clear <id>`
 
 Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `<runtime dir>/goals/` as audit trail; status is terminal.
+
+A cancelled goal still belongs to its branch: `/flow:merge` blocks a pull request whose branch carries a goal that is not `achieved`, cancelled and failed included. If the branch no longer ships the goal's work, remove the goal file from the branch before merging; if it does, finish the work under a new goal.
 
 Confirmation via AskUserQuestion is mandatory (Tier 3 action: cancels potentially in-flight work).
 

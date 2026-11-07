@@ -12,6 +12,8 @@
 #   --path             absolute-or-relative path to <runtime dir>/goals/<id>.goal.yaml
 #   --id               metadata.id
 #   --status           lifecycle.status (e.g., active, waiting_for_user)
+#   --reason           lifecycle.last_evaluation.reason on one line (empty when
+#                      the goal records none)
 #   --json             full goal as JSON, sorted keys (jq-compatible)
 #   --ac-summary       one line per AC: <id>|<status>|<evidence_ref>|<last_result>
 #   --verifiable-count <total>/<verifiable> — AC count and the subset carrying a
@@ -40,6 +42,17 @@
 #                      window. Active goals on the current branch still take
 #                      precedence. Stop hook + /flow:status omit the flag to keep
 #                      their narrow active-only semantics.
+#   --any-status       consider a goal on the current branch whatever its
+#                      status: draft, waiting_for_user, waiting_for_ci, blocked,
+#                      failed, cancelled as well as achieved (implies
+#                      --allow-terminal). Like --allow-terminal, a goal that is
+#                      not active is only selected when it owns the current
+#                      branch. An active goal on the branch still wins; then a
+#                      goal that is neither active nor achieved, so a branch
+#                      carrying a failed goal and an achieved one is judged by
+#                      the failed one (fail closed). The merge gate uses it: a
+#                      goal that failed, was cancelled, or waits on a person is
+#                      still this branch's goal, not "no goal".
 #   --branch-strict    when the current branch is KNOWN and owns no goal, exit 1
 #                      (not applicable) instead of falling back to a goal on
 #                      another branch. Used by callers that must act on the
@@ -87,12 +100,13 @@ MODE="--status"
 SAW_MODE=0
 OVERRIDE_BRANCH=""
 ALLOW_TERMINAL=0
+ANY_STATUS=0
 BRANCH_STRICT=0
 RUNTIME_DIR_ARG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --path|--id|--status|--json|--ac-summary|--verifiable-count)
+    --path|--id|--status|--reason|--json|--ac-summary|--verifiable-count)
       [ "$SAW_MODE" = "1" ] && { echo "flow-active-goal.sh: only one mode flag allowed (got both $MODE and $1)" >&2; exit 2; }
       MODE="$1"
       SAW_MODE=1
@@ -104,6 +118,11 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --allow-terminal)
+      ALLOW_TERMINAL=1
+      shift
+      ;;
+    --any-status)
+      ANY_STATUS=1
       ALLOW_TERMINAL=1
       shift
       ;;
@@ -138,7 +157,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" "$RUNTIME_DIR_ARG" <<'PYEOF'
+python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" "$RUNTIME_DIR_ARG" "$ANY_STATUS" <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -158,6 +177,7 @@ mode = sys.argv[1]
 override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
 allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
 branch_strict = (sys.argv[4] if len(sys.argv) > 4 else "0") == "1"
+any_status = (sys.argv[7] if len(sys.argv) > 7 else "0") == "1"
 
 GOALS_DIR = os.path.join(runtime_dir(sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None), "goals")
 
@@ -199,6 +219,11 @@ active = []
 # both answer the gate with an unrelated goal and be influenceable through file
 # mtime.
 terminal = []
+# Goals that are neither active nor achieved (draft, waiting_for_user,
+# waiting_for_ci, blocked, failed, cancelled, or a status nobody recognises),
+# collected only with --any-status, and like `terminal` selected only on the
+# current branch.
+other = []
 unreadable = []
 for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
     if os.path.islink(path):
@@ -219,6 +244,8 @@ for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml")
             active.append((path, data, branch, mtime))
         elif allow_terminal and status == "achieved":
             terminal.append((path, data, branch, mtime))
+        elif any_status:
+            other.append((path, data, branch, mtime))
     except Exception as exc:
         # Tolerate unparseable goals — they would block lookup of a sibling
         # legitimate goal. The Stop hook + status subcommand follow the same
@@ -234,19 +261,21 @@ for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml")
 # is the whole question for a caller that gates on existence: the merge gate
 # reads exit 1 as "not applicable" and proceeds. Say the second thing when it
 # is true, and let the caller decide.
-if not active and not terminal and unreadable:
+if not active and not terminal and not other and unreadable:
     for path, exc in unreadable:
         print(f"flow-active-goal.sh: {path} could not be read: {exc}", file=sys.stderr)
     sys.exit(4)
 
-if not active and not terminal:
+if not active and not terminal and not other:
     sys.exit(1)
 
 # Branch-first selection. A goal that owns the current branch always wins over a
 # cross-branch goal, regardless of lifecycle status. Priority:
 #   1. active goal(s) on the current branch  (>1 -> exit 3, degenerate)
-#   2. achieved goal on the current branch    (only with --allow-terminal)
-#   3. most-recently-modified ACTIVE goal on any branch (legacy goals predating
+#   2. a goal on the current branch that is neither active nor achieved
+#      (only with --any-status): it fails closed over an achieved sibling
+#   3. achieved goal on the current branch    (only with --allow-terminal)
+#   4. most-recently-modified ACTIVE goal on any branch (legacy goals predating
 #      scope.branch, detached HEAD, or a caller run from main)
 # Terminal goals are never selected cross-branch (no tier-3 equivalent): if only
 # achieved goals exist and none own the current branch, there is no applicable
@@ -256,6 +285,7 @@ def _branch_matches(t):
 
 active_here = [t for t in active if _branch_matches(t)]
 terminal_here = [t for t in terminal if _branch_matches(t)]
+other_here = [t for t in other if _branch_matches(t)]
 
 if active_here:
     if len(active_here) > 1:
@@ -267,6 +297,12 @@ if active_here:
         )
         sys.exit(3)
     chosen = active_here[0]
+elif other_here:
+    # A goal on this branch that failed, was cancelled, is blocked, a draft, or
+    # waits on a person or CI. Most-recent wins; equal mtime -> alphabetically
+    # first path. It is chosen over an achieved goal on the same branch so the
+    # caller is told about the goal that is not done.
+    chosen = max(other_here, key=lambda t: t[3])
 elif terminal_here:
     # Achieved goal on the current branch (e.g. the gate after evaluation).
     # Most-recent wins; equal mtime -> alphabetically-first path (sorted glob
@@ -322,6 +358,10 @@ elif mode == "--id":
     print(_one_line((data.get("metadata") or {}).get("id", "")))
 elif mode == "--status":
     print(_one_line((data.get("lifecycle") or {}).get("status", "")))
+elif mode == "--reason":
+    _lc = data.get("lifecycle") or {}
+    _ev = _lc.get("last_evaluation") if isinstance(_lc, dict) else None
+    print(_one_line((_ev or {}).get("reason", "") if isinstance(_ev, dict) else ""))
 elif mode == "--json":
     print(json.dumps(data, sort_keys=True))
 elif mode == "--ac-summary":

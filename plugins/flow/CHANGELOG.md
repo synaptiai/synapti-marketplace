@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `/flow:merge`'s FlowGoal gate no longer lets a pull request through when
+  its goal failed, was cancelled, is blocked, is a draft, or waits on a person
+  or CI (#335). The lookup saw only `active` and `achieved` goals, so every
+  other status read as "no goal, gate not applicable". The gate now asks
+  `bin/flow-active-goal.sh` for the branch's goal in any status (the new
+  `--any-status`), passes only an `achieved` goal or a branch with no goal,
+  and blocks every other status with a reason that names the goal, its status,
+  what it waits for, and the last evaluation's reason when the goal records
+  one. When a branch carries a failed or cancelled goal beside an achieved one,
+  the failed or cancelled one decides. `/flow:goal clear` and `/flow:goal
+  pause` say that a cancelled or paused goal keeps the merge blocked.
+- `bin/flow-active-goal.sh` has a `--reason` mode that prints the goal's
+  `lifecycle.last_evaluation.reason` on one line.
+
 ## 3.14.0 (2026-11-05)
 
 Review rounds end when no P1 or P2 with a realistic trigger is left (#326).

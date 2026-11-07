@@ -30,6 +30,11 @@
 #      limited to the current branch)
 #   G4 two active goals on this branch pick one silently instead of blocking
 #   G5 flow.goals.enabled=false still gates
+#   G6 a goal on this branch that is draft, waiting_for_user, waiting_for_ci,
+#      blocked, failed or cancelled reads as "no goal" and lets the merge
+#      through (#335), or blocks without naming the goal and its status
+#   G7 a failed goal beside an achieved one on this branch is passed over for
+#      the achieved one
 #
 # status.md findings ledger
 #   S1 RESOLVED does not win over ESCALATED for the same finding
@@ -168,7 +173,7 @@ _goal_case merge-goal-other-branch "the only active goal belongs to feature/othe
 e2e_goal g-other feature/other active false
 e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
 e2e_expect_line "FLOW_GOAL_GATE_STATE=ok"
-e2e_expect_line "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
+e2e_expect_line "FLOW_GOAL_GATE_NOTE=no FlowGoal for this branch — gate not applicable"
 e2e_expect_no_line "FLOW_GOAL_ID=g-other"
 e2e_expect_clean_edges
 
@@ -188,6 +193,53 @@ mkdir -p "$E2E_REPO/.claude"
 printf '%s\n' '{"flow":{"goals":{"enabled":false}}}' > "$E2E_REPO/.claude/settings.flow.json"
 e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
 e2e_expect_line "FLOW_GOAL_GATE_STATE=disabled"
+e2e_expect_clean_edges
+
+# G6: every status other than active and achieved, as the #335 table lists
+# them. Each blocks, and the reason names the goal, its status and what to do.
+_goal_status_case() {
+  local status=$1 expect=$2
+  _flow_test_begin "merge goal gate: a $status goal on this branch blocks (G6)"
+  _goal_case "merge-goal-$status" "the goal owning this branch is $status: the merge must be blocked and the reason name it"
+  e2e_goal g-mine feature/e2e "$status" false
+  e2e_goal g-other feature/other active false
+  e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
+  e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+  e2e_expect_line "FLOW_GOAL_ID=g-mine"
+  e2e_expect_line "FLOW_GOAL_LIFECYCLE=$status"
+  e2e_expect_out "FlowGoal g-mine lifecycle is '$status' — $expect"
+  e2e_expect_no_line "FLOW_GOAL_GATE_NOTE=no FlowGoal for this branch — gate not applicable"
+  e2e_expect_clean_edges
+}
+_goal_status_case failed "a failed goal does not merge"
+_goal_status_case cancelled "a cancelled goal does not merge"
+_goal_status_case waiting_for_user "it waits for a person's answer"
+_goal_status_case waiting_for_ci "it waits for CI"
+_goal_status_case blocked "it is blocked"
+_goal_status_case draft "it is a draft that was never activated"
+
+_flow_test_begin "merge goal gate: a failed goal is not hidden by an achieved one on the same branch (G7)"
+_goal_case merge-goal-failed-and-achieved "this branch carries an achieved goal and a failed one: the failed one decides"
+e2e_goal g-done feature/e2e achieved true
+e2e_goal g-failed feature/e2e failed false
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_line "FLOW_GOAL_ID=g-failed"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: a waiting goal's reason is shown (G6)"
+_goal_case merge-goal-waiting-reason "a waiting_for_user goal whose last evaluation says what it waits for"
+e2e_goal g-mine feature/e2e waiting_for_user false
+python3 - "$E2E_REPO/.flow/goals/g-mine.goal.yaml" <<'PY'
+import sys, yaml
+p = sys.argv[1]
+g = yaml.safe_load(open(p, encoding="utf-8"))
+g["lifecycle"]["last_evaluation"] = {"result": "needs_human_review", "reason": "which API version to target"}
+yaml.safe_dump(g, open(p, "w", encoding="utf-8"), sort_keys=False)
+PY
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out "(last evaluation: which API version to target)"
 e2e_expect_clean_edges
 
 # --- status.md findings ledger -----------------------------------------------
