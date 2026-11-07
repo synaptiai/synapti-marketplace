@@ -515,7 +515,10 @@ if [ -n "$TRAP_NAME" ] && [ -z "$BUILD_REPO_DIR" ]; then
   if [ "$CASE_FILTER" = "all" ] || [ "${CASE_FILTER#*,}" != "$CASE_FILTER" ]; then
     echo "flow-eval-run: --trap needs exactly one --case, because trap names belong to a case" >&2; exit 1
   fi
-  python3 "$HELPER" list-traps "$EVALS_DIR/$CASE_FILTER" | grep -Fxq -- "$TRAP_NAME" || {
+  # grep reads the whole list: with -q it stops at the match, and a lister
+  # still writing is killed by the closed pipe, which pipefail reports as a
+  # trap the case does not have.
+  python3 "$HELPER" list-traps "$EVALS_DIR/$CASE_FILTER" | grep -Fx -- "$TRAP_NAME" >/dev/null || {
     echo "flow-eval-run: case '$CASE_FILTER' has no trap '$TRAP_NAME' (list them with: python3 $HELPER list-traps $EVALS_DIR/$CASE_FILTER)" >&2
     exit 1
   }

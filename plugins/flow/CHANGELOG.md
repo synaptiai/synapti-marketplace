@@ -285,6 +285,12 @@ Each entry below describes the change against 3.14.0.
   `bin/lib/py-path.sh`'s header names them. `docs/windows-support.md` names
   the helpers `tests/windows-hooks-smoke.sh` calls on the Windows runner
   (`flow-dep-diff.sh` among them) and what it checks for each.
+- `flow-eval-run.sh --trap` no longer refuses, now and then, a trap the case
+  has. It checked the name by piping the case's trap list into `grep -q`,
+  which stops reading at the match; a list still being written was cut off,
+  and the closed pipe read as "case has no trap". It showed under load (5 of
+  40 runs of one command while other tests ran). `grep` now reads the whole
+  list; `tests/e2e-eval-run-trap.test.sh` forces the slow writer.
 
 ## 3.14.0 (2026-11-05)
 
