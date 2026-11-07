@@ -28,6 +28,10 @@
 #   _bd_is_opt <token> <full> <min> -> 0 when the token is that long option,
 #                                    including any unambiguous abbreviation
 #   _bd_is_interpreter <word>     -> 0 when the word names something that runs a script
+#   _bd_command_word <is-target> [<from>] -> sets BD_CMDI to the index in TOK of the
+#                                    program a simple command runs, past keywords,
+#                                    assignments and wrappers (sudo, time, ...),
+#                                    and BD_WRAPI to the wrappers' indices
 #   _bd_shell_reads_stdin <index> -> 0 when TOK[index] is a shell that reads its
 #                                    script from its input (no -c, no script file)
 #   _bd_expand_interpreter_args   -> appends quoted interpreter arguments, and text
@@ -375,6 +379,49 @@ _bd_is_shell() {
   return "$r"
 }
 
+# The words in front of a program that are not the program, the one list each
+# that every reader looking for a command word uses (_bd_command_word): shell
+# keywords after which a command starts (`if x; then cmd; fi`, `{ cmd; }`,
+# `! cmd`), and programs that run the rest of their line.
+_BD_KEYWORDS="if then elif else while until do ! {"
+_BD_WRAPPERS="sudo doas env nohup nice time command builtin exec timeout xargs stdbuf setsid ionice caffeinate chrt taskset flock unbuffer chronic coproc busybox script watch parallel"
+
+# _bd_command_word <is-target> [<from>]
+# Reads TOK from index <from> (default 0) and sets BD_CMDI to the index of
+# the word the shell runs as the program: past assignments, past the words in
+# _BD_KEYWORDS, and past each program in _BD_WRAPPERS, after which the program
+# is the first word the function <is-target> accepts, past the wrapper's
+# options and their values (`timeout 5 bash`, `sudo -u deploy curl`,
+# `ionice -c3 bash`). BD_WRAPI gets the index of each wrapper stepped over.
+# BD_CMDI is the number of words when there is no program (`command -v x`
+# looks a program up and runs nothing; a wrapper with no target after it).
+# The caller declares TOK, BD_CMDI and BD_WRAPI.
+_bd_command_word() {
+  local is="$1" i="${2:-0}" n=${#TOK[@]} w b
+  BD_WRAPI=()
+  while [ "$i" -lt "$n" ]; do
+    w="${TOK[i]}"
+    case "$w" in [A-Za-z_]*=*) i=$((i + 1)); continue ;; esac
+    case " $_BD_KEYWORDS " in *" $w "*) i=$((i + 1)); continue ;; esac
+    # A program name is never longer than PATH_MAX, and stripping the
+    # directory of a long word costs a rescan.
+    [ "${#w}" -le 4096 ] || break
+    b="${w##*/}"
+    if [ "$b" = command ]; then
+      case "${TOK[i+1]:-}" in -*[vV]*) i=$n; break ;; esac
+    fi
+    case " $_BD_WRAPPERS " in
+      *" $b "*)
+        BD_WRAPI+=("$i")
+        i=$((i + 1))
+        while [ "$i" -lt "$n" ] && ! "$is" "${TOK[i]}"; do i=$((i + 1)); done
+        continue ;;
+    esac
+    break
+  done
+  BD_CMDI=$i
+}
+
 # _bd_shell_reads_stdin <index>
 # Is TOK[index] a shell (_bd_is_shell) that reads its script from its input? It does when it
 # is given neither -c nor a script file: `bash`, `bash -s arg`, `sh -x`,
@@ -544,9 +591,17 @@ _bd_strip_noncode() {
       # no comment and runs the rm. `pe1` and `pe2` say whether the character
       # one and two places back was escaped. A `(` ends a word for this only
       # when it opens one itself: zsh reads the `#` of `ls /(#|tmp) ; rm -rf ~`
-      # as part of a glob and runs the rm (bash refuses the line). When in
-      # doubt the text is kept, which only ever makes a rule see more.
-      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0
+      # as part of a glob and runs the rm (bash refuses the line). A `)` ends
+      # a word only when it closes a `(` that opened one: a subshell or a
+      # `((` arithmetic command. The `)` of a `$( )`, `$(( ))`, `<( )` or any
+      # other `(` inside a word leaves the word going on, so
+      # `echo $(true)#x ; rm -rf ~` has no comment and runs the rm. `ps`
+      # holds one letter per open `(` on the line, s for one that opens a
+      # word and w for one inside a word, and `sc` is where the last `)` that
+      # closed an s stood. A `)` with no `(` on its line is not known to end
+      # a word. When in doubt the text is kept, which only ever makes a rule
+      # see more.
+      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0; ps = ""; sc = 0
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
@@ -563,10 +618,23 @@ _bd_strip_noncode() {
         else if (ql != "") { if (c == ql || (ql == DQ && c == SQ)) ql = "" }
         else if (dq) ql = DQ
         else if (c == "\"" || c == SQ) ql = c
+        if (oq && ol && !bq && !bl && (c == "(" || c == ")")) {
+          prev = (i == 1) ? "" : substr(line, i - 1, 1)
+          if (c == ")") {
+            if (ps != "") {
+              if (substr(ps, length(ps), 1) == "s") sc = i
+              ps = substr(ps, 1, length(ps) - 1)
+            }
+          } else if (pe1) ps = ps "w"
+          else if (prev == "(") ps = ps ((substr(ps, length(ps), 1) == "s") ? "s" : "w")
+          else if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
+                   prev == "|" || prev == "&" || prev == ")") ps = ps "s"
+          else ps = ps "w"
+        }
         if (c == "#" && oq && ol && !bq && !bl && !pe1) {
           prev = (i == 1) ? "" : substr(line, i - 1, 1)
           if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
-              prev == "|" || prev == "&" || prev == ")") { cut = i; break }
+              prev == "|" || prev == "&" || (prev == ")" && sc == i - 1)) { cut = i; break }
           if (prev == "(") {
             pp = (i == 2) ? "" : substr(line, i - 2, 1)
             if (pp == "" || (!pe2 && (pp == " " || pp == "\t" || pp == ";" || pp == "|" ||
@@ -952,8 +1020,8 @@ _BD_SEG_AWK='
 # merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
 _bd_expand_interpreter_args() {
   local seg tok base i n found h prev
-  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=()
-  local BD_RIN=0
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=()
+  local BD_RIN=0 BD_CMDI=0
   local extra=""
   while IFS= read -r seg; do
     [ -z "$seg" ] && continue
@@ -1024,29 +1092,11 @@ BD_EXPAND_EOF
         case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac; case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
         _bd_words "$seg"
         n=${#TOK[@]}
-        # The shell is the command word: past assignments, shell keywords
-        # (`if true; then bash; fi`), and the programs that run the rest of
-        # the line (and their options).
-        i=0
-        while [ "$i" -lt "$n" ]; do
-          case "${TOK[i]}" in
-            [A-Za-z_]*=*|if|then|elif|else|while|until|do|'!'|'{') i=$((i + 1)); continue ;;
-          esac
-          # `command -v bash` looks a program up and runs nothing.
-          if [ "${TOK[i]##*/}" = command ]; then
-            case "${TOK[i+1]:-}" in -*[vV]*) i=$n; break ;; esac
-          fi
-          # A program that runs the rest of its line: the shell is the first
-          # word after it that names one, past its options and their values
-          # (`timeout 5 bash`, `ionice -c3 bash`, `busybox sh`).
-          case "${TOK[i]##*/}" in
-            sudo|doas|env|nohup|nice|time|command|builtin|exec|timeout|xargs|stdbuf|setsid|ionice|caffeinate|chrt|taskset|flock|unbuffer|chronic|coproc|busybox|script|watch|parallel)
-              i=$((i + 1))
-              while [ "$i" -lt "$n" ] && ! _bd_is_shell "${TOK[i]}"; do i=$((i + 1)); done
-              continue ;;
-          esac
-          break
-        done
+        # The shell is the command word (_bd_command_word): past assignments,
+        # shell keywords (`if true; then bash; fi`), and the programs that run
+        # the rest of the line (and their options).
+        _bd_command_word _bd_is_shell 0
+        i=$BD_CMDI
         if [ "$BD_RIN" = 0 ] && _bd_shell_reads_stdin "$i"; then fed=1; fi
         for ((i = 0; i < n; i++)); do
           case "${TOK[i]}" in *[[:space:]]*) quoted="$quoted

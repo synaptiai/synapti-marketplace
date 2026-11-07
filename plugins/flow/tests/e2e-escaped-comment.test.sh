@@ -20,6 +20,10 @@
 #   C4 a real comment stops being one: an escaped backslash followed by a real
 #      `;` (`x\\;#y`), or `ls # rm -rf ~`, is refused
 #   C5 one of the readers is fixed and another is not
+#   C6 a `#` right after the `)` that closes a `$( )`, `$(( ))` or `<( )`
+#      inside a word is read as a comment, though the word goes on, so the
+#      command after the next `;` is never checked
+#   C7 a `#` right after the `)` that closes a subshell stops being a comment
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -72,6 +76,18 @@ _case esc-push-real-escaped-bs "$PUSH_HOOK" 'ls x\\;#y ; git push --force origin
 # --- the tier gate (lib/command-parse.sh, as tier-gate.sh reads it) ----------
 _case esc-gate-merge "$GATE_HOOK" 'ls x\ #y ; gh pr merge 7 --squash' asks "a merge hidden after an escaped space is asked about (C1, C5)"
 _case esc-gate-comment "$GATE_HOOK" 'ls # gh pr merge 7 --squash' silent "a merge in a real comment is not (C4)"
+
+# --- a # after the ) of a substitution inside a word (#304) ------------------
+_case esc-rm-subst "$DELETE_HOOK" 'echo $(true)#x ; rm -rf ~' refused "a # after the ) that closes \$( ) is part of the word (C6)"
+_case esc-rm-arith "$DELETE_HOOK" 'echo $((1))#x ; rm -rf ~' refused "a # after the )) that closes \$(( )) is part of the word (C6)"
+_case esc-rm-procsub "$DELETE_HOOK" 'cat <(true)#x ; rm -rf ~' refused "a # after the ) that closes <( ) is part of the word (C6)"
+_case esc-rm-subshell-close "$DELETE_HOOK" '(ls)#x ; rm -rf ~' allowed "a # after the ) that closes a subshell is a comment (C7)"
+_case esc-push-subst "$PUSH_HOOK" 'echo $(true)#x ; git push --force origin main' refused "a # after the ) that closes \$( ) (C6, C5)"
+_case esc-push-arith "$PUSH_HOOK" 'echo $((1))#x ; git push --force origin main' refused "a # after the )) that closes \$(( )) (C6, C5)"
+_case esc-push-procsub "$PUSH_HOOK" 'cat <(true)#x ; git push --force origin main' refused "a # after the ) that closes <( ) (C6, C5)"
+_case esc-push-subshell-close "$PUSH_HOOK" '(ls)#x ; git push --force origin main' allowed "a # after the ) that closes a subshell is a comment (C7)"
+_case esc-gate-subst "$GATE_HOOK" 'echo $(true)#x ; gh pr merge 7 --squash' asks "a merge after \$(true)#x is asked about (C6, C5)"
+_case esc-gate-subshell-close "$GATE_HOOK" '(ls)#x ; gh pr merge 7 --squash' silent "a merge in the comment after a subshell is not (C7)"
 
 # --- gh issue create during an active goal (ask-issue-create.sh) ------------
 _issue_goal() { e2e_goal issue-304 feature/issue-304-e2e active true; }
