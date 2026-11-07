@@ -259,7 +259,7 @@ Examples:
 
 Workflow:
 1. Resolve `<id>` from `<kind>` + branch state.
-2. Pre-flight check: refuse if `<runtime dir>/goals/<id>.goal.yaml` already exists. A goal that is not terminal is cleared first (`/flow:goal clear <id>`); a terminal one (`achieved`, `failed`, `cancelled`) never changes, so its file is removed first or the new goal takes another id. `bin/flow-goal-record.sh --create` refuses both.
+2. Pre-flight check: when `<runtime dir>/goals/<id>.goal.yaml` already exists, continue only if its `lifecycle.status` is `failed` or `cancelled`: the new goal replaces it. Refuse a goal in progress (clear it first with `/flow:goal clear <id>`, which cancels it), an `achieved` goal (it never changes: remove its file first or give the new goal another id), and a goal whose `lifecycle.status` cannot be read. `bin/flow-goal-record.sh --create` refuses the same goals.
 3. Invoke `Skill(goal-contract-capture)` with the inputs documented in its SKILL.md.
 4. After the skill writes the YAML, transition `lifecycle: draft → active` via `Skill(goal-lifecycle)`.
 5. Print: `Created <runtime dir>/goals/<id>.goal.yaml (status: active).`

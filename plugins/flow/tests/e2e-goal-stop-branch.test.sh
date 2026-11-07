@@ -254,18 +254,26 @@ e2e_run_bin bin/flow-runtime-dir.sh --goals
 e2e_expect_line "state/flow/goals"
 e2e_expect_clean_edges
 
-# Ways a terminal goal can be changed from a subdirectory (#337), written down
-# before the scenarios. A terminal goal (achieved, failed, cancelled) never
-# changes; the readers must see the goals where the writer writes them, at the
-# repository top, and the writer must not replace a terminal goal.
+# Ways a goal can be replaced from a subdirectory (#337), written down before
+# the scenarios. The readers must see the goals where the writer writes them,
+# at the repository top. The writer follows goal-contract-capture's
+# pre-flight: it replaces a failed or cancelled goal (so /flow:goal clear and
+# then /flow:start works) and refuses every other one.
 #   B13 /flow:start run in packages/app does not see the achieved goal at the
 #       top and answers FLOW_GOAL_STATE=create, which goes on to create the
 #       goal again under the same id
 #   B14 the same for an active goal at the top: create instead of exists, so
 #       the goal in progress is not resumed
 #   B15 flow-goal-record.sh --create, at the top or in packages/app, replaces
-#       an achieved, failed or cancelled goal with a new active one: it
-#       refuses only a goal that is not terminal
+#       an achieved goal, or one in progress (draft, active, waiting_for_user,
+#       waiting_for_ci, blocked), with a new active one
+#   B18 --create refuses a failed or cancelled goal too, so a goal cleared
+#       with /flow:goal clear (now cancelled) cannot be created again under
+#       its id, and the refusal's hint to clear it first is false
+#   B19 an existing goal whose lifecycle.status is not text (a list, a
+#       mapping, null, a number), is missing, or is a word no status is:
+#       --create stops with a Python traceback (a list or a mapping cannot be
+#       looked up in a set), or reads it as no goal and overwrites it
 #   B16 /flow:goal status run in packages/app finds no goal under
 #       packages/app and says no goal is active, beside the active one at the
 #       top
@@ -332,26 +340,103 @@ e2e_expect_line "GOAL_PATH=$TOP/.flow/goals/issue-7.goal.yaml"
 e2e_expect_no_line "FLOW_GOAL_STATE=create"
 e2e_expect_clean_edges
 
-_flow_test_begin "goal record: --create refuses to replace an achieved, failed or cancelled goal, at the top or in a subdirectory (B15)"
-e2e_new goal-create-over-terminal
-e2e_describe "for each terminal status, a goal issue-7 in it committed at the top; flow-goal-record.sh --create of an active issue-7 in packages/app, then at the top. Each is refused with the status named, and the goal at the top keeps its status and its bytes"
+_flow_test_begin "goal record: --create refuses to replace an achieved goal or one in progress, at the top or in a subdirectory (B15)"
+e2e_new goal-create-over-kept
+e2e_describe "for achieved and each status of a goal in progress, a goal issue-7 in it committed at the top; flow-goal-record.sh --create of an active issue-7 in packages/app, then at the top. Each is refused with the file and the status named, and the goal at the top keeps its bytes"
 _stop_repo warn
 TOP=$(cd "$E2E_REPO" && pwd -P)
 _goal_input issue-7
-for B15_STATUS in achieved failed cancelled; do
+for B15_STATUS in achieved draft active waiting_for_user waiting_for_ci blocked; do
   rm -rf "$E2E_REPO/.flow"
   e2e_goal issue-7 feature/issue-7-x "$B15_STATUS" true
   _commit_goals
   B15_BEFORE=$(cat "$E2E_REPO/.flow/goals/issue-7.goal.yaml")
+  case "$B15_STATUS" in
+    achieved) B15_SAID="exists with terminal status 'achieved'" ;;
+    *) B15_SAID="exists with non-terminal status '$B15_STATUS'" ;;
+  esac
   _in_app bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
   e2e_expect_equal 1 "$E2E_RC" "the create's exit status in packages/app over a $B15_STATUS goal"
-  e2e_expect_err "refusing to overwrite — $TOP/.flow/goals/issue-7.goal.yaml exists with terminal status '$B15_STATUS'"
+  e2e_expect_err "refusing to overwrite — $TOP/.flow/goals/issue-7.goal.yaml $B15_SAID"
   e2e_expect_equal "$B15_STATUS" "$(_top_status issue-7)" "the top goal's lifecycle.status after the create in packages/app"
   e2e_expect_equal no "$(_exists packages/app/.flow)" "a .flow in packages/app"
   e2e_run_bin bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
   e2e_expect_equal 1 "$E2E_RC" "the create's exit status at the top over a $B15_STATUS goal"
-  e2e_expect_err "refusing to overwrite — .flow/goals/issue-7.goal.yaml exists with terminal status '$B15_STATUS'"
+  e2e_expect_err "refusing to overwrite — .flow/goals/issue-7.goal.yaml $B15_SAID"
+  [ "$B15_STATUS" != achieved ] || e2e_expect_err "an achieved goal never changes; remove its file before creating a goal under the same id, or use a new id"
   e2e_expect_equal "$B15_BEFORE" "$(cat "$E2E_REPO/.flow/goals/issue-7.goal.yaml")" "the $B15_STATUS goal's bytes"
+done
+e2e_expect_err "use /flow:goal clear to cancel before re-creating"
+e2e_expect_clean_edges
+
+_flow_test_begin "goal record: --create replaces a failed or cancelled goal, and a goal cleared then created again (B18)"
+e2e_new goal-create-over-ended
+e2e_describe "a failed issue-7 committed at the top, --create in packages/app; a cancelled one, --create at the top; that new active goal cancelled the way /flow:goal clear does (--update-lifecycle --from-status active), then --create in packages/app. Each create writes the new active goal at the top"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+_goal_input issue-7
+e2e_goal issue-7 feature/issue-7-x failed true
+_commit_goals
+_in_app bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+e2e_expect_equal 0 "$E2E_RC" "the create's exit status in packages/app over a failed goal"
+e2e_expect_err "created $TOP/.flow/goals/issue-7.goal.yaml"
+e2e_expect_equal active "$(_top_status issue-7)" "the top goal's lifecycle.status after the create over a failed goal"
+e2e_expect_equal no "$(_exists packages/app/.flow)" "a .flow in packages/app"
+rm -rf "$E2E_REPO/.flow"
+e2e_goal issue-7 feature/issue-7-x cancelled true
+_commit_goals
+e2e_run_bin bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+e2e_expect_equal 0 "$E2E_RC" "the create's exit status at the top over a cancelled goal"
+e2e_expect_err "created .flow/goals/issue-7.goal.yaml"
+e2e_expect_equal active "$(_top_status issue-7)" "the top goal's lifecycle.status after the create over a cancelled goal"
+printf 'lifecycle:\n  status: cancelled\n' > "$E2E_DIR/clear.yaml"
+_in_app bin/flow-goal-record.sh --update-lifecycle --goal-id issue-7 --lifecycle-file "$E2E_DIR/clear.yaml" --from-status active --merge
+e2e_expect_equal 0 "$E2E_RC" "the clear's exit status"
+e2e_expect_equal cancelled "$(_top_status issue-7)" "the top goal's lifecycle.status after the clear"
+_in_app bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+e2e_expect_equal 0 "$E2E_RC" "the create's exit status after the clear"
+e2e_expect_equal active "$(_top_status issue-7)" "the top goal's lifecycle.status after the clear and the create"
+e2e_expect_clean_edges
+
+# _set_top_status <id> <YAML value, or - for no status key> — rewrite the top
+# goal's lifecycle.status to that value.
+_set_top_status() {
+  python3 - "$E2E_REPO/.flow/goals/$1.goal.yaml" "$2" <<'PY' || _flow_assert_fail "$E2E_NAME: could not set the status to $2"
+import sys, yaml
+path, value = sys.argv[1:3]
+with open(path, encoding="utf-8") as f:
+    g = yaml.safe_load(f)
+if value == "-":
+    del g["lifecycle"]["status"]
+else:
+    g["lifecycle"]["status"] = yaml.safe_load(value)
+with open(path, "w", encoding="utf-8") as f:
+    yaml.safe_dump(g, f, sort_keys=False)
+PY
+}
+
+_flow_test_begin "goal record: --create over a goal whose lifecycle.status cannot be read refuses it, with no traceback (B19)"
+e2e_new goal-create-over-unreadable
+e2e_describe "an issue-7 goal at the top whose lifecycle.status is a list, a mapping, null, a number, missing, or a word no status is; flow-goal-record.sh --create in packages/app, then at the top. Each is refused (exit 2) with the file named and its lifecycle said not to be readable, and the goal keeps its bytes"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+_goal_input issue-7
+for B19_VALUE in '[active]' '{state: active}' 'null' '7' '-' 'finished'; do
+  rm -rf "$E2E_REPO/.flow"
+  e2e_goal issue-7 feature/issue-7-x active true
+  _set_top_status issue-7 "$B19_VALUE"
+  _commit_goals
+  B19_BEFORE=$(cat "$E2E_REPO/.flow/goals/issue-7.goal.yaml")
+  printf 'lifecycle.status: %s\n' "$B19_VALUE" | _e2e_art
+  _in_app bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+  e2e_expect_equal 2 "$E2E_RC" "the create's exit status in packages/app over a status of $B19_VALUE"
+  e2e_expect_err "refusing to overwrite — $TOP/.flow/goals/issue-7.goal.yaml has a lifecycle that cannot be read"
+  e2e_expect_err_lacks "Traceback"
+  e2e_run_bin bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+  e2e_expect_equal 2 "$E2E_RC" "the create's exit status at the top over a status of $B19_VALUE"
+  e2e_expect_err "refusing to overwrite — .flow/goals/issue-7.goal.yaml has a lifecycle that cannot be read"
+  e2e_expect_err_lacks "Traceback"
+  e2e_expect_equal "$B19_BEFORE" "$(cat "$E2E_REPO/.flow/goals/issue-7.goal.yaml")" "the goal's bytes with a status of $B19_VALUE"
 done
 e2e_expect_clean_edges
 

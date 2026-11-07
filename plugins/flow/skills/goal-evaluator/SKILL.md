@@ -13,7 +13,7 @@ Iron law: deterministic checks beat LLM judgment: run every `verification_comman
 
 ## Inputs
 
-1. **Goal id**: `<runtime dir>/goals/<id>.goal.yaml` (`<runtime dir>`: `bin/flow-runtime-dir.sh` output; the goals are at the repository top, and `bin/flow-runtime-dir.sh --goals` prints their directory as a path from the working directory) with status `active` (or resumable `waiting_for_user`, `waiting_for_ci`, `blocked`). Never read through a symlink: when `bin/flow-mkdir.sh --check <runtime dir>/goals` refuses, or the goal file is a symlink, it belongs to the link's target.
+1. **Goal id**: `<runtime dir>/goals/<id>.goal.yaml` (`<runtime dir>`: `bin/flow-runtime-dir.sh` output; `bin/flow-runtime-dir.sh --goals` prints the repository top's goals directory) with status `active` (or resumable `waiting_for_user`, `waiting_for_ci`, `blocked`). Never read through a symlink (`bin/flow-mkdir.sh --check <runtime dir>/goals` refuses, or the goal file is one): it belongs to the link's target.
 2. **Run id**: for `<runtime dir>/runs/<run-id>/evidence/`; defaults to the goal's `scope.run_id`.
 3. **Trigger**: `manual | command`.
 
@@ -60,13 +60,13 @@ On `JUDGE_STATE=blocked` or `unavailable`, report `JUDGE_ERROR` and use `needs_h
 
 Map the candidate and judge verdict to a status per `references/goal-lifecycle-transitions.md`.
 
-**Non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`): set `lifecycle.status`, increment `turns_evaluated`, set `last_evaluation = {result, reason, at}`, and write immediately via `bin/flow-goal-record.sh --update-lifecycle`.
+**Non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`): set `lifecycle.status`, increment `turns_evaluated`, set `last_evaluation = {result, reason, at}`, and write via `bin/flow-goal-record.sh --update-lifecycle`.
 
 [ask: permission] **Terminal transitions** (`achieved`, `failed`, `cancelled`): the skill does NOT write them. Return `proposed_transition: {to, reason, turns_evaluated}`; the caller asks the user (AskUserQuestion, `metadata.source` `flow:permission`) and, on confirmation, writes it with `bin/flow-goal-record.sh --update-lifecycle`.
 
 ### Step 7: Journal
 
-`bin/journal-record.sh --issue {N} --type goal-evaluation --metadata goal_id=<id> --metadata result=<status> --metadata evidence_bundle=<run-dir> --metadata failures=<comma-list or none>`. With no linked issue, pass `--session` in place of `--issue {N}` (that day's session journal).
+`bin/journal-record.sh --issue {N} --type goal-evaluation --metadata goal_id=<id> --metadata result=<status> --metadata evidence_bundle=<run-dir> --metadata failures=<comma-list or none>`. Without a linked issue, `--session` replaces `--issue {N}` (that day's session journal).
 
 ### Step 8: Return the verdict
 

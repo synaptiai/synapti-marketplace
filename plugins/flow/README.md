@@ -291,7 +291,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   └── flow-finding-state.sh, flow-comment-state.sh, flow-test-state.sh — build the state a System One question about one finding, review comment or test is asked with
   Goals, runs and the quality ledger
   ├── flow-active-goal.sh   — finds the FlowGoal for the current branch, or for another branch in a given commit, and prints its status, criteria or JSON
-  ├── flow-goal-record.sh   — creates a FlowGoal (never over an existing one, terminal included), or updates its lifecycle (--merge, --increment-turns), in the repository top's goals directory from any subdirectory
+  ├── flow-goal-record.sh   — creates a FlowGoal (over a failed or cancelled one, never over an achieved goal or one in progress), or updates its lifecycle (--merge, --increment-turns), in the repository top's goals directory from any subdirectory
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
   ├── flow-goal-judge-run.sh — runs the goal judge for /flow:goal evaluate, as the Stop hook runs it
   ├── flow-judge.sh         — runs the goal judge or the verdict judge through the claude CLI with every tool disallowed

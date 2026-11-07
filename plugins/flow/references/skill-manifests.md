@@ -55,9 +55,9 @@ Commands cannot preload skills from frontmatter, so each command with Required S
 | evidence-based-development | ambient | 439 | Enforce evidence-based claims through file:line citations, P1/P2/P3 prioritization proportional to eviden... |
 | feedback-resolution | dispatched | 595 | Address PR review feedback through surgical fixes traceable to specific comments, apply the Boy Scout Rul... |
 | goal-contract-capture | dispatched | 585 | Capture a FlowGoal contract as `<runtime dir>/goals/<id>.goal.yaml` — outcome, acceptance criteria with v... |
-| goal-evaluator | dispatched | 598 | Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, disp... |
+| goal-evaluator | dispatched | 600 | Evaluate a FlowGoal against its evidence ledger: run every deterministic verification command first, disp... |
 | goal-evidence-ledger | dispatched | 554 | Maintain the append-only evidence ledger: `<runtime dir>/runs/<run-id>/evidence/*.evidence.yaml` sidecars... |
-| goal-lifecycle | dispatched | 544 | Enforce the FlowGoal state machine: every `lifecycle.status` transition (draft → active → {waiting_for_us... |
+| goal-lifecycle | dispatched | 561 | Enforce the FlowGoal state machine: every `lifecycle.status` transition (draft → active → {waiting_for_us... |
 | holdout-validation | dispatched | 600 | Cross-reference agent self-review claims and evidence-bundle entries against actual file state using hidd... |
 | issue-crafting | dispatched | 455 | Craft well-structured GitHub issues with solution-agnostic outcomes, duplicate detection (open and closed... |
 | llm-operator-principles | ambient | 596 | Frame Claude's identity as an LLM operator that does not tire, treats convergence as no counted P1 or P2... |

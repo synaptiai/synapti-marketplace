@@ -13,7 +13,7 @@ Iron law: no `lifecycle.status` transition without an audit-trail entry — the 
 
 ## State machine
 
-Non-terminal: `draft`, `active`, and the resumable `waiting_for_user`, `waiting_for_ci`, `blocked`. Terminal and immutable: `achieved`, `failed`, `cancelled` — new work needs a new goal id. The allowed-transition table with triggers, the disallowed transitions, and the `last_evaluation.result` mapping live in `references/goal-lifecycle-transitions.md`; `bin/flow-goal-record.sh` enforces the same table and refuses anything outside it (including `terminal → any`, `active → draft`, and `blocked → achieved` without passing through `active`).
+Non-terminal: `draft`, `active`, and the resumable `waiting_for_user`, `waiting_for_ci`, `blocked`. Terminal and immutable: `achieved`, `failed`, `cancelled` — new work needs a new goal, which may reuse a failed or cancelled goal's id (`bin/flow-goal-record.sh --create` replaces that goal, never an achieved one). The allowed-transition table with triggers, the disallowed transitions, and the `last_evaluation.result` mapping live in `references/goal-lifecycle-transitions.md`; `bin/flow-goal-record.sh` enforces the same table and refuses anything outside it (including `terminal → any`, `active → draft`, and `blocked → achieved` without passing through `active`).
 
 ## Outputs
 
