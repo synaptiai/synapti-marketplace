@@ -7,7 +7,7 @@ Upgrading turns on four features by default: FlowGoals (`flow.goals.goalCreation
 v3.1 makes FlowGoals **invisible-by-default**: `flow.goals.goalCreation` defaults to `auto`, so goal/run/evidence artifacts are recorded for you rather than gated behind an opt-in. After upgrading without editing settings:
 
 - `/flow:start <issue>` creates `.flow/goals/issue-<N>.goal.yaml` whenever the Spec Validation Gate passes with **≥1 acceptance criterion carrying a `verification_command`**. An issue that yields zero verifiable ACs (e.g. a spec-free `documentation`/`chore` issue) creates **no** goal, silently. All artifacts are local under `.flow/` — nothing is pushed, posted, or sent.
-- `/flow:status` surfaces the active goal/run; `/flow:pr` and `/flow:merge` gate on goal **existence** — a branch whose goal isn't `achieved` is held back, but a branch with **no** goal is not blocked.
+- `/flow:status` surfaces the active goal/run. `/flow:merge` and `/flow:pr` gate on goal **existence**, so a branch with **no** goal is not blocked. `/flow:merge` blocks a pull request whose branch has a goal, in any status, that isn't `achieved`. `/flow:pr` only asks before opening a pull request while the branch's goal is still `active` (you can proceed; the choice is journaled); it looks only for an `active` or `achieved` goal, so a goal in any other status is not caught until `/flow:merge`.
 - The Stop hook fires but stays silent in the default `warn` mode unless an active goal lacks evidence.
 - `/flow:learn` records nothing under `.flow/`; `/flow:review` and `/flow:address` record a FlowRun but no goal.
 
