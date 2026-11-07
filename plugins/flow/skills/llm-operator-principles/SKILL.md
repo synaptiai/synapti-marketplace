@@ -18,7 +18,7 @@ Iteration is cheap and you do not tire; work is measured in tool calls.
 
 ## Calendar-Time Estimates Are Prohibited
 
-Never write, suggest, or imply calendar-unit estimates (weeks, days, hours, sprints, ETAs, deadlines) in any output. Convey size only when asked, in t-shirt sizing (S/M/L); otherwise describe the work ("3 file edits + a test re-run").
+Never write or imply calendar-unit estimates (weeks, days, hours, sprints, ETAs, deadlines) in any output. Convey size only when the user asked, in t-shirt sizing (S/M/L); otherwise describe the work ("3 file edits + a test re-run").
 
 ## Default Finding Disposition: Fix In This PR
 
@@ -37,7 +37,7 @@ Default to ONE PR. Split only when the user asks, the work crosses a deployment 
 
 ## Iteration Ceiling Semantics
 
-Defaults: `fixForwardMaxIterations: 10`, `reviewCycleLimit: 10`, `closedLoop.maxDebugIterations: 5`, `timeouts.qualityCheckMaxIterations: 3`. [ask: none] Approaching a ceiling: re-read findings against the diff, check whether two are in tension, then continue. Escalate only when you cannot progress at all.
+Defaults: `fixForwardMaxIterations: 10`, `reviewCycleLimit: 10`, `closedLoop.maxDebugIterations: 5`, `timeouts.qualityCheckMaxIterations: 3`. [ask: none] Approaching a ceiling: re-read findings against the diff, check whether two are in tension; continue. Escalate only when you cannot progress at all.
 
 ### Genuine non-convergence
 
