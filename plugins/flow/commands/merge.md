@@ -427,7 +427,7 @@ true
 
 ### FlowGoal Gate
 
-Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**. It judges the pull request being merged, whatever branch is checked out: the goal whose `scope.branch` is the pull request's head branch, read from the working tree when that branch is checked out and from the pull request's head commit otherwise (fetched from origin when it is not in the clone; when it cannot be read, the gate blocks). When that goal exists, in any status, it must have reached `lifecycle.status == achieved` to merge. A goal that is `active`, `draft`, `waiting_for_user`, `waiting_for_ci`, `blocked`, `failed` or `cancelled` blocks, and the reason names the goal, its status and what it waits for. When the pull request's branch has **no** goal the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
+Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**. It judges the pull request being merged, whatever branch is checked out: the goal whose `scope.branch` is the pull request's head branch, read from the working tree when that branch is checked out and from the pull request's head commit otherwise (fetched from origin when it is not in the clone; when it cannot be read, the gate blocks). When that goal exists, in any status, it must have reached `lifecycle.status == achieved` to merge. A goal that is `active`, `draft`, `waiting_for_user`, `waiting_for_ci`, `blocked`, `failed` or `cancelled` blocks, and the reason names the goal, its status and what it waits for. A `failed` or `cancelled` goal decides over an `achieved` one on the same branch, so the merge stays blocked while its file is on the branch: if the pull request still ships the work, finish it under a new goal and remove the failed or cancelled goal file from the branch; if it does not, remove the file. When the pull request's branch has **no** goal the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
 
 ```!
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -519,8 +519,14 @@ else
             active)
               GOAL_NEXT="run /flow:goal evaluate $GOAL_ID to advance" ;;
             failed|cancelled)
+              # A failed or cancelled goal wins over an achieved one on the
+              # same branch, so a new goal alone never unblocks the merge: the
+              # file has to leave the branch either way. Read from the head
+              # commit, the path is <commit>:<path>; the path is what to remove.
               GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path "${GOAL_ARGS[@]}" 2>/dev/null | head -1)
-              GOAL_NEXT="a $GOAL_STATUS goal does not merge; if this PR still ships the work, finish it under a new goal (/flow:goal create), and if it no longer does, remove ${GOAL_PATH:-the goal file} from the branch" ;;
+              [ -z "$PR_HEAD_OID" ] || GOAL_PATH=${GOAL_PATH#"$PR_HEAD_OID":}
+              GOAL_PATH=${GOAL_PATH:-the goal file}
+              GOAL_NEXT="a $GOAL_STATUS goal does not merge, and the merge stays blocked while $GOAL_PATH is on the branch: if this PR still ships the work, finish it under a new goal (/flow:goal create) and remove $GOAL_PATH from the branch; if it does not, remove $GOAL_PATH from the branch" ;;
             waiting_for_user)
               GOAL_NEXT="it waits for a person's answer; answer it, then /flow:goal resume $GOAL_ID and /flow:goal evaluate $GOAL_ID" ;;
             waiting_for_ci)

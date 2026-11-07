@@ -291,7 +291,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   └── flow-finding-state.sh, flow-comment-state.sh, flow-test-state.sh — build the state a System One question about one finding, review comment or test is asked with
   Goals, runs and the quality ledger
   ├── flow-active-goal.sh   — finds the FlowGoal for the current branch, or for another branch in a given commit, and prints its status, criteria or JSON
-  ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns)
+  ├── flow-goal-record.sh   — creates a FlowGoal, or updates its lifecycle (--merge, --increment-turns), in the repository top's goals directory from any subdirectory
   ├── flow-goal-trust.sh    — user-local trust ledger: which FlowGoals may auto-run verification commands
   ├── flow-goal-judge-run.sh — runs the goal judge for /flow:goal evaluate, as the Stop hook runs it
   ├── flow-judge.sh         — runs the goal judge or the verdict judge through the claude CLI with every tool disallowed
@@ -302,7 +302,7 @@ BIN/ HELPER SCRIPTS (most print usage with --help)
   ├── _flow_trigger_read.py — reads a trigger or a run.yaml for the three checks above: never through a symbolic link, a regular file holding a YAML mapping only
   ├── flow-watch-create.sh  — writes an issue-watch or branch-watch trigger and its loop prompt for /flow:watch
   ├── flow-record-activity.sh, flow-record-evidence.sh, flow-record-verdict.sh — write FlowRun activities, evidence and the last verdict
-  ├── flow-runtime-dir.sh   — prints the runtime directory: flow.runtime.stateDir (default .flow), held inside the repository with no symlink on the way, or .flow with one warning
+  ├── flow-runtime-dir.sh   — prints the runtime directory: flow.runtime.stateDir (default .flow), held inside the repository with no symlink on the way, or .flow with one warning; --goals prints its goals directory as a path from the working directory
   ├── flow-mkdir.sh         — creates a directory under .flow/ or the journal, refusing one reached through a symlink (exit 2), or says the check could not run (exit 3); needs python3 but not PyYAML
   └── flow-quality-ledger.sh — per-session ledger of file edits and quality-command runs (task-completion gate): append|path|status|digest|prune
   Decision journal

@@ -61,7 +61,7 @@ All `.flow/` writes go through `bin/_journal_atomic.py` (or one of its wrappers)
 
 | Helper | Writes |
 |---|---|
-| `bin/flow-goal-record.sh` | `.flow/goals/<id>.goal.yaml` (create + update-lifecycle modes) |
+| `bin/flow-goal-record.sh` | `.flow/goals/<id>.goal.yaml` (create + update-lifecycle modes), at the repository top wherever below it the helper runs: the directory `bin/flow-active-goal.sh` (and so the Stop hook and the merge gate) reads, and `bin/flow-runtime-dir.sh --goals` names (`from_repo_top()` in `bin/_repo_dir.py`) |
 | `bin/flow-record-activity.sh` | `.flow/runs/<id>/activities/<NNN>-<name>.yaml` + appends `events.jsonl` |
 | `bin/flow-record-evidence.sh` | `.flow/runs/<id>/evidence/<id>.evidence.yaml` + optional `<id>.txt` |
 | `bin/journal-record.sh` | `.decisions/issue-N.md` (or `session-YYYY-MM-DD.md` with `--session`) manifest entries (not `.flow/`) |

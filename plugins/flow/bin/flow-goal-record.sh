@@ -32,7 +32,10 @@
 #   Both read the current lifecycle under the goal's lock, so a caller that
 #   changes one field never writes back a stale copy of the others.
 #
-# <runtime dir>/goals is created if it is missing, and never through a
+# <runtime dir>/goals is the repository top's, wherever below the top this
+# runs (bin/flow-active-goal.sh reads the same directory; from_repo_top() in
+# bin/_repo_dir.py), and the paths printed are relative when the working
+# directory is the top. It is created if it is missing, and never through a
 # symlink: when a directory on the way to it is one (a repository can commit such a link to a
 # directory outside the checkout), nothing is written and the helper exits 2.
 #
@@ -135,7 +138,7 @@ import os
 import subprocess
 import yaml
 from _flow_cli import Messages, name_max, open_regular, schema_problem, shown, yaml_problem
-from _repo_dir import runtime_dir
+from _repo_dir import from_repo_top, runtime_dir
 from _journal_atomic import (
     JournalAtomicError,
     acquire_lock,
@@ -162,7 +165,11 @@ options = messages.read_arguments(
     ("--goal-file", "--goal-id", "--lifecycle-file", "--from-status", "--runtime-dir"),
     ("--create", "--update-lifecycle", "--merge", "--increment-turns"),
 )
-GOALS_DIR = os.path.join(runtime_dir(options["--runtime-dir"] or None), "goals")
+# The runtime directory is relative to the repository top: run from a
+# subdirectory, the goals are still the top's, joined to it by
+# from_repo_top() exactly as bin/flow-active-goal.sh reads them (relative when
+# the working directory is the top, so what is printed there does not change).
+GOALS_DIR = from_repo_top(os.path.join(runtime_dir(options["--runtime-dir"] or None), "goals"))
 # The last of --create and --update-lifecycle given wins, as the shell's
 # loop had it.
 mode = ""

@@ -44,6 +44,10 @@
 #      passes
 #   G10 a goals directory committed as a symlink in the pull request's head
 #      is followed
+#   G11 a failed or cancelled goal's block reason says to finish the work
+#      under a new goal and stops there, but the failed goal still decides
+#      over the new achieved one while its file is on the branch (#335), so
+#      the remedy it gives never unblocks the merge
 #
 # status.md findings ledger
 #   S1 RESOLVED does not win over ESCALATED for the same finding
@@ -262,6 +266,37 @@ e2e_goal g-failed feature/e2e failed false
 e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
 e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
 e2e_expect_line "FLOW_GOAL_ID=g-failed"
+e2e_expect_clean_edges
+
+# G11: the remedy the reason gives must be one that unblocks the merge.
+_retry_case() {
+  local status=$1
+  _flow_test_begin "merge goal gate: a $status goal's reason says to remove its file, which then unblocks the retry (G11)"
+  _goal_case "merge-goal-$status-retry" "issue-5 is $status and issue-5-retry achieved on this branch: the $status one decides, and its reason must say the file has to leave the branch"
+  e2e_goal issue-5 feature/e2e "$status" false
+  e2e_goal issue-5-retry feature/e2e achieved true
+  e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+  e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+  e2e_expect_line "FLOW_GOAL_ID=issue-5"
+  e2e_expect_out "FlowGoal issue-5 lifecycle is '$status' — a $status goal does not merge, and the merge stays blocked while .flow/goals/issue-5.goal.yaml is on the branch: if this PR still ships the work, finish it under a new goal (/flow:goal create) and remove .flow/goals/issue-5.goal.yaml from the branch; if it does not, remove .flow/goals/issue-5.goal.yaml from the branch"
+  e2e_expect_clean_edges
+  # The remedy, followed: the file leaves the branch and the retry decides.
+  rm "$E2E_REPO/.flow/goals/issue-5.goal.yaml"
+  e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+  e2e_expect_line "FLOW_GOAL_GATE_STATE=ok"
+  e2e_expect_line "FLOW_GOAL_ID=issue-5-retry"
+  e2e_expect_clean_edges
+}
+_retry_case failed
+_retry_case cancelled
+
+_flow_test_begin "merge goal gate: read from the pull request's head, a failed goal's reason names the file to remove, not the commit (G11)"
+_goal_case merge-goal-pr-failed "checked out: feature/e2e with no goal; PR #7's head feature/pr carries a failed goal"
+_pr_branch feature/pr g-pr failed
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out "the merge stays blocked while .flow/goals/g-pr.goal.yaml is on the branch"
+e2e_expect_no_out "$(cat "$E2E_DIR/pr-oid"):"
 e2e_expect_clean_edges
 
 _flow_test_begin "merge goal gate: a waiting goal's reason is shown (G6)"

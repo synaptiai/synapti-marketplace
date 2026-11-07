@@ -114,3 +114,142 @@ printf -- '--- expectations\n' | _e2e_art
 e2e_expect_out '"decision":"block"'
 e2e_expect_out "stopHookEnforcement=block"
 e2e_expect_clean_edges
+
+# Ways a goal created, updated or read in a subdirectory can be wrong (#337),
+# written down before the scenarios. The goals are the repository top's, as
+# bin/flow-active-goal.sh reads them, and every writer must agree with it.
+#   B7  flow-goal-record.sh --create run in packages/app writes
+#       packages/app/.flow/goals, which the lookup (and so the Stop hook and
+#       the merge gate) never reads
+#   B8  the Stop hook run in packages/app says "no active flow goal" about the
+#       goal just created there
+#   B9  flow-goal-record.sh --update-lifecycle run in packages/app says the
+#       goal at the top does not exist, so the evaluator cannot move it
+#   B10 run at the top, the paths printed change (relative before, absolute
+#       after), which callers and their tests read
+#   B11 bin/flow-goal-judge-run.sh run in packages/app finds no goal file to
+#       read, so /flow:goal evaluate gets no judge verdict
+#   B12 with flow.runtime.stateDir set, the goals land under packages/app
+#       instead of the top's <stateDir>/goals, or bin/flow-runtime-dir.sh
+#       --goals names a different directory from the one written
+
+# _goal_input <id> — a schema-valid active goal for feature/issue-7-x whose
+# criterion fails (its command is `false`), written to
+# $E2E_DIR/<id>.input.yaml, outside the repository.
+_goal_input() {
+  e2e_goal "$1" feature/issue-7-x active false
+  mv "$E2E_REPO/.flow/goals/$1.goal.yaml" "$E2E_DIR/$1.input.yaml"
+  rmdir "$E2E_REPO/.flow/goals" "$E2E_REPO/.flow"
+}
+# _in_app <script under the plugin> [arguments] — run it in packages/app.
+_in_app() {
+  mkdir -p "$E2E_REPO/packages/app"
+  printf 'code: %s (run in packages/app)\narguments: %s\n' "$1" "${*:2}" | _e2e_art
+  _e2e_exec sh -c 'cd packages/app && s=$1 && shift && exec "$CLAUDE_PLUGIN_ROOT/$s" "$@"' sh "$@"
+  printf -- '--- expectations\n' | _e2e_art
+}
+# _hook_in_app — the Stop hook, fed $PAYLOAD, in packages/app.
+_hook_in_app() {
+  mkdir -p "$E2E_REPO/packages/app"
+  printf '%s' "$PAYLOAD" > "$E2E_DIR/payload.json"
+  printf 'code: %s (run in packages/app)\npayload: %s\n' "$STOP_HOOK" "$PAYLOAD" | _e2e_art
+  _e2e_exec sh -c 'cd packages/app && exec "$CLAUDE_PLUGIN_ROOT/$1" < "$2"' sh "$STOP_HOOK" "$E2E_DIR/payload.json"
+  printf -- '--- expectations\n' | _e2e_art
+}
+# _top_status <id> — lifecycle.status of the goal at the repository top.
+_top_status() {
+  python3 -c 'import sys, yaml; print(((yaml.safe_load(open(sys.argv[1])) or {}).get("lifecycle") or {}).get("status", ""))' \
+    "$E2E_REPO/.flow/goals/$1.goal.yaml" 2>/dev/null || printf 'missing'
+}
+# _exists <path under the repository> — yes or no.
+_exists() { if [ -e "$E2E_REPO/$1" ]; then printf yes; else printf no; fi; }
+
+_flow_test_begin "goal record: --create run in a subdirectory writes the top's goals, which the lookup reads (B7)"
+e2e_new goal-create-subdir
+e2e_describe "flow-goal-record.sh --create in packages/app, then flow-active-goal.sh --path --branch-strict there"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+_goal_input issue-7
+_in_app bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+e2e_expect_equal 0 "$E2E_RC" "the create's exit status"
+e2e_expect_err "created $TOP/.flow/goals/issue-7.goal.yaml"
+e2e_expect_equal yes "$(_exists .flow/goals/issue-7.goal.yaml)" "a goal file at the top"
+e2e_expect_equal no "$(_exists packages/app/.flow)" "a .flow in packages/app"
+_in_app bin/flow-active-goal.sh --path --branch-strict
+e2e_expect_equal 0 "$E2E_RC" "the lookup's exit status"
+e2e_expect_line "$TOP/.flow/goals/issue-7.goal.yaml"
+e2e_expect_clean_edges
+
+_flow_test_begin "goal Stop hook: a goal created in a subdirectory is judged by the hook run there (B8)"
+e2e_new stop-branch-create-subdir
+e2e_describe "flow-goal-record.sh --create in packages/app, then the Stop hook in packages/app, warn mode"
+_stop_repo warn
+_goal_input issue-7
+_in_app bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+e2e_expect_equal 0 "$E2E_RC" "the create's exit status"
+_hook_in_app
+e2e_expect_out '"decision":"approve"'
+e2e_expect_out "Active goal: issue-7"
+e2e_expect_no_out "no active flow goal"
+e2e_expect_clean_edges
+
+_flow_test_begin "goal record: --update-lifecycle run in a subdirectory updates the top's goal (B9)"
+e2e_new goal-update-subdir
+e2e_describe "an active goal at the top; flow-goal-record.sh --update-lifecycle --from-status active in packages/app moves it to waiting_for_user"
+_stop_repo warn
+TOP=$(cd "$E2E_REPO" && pwd -P)
+e2e_goal issue-7 feature/issue-7-x active true
+printf 'lifecycle:\n  status: waiting_for_user\n' > "$E2E_DIR/lifecycle.yaml"
+_in_app bin/flow-goal-record.sh --update-lifecycle --goal-id issue-7 --lifecycle-file "$E2E_DIR/lifecycle.yaml" --from-status active --merge
+e2e_expect_equal 0 "$E2E_RC" "the update's exit status"
+e2e_expect_err "updated $TOP/.flow/goals/issue-7.goal.yaml lifecycle.status to 'waiting_for_user'"
+e2e_expect_equal waiting_for_user "$(_top_status issue-7)" "the top goal's lifecycle.status"
+e2e_expect_equal no "$(_exists packages/app/.flow)" "a .flow in packages/app"
+e2e_expect_clean_edges
+
+_flow_test_begin "goal record: run at the top, the paths printed stay relative (B10)"
+e2e_new goal-record-top
+e2e_describe "flow-goal-record.sh --create and --update-lifecycle, and the lookup, at the repository top"
+_stop_repo warn
+_goal_input issue-7
+e2e_run_bin bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+e2e_expect_equal 0 "$E2E_RC" "the create's exit status"
+e2e_expect_err "created .flow/goals/issue-7.goal.yaml"
+printf 'lifecycle:\n  status: waiting_for_user\n' > "$E2E_DIR/lifecycle.yaml"
+e2e_run_bin bin/flow-goal-record.sh --update-lifecycle --goal-id issue-7 --lifecycle-file "$E2E_DIR/lifecycle.yaml" --merge
+e2e_expect_err "updated .flow/goals/issue-7.goal.yaml lifecycle.status to 'waiting_for_user'"
+e2e_run_bin bin/flow-active-goal.sh --path --any-status --branch-strict
+e2e_expect_line ".flow/goals/issue-7.goal.yaml"
+e2e_expect_clean_edges
+
+_flow_test_begin "goal judge: bin/flow-goal-judge-run.sh run in a subdirectory reads the top's goal (B11)"
+e2e_new goal-judge-run-subdir
+e2e_describe "an active goal at the top whose one criterion passes; the judge helper runs in packages/app and the judge replies achieved"
+_stop_repo warn
+e2e_goal issue-7 feature/issue-7-x active true
+e2e_judge_says '{"structured_output":{"verdict":"achieved","confidence":0.9,"delta":"made_progress","next_step_hint":"none","reason":"AC1 passes"}}'
+_in_app bin/flow-goal-judge-run.sh issue-7 ""
+e2e_expect_no_out "no goal file to read"
+e2e_expect_line "JUDGE_STATE=done"
+e2e_expect_equal 1 "$(wc -l < "$E2E_DIR/judge-calls.log" 2>/dev/null | tr -d ' ')" "the judge calls"
+e2e_expect_clean_edges
+
+_flow_test_begin "goal record: with flow.runtime.stateDir set, a subdirectory writes and names the top's goals (B12)"
+e2e_new goal-statedir-subdir
+e2e_describe "flow.runtime.stateDir is state/flow; flow-goal-record.sh --create, flow-runtime-dir.sh --goals and the lookup all run in packages/app"
+e2e_repo feature/issue-7-x
+mkdir -p "$E2E_REPO/.claude"
+printf '%s\n' '{"flow":{"runtime":{"stateDir":"state/flow"}}}' > "$E2E_REPO/.claude/settings.flow.json"
+TOP=$(cd "$E2E_REPO" && pwd -P)
+_goal_input issue-7
+_in_app bin/flow-goal-record.sh --create --goal-file "$E2E_DIR/issue-7.input.yaml"
+e2e_expect_equal 0 "$E2E_RC" "the create's exit status"
+e2e_expect_equal yes "$(_exists state/flow/goals/issue-7.goal.yaml)" "a goal file in the top's state/flow/goals"
+e2e_expect_equal no "$(_exists packages/app/state)" "a state directory in packages/app"
+_in_app bin/flow-runtime-dir.sh --goals
+e2e_expect_line "$TOP/state/flow/goals"
+_in_app bin/flow-active-goal.sh --path --branch-strict
+e2e_expect_line "$TOP/state/flow/goals/issue-7.goal.yaml"
+e2e_run_bin bin/flow-runtime-dir.sh --goals
+e2e_expect_line "state/flow/goals"
+e2e_expect_clean_edges

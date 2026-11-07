@@ -24,7 +24,9 @@
 #                           directory)
 #
 # Goals and runs are read from the runtime directory, flow.runtime.stateDir
-# (bin/flow-runtime-dir.sh, default .flow). Never reads through a symlink: a
+# (bin/flow-runtime-dir.sh, default .flow). The goal is the repository top's,
+# wherever below the top this runs (bin/flow-runtime-dir.sh --goals), the one
+# bin/flow-goal-record.sh wrote. Never reads through a symlink: a
 # goal or run reached through a link belongs to its target, not to this
 # repository.
 #
@@ -62,8 +64,10 @@ FLOW_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 RT=$("${BASH:-bash}" "$FLOW_ROOT/bin/flow-runtime-dir.sh") || RT=""
 [ -n "$RT" ] || _blocked "the runtime directory could not be resolved"
-GOAL_FILE="$RT/goals/$GOAL_ID.goal.yaml"
-if ! "$FLOW_ROOT/bin/flow-mkdir.sh" --check -- "$RT/goals" >/dev/null 2>&1 || [ -L "$GOAL_FILE" ] || [ ! -f "$GOAL_FILE" ]; then
+GOALS_DIR=$("${BASH:-bash}" "$FLOW_ROOT/bin/flow-runtime-dir.sh" --goals 2>/dev/null) || GOALS_DIR=""
+[ -n "$GOALS_DIR" ] || GOALS_DIR="$RT/goals"
+GOAL_FILE="$GOALS_DIR/$GOAL_ID.goal.yaml"
+if ! "$FLOW_ROOT/bin/flow-mkdir.sh" --check -- "$GOALS_DIR" >/dev/null 2>&1 || [ -L "$GOAL_FILE" ] || [ ! -f "$GOAL_FILE" ]; then
   _blocked "no goal file to read at $RT/goals/<GOAL_ID>.goal.yaml (missing, or reached through a symlink)"
 fi
 RUN_DIR=""

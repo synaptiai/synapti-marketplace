@@ -6,10 +6,12 @@
 # state is. Centralized so changes to the goals layout or YAML schema only
 # touch one reader. Goals are read from <runtime dir>/goals/, the runtime
 # directory being flow.runtime.stateDir (bin/flow-runtime-dir.sh, default
-# .flow).
+# .flow), under the repository top wherever below it this runs: the directory
+# bin/flow-goal-record.sh writes (from_repo_top() in bin/_repo_dir.py).
 #
 # Output modes (exactly one allowed, default --status):
-#   --path             absolute-or-relative path to <runtime dir>/goals/<id>.goal.yaml
+#   --path             path to <runtime dir>/goals/<id>.goal.yaml: relative at
+#                      the repository top, absolute below it
 #   --id               metadata.id
 #   --status           lifecycle.status (e.g., active, waiting_for_user)
 #   --reason           lifecycle.last_evaluation.reason on one line (empty when
@@ -196,7 +198,7 @@ sys.path.insert(0, sys.argv[5])
 import yaml
 from _flow_cli import open_regular
 from _journal_atomic import JournalAtomicError, ensure_repo_dir
-from _repo_dir import runtime_dir
+from _repo_dir import from_repo_top, runtime_dir
 
 mode = sys.argv[1]
 override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -205,44 +207,14 @@ branch_strict = (sys.argv[4] if len(sys.argv) > 4 else "0") == "1"
 any_status = (sys.argv[7] if len(sys.argv) > 7 else "0") == "1"
 commit = sys.argv[8] if len(sys.argv) > 8 else ""
 
-GOALS_DIR = os.path.join(runtime_dir(sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None), "goals")
+GOALS_REL = os.path.join(runtime_dir(sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None), "goals")
 # The runtime directory is relative to the repository top. Run from a
-# subdirectory, the goals are still the top's: join them to it (the path stays
-# relative when the working directory is the top, so what callers print does
-# not change there). A --commit lookup keeps the relative path, which is what
-# git's tree is keyed by.
-def _repo_top():
-    try:
-        r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=5)
-    except Exception:
-        return None
-    top = r.stdout.strip() if r.returncode == 0 else ""
-    if not top or not os.path.isdir(top):
-        return None
-    # A home directory kept in git is the user's, not a repository
-    # (cascade-resolve.sh treats it the same way): under it the working
-    # directory is where the goals are, as before.
-    homes = [os.environ.get("HOME", "")]
-    try:
-        import pwd
-        homes.append(pwd.getpwuid(os.getuid()).pw_dir)
-    except Exception:
-        pass
-    for h in homes:
-        try:
-            if h and os.path.samefile(top, h):
-                return None
-        except OSError:
-            pass
-    return top
-_top = _repo_top()
-GOALS_REL = GOALS_DIR
-if _top is not None:
-    try:
-        if not os.path.samefile(_top, os.curdir):
-            GOALS_DIR = os.path.join(_top, GOALS_DIR)
-    except OSError:
-        pass
+# subdirectory, the goals are still the top's: from_repo_top() joins them to
+# it (the path stays relative when the working directory is the top, so what
+# callers print does not change there), as bin/flow-goal-record.sh does for
+# the goals it writes. A --commit lookup keeps the relative path, which is
+# what git's tree is keyed by.
+GOALS_DIR = from_repo_top(GOALS_REL)
 
 # Symlink defense — no goal is read through a symlinked runtime directory or goals.
 READ_NOTE = "goals are not read through it"
