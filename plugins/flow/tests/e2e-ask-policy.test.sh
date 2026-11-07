@@ -130,23 +130,32 @@ done
 
 # --- every place that asks or escalates carries its class (A7) ---------------
 # A place is a line that names AskUserQuestion, tells the agent to ask the
-# user (ask the user, ask whether, explicit confirmation) or to escalate
-# (escalate, a six-field or Proactive-Autonomy escalation): many of them never
-# name the tool, and an untagged one is denied under autonomous: true like a
-# default. The frontmatter, a fenced code block, a table row, a heading and an
-# entry of a References or Required Skills list are not places; every other
-# such line must carry one of the tags.
+# user (ask the user, ask whether, ask (`flow:decision`), explicit
+# confirmation), names an ask class as its source (`flow:decision`,
+# `flow:permission`, `flow:default`) or tells it to escalate (escalate, a
+# six-field or Proactive-Autonomy escalation): many of them never name the
+# tool, and an untagged one is denied under autonomous: true like a default.
+# The frontmatter, a code fence (```!, ```bash, ```json, ```yaml or any other
+# language), a table row, a heading and an entry of a References or Required
+# Skills list are not places. A plain ``` or ```text fence holds the
+# pseudocode of a step, and a ```markdown fence the text a command writes, so
+# their lines are scanned as prose is. Every other such line must carry one
+# of the tags.
 _untagged() {
   ( cd "$1" && awk '
-    FNR == 1 { fence = 0; fm = 0 }
+    FNR == 1 { fence = 0; code = 0; fm = 0 }
     FNR == 1 && /^---$/ { fm = 1; next }
     fm == 1 { if (/^---$/) fm = 0; next }
-    /^[ \t]*```/ { fence = !fence; next }
-    fence { next }
-    /^[ \t]*\|/ || /^#/ { next }
-    /^[ \t]*- (\[`|`)(references\/|[a-z0-9-]+`)/ { next }
+    /^[ \t]*```/ {
+      if (fence) { fence = 0; code = 0; next }
+      fence = 1; lang = $0; sub(/^[ \t]*```/, "", lang); sub(/[ \t].*$/, "", lang)
+      code = (lang != "" && lang != "text" && lang != "markdown")
+      next }
+    code { next }
+    !fence && (/^[ \t]*\|/ || /^#/) { next }
+    !fence && /^[ \t]*- (\[`|`)(references\/|[a-z0-9-]+`)/ { next }
     /\[ask: (decision|permission|default|none)\]/ { next }
-    /AskUserQuestion|[Aa]sks? the user|[Aa]sk whether|explicit confirmation|[Ee]scalate([^a-z]|$)|six-field escalation|Proactive-Autonomy escalation/ {
+    /AskUserQuestion|[Aa]sks? the user|[Aa]sk whether|[Aa]sk \(`?flow:|explicit confirmation|[Ee]scalate([^a-z]|$)|six-field escalation|Proactive-Autonomy escalation|`flow:(decision|permission|default)`/ {
       print FILENAME ":" FNR ":" $0 }' commands/*.md skills/*/SKILL.md ) || true
 }
 _flow_test_begin "ask-tags"
@@ -167,6 +176,29 @@ printf 'and, in the same copy, the tags removed from the terminal-goal line of c
 e2e_expect_equal 1 "$(_untagged "$E2E_ACTIVE_PLUGIN" | grep -c '^commands/start.md:[0-9]*:- \*\*`terminal`\*\*')" "the terminal-goal escalation reported in a copy without its tag"
 e2e_expect_equal 1 "$(_untagged "$E2E_ACTIVE_PLUGIN" | grep -c '^commands/review.md:[0-9]*:   - No test or command can reproduce')" "the unsettled-finding escalation reported in a copy without its tag"
 e2e_expect_equal 1 "$(_untagged "$E2E_ACTIVE_PLUGIN" | grep -c '^skills/capability-discovery/SKILL.md:[0-9]*:No agents')" "the skill line that asks the user reported in a copy without its tag"
+# And places in a plain ``` or ```text fence, and one that says ask
+# (`flow:decision`): the iteration-ceiling escalation in the pseudocode of
+# /flow:start, the terminal-transition question in the ```text fence of
+# /flow:goal and the Stop Conditions line of skills/autonomous-workflow.
+sed 's/^       - \[ask: decision\] Approaching `closedLoop.maxDebugIterations`/       - Approaching `closedLoop.maxDebugIterations`/' "$E2E_ACTIVE_PLUGIN/commands/start.md" > "$E2E_DIR/start.md" && mv "$E2E_DIR/start.md" "$E2E_ACTIVE_PLUGIN/commands/start.md"
+sed 's/^\[ask: permission\] AskUserQuestion (with `metadata: {"source": "flow:permission"}`): "FlowGoal/AskUserQuestion (with `metadata: {"source": "flow:permission"}`): "FlowGoal/' "$E2E_PLUGIN_DIR/commands/goal.md" > "$E2E_ACTIVE_PLUGIN/commands/goal.md"
+sed 's/^\[ask: decision\] Plan >10 tasks/Plan >10 tasks/' "$E2E_PLUGIN_DIR/skills/autonomous-workflow/SKILL.md" > "$E2E_ACTIVE_PLUGIN/skills/autonomous-workflow/SKILL.md"
+printf 'and the tags removed from the maxDebugIterations line in the plain fence of commands/start.md, the AskUserQuestion line in the text fence of commands/goal.md and the Stop Conditions line of skills/autonomous-workflow/SKILL.md\n' | _e2e_art
+e2e_expect_equal 1 "$(_untagged "$E2E_ACTIVE_PLUGIN" | grep -c '^commands/start.md:[0-9]*:       - Approaching `closedLoop.maxDebugIterations`')" "the escalation in a plain fence reported in a copy without its tag"
+e2e_expect_equal 1 "$(_untagged "$E2E_ACTIVE_PLUGIN" | grep -c '^commands/goal.md:[0-9]*:AskUserQuestion (with `metadata: {"source": "flow:permission"}`): "FlowGoal')" "the question in a text fence reported in a copy without its tag"
+e2e_expect_equal 1 "$(_untagged "$E2E_ACTIVE_PLUGIN" | grep -c '^skills/autonomous-workflow/SKILL.md:[0-9]*:Plan >10 tasks')" "the ask (flow:decision) line reported in a copy without its tag"
+# Every place that asks is one the scan finds: with every tag removed from
+# every command and skill, it reports each line whose first tag is decision,
+# permission or default. An [ask: none] line may describe the policy without
+# being a place, so it need not be reported.
+TAGGED=$(cd "$E2E_PLUGIN_DIR" && awk 'match($0, /\[ask: (decision|permission|default|none)\]/) && substr($0, RSTART, RLENGTH) != "[ask: none]" {
+  print FILENAME ":" FNR }' commands/*.md skills/*/SKILL.md | LC_ALL=C sort)
+for f in "$E2E_PLUGIN_DIR"/commands/*.md "$E2E_PLUGIN_DIR"/skills/*/SKILL.md; do
+  rel=${f#"$E2E_PLUGIN_DIR"/}
+  sed -E 's/\[ask: (decision|permission|default|none)\] ?//g' "$f" > "$E2E_ACTIVE_PLUGIN/$rel"
+done
+printf 'and then every [ask: ...] tag removed from every command and skill; %s lines had decision, permission or default as their first tag\n' "$(printf '%s\n' "$TAGGED" | grep -c .)" | _e2e_art
+e2e_expect_equal "" "$(printf '%s\n' "$TAGGED" | grep . | LC_ALL=C comm -23 - <(_untagged "$E2E_ACTIVE_PLUGIN" | cut -d: -f1,2 | LC_ALL=C sort))" "asking places not reported in a copy without any tag"
 # Every default place says what to do under the autonomous policy.
 e2e_expect_equal "" "$(cd "$E2E_PLUGIN_DIR" && grep -n '\[ask: default\]' commands/*.md skills/*/SKILL.md | grep -v '\[ask: none\]' | grep -v 'ASK_POLICY=autonomous' | grep -v '^commands/[a-z]*.md:[0-9]*:Which questions reach the person' || true)" "default places without their autonomous instruction"
 e2e_expect_clean_edges
