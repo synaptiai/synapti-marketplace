@@ -124,88 +124,51 @@ SESSION_ID=$(echo "$EVENT" | jq -r '.session_id // "unknown"' 2>/dev/null)
 SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9_-' | head -c 64)
 [ -z "$SESSION_ID" ] && SESSION_ID="anon"
 
-# Find the active goal (lifecycle.status == active) for the current repo
-# state. We iterate over $RT/goals/*.goal.yaml and take the first match. RT
-# is the runtime directory (flow.runtime.stateDir, bin/flow-runtime-dir.sh,
-# default .flow), resolved once here and passed to the evaluator.
+# Find the active goal (lifecycle.status == active) whose scope.branch is the
+# current branch. Goal files are committed, so a branch can carry active goals
+# for other issues (merged in from main, say): the hook judges only the one
+# that owns this branch, and with none it does nothing. The selection is
+# bin/flow-active-goal.sh --branch-strict, the lookup the evaluator and the
+# merge gate use, not a second copy of the rule. With no branch to go by
+# (detached HEAD) it is the most recently modified active goal. RT is the
+# runtime directory (flow.runtime.stateDir, bin/flow-runtime-dir.sh, default
+# .flow), resolved once here and passed to the lookup and the evaluator.
 #
 # Never through a symlink. A repository can commit the runtime directory or
-# its goals, or a
-# goal file, as a symlink to something outside the checkout, and a goal read
-# through it belongs to the link's target: the hook would block or approve on
-# it. Goal trust is keyed on this repository, so none of its commands would
-# run, but the loop would still act on it. ensure_repo_dir() is the rule every
-# flow writer applies below the repository; a refusal is reported and the goal
-# treated as absent.
+# its goals, or a goal file, as a symlink to something outside the checkout,
+# and a goal read through it belongs to the link's target: the hook would
+# block or approve on it. The lookup refuses it (exit 2) and the refusal is
+# reported, the goal treated as absent.
 RT=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-runtime-dir.sh") || RT=""
 [ -n "$RT" ] || RT=".flow"
 # lib/goal-s1.sh passes it to flow-s1.sh.
 _GOAL_S1_RT="$RT"
-ACTIVE_GOAL=$(python3 - "$PLUGIN_ROOT/bin" "$RT" <<'PYEOF' 2>/dev/null
-# Keep the working directory (the repository) off sys.path before any other
-# import; tests/syspath-guard.test.sh has the reasons.
-import os, sys
-try:
-    _flow_cwd = os.path.realpath(os.getcwd())
-except OSError:
-    _flow_cwd = None
-sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
-import os, glob, sys
-sys.path.insert(0, sys.argv[1])
-try:
-    from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
-    from _flow_cli import open_regular
-except BaseException as exc:  # SystemExit when PyYAML is missing, ImportError otherwise
-    print("!refused:the directory check could not be loaded (%s), so no goal is read" % type(exc).__name__)
-    sys.exit(0)
-import yaml
-READ_NOTE = "goals are not read through it"
-GOALS_DIR = os.path.join(sys.argv[2], "goals")
-try:
-    ensure_repo_dir(GOALS_DIR)
-except RepoDirRefused as exc:
-    # "refusing — .flow is a symlink", which names the component: the
-    # summary set where the rule refused, never the message cut at a "; ".
-    print("!refused:%s; %s" % (exc.summary, READ_NOTE))
-    sys.exit(0)
-except JournalAtomicError as exc:
-    # Not a refusal: the check could not be done (a component could not be
-    # inspected), so whether a goal is active is unknown, not "none".
-    print("!unreadable:%s (%s)" % (GOALS_DIR, " ".join(str(exc).split())))
-    sys.exit(0)
-if not os.path.isdir(GOALS_DIR):
-    sys.exit(0)
-unreadable = []
-for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
-    if os.path.islink(path):
-        print("!refused:refusing — %s is a symlink; %s" % (path, READ_NOTE))
-        sys.exit(0)
-    try:
-        # Never waits on, or reads, anything but a regular file: a FIFO named
-        # like a goal is opened at once and refused, and counted unreadable.
-        with open_regular(path) as f:
-            data = yaml.safe_load(f) or {}
-        # `lifecycle:` written with no value yields None, and the {} default
-        # only fires for an ABSENT key — so .get on it raises, and the handler
-        # below used to turn that into "no active goal".
-        lifecycle = data.get("lifecycle")
-        if isinstance(lifecycle, dict) and lifecycle.get("status") == "active":
-            print(path)
-            sys.exit(0)
-        if lifecycle is not None and not isinstance(lifecycle, dict):
-            unreadable.append(path)
-    except Exception:
-        # Skipping is right — one corrupt goal must not hide an active sibling
-        # further down the list. Reporting nothing is not: a goal nobody could
-        # read is not the same fact as no goal, and the caller says one of them
-        # out loud.
-        unreadable.append(path)
-        continue
-# No active goal. Say whether that was determined or merely not contradicted.
-if unreadable:
-    print("!unreadable:" + unreadable[0])
-PYEOF
-)
+ACTIVE_GOAL=$("${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-active-goal.sh" --path --branch-strict --runtime-dir "$RT" 2>/dev/null)
+_GOAL_LOOKUP_EXIT=$?
+_GOAL_LOOKUP_MSG=""
+if [ "$_GOAL_LOOKUP_EXIT" -gt 1 ]; then
+  # The lookup says why on stderr, which the call above discards. Its first
+  # line is asked for again here, only when there is something to say.
+  _GOAL_LOOKUP_MSG=$({ "${BASH:-bash}" "${PLUGIN_ROOT}/bin/flow-active-goal.sh" --path --branch-strict --runtime-dir "$RT" >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr '\000-\037\177' ' ')
+  _GOAL_LOOKUP_MSG=${_GOAL_LOOKUP_MSG#flow-active-goal.sh: }
+fi
+case "$_GOAL_LOOKUP_EXIT" in
+  0) ;;
+  1) ACTIVE_GOAL="" ;;
+  2)
+    # Refused (a symlink on the way to a goal), or the lookup could not run
+    # (python3 or PyYAML missing): either way no goal of this repository is
+    # read.
+    ACTIVE_GOAL="!refused:${_GOAL_LOOKUP_MSG:-the goal lookup could not run, so no goal is read}" ;;
+  3)
+    ACTIVE_GOAL="!degenerate:${_GOAL_LOOKUP_MSG:-more than one active goal owns the current branch}" ;;
+  4)
+    # "<path> could not be read: <why>" — the hook names the path.
+    _GOAL_LOOKUP_MSG=${_GOAL_LOOKUP_MSG%% could not be read*}
+    ACTIVE_GOAL="!unreadable:${_GOAL_LOOKUP_MSG:-a goal file}" ;;
+  *)
+    ACTIVE_GOAL="!unreadable:the goal lookup (exit $_GOAL_LOOKUP_EXIT${_GOAL_LOOKUP_MSG:+: $_GOAL_LOOKUP_MSG})" ;;
+esac
 
 # A goal file that could not be read is not "no active flow goal" — the hook
 # cannot tell whether the one it could not parse was the active one.
@@ -219,6 +182,15 @@ case "${ACTIVE_GOAL}" in
     jq -nc --arg r "no active flow goal: $REFUSAL" '{decision:"approve", reason:$r}'
     exit 0
     ;;
+  '!degenerate:'*)
+    # Two active goals own this branch: the hook cannot tell which one it is
+    # to judge, so it judges neither and says so.
+    DEGENERATE=${ACTIVE_GOAL#\!degenerate:}
+    REASON="FLOW_GOAL_UNCHECKED — stop ALLOWED; ${DEGENERATE}; run /flow:goal history and clear the extra goal"
+    printf '%s\n' "$REASON" >&2
+    jq -nc --arg r "$REASON" '{decision:"approve", reason:$r}'
+    exit 0
+    ;;
   '!unreadable:'*)
     UNREADABLE_GOAL=${ACTIVE_GOAL#\!unreadable:}
     REASON="FLOW_GOAL_UNCHECKED — stop ALLOWED; ${UNREADABLE_GOAL} could not be read, so whether a goal is active is unknown"
@@ -228,7 +200,7 @@ case "${ACTIVE_GOAL}" in
     ;;
 esac
 
-# Fast-path: no $RT/goals or no active goal — be silent.
+# Fast-path: no $RT/goals, or no active goal owns this branch — be silent.
 if [ -z "${ACTIVE_GOAL}" ]; then
   echo '{"decision":"approve","reason":"no active flow goal"}'
   exit 0

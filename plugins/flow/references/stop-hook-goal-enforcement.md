@@ -26,13 +26,16 @@ Stop event output (stdout JSON):
 
 Configured via `flow.goals.stopHookEnforcement` (cascade-resolved). What each mode does to the stop is the first thing its reason string says, and the same text is printed to stderr so it reaches the terminal — the JSON `reason` of an `approve` decision is otherwise invisible to the user.
 
-In every mode the hook reads no goal through a symlink. When `.flow` or `.flow/goals` is a symlink, or is not a directory, or a goal file is a symlink, the hook prints `refusing — <path> is a symlink; goals are not read through it` to stderr and approves with `no active flow goal: <the same text>`. A repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target. `bin/flow-active-goal.sh`, which the `/flow:merge`, `/flow:pr` and `/flow:status` gates and the evaluator loop ask, refuses the same paths with exit 2, and each gate puts the refusal text after the exit status in its reason (`flow-active-goal.sh exited 2: refusing — .flow is a symlink; goals are not read through it`). The judge's evidence bundle (`bin/_flow_evidence_bundle.py`) reads no run directory reached through a symlink either: it is assembled as for a goal with no run directory, and the refusal goes to stderr.
+In every mode the hook reads no goal through a symlink. When `.flow` or `.flow/goals` is a symlink, or is not a directory, or a goal file is a symlink, the hook prints `refusing — <path> is a symlink; goals are not read through it` to stderr and approves with `no active flow goal: <the same text>`. A repository can commit `.flow` as a link to a directory outside the checkout, and a goal read there belongs to the link's target. `bin/flow-active-goal.sh`, which this hook, the `/flow:merge`, `/flow:pr` and `/flow:status` gates and the evaluator loop ask, refuses the same paths with exit 2, and each gate puts the refusal text after the exit status in its reason (`flow-active-goal.sh exited 2: refusing — .flow is a symlink; goals are not read through it`). The judge's evidence bundle (`bin/_flow_evidence_bundle.py`) reads no run directory reached through a symlink either: it is assembled as for a goal with no run directory, and the refusal goes to stderr.
+
+**Which goal is judged.** The hook judges the active goal whose `scope.branch` is the current branch, found with `bin/flow-active-goal.sh --path --branch-strict`, the lookup the evaluator loop and the merge gate use. Goal files are committed, so a branch can carry active goals for other issues (merged in from `main`, say); those are never judged. With no active goal for the current branch the hook approves with `no active flow goal`. With no branch to go by (a detached HEAD) it judges the most recently modified active goal. When two active goals both own the current branch it judges neither: it approves with `FLOW_GOAL_UNCHECKED — stop ALLOWED; degenerate state — 2 active goals on branch '<branch>' …; run /flow:goal history and clear the extra goal`.
 
 ### `warn` (default) — the stop is always allowed
 
 ```
-turn ends → Stop hook fires → find active goal (.flow/goals/*.goal.yaml with lifecycle.status: active)
-  ↓ no active goal
+turn ends → Stop hook fires → find the active goal for the current branch
+  (.flow/goals/*.goal.yaml with lifecycle.status: active and scope.branch: <current branch>)
+  ↓ no active goal for this branch
 emit {"decision":"approve","reason":"no active flow goal"} — silent
 
   ↓ active goal found

@@ -25,6 +25,14 @@
   out, and in the head commit otherwise, fetched from origin when the clone
   lacks it. When the head cannot be read the gate blocks and says why. The
   block now needs the pull request number, as the finding-ledger gate does.
+- The goal Stop hook judges the goal that owns the current branch, not the
+  first active goal in sorted order (#336). Goal files are committed, so a
+  branch can carry other issues' active goals; on a branch for issue 7 the
+  hook reported, and in `block` mode enforced, issue 1's criteria. It now
+  selects with `bin/flow-active-goal.sh --branch-strict`, the lookup the
+  evaluator and the merge gate use, and with no goal for the branch it
+  approves with `no active flow goal`. Two active goals owning the branch
+  are reported (`FLOW_GOAL_UNCHECKED`), not one picked.
 - `bin/flow-active-goal.sh --commit <rev>` reads the goals committed in a
   commit instead of the working tree, with the same symlink refusals.
 - `bin/flow-active-goal.sh` has a `--reason` mode that prints the goal's
