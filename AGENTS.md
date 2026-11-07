@@ -7,6 +7,6 @@
 - If you must test a system in isolation, first write down all the ways it could fail, then write the code.
 
 For the flow plugin, write E2E tests with `plugins/flow/tests/lib/e2e.sh`; the `plugins/flow/tests/e2e-*.test.sh` files are examples. It runs the shipped command block or hook in a scratch repository the way Claude Code runs it, and writes one artifact file per scenario. Set `FLOW_E2E_ARTIFACT_DIR` to keep the artifacts; without it they are kept only when an expectation fails, and the run prints where.
-After a failure only the artifacts are kept; `FLOW_E2E_KEEP_SCRATCH=1` also keeps each scenario's scratch repository. A scenario that needs a changed copy of the plugin makes it with `e2e_copy_plugin` or `e2e_plugin_copy`, never `cp -R` of the whole plugin: those leave out `tests/` and the recorded eval runs.
+After a failure only the artifacts are kept; `FLOW_E2E_KEEP_SCRATCH=1` also keeps each scenario's scratch repository. `tests/run.sh` gives each test file a `TMPDIR` of its own and removes it when the file ends, so a test needs no cleanup of its own for what it makes there. A scenario that needs a changed copy of the plugin makes it with `e2e_copy_plugin` or `e2e_plugin_copy`, never `cp -R` of the whole plugin: those leave out `tests/` and the recorded eval runs.
 
 While developing, run the test files your change touches (`plugins/flow/tests/run.sh <file>`), and the full suite once before pushing. After a run made to fail on purpose (to show a test catches a fault), delete the artifacts it kept once you have read them.

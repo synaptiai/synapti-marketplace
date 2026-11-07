@@ -77,8 +77,13 @@ Each entry below describes the change against 3.14.0.
     the rest of the scratch root is removed, without following a symlink.
     `FLOW_E2E_KEEP_SCRATCH=1` keeps the whole scratch root to look at a
     scenario by hand.
-  - `tests/e2e-harness-scratch.test.sh` checks both, with the harness run on
-    a small test file of its own.
+  - `tests/run.sh` runs each test file with a `TMPDIR` of its own and
+    removes it when the file ends, so the temporary directories that most
+    files which are not e2e files never removed no longer pile up. The e2e
+    harness makes its scratch root in the run's own temporary directory
+    (`FLOW_E2E_TMPDIR`), so a failed file's artifacts stay where it says.
+  - `tests/e2e-harness-scratch.test.sh` checks all of this, with the harness
+    and run.sh run on small test files of its own.
 
 ### Fixed
 
