@@ -137,6 +137,11 @@
   that value as a redirect target. A single-quoted value is not interpolated
   and is reported as written. A `#` inside a backtick command is no longer
   read as a comment.
+- A Gemfile `gem` call that does not start its statement (`%w(a b).each { |g|
+  gem g }`, `group :test do gem "x" end`) makes the Gemfile
+  `MANIFEST_UNPARSED` instead of reporting no dependency (#248).
+  `bin/flow-dep-diff.sh`'s header lists every form that makes a Gemfile
+  unreadable, `gem("x") if c` and `%q()` values among them.
 - A setter or operator method in a Gemfile (`def mode=(v)`, `def ==(o)`, `def
   []=(k, v)`) now opens a block closed by its `end`. Only a true endless `def
   x = expr` does not, so the setter's `end` no longer closes the surrounding
@@ -146,6 +151,29 @@
   `DEP_REPLACED`. Other `PATH` redirects now print `(unpinned)` instead of the
   gem version, so a version bump of a path gem is not reported as a new
   redirect (#248)
+- The secrets guard no longer refuses text that only names a secret-shaped
+  assignment (#241). It matched its pattern against the whole line, so filing
+  an issue about a leaked token, writing the pattern into a README, grepping
+  for it, or committing a message about a rotation was refused. It now reads
+  the command with `lib/command-parse.sh` and judges each simple command:
+  refused are a secret-shaped assignment set in the shell (an assignment in
+  command position, `export`, `declare`, `readonly`, `local`, `env`), a
+  secret-shaped option (`--password=…`) whatever the command, any
+  secret-shaped argument or literal `Authorization`/`X-API-Key` header given
+  to a command that sends data or sets another process's environment (curl,
+  wget, httpie, ssh, mysql, psql, docker, kubectl and others), and the same
+  inside a script run with `bash -c`. The same text as an argument of a text
+  command (`echo`, `printf`, `grep`, `git commit -m`, `gh issue create --body`
+  and the like) is allowed; the next entry says which commands count as
+  sending or setting, and the two checks added for #241 beside the
+  secret-shaped word pattern, which is unchanged: a URL with a password or a
+  secret query parameter, and an inline interpreter script. When the parser
+  cannot be loaded or cannot split the command, the hook falls back to the
+  whole-line check. The payload is read with `printf`, not `echo`, so a
+  backslash escape reaches `jq` as written. It does not catch a secret passed
+  as two separate words (`aws configure set aws_secret_access_key <value>`) or
+  one that appears only when a variable or `$(...)` is expanded; the README
+  says so.
 - The secrets guard now finds the command a simple command runs past shell
   keywords and wrappers (#241). `{ export API_TOKEN=…; }`, `if …; then export
   PASSWORD=…; fi`, `for …; do curl -d password=…; done`, `! export …`, `sudo
@@ -248,22 +276,6 @@
   evaluator and the merge gate use, and with no goal for the branch it
   approves with `no active flow goal`. Two active goals owning the branch
   are reported (`FLOW_GOAL_UNCHECKED`), not one picked.
-- The secrets guard no longer refuses text that only names a secret-shaped
-  assignment (#241). It matched its pattern against the whole line, so filing
-  an issue about a leaked token, writing the pattern into a README, grepping
-  for it, or committing a message about a rotation was refused. It now reads
-  the command with `lib/command-parse.sh` and judges each simple command:
-  refused are a secret-shaped assignment set in the shell (an assignment in
-  command position, `export`, `declare`, `readonly`, `local`, `env`), a
-  secret-shaped option (`--password=…`) whatever the command, any
-  secret-shaped argument or literal `Authorization`/`X-API-Key` header given
-  to a command that sends data or sets another process's environment (curl,
-  wget, httpie, ssh, mysql, psql, docker, kubectl and others), and the same
-  inside a script run with `bash -c`. The same text as an argument of any
-  other command is allowed. The pattern itself is unchanged. When the parser
-  cannot be loaded or cannot split the command, the hook falls back to the
-  whole-line check. The payload is read with `printf`, not `echo`, so a
-  backslash escape reaches `jq` as written.
 - The pattern checks no longer miss a command hidden after an escaped
   separator and a `#` (#304). `ls x\ #y ; rm -rf ~` and `ls x\;#y ; git push
   --force origin main` ran their second command in bash and zsh. The

@@ -376,3 +376,21 @@ DEP_ADDED=right@evil/right#main manifest=package.json
 DEP_REPLACED=left -> git+https://git.example/left.git@(unpinned) manifest=package.json
 DEP_REPLACED=local -> file:../local@(unpinned) manifest=package.json
 DEP_REPLACED=right -> evil/right#main@(unpinned) manifest=package.json'
+
+# --- a gem call that does not start its statement (R4) ------------------------
+_dep dep-gem-in-block-expr "a gem call inside an each block on one line is read as unreadable, not as no dependency (R4)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\n%w(rack puma).each { |g| gem g }\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 is not at the start of its statement at head'
+
+_dep dep-gem-one-line-group "a one-line group block holding a gem call is unreadable, not skipped (R4)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngroup :test do gem "rspec" end\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 is not at the start of its statement at head'
+
+_dep dep-gem-word-in-string "the word gem inside a string or in gemspec is not a gem call (R4)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngemspec\nputs "install the gem rack"\n' \
+'STATE=ok'

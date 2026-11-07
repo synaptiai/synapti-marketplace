@@ -824,6 +824,12 @@ _DOC_BEGIN = re.compile(r"^=begin(?:\s|$)")
 _DOC_END = re.compile(r"^=end(?:\s|$)")
 
 
+# A `gem` call anywhere in a line's code: not `gemspec`, `gem_group`,
+# `Gem::Version`, `.gem` or `:gem`. Read on the line with its strings blanked.
+_GEM_CALL_ANYWHERE = re.compile(r"(?<![A-Za-z0-9_.:@$])gem(?=[ \t(])")
+_RUBY_STRING = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`')
+
+
 def _ruby_code(raw):
     """A Gemfile line without its comment, as this parser reads it. A `#`
     inside a quoted string or a backtick command (a URL fragment, a `#{...}`
@@ -1026,6 +1032,11 @@ def parse_gemfile(text):
             if _DO.search(line):
                 blocks.append(None)
             continue
+        # A gem call that does not start its statement (`%w(a b).each { |g|
+        # gem g }`, `group :test do gem "x" end`) is one this reads nothing
+        # from: the Gemfile is unreadable rather than missing a dependency.
+        if _GEM_CALL_ANYWHERE.search(_RUBY_STRING.sub('""', line)):
+            raise ParseError("the gem call on line %d is not at the start of its statement" % lineno)
         if _END.match(line):
             if not blocks:
                 raise ParseError("the end on line %d closes no block this can see" % lineno)

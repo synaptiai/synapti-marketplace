@@ -57,6 +57,15 @@
 #     two Python names are compared PEP 503 normalised (my_pkg is my-pkg);
 #     names from other ecosystems as written
 #   MANIFEST_UNPARSED=<path> reason=<why>
+#     a Gemfile is Ruby, and is unreadable rather than guessed at when: a gem
+#     name, source option or git/path block target is not a string literal
+#     (a variable, a method call, a `%q()` string, or a double-quoted string
+#     that interpolates); a gem call is not at the start of its statement
+#     (`%w(a b).each { |g| gem g }`, `group :test do gem "x" end`); a
+#     parenthesised gem call does not close on its line or carries a trailing
+#     modifier (`gem("x") if c`); a continued call runs past the end of the
+#     file or into another statement; an `end` closes no block it has seen;
+#     or a `=begin` has no `=end`
 #
 # MANIFESTS_EXAMINED=0 with STATE=none means no manifest was in the diff.
 # MANIFESTS_EXAMINED=1 with no DEP_ lines means a manifest was read and nothing
