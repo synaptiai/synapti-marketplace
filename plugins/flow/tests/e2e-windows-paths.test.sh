@@ -20,6 +20,9 @@
 #      (FLOW_DEP_BIN) is not converted
 #   W5 on Linux and macOS anything is converted (cygpath is called at all)
 #   W6 with the conversion in place the helper no longer does its work
+#   W7 a user path variable (FLOW_STATE_DIR) that reaches a script in Windows
+#      form, as MSYS2 hands it to a script a native python3 starts, is ignored,
+#      so the trust ledger is written to one place and read from another
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -114,4 +117,28 @@ _missing=$(cd "$E2E_PLUGIN_DIR" && grep -l 'sys.path.insert(0' bin/*.sh hooks/sc
 e2e_expect_equal "" "$_missing" "helpers that put a directory on sys.path without the conversion"
 _copies=$(cd "$E2E_PLUGIN_DIR" && grep -l '^py_path() {' bin/*.sh hooks/scripts/*.sh 2>/dev/null || true)
 e2e_expect_equal "" "$_copies" "helpers with their own py_path"
+e2e_expect_clean_edges
+
+# W7: the stub here converts with -u, mapping the made-up drive Z: to a
+# directory of the scenario, as cygpath maps D: to /d.
+_win_case win-state-dir-windows-form "FLOW_STATE_DIR in Windows form (Z:\\state, Z:/state) under Git Bash is read as the shell reaches it; off Windows it is not an absolute path and is ignored (W7)"
+mkdir -p "$E2E_DIR/zdrive/state"
+cat > "$E2E_BIN/cygpath" <<STUB
+#!/usr/bin/env bash
+[ "\$1" = -u ] || { printf 'unexpected cygpath %s\n' "\$*" >> "$E2E_DIR/cygpath.log"; exit 1; }
+printf '%s\n' "\$2" >> "$E2E_DIR/cygpath.log"
+p=\${2//\\\\//}
+case "\$p" in Z:/*) printf '%s' "$E2E_DIR/zdrive/\${p#Z:/}" ;; *) exit 1 ;; esac
+STUB
+chmod +x "$E2E_BIN/cygpath"
+for form in 'Z:\state' 'Z:/state'; do
+  e2e_run_bin FLOW_PY_PATH_PLATFORM=$WIN "FLOW_STATE_DIR=$form" bin/cascade-resolve.sh --state-dir
+  e2e_expect_equal 0 "$E2E_RC" "exit status ($form)"
+  e2e_expect_equal "$E2E_DIR/zdrive/state" "$E2E_OUT" "the state directory ($form)"
+  e2e_expect_err_lacks "ignoring FLOW_STATE_DIR"
+done
+: > "$E2E_DIR/cygpath.log"
+e2e_run_bin "FLOW_STATE_DIR=Z:/state" bin/cascade-resolve.sh --state-dir
+e2e_expect_err "ignoring FLOW_STATE_DIR: it is not an absolute path"
+_expect_not_converted "Z:/state" "off Windows the value is left as it is"
 e2e_expect_clean_edges

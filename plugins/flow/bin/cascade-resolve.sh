@@ -467,6 +467,20 @@ _cr_user_value() {
   local name="$1" kind="$2" value why="" rc repo=0
   value=${!name-}
   [ -n "$value" ] || return 0
+  # Under Git Bash, MSYS2 or Cygwin a value can arrive in Windows form (D:\a\x
+  # or D:/a/x): MSYS2 rewrites a path in the environment of a native Windows
+  # program, such as python3, which passes it on unchanged to a script it
+  # starts. It is read as the shell reaches it. FLOW_PY_PATH_PLATFORM stands in for
+  # uname -s, as in bin/lib/py-path.sh.
+  case "$value" in
+    [A-Za-z]:[\\/]*)
+      case "${FLOW_PY_PATH_PLATFORM:-$(uname -s 2>/dev/null)}" in
+        MINGW*|MSYS*|CYGWIN*)
+          if command -v cygpath >/dev/null 2>&1; then
+            value=$(cygpath -u "$value" 2>/dev/null) || value=${!name-}
+          fi ;;
+      esac ;;
+  esac
   case "$value" in
     *[[:cntrl:]]*) why="it holds a control character" ;;
     /*)
