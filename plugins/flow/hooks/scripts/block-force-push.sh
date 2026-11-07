@@ -429,12 +429,30 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
         i = (j <= n) ? j + 1 : n + 1
         continue
       }
+      # Inside `(( ))` arithmetic and inside `[[ ]]` (a `=~` regex) a `#` is
+      # never a comment: `(( x = (1)#2 )) ; git push --force` and `[[ a =~
+      # (a)#x ]] ; git push --force` run the push. `am` is 1 while a `((` is
+      # open, `pd` counts the single `(` open inside it (the `))` of
+      # `(1+(2))` closes no `((`), and `bk` is 1 while a `[[` is open; all
+      # three carry over a line break. While either is open no `#` opens a
+      # comment, and once a line has held either `nosub` is set, so no `)`
+      # on it or on a later line opens one (lib/command-parse.sh has the
+      # same rule).
       if (c == "(" && substr(line, i + 1, 1) == "(") {
         unmodelled = 1
         ps = ps (opens_word(line, i, escat) ? "ss" : "ww")
-        if (substr(ps, length(ps), 1) == "w") nosub = 1
+        nosub = 1
+        if (am) pd += 2
+        else { am = 1; pd = 0 }
         i += 2; continue
       }
+      if (am && c == "(") pd++
+      if (am && c == ")") {
+        if (pd > 0) pd--
+        else if (substr(line, i + 1, 1) == ")") am = 0
+      }
+      if (!am && c == "[" && substr(line, i + 1, 1) == "[" && !bk) { bk = 1; nosub = 1 }
+      else if (bk && c == "]" && substr(line, i + 1, 1) == "]") bk = 0
       if (c == "\"" || c == SQ) {
         # A string may run past this line, and its continuation lines have no
         # command word of their own. Remember whose argument the span is.
@@ -448,7 +466,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       # not escaped: `ls x\ #y ; git push --force` has no comment, and runs
       # the push. A `(` ends a word only when it opens one itself, since zsh
       # reads `/(#|tmp)` as a glob (lib/command-parse.sh has the same rule).
-      if (c == "#" && is_comment_start(line, i, escat)) {
+      if (c == "#" && !am && !bk && is_comment_start(line, i, escat)) {
         if (segstart > 0) judge(substr(line, segstart, i - segstart))
         # A comment is prose about the command. Its flags are accounted for,
         # but they are still flags the floor saw, so they are counted.

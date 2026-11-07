@@ -556,6 +556,7 @@ _bd_strip_noncode() {
       return 1
     }
     BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = ""; nos = 0
+            am = 0; pd = 0; bk = 0; am0 = 0; pd0 = 0; bk0 = 0
             shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$" }
     {
       line = $0
@@ -571,10 +572,11 @@ _bd_strip_noncode() {
 
       # A continued line is scanned again with the line it continues, from the
       # quote state that line started in, so nothing is counted twice.
-      if (pend == "") q0 = q
+      if (pend == "") { q0 = q; am0 = am; pd0 = pd; bk0 = bk }
       line = pend line
       pend = ""
       q = q0
+      am = am0; pd = pd0; bk = bk0
 
       # --- remove a comment, tracking quotes and backslash escapes ---------
       # Two quote states. `q` carries from one line to the next, as the shell
@@ -609,7 +611,17 @@ _bd_strip_noncode() {
       # a way this scan does not follow, so once a line has held one no `)`
       # on a later line opens a comment either. When in doubt the text is
       # kept, which only ever makes a rule see more.
-      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0; ps = ""; sc = 0
+      # Inside `(( ))` or `$(( ))` arithmetic and inside `[[ ]]` (a `=~`
+      # regex) a `#` is never a comment: `(( x = (1)#2 )) ; rm -rf ~`,
+      # `(( x = 1 #2 )) ; rm -rf ~` and `[[ a =~ (a)#x ]] ; rm -rf ~` all run
+      # the rm. `am` is 1 while a `((` is open, `pd` counts the single `(`
+      # open inside it, so the `))` of `(1+(2))` closes no `((`, and `bk` is
+      # 1 while a `[[` is open; all three carry over a line break (`((` then
+      # `(1)#2 ))` on the next line). `lp` is the last character a pair
+      # took. While either is open no `#` opens a comment. Counting cannot
+      # follow every form, so a line that held either also sets `nos`, and
+      # no `)` on it or on a later line opens a comment.
+      n = length(line); cut = 0; ql = ""; eq = 0; el = 0; pe1 = 0; pe2 = 0; ps = ""; sc = 0; lp = 0
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
         bq = eq; bl = el; oq = (q == ""); ol = (ql == "")
@@ -627,6 +639,15 @@ _bd_strip_noncode() {
         else if (dq) ql = DQ
         else if (c == "\"" || c == SQ) ql = c
         if ((c == "$" || c == "`") && !bq && !bl) nos = 1
+        if (oq && ol && !bq && !bl && lp != i) {
+          nx = (i < n) ? substr(line, i + 1, 1) : ""
+          if (am) {
+            if (c == "(") pd++
+            else if (c == ")") { if (pd > 0) pd--; else if (nx == ")") { am = 0; lp = i + 1 } }
+          } else if (c == "(" && nx == "(") { am = 1; pd = 0; nos = 1; lp = i + 1 }
+          else if (bk) { if (c == "]" && nx == "]") { bk = 0; lp = i + 1 } }
+          else if (c == "[" && nx == "[") { bk = 1; nos = 1; lp = i + 1 }
+        }
         if (oq && ol && !bq && !bl && (c == "(" || c == ")")) {
           prev = (i == 1) ? "" : substr(line, i - 1, 1)
           if (c == ")") {
@@ -641,7 +662,7 @@ _bd_strip_noncode() {
           else ps = ps "w"
           if (c == "(" && substr(ps, length(ps), 1) == "w") nos = 1
         }
-        if (c == "#" && oq && ol && !bq && !bl && !pe1) {
+        if (c == "#" && oq && ol && !bq && !bl && !pe1 && !am && !bk) {
           prev = (i == 1) ? "" : substr(line, i - 1, 1)
           if (prev == "" || prev == " " || prev == "\t" || prev == ";" ||
               prev == "|" || prev == "&" || (prev == ")" && sc == i - 1 && !nos)) { cut = i; break }

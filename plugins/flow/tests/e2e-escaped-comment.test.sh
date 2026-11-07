@@ -35,6 +35,13 @@
 #      `)#` is part of its word to bash, but a reader that forgets the open
 #      span at the line break reads the `#` as a comment and never checks
 #      the command after the span closes
+#   C10 a `#` inside `(( ))` arithmetic or inside `[[ ]]` (a `=~` regex),
+#      after a `)` (`(1)#2`, `(a)#x`), a space or a `(`, is read as a
+#      comment, though bash and zsh read it as part of the expression and
+#      run the command after the next `;`; the same when the `((` or `[[`
+#      opened on an earlier line, or when an inner `(1+(2))` holds a `))`
+#      that does not close the `((`. A real comment after the `))` or `]]`
+#      that closes it must stay one (C4).
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -126,6 +133,33 @@ _case esc-merge-param-nl "$MERGE_HOOK" "( echo \${x:-${NL}(a)#} ; gh pr merge 5 
 _case esc-merge-backquote-nl "$MERGE_HOOK" "( echo ${BQ}echo${NL}(a)#x${BQ} ; gh pr merge 5 )" refused "an unchecked merge after a backquote still open on the next line is refused (C9, C5)"
 _case esc-rm-subshell-close-nl "$DELETE_HOOK" "ls${NL}(ls)#x ; rm -rf ~" allowed "a # after a subshell on a line after one with no span is still a comment (C7, C9)"
 _case esc-push-subshell-close-nl "$PUSH_HOOK" "ls${NL}(ls)#x ; git push --force origin main" allowed "the same for the force-push check (C7, C9)"
+
+# --- a # inside (( )) arithmetic or a [[ ]] regex (C10) ----------------------
+_case esc-rm-arith-cmd "$DELETE_HOOK" '(( x = (1)#2 )) ; rm -rf ~' refused "a # after a ) inside (( )) is part of the expression (C10)"
+_case esc-rm-arith-space "$DELETE_HOOK" '(( x = 1 #2 )) ; rm -rf ~' refused "a # after a space inside (( )) is part of the expression (C10)"
+_case esc-rm-arith-inner "$DELETE_HOOK" '(( x = (1+(2)) #2 )) ; rm -rf ~' refused "an inner )) does not close the (( (C10)"
+_case esc-rm-arith-nl "$DELETE_HOOK" "((${NL}(1)#2 )) ; rm -rf ~" refused "a (( opened on the line before is still open (C10)"
+_case esc-rm-arith-nl-expr "$DELETE_HOOK" "(( x = 1 +${NL}(1)#2 )) ; rm -rf ~" refused "the same with the expression begun on the line before (C10)"
+_case esc-rm-arith-if "$DELETE_HOOK" 'if (( (1)#2 )); then rm -rf ~; fi' refused "a (( after if (C10)"
+_case esc-rm-arith-while "$DELETE_HOOK" 'echo a | while (( (1)#2 )); do :; done; rm -rf ~' refused "a (( after while in a pipeline (C10)"
+_case esc-rm-regex "$DELETE_HOOK" '[[ a =~ (a)#x ]] ; rm -rf ~' refused "a # after a ) inside a [[ =~ ]] regex (C10)"
+_case esc-rm-regex-open "$DELETE_HOOK" '[[ a =~ (#y) ]] ; rm -rf ~' refused "a # after a ( inside a [[ =~ ]] regex (C10)"
+_case esc-rm-regex-nl "$DELETE_HOOK" "[[ a =~ x${NL}(a)#x ]] ; rm -rf ~" refused "a [[ opened on the line before is still open (C10)"
+_case esc-rm-arith-comment "$DELETE_HOOK" '(( x = 1 )) # rm -rf ~' allowed "a real comment after the )) that closes (( (C10, C4)"
+_case esc-rm-regex-comment "$DELETE_HOOK" '[[ -f x ]] # rm -rf ~' allowed "a real comment after the ]] that closes [[ (C10, C4)"
+_case esc-rm-for-comment "$DELETE_HOOK" 'for ((i=0;i<3;i++)); do echo $i; done # rm -rf ~' allowed "a real comment after a for (( )) loop (C10, C4)"
+_case esc-push-arith-cmd "$PUSH_HOOK" '(( x = (1)#2 )) ; git push --force origin main' refused "a # after a ) inside (( )) (C10, C5)"
+_case esc-push-arith-space "$PUSH_HOOK" '(( x = 1 #2 )) ; git push --force origin main' refused "a # after a space inside (( )) (C10, C5)"
+_case esc-push-arith-if "$PUSH_HOOK" 'if (( (1)#2 )); then git push --force origin main; fi' refused "a (( after if (C10, C5)"
+_case esc-push-arith-nl "$PUSH_HOOK" "((${NL}(1)#2 )) ; git push --force origin main" refused "a (( opened on the line before (C10, C5)"
+_case esc-push-regex "$PUSH_HOOK" '[[ a =~ (a)#x ]] ; git push --force origin main' refused "a # after a ) inside a [[ =~ ]] regex (C10, C5)"
+_case esc-push-arith-comment "$PUSH_HOOK" '(( x = 1 )) # git push --force origin main' allowed "a real comment after the )) that closes (( (C10, C4)"
+_case esc-push-regex-comment "$PUSH_HOOK" '[[ -f x ]] # git push --force origin main' allowed "a real comment after the ]] that closes [[ (C10, C4)"
+_case esc-merge-arith "$MERGE_HOOK" '(( x = (1)#2 )) ; gh pr merge 5' refused "an unchecked merge after a # inside (( )) is refused (C10, C5)"
+_case esc-merge-regex "$MERGE_HOOK" '[[ a =~ (a)#x ]] ; gh pr merge 5' refused "an unchecked merge after a # inside a [[ =~ ]] regex is refused (C10, C5)"
+_case esc-gate-arith "$GATE_HOOK" '(( x = (1)#2 )) ; gh pr merge 5' asks "a merge after a # inside (( )) is asked about (C10, C5)"
+_case esc-gate-regex "$GATE_HOOK" '[[ a =~ (a)#x ]] ; gh pr merge 5' asks "a merge after a # inside a [[ =~ ]] regex is asked about (C10, C5)"
+_case esc-gate-arith-comment "$GATE_HOOK" '(( x = 1 )) # gh pr merge 5' silent "a merge in a real comment after (( )) is not (C10, C4)"
 
 # --- gh issue create during an active goal (ask-issue-create.sh) ------------
 _issue_goal() { e2e_goal issue-304 feature/issue-304-e2e active true; }
