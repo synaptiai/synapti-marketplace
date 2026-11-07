@@ -54,8 +54,9 @@
   `stopHookEnforcement`, `ask-issue-create.sh`'s `minimalScope` and
   `verify-task-completion.sh`'s `taskCompletionGate`. Both files are now read
   at `git rev-parse --show-toplevel`; at the top the paths, and the messages
-  that name them, are unchanged, and outside a repository the working
-  directory's files are read as before. `bin/flow-active-goal.sh` finds the
+  that name them, are unchanged, and outside a repository, or under a home
+  directory kept in git (which flow treats as the user's, not a repository),
+  the working directory's files are read as before. `bin/flow-active-goal.sh` finds the
   goals at the top too, so the Stop hook judges a goal from a subdirectory.
 - `bin/flow-active-goal.sh --commit <rev>` reads the goals committed in a
   commit instead of the working tree, with the same symlink refusals.
