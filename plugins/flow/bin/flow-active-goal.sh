@@ -33,7 +33,8 @@
 #   resolve cleanly.
 #   Exit codes: 0 resolved · 1 no applicable goal · 2 refused (a symlink on the
 #   way to a goal, bad arguments) · 3 degenerate (>1 active on this branch) · 4 a goal file exists
-#   but could not be read, and no other goal answered. 4 is distinct from 1
+#   but could not be read, and no other goal answered, or the goals directory
+#   could not be inspected. 4 is distinct from 1
 #   because callers gate on existence: the merge gate treats 1 as "no goal, not
 #   applicable" and proceeds, which is the wrong answer when a goal is sitting
 #   there unreadable. Unreadable goals are still skipped when some other goal
@@ -198,7 +199,7 @@ import sys, glob, os, json, subprocess
 sys.path.insert(0, sys.argv[5])
 import yaml
 from _flow_cli import open_regular
-from _journal_atomic import JournalAtomicError, ensure_repo_dir
+from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
 from _repo_dir import from_repo_top, runtime_dir
 
 mode = sys.argv[1]
@@ -290,11 +291,17 @@ if commit:
 else:
     try:
         ensure_repo_dir(GOALS_DIR)
-    except JournalAtomicError as exc:
+    except RepoDirRefused as exc:
         # "refusing — .flow is a symlink", which names the component: the
         # summary set where the rule refused, never the message cut at a "; ".
         print(f"flow-active-goal.sh: {exc.summary}; {READ_NOTE}", file=sys.stderr)
         sys.exit(2)
+    except JournalAtomicError as exc:
+        # A directory that could not be inspected (no permission, say) is not
+        # a refusal: the goals may be there, so whether one is active is
+        # unknown, exit 4, as for a goal file that cannot be read.
+        print(f"flow-active-goal.sh: {GOALS_DIR} could not be read: {' '.join(str(exc).split())}", file=sys.stderr)
+        sys.exit(4)
 
     if not os.path.isdir(GOALS_DIR):
         sys.exit(1)

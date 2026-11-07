@@ -120,7 +120,9 @@ Each entry below describes the change against 3.14.0.
   selects with `bin/flow-active-goal.sh --branch-strict`, the lookup the
   evaluator and the merge gate use, and with no goal for the branch it
   approves with `no active flow goal`. Two active goals owning the branch are
-  reported (`FLOW_GOAL_UNCHECKED`), not one picked.
+  reported (`FLOW_GOAL_UNCHECKED`), not one picked, and so is a goals
+  directory the lookup cannot inspect: `flow-active-goal.sh` exits 4 for it,
+  as for a goal file it cannot read, and keeps 2 for a refusal.
 - A repository's settings and goals are read at its top, whatever directory a
   command or hook runs in (#337).
   - `bin/cascade-resolve.sh` looked for `.claude/settings.flow.json` and
