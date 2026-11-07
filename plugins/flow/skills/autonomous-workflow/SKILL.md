@@ -44,7 +44,7 @@ TaskCreate in PLAN (one per deliverable, imperative subject, acceptance criteria
 
 ## AskUserQuestion Enforcement
 
-"Use the AskUserQuestion tool" means invoke the tool with contextual options, never plain text.
+[ask: none] "Use the AskUserQuestion tool" means calling it with options, never plain text.
 
 ## Decision Journal
 

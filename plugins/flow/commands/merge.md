@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, AskUserQuestion, Skill
 
 # Merge PR #$ARGUMENTS
 
-Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion before it runs the merge. The `tier-gate.sh` hook then asks again when the merge command runs (`tiers.merge` cannot be set below `confirm`), showing the exact command; it is a second check, and it also covers a merge typed outside flow. You may see two prompts for one merge.
+[ask: permission] Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion before it runs the merge. The `tier-gate.sh` hook then asks again when the merge command runs (`tiers.merge` cannot be set below `confirm`), showing the exact command; it is a second check, and it also covers a merge typed outside flow. You may see two prompts for one merge.
 
 ## Required Skills
 
@@ -781,7 +781,7 @@ If any check fails, explain what needs to be fixed and suggest actions.
 
 If the Mergeable check fails (has conflicts):
 
-Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
+[ask: default] Use the AskUserQuestion tool with a Proactive-Autonomy escalation: Under `ASK_POLICY=autonomous`, do not ask: take Option 1, resolve the conflicts now, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 > **Situation** — PR #$PR_NUM has merge conflicts that prevent merging.
 >
@@ -842,7 +842,7 @@ fi
 # DESCRIPTION_CHECK_BLOCK_END
 ```
 
-Show the assessment as text. Then use the AskUserQuestion tool with contextual
+[ask: permission] Show the assessment as text. Then use the AskUserQuestion tool with contextual
 options to confirm, naming what will actually run: "PR #{PR_NUMBER} in
 {OWNER/NAME} is ready to merge. Proceed with a {strategy} merge{, deleting the
 branch}?" The strategy and the branch clause come from `MERGE_STRATEGY` and
@@ -906,7 +906,7 @@ git pull origin $DEFAULT_BRANCH
 
 **FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): after a successful merge, invoke `Skill(run-state-management)` to transition the `merge-pr` FlowRun to `state.status: completed` and update its `workflow-run` journal artifact to `status=completed`. Then transition the linked FlowGoal to a terminal status if it is not already — the merge itself is the achievement signal. If the merge was cancelled, transition the run to `cancelled` (with `blocked_reason`) so it is not treated as resumable.
 
-**Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
+[ask: none] **Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
 
 ```bash
 # ESCALATION_RESOLVED_BLOCK_BEGIN

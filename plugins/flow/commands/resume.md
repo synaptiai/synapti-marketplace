@@ -306,7 +306,7 @@ fi
 true
 ```
 
-When `FLOW_RESUME_UNLINKED=unknown`, treat it like `1` for safety: surface that the working tree could not be assessed and ask before suggesting continuation. When `FLOW_RESUME_UNLINKED=1`, you MUST surface the listed paths and **ask before suggesting continuation** — do not jump to the Step 5 next-action suggestion. Use `AskUserQuestion`:
+[ask: decision] When `FLOW_RESUME_UNLINKED=unknown`, treat it like `1` for safety: surface that the working tree could not be assessed and ask before suggesting continuation. When `FLOW_RESUME_UNLINKED=1`, you MUST surface the listed paths and **ask before suggesting continuation** — do not jump to the Step 5 next-action suggestion. Use `AskUserQuestion`:
 
 > Uncommitted changes exist that aren't linked to FlowRun `<RUN_ID>` (they're outside `<runtime dir>/` and the journal directory):
 > `<the listed paths>`
@@ -365,7 +365,7 @@ When the run is `blocked` with a `blocked_reason`, the suggestion includes resol
 
 ### Step 6: Optional AskUserQuestion
 
-If the user explicitly wants to act on the resume rather than just inspect, offer the suggested next command via AskUserQuestion. Otherwise just print the report and exit.
+[ask: default] If the user explicitly wants to act on the resume rather than just inspect, offer the suggested next command via AskUserQuestion. Otherwise just print the report and exit. Under `ASK_POLICY=autonomous`, do not ask: print the suggested next command and stop; `/flow:resume` never runs it, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 ## Anti-patterns
 

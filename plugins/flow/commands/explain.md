@@ -122,7 +122,7 @@ true
 
 ## Phase 3: Interactive Q&A
 
-Use the AskUserQuestion tool with contextual options to ask: "What would you like to understand about this implementation?"
+[ask: decision] Use the AskUserQuestion tool with contextual options to ask: "What would you like to understand about this implementation?"
 
 For each question:
 1. Search the decision journal for relevant entries

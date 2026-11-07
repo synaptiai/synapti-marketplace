@@ -25,6 +25,21 @@ allowed-tools: Bash, Read, Write, Edit, Agent, Skill, AskUserQuestion, TaskCreat
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## References
 
 - [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by the max-conflict-files escalation (Phase 1) and any semantic/structural/delete-modify escalation surfaced during resolution
@@ -177,7 +192,7 @@ Resolve `conflictResolution.autoResolveTrivial` (default `true`) and `conflictRe
 
 If conflicted file count exceeds `maxConflictFiles` (default: 20):
 
-Use AskUserQuestion: "There are {N} conflicted files (limit: {max}). This may indicate the branches have diverged significantly. Options: 1) Proceed anyway, 2) Abort and consider rebasing in smaller steps."
+[ask: default] Use AskUserQuestion: "There are {N} conflicted files (limit: {max}). This may indicate the branches have diverged significantly. Options: 1) Proceed anyway, 2) Abort and consider rebasing in smaller steps." Under `ASK_POLICY=autonomous`, do not ask: proceed with the resolution, since every resolved file is verified afterwards, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 ## Phase 2: PLAN
 
@@ -205,7 +220,7 @@ Display conflict analysis table:
 
 **Auto-proceed** for trivial conflicts if `autoResolveTrivial` is true (default).
 
-**AskUserQuestion** for semantic, structural, or delete-modify conflicts — show both sides and proposed strategy before proceeding.
+[ask: decision] **AskUserQuestion** for semantic, structural, or delete-modify conflicts — show both sides and proposed strategy before proceeding.
 
 ## Phase 3: CODE
 
@@ -221,8 +236,8 @@ For each conflicted file:
    - `accept-theirs`: keep content between `=======` and `>>>>>>>`
    - `manual-merge`: combine both sides, removing markers
      - For **compatible changes**: merge both
-     - For **competing changes**: use AskUserQuestion showing both sides with context
-5. For **delete-modify** conflicts: use AskUserQuestion — "File {name} was deleted on one side and modified on the other. Keep modified version or accept deletion?"
+     - [ask: decision] For **competing changes**: use AskUserQuestion showing both sides with context
+5. [ask: decision] For **delete-modify** conflicts: use AskUserQuestion — "File {name} was deleted on one side and modified on the other. Keep modified version or accept deletion?"
 6. **Verify** no orphaned conflict markers remain in the file:
    ```bash
    grep -n '<<<<<<<\|=======\|>>>>>>>' "$FILE"

@@ -72,6 +72,8 @@ What breaks if the user defers, and who bears the cost. This is the "wake me at 
 
 Every escalation MUST be delivered via the `AskUserQuestion` tool, NEVER as inline text in a markdown response. Inline text is bypassable; the tool surfaces a structured prompt the user definitively sees and answers.
 
+The call carries the class of its place ([`ask-policy.md`](ask-policy.md)): `metadata: {"source": "flow:decision"}` for a product or scope decision, `{"source": "flow:permission"}` for a Tier 3 action or an out-of-whitelist skip. Under `autonomous: true` a question without one of those is denied by the `ask-policy.sh` hook, and a place tagged `[ask: default]` takes its recommendation instead of escalating.
+
 The `AskUserQuestion` invocation should structure the six fields as the question prefix and use the **Options** as the actual options the user selects from:
 
 ```

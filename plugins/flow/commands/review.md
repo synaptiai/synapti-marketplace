@@ -26,6 +26,21 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## Phase 1: EXPLORE
 
 The checkout step stays inline below (it writes a working tree); read-only context-gathering is in the `!` block.
@@ -1900,11 +1915,11 @@ fi
 
    Findings in files the PR already modifies are NEVER outside this pull request's scope (a different sense from a trigger the review scope excludes) — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
 
-   **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend fixing them in this PR with an `improve:` commit in the review comment.
+   [ask: none] **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend fixing them in this PR with an `improve:` commit in the review comment.
 
    **Minimal-scope mode (`settings.json` → `minimalScope: true`):** for cosmetic P3 findings in untouched files only, use the follow-up issue workflow:
 
-   Present the findings and use the AskUserQuestion tool with contextual options: "These cosmetic P3 findings are in untouched files. Which ones should become follow-up issues?"
+   [ask: default] Present the findings and use the AskUserQuestion tool with contextual options: "These cosmetic P3 findings are in untouched files. Which ones should become follow-up issues?" Under `ASK_POLICY=autonomous`, do not ask: create follow-up issues for all of them, as `minimalScope: true` asks, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
    For each selected finding, create a GitHub issue using issue-crafting skill knowledge:
    - Title: concise, solution-agnostic description of the finding

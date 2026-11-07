@@ -208,7 +208,7 @@ TaskUpdate("Coupling and convention review", status: "completed")
 
 TaskUpdate("Design decision", status: "in_progress")
 
-1. Use the AskUserQuestion tool with contextual options to ask: "Recommended design: {approach}. {rationale}. Approve?"
+1. [ask: decision] Use the AskUserQuestion tool with contextual options to ask: "Recommended design: {approach}. {rationale}. Approve?"
 2. **Log decision** to the decision journal. On a branch whose name contains `issue-N` the block below writes `issue-N.md`; on any other branch it writes today's session journal, `<journal dir>/session-YYYY-MM-DD.md` (dated by the local calendar day), and the manifest emit below records to the same file.
 
 ```bash

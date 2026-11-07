@@ -62,7 +62,7 @@ Map the candidate and judge verdict to a status per `references/goal-lifecycle-t
 
 **Non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`): set `lifecycle.status`, increment `turns_evaluated`, set `last_evaluation = {result, reason, at}`, and write immediately via `bin/flow-goal-record.sh --update-lifecycle`.
 
-**Terminal transitions** (`achieved`, `failed`, `cancelled`): the skill does NOT write them. Return `proposed_transition: {to, reason, turns_evaluated}` and leave the persisted status non-terminal; the caller asks the user (AskUserQuestion) and, on confirmation, writes it with `bin/flow-goal-record.sh --update-lifecycle`.
+[ask: permission] **Terminal transitions** (`achieved`, `failed`, `cancelled`): the skill does NOT write them. Return `proposed_transition: {to, reason, turns_evaluated}` leaving the status non-terminal; the caller asks the user (AskUserQuestion) and, on confirmation, writes it with `bin/flow-goal-record.sh --update-lifecycle`.
 
 ### Step 7: Journal
 

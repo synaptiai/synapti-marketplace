@@ -29,7 +29,7 @@ Verbatim matches are `extracted-from-issue`; never prompt for what the issue sta
 
 ### Step 3: Prompt for missing elements
 
-Draft each missing element, then surface one blocking six-field escalation per element (never bundled) via `AskUserQuestion` per [`references/escalation-format.md`](../../references/escalation-format.md). Options: (1) accept draft, (2) edit, (3) reject (update the issue first). Recommend (1).
+[ask: decision] Draft each missing element, then surface one blocking six-field escalation per element (never bundled) via `AskUserQuestion` per [`references/escalation-format.md`](../../references/escalation-format.md). Options: (1) accept draft, (2) edit, (3) reject (update the issue first). Recommend (1).
 
 Risk map draft: 2-6 rows from the issue and the touched files. Each: where the logic is likeliest subtly wrong; what the plausible wrong version does (reversed order, off-by-one, wrong precedence, wrong empty case); one input where right and wrong differ.
 

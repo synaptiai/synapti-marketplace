@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Added
+
+- `autonomous: true` is enforced by a hook, not left to the model's memory
+  of a setting (#339). No script read it before; whether a question was
+  asked depended on the model having read the settings file.
+  - `bin/flow-ask-policy.sh` prints the ask policy, `attended` or
+    `autonomous`, and the preflight of `/flow:start`, `/flow:pr`,
+    `/flow:address`, `/flow:review`, `/flow:commit` and `/flow:resolve`
+    prints it (`ASK_POLICY=...`).
+  - Every place in `commands/` and `skills/` that asks carries a class:
+    `[ask: decision]` (a product or scope decision), `[ask: permission]` (a
+    Tier 3 action, or a skip outside the runtime-verification list) or
+    `[ask: default]`; `[ask: none]` marks a mention that is not a place to
+    ask. The 14 default places say what to take under the autonomous policy,
+    and the choice is recorded as a `default-taken` journal artifact.
+  - `hooks/scripts/ask-policy.sh`, a `PreToolUse` hook on `AskUserQuestion`,
+    denies a question whose `metadata.source` is not `flow:decision` or
+    `flow:permission` while the policy is autonomous, with a reason telling
+    the agent to take its recommendation and record it. Attended, or with
+    settings it cannot read, it allows every question.
+  - Before it was built on, the mechanism was checked on Claude Code 2.1.319:
+    a deny-only hook on `AskUserQuestion` takes effect, no permission request
+    reaches the host, and the hook sees `metadata.source`
+    (`references/ask-policy.md` records how).
+  - Saying "autonomous mode" in the conversation no longer turns it on; the
+    setting does.
+
 ### Fixed
 
 - `/flow:merge`'s FlowGoal gate no longer lets a pull request through when

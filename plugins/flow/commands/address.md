@@ -30,6 +30,21 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## References
 
 - [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 4's genuine non-convergence escalation (step 4), Phase 4's review-cycle-limit escalation (step 12), and any other Proactive-Autonomy escalation surfaced during feedback resolution
@@ -916,11 +931,11 @@ A finding in a file the PR already modifies is NEVER out-of-scope — it must be
 
 P1 or P2 findings in untouched files must be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded). They MUST NOT be filed as a six-field Proactive-Autonomy escalation — finding triage is not a decision, it is work. See `skills/llm-operator-principles/SKILL.md`.
 
-**Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed in this PR with an `improve:` commit. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
+[ask: none] **Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed in this PR with an `improve:` commit. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
 
 **Minimal-scope mode (`settings.json` → `minimalScope: true`, or user said "minimal scope" in-conversation):** for cosmetic P3 findings in truly untouched files only, use the follow-up issue workflow:
 
-1. Use the AskUserQuestion tool with contextual options: "This cosmetic P3 finding is in an untouched file. Create a follow-up issue to track it?"
+1. [ask: default] Use the AskUserQuestion tool with contextual options: "This cosmetic P3 finding is in an untouched file. Create a follow-up issue to track it?" Under `ASK_POLICY=autonomous`, do not ask: create the follow-up issue, as `minimalScope: true` asks, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 2. If yes, create a GitHub issue using issue-crafting skill knowledge:
    - Title: concise, solution-agnostic description
    - Body: Context, Current State (file:line), Objective, Acceptance Criteria
@@ -1435,7 +1450,7 @@ true
       ```bash
       gh pr edit "$PR_NUM" --add-reviewer @{reviewer}
       ```
-    - If cycle >= `reviewCycleLimit` → this signals genuine review deadlock (not a finding-triage decision). Use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
+    - [ask: decision] If cycle >= `reviewCycleLimit` → this signals genuine review deadlock (not a finding-triage decision). Use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
 
       **Situation**: Review cycle {N} reached the configured limit (`reviewCycleLimit`). {remaining_count} finding(s) remain unresolved across {N} review-and-address cycles — this is a deadlock between reviewer and author, not a finding-triage question.
       **Tried**: {N} cycles of review-and-address with the current reviewer.
@@ -1447,7 +1462,7 @@ true
       **Blocking?**: Yes — PR cannot merge until findings are resolved or explicitly overridden with justification.
       **Risk**: Merging with unresolved findings violates the "no incomplete shipments" hard boundary. Open findings become production defects owned by the team.
 
-      Present via AskUserQuestion: "Review cycle {N} has reached the limit with {remaining_count} unresolved finding(s). Choose a path forward:"
+      [ask: decision] Present via AskUserQuestion: "Review cycle {N} has reached the limit with {remaining_count} unresolved finding(s). Choose a path forward:"
         - Option 1: "Re-request same reviewer"
         - Option 2: "Request fresh reviewer"
         - Option 3: "Override with written risk acceptance (will be recorded on PR)"

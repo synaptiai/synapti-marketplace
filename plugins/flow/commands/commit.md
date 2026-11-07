@@ -25,6 +25,21 @@ Classify changes, flag anomalies, and create atomic conventional commits. Follow
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## References
 
 - [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 3's uncertain/out-of-context-files escalation
@@ -204,7 +219,7 @@ For each file the block prints `S1_FILE=`, then `S1_ESTIMATE=`. A number is the 
 
 **If uncertain or out-of-context files exist:**
 
-Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
+[ask: default] Use the AskUserQuestion tool with a Proactive-Autonomy escalation: Under `ASK_POLICY=autonomous`, do not ask: include cleanup files in a separate `improve:` or `chore:` commit and leave genuinely unrelated files unstaged, as the Recommendation below says, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 > **Situation** — {N} files are classified as uncertain or out-of-context for this branch.
 >

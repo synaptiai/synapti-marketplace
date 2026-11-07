@@ -167,7 +167,7 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `debugging.maxHypotheses` | `3` | `debugging-patterns` skill |
 | `reviewCycleLimit` | `10` | `/flow:address`, `llm-operator-principles` skill |
 | `fixForwardMaxIterations` | `10` | `/flow:start`, `/flow:pr`, `/flow:review`, `/flow:address` fix loops |
-| `autonomous` | `false` | `llm-operator-principles` skill, `/flow:setup`; merge and release still ask |
+| `autonomous` | `false` | `bin/flow-ask-policy.sh`, the `ask-policy.sh` hook on `AskUserQuestion`, `llm-operator-principles`: `true` sets the ask policy to autonomous, so a question that only asks for a default is not asked (the agent takes its recommendation and records it); decisions and permissions, merge and release among them, still ask ([`ask-policy.md`](ask-policy.md)) |
 | `minimalScope` | `false` | `hooks/scripts/ask-issue-create.sh`, `/flow:review`, `/flow:address` |
 | `closedLoop.enabled` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`CLOSED_LOOP=`): false runs each build-and-run and runtime check once and asks on a failure |
 | `closedLoop.requireRuntimeVerification` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`RUNTIME_VERIFICATION=`): false lets Phase 4 skip runtime verification without an escalation |

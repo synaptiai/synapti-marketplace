@@ -96,10 +96,10 @@ See [`skills/llm-operator-principles/SKILL.md`](skills/llm-operator-principles/S
 
 Two opt-in modes complement the LLM-operator defaults:
 
-- `autonomous: true` — removes `AskUserQuestion` interruptions for any decision the agent can resolve under the operator principles. Reserves `AskUserQuestion` for Tier 3 confirmations (merge, release) and true product/architecture decisions; the tier hook's prompt on the merge or release command still appears as well. Recommended for sole-maintainer repositories.
+- `autonomous: true` — a question that only asks for a default is not asked: the agent takes its recommendation, records it in the decision journal (`default-taken`) and lists it in its summary. Product or scope decisions and permissions (Tier 3 confirmations such as merge and release, a required check that cannot run) are still asked, and the tier hook's prompt on the merge or release command still appears as well. A hook on `AskUserQuestion` (`hooks/scripts/ask-policy.sh`) enforces this, so it does not depend on the model remembering the setting; under it, any question in the session that does not declare itself a decision or a permission is denied ([`references/ask-policy.md`](references/ask-policy.md)). Recommended for sole-maintainer repositories.
 - `minimalScope: true` — offers a follow-up issue, instead of an in-PR fix, for cosmetic P3 in untouched files only. Use when scope is deliberately constrained (e.g., a one-line hotfix that should not expand into a refactor). P1/P2 findings still fix in-PR even in this mode.
 
-Both can be toggled in settings or in-conversation ("autonomous mode on", "minimal scope on").
+`minimalScope` can be toggled in settings or in-conversation ("minimal scope on"); `autonomous` only in settings, since the hook reads the setting.
 
 ### Opting Out
 
@@ -244,7 +244,7 @@ COMMANDS (23)
   Runtime / admin (6) — inspect & debug the layer Flow manages for you:
   └── goal, workflow, trigger, run, resume, watch
 
-HOOKS (19 scripts; 17 registered in hooks/hooks.json, the other two run from flow-goal-stop;
+HOOKS (20 scripts; 18 registered in hooks/hooks.json, the other two run from flow-goal-stop;
        plus the git and gh wrappers in hooks/shims)
   ├── Safety (PreToolUse): block-force-push, block-destructive, block-secrets,
   │                        block-unchecked-merge (refuses `gh pr merge` while checks are
@@ -252,6 +252,8 @@ HOOKS (19 scripts; 17 registered in hooks/hooks.json, the other two run from flo
   │                        `gh issue create` during an active goal), tier-gate (applies
   │                        tiers.*: asks before merge, release, a tag push and any
   │                        action set to confirm; journals actions set to journal)
+  ├── Ask policy (PreToolUse, AskUserQuestion): ask-policy (with autonomous: true,
+  │                        denies a question that only asks for a default)
   ├── Run-time tier check (SessionStart): tier-session-start puts flow's git and gh
   │                        wrappers first on PATH; they refuse a merge, release, tag
   │                        push or confirm action tier-gate did not ask about
@@ -344,6 +346,7 @@ TESTS (not part of what a user runs)
 
 | Event | Wired Script | Min. Claude Code | Notes |
 |-------|--------------|------------------|-------|
+| `PreToolUse` (AskUserQuestion) | `ask-policy` | All current | Documented event. With `autonomous: true` it returns `permissionDecision: deny` for a question whose `tool_input.metadata.source` is not `flow:decision` or `flow:permission`, with a reason telling the agent to take its recommendation and record it; with the default `autonomous: false`, or settings it cannot read, it allows every question. Checked on Claude Code 2.1.319 (`references/ask-policy.md`) |
 | `PreToolUse` (Bash) | `block-force-push`, `block-destructive`, `block-unchecked-merge`, `block-secrets`, `ask-issue-create`, `tier-gate` | All current | Documented event. `block-force-push`, `block-destructive` and `block-unchecked-merge` parse the command rather than match its text, so a command that only mentions `rm -rf` or `gh pr merge` in a string is not refused; each `block-*` guard blocks when a tool it needs (such as `jq`) is missing. `block-force-push` blocks unless it can show the command does not force-push; `--force-with-lease` is allowed. `block-unchecked-merge` refuses `gh pr merge` while any check is queued, running or failed, refuses `--auto` on a base branch with no required checks, and accepts a merge only in one literal shape: `gh pr merge <number> --repo owner/name --squash\|--merge\|--rebase [...]`, which `/flow:merge` writes. `block-secrets` reads the command the same way and judges how secret-shaped text (`password=`, `token=`, `api_key=` and the like, with a literal value of 8 or more characters) is used: it refuses one set in the shell (`export`, `env`, an assignment in command position), given as an option (`--password=…`), or handed to a command that sends data or sets another process's environment (curl, wget, mysql, docker and others), and a literal `Authorization` or `X-API-Key` header given to such a command; the same text as an argument of `echo`, `grep`, `git commit -m` or `gh issue create` is allowed. `ask-issue-create` returns `permissionDecision: ask` (documented JSON contract) only for `gh issue create` while a FlowGoal is active and `minimalScope` is false. `tier-gate` parses the command the same way and applies `tiers.*`: `permissionDecision: ask` for merge, release (a tag push included) and any action set to `confirm`, one breadcrumb in the git-ignored auto-log trail for an action set to `journal` |
 | `SessionStart` | `tier-session-start` | All current | Documented event. Writes lines to `CLAUDE_ENV_FILE` that put `hooks/shims` (flow's `git` and `gh` wrappers) first on PATH for the session's Bash commands; the wrappers check `tiers.*` against the arguments the program gets (`references/three-tier-safety.md`) |
 | `PostToolUse` (Edit\|Write\|NotebookEdit) | `log-file-changes` | All current | Documented event; also appends a `file_change` entry to the session quality ledger (`notebook_path` read for NotebookEdit) |

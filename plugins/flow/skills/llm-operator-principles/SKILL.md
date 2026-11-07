@@ -65,7 +65,7 @@ Invalid:
 
 ## Autonomous Mode
 
-`settings.json` `autonomous: true` (or "autonomous mode" in-conversation): never use `AskUserQuestion` for decisions resolvable under these principles; reserve it for Tier 3 confirmations (merge, release) and the valid triggers above.
+[ask: none] `autonomous: true` in settings: `[ask: default]` places take their recommendation and record it (`default-taken`); `[ask: decision]` and `[ask: permission]` places ask, with `metadata.source` set. A hook enforces it: `references/ask-policy.md`.
 
 ## Minimal-Scope Mode
 

@@ -9,7 +9,7 @@ agent: Explore
 
 ## Contract
 
-Iron law: **no completion until the code builds, runs, and behaves correctly; if you cannot verify it, build the infrastructure to verify it.** Invoked after quality checks pass by `/flow:start` Phase 4 step 2, `/flow:pr` Phase 4 via `Agent(integration-verifier)`, and the `address-pr`, `debug`, and `start-issue` workflows. Returns the Runtime Verification Results and Acceptance Criteria Verification tables, with failures as P1 findings (`category=runtime`). Permitted skips: only `markdown-only`, `config-only`, or `dependency-bump-only`, each with its listed evidence; any other skip needs an approved six-field escalation via `AskUserQuestion`.
+[ask: none] Iron law: **no completion until the code builds, runs, and behaves correctly; if you cannot verify it, build the infrastructure to verify it.** Invoked after quality checks pass by `/flow:start` Phase 4 step 2, `/flow:pr` Phase 4 via `Agent(integration-verifier)`, and the `address-pr`, `debug`, and `start-issue` workflows. Returns the Runtime Verification Results and Acceptance Criteria Verification tables, with failures as P1 findings (`category=runtime`). Permitted skips: only `markdown-only`, `config-only`, or `dependency-bump-only`, each with its listed evidence; any other skip needs an approved six-field escalation via `AskUserQuestion`.
 
 ## Skip Whitelist
 
@@ -21,7 +21,7 @@ Iron law: **no completion until the code builds, runs, and behaves correctly; if
 
 Mixed diffs (a whitelisted category plus one `.py` file, a new dependency, or a behavior-changing config value) get full verification. "Small change", "CI-only", "tests cover this", "just a refactor" are not categories.
 
-**Out-of-whitelist skips** (anything uncovered): raise a Proactive-Autonomy escalation per [`references/escalation-format.md`](../../references/escalation-format.md) via `AskUserQuestion` and wait for approval; Situation cites why the whitelist misses the change, Tried lists the fast-path, build, and smoke attempts. Blanket repo-wide authorization is never valid.
+[ask: permission] **Out-of-whitelist skips** (anything uncovered): raise a Proactive-Autonomy escalation per [`references/escalation-format.md`](../../references/escalation-format.md) via `AskUserQuestion` and wait for approval; Situation cites why the whitelist misses the change, Tried lists the fast-path, build, and smoke attempts. Blanket authorization is never valid.
 
 ## Sequence
 

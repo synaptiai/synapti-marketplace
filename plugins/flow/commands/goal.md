@@ -252,7 +252,7 @@ Examples:
 - `/flow:goal create issue 42` — explicit issue number
 - `/flow:goal create pr-review 123` — captures review goal for PR #123
 - `/flow:goal create pr-address 123` — captures address goal for PR #123
-- `/flow:goal create adhoc <id>` — user-supplied outcome via AskUserQuestion
+- [ask: decision] `/flow:goal create adhoc <id>` — user-supplied outcome via AskUserQuestion
 
 Workflow:
 1. Resolve `<id>` from `<kind>` + branch state.
@@ -299,10 +299,10 @@ Skipping the write breaks delta computation for the next turn (everything become
 
 **Terminal-transition Tier 3 confirmation**:
 
-When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion. The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
+[ask: permission] When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion. The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
 
 ```text
-AskUserQuestion: "FlowGoal $GOAL_ID evaluation produced verdict: <achieved|failed>.
+[ask: permission] AskUserQuestion: "FlowGoal $GOAL_ID evaluation produced verdict: <achieved|failed>.
                   Confirm transition to terminal status '<proposed_to>'?
                   Reason: <proposed_reason>"
 
@@ -345,7 +345,7 @@ On **Re-evaluate**, recursively invoke `/flow:goal evaluate $GOAL_ID` for anothe
 
 On **Cancel**, exit cleanly. The goal stays at its current non-terminal status; the verdict has been persisted to `last-verdict.json` (so next-turn delta is correct) but lifecycle is unchanged.
 
-For **non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`), the skill writes lifecycle itself per Step 6 of `goal-evaluator/SKILL.md` — no AskUserQuestion is needed for these reversible states.
+[ask: none] For **non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`), the skill writes lifecycle itself per Step 6 of `goal-evaluator/SKILL.md` — no AskUserQuestion is needed for these reversible states.
 
 Print the resulting verdict + per-AC table. If lifecycle transitioned to `achieved`, print celebration. If `failed`, print the failing AC + suggested next action.
 
@@ -357,7 +357,7 @@ Print the resulting verdict + per-AC table. If lifecycle transitioned to `achiev
 
 Transition `active → waiting_for_user` via `Skill(goal-lifecycle)`. Use when stepping away mid-flow and the Stop hook should fall silent. A paused goal keeps `/flow:merge` blocked until it is resumed and achieved.
 
-Reason for the lifecycle transition is collected via AskUserQuestion if not provided as `--reason "..."`.
+[ask: default] Reason for the lifecycle transition is collected via AskUserQuestion if not provided as `--reason "..."`. Under `ASK_POLICY=autonomous`, do not ask: write the reason yourself from what the session was doing, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 ### `/flow:goal resume <id>`
 
@@ -369,7 +369,7 @@ Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The g
 
 A cancelled goal still belongs to its branch: `/flow:merge` blocks a pull request whose branch carries a goal that is not `achieved`, cancelled and failed included. If the branch no longer ships the goal's work, remove the goal file from the branch before merging; if it does, finish the work under a new goal.
 
-Confirmation via AskUserQuestion is mandatory (Tier 3 action: cancels potentially in-flight work).
+[ask: permission] Confirmation via AskUserQuestion is mandatory (Tier 3 action: cancels potentially in-flight work).
 
 ### `/flow:goal history`
 

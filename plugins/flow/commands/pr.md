@@ -30,6 +30,21 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## References
 
 - [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 4's visual-verification BLOCKED escalation and any other Proactive-Autonomy escalation surfaced during PR creation
@@ -571,7 +586,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    if _off '.visualVerification.enabled'; then printf '%s\n' "VISUAL_VERIFICATION=off"; else printf '%s\n' "VISUAL_VERIFICATION=on"; fi
    ```
 
-   - `CLOSED_LOOP=off` (`closedLoop.enabled` is false): tell the agent to run each check once and report a failure without fixing and retrying; then ask the user with `AskUserQuestion` whether to fix it now or open the PR with the failure noted.
+   - [ask: default] `CLOSED_LOOP=off` (`closedLoop.enabled` is false): tell the agent to run each check once and report a failure without fixing and retrying; then ask the user with `AskUserQuestion` whether to fix it now or open the PR with the failure noted. Under `ASK_POLICY=autonomous`, do not ask: fix the failure now, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
    - `RUNTIME_VERIFICATION=optional` (`closedLoop.requireRuntimeVerification` is false): runtime verification may be skipped; record `skipped: closedLoop.requireRuntimeVerification is false` in the PR body.
    - `VISUAL_VERIFICATION=off` (`visualVerification.enabled` is false): leave the visual-verification sentence out of the prompt below, and record visual verification as `SKIP` with that reason.
 
@@ -593,7 +608,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
 4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation, unless the block printed `RUNTIME_VERIFICATION=optional`.
 5. **Visual verification enforcement**: If `visualVerification.requireVisualVerification` is `true` and integration-verifier returned visual verification as BLOCKED:
-   - Use `AskUserQuestion` with a Proactive-Autonomy escalation:
+   - [ask: permission] Use `AskUserQuestion` with a Proactive-Autonomy escalation:
      > **Situation** — Visual verification is required (`requireVisualVerification: true`) but no browser tools are available. UI files changed: {list}.
      >
      > **What I tried** — Checked for Playwright MCP, headless browser tools, and gstack. None available.
@@ -618,7 +633,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    - Every fix covers its class: the other inputs of the same shape and the other callers of the same code are fixed in the same commit, or the shared code they all use is (`commands/review.md` Phase 4 step 5).
 7. **If P1 or P2 findings that are not escalated**: Fix them, then re-review only what those fixes changed, for regressions they introduced. A re-review raises P1 and P2 findings only; the review has converged when no P1 or P2 is left. An escalated finding keeps its priority but stays listed in the PR body and does not send the flow back here.
 
-7a. **FlowGoal gate** (on by default; off when `flow.goals.enabled` is false or `flow.goals.goalCreation` is `off`) — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. `/flow:start` evaluates its goal at the end of VERIFY and moves it to `achieved` when every criterion passed, so a block here means the goal was evaluated and is not met (its `lifecycle.last_evaluation.reason` names what), or the work did not go through `/flow:start`'s VERIFY. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
+7a. [ask: permission] **FlowGoal gate** (on by default; off when `flow.goals.enabled` is false or `flow.goals.goalCreation` is `off`) — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. `/flow:start` evaluates its goal at the end of VERIFY and moves it to `achieved` when every criterion passed, so a block here means the goal was evaluated and is not met (its `lifecycle.last_evaluation.reason` names what), or the work did not go through `/flow:start`'s VERIFY. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
 
    - **Option 1 (Recommended): Run `/flow:goal evaluate <id>` first** — produces a verdict that may transition the goal to `achieved`. If the verdict is `achieved`, return here and proceed with PR creation.
    - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal with the block below: an `escalation-resolved` artifact whose `escalation_field` is `blocking`, because the user answered the escalation's Blocking? field (the gate said the incomplete goal blocks the PR, and the user chose to go on). On a branch whose name contains `issue-N` it goes to `issue-N.md`; on any other branch it goes to today's session journal, `<journal dir>/session-YYYY-MM-DD.md`:

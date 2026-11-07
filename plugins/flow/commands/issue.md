@@ -55,7 +55,7 @@ true
 
 **Requirements gathering** from `$ARGUMENTS`:
 
-If `$ARGUMENTS` provides a description, parse it for initial context. For each missing element, use the AskUserQuestion tool with contextual options:
+[ask: decision] If `$ARGUMENTS` provides a description, parse it for initial context. For each missing element, use the AskUserQuestion tool with contextual options:
 
 1. **Context**: "What's the background/motivation for this issue?"
 2. **Current State**: "What's happening now? What's the problem or gap?"
@@ -90,7 +90,7 @@ gh issue list --state open --search "KEYWORDS" --limit 10
 gh issue list --state closed --search "KEYWORDS" --limit 5
 ```
 
-If matches found, present them to the user via AskUserQuestion: "These existing issues look related. Should we proceed with creating a new issue, or does one of these cover your need?"
+[ask: decision] If matches found, present them to the user via AskUserQuestion: "These existing issues look related. Should we proceed with creating a new issue, or does one of these cover your need?"
 
 TaskUpdate duplicate detection to completed.
 

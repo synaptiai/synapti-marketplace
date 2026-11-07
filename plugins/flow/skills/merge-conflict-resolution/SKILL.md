@@ -19,7 +19,7 @@ git diff --name-only --diff-filter=U
 git status --porcelain
 ```
 
-Settings: `conflictResolution.autoResolveTrivial` (default `true`), `conflictResolution.maxConflictFiles` (default 20). Above the limit, `AskUserQuestion`: proceed anyway, or abort and rebase in smaller steps.
+[ask: default] Settings: `conflictResolution.autoResolveTrivial` (default `true`), `conflictResolution.maxConflictFiles` (default 20). Above the limit, `AskUserQuestion`: proceed anyway, or abort and rebase in smaller steps. Under `ASK_POLICY=autonomous`: proceed, since every resolved file is verified afterwards, recorded as `default-taken`.
 
 ## Classify
 
@@ -47,13 +47,13 @@ Settings: `conflictResolution.autoResolveTrivial` (default `true`), `conflictRes
 | manual-merge | Both changes are needed | Tier 2 — show rationale |
 | ask-user | Competing hunks, or a delete-modify conflict | The user decides via `AskUserQuestion` |
 
-Create one task per file (type, complexity, strategy, hunks) and display the Conflict Analysis table. Trivial files auto-proceed when `autoResolveTrivial` is true; semantic, structural, and delete-modify files show both sides and the proposed strategy via `AskUserQuestion` first. Never "take ours for everything" — analyze each conflict individually, and verify that "identical" changes really are identical.
+[ask: decision] Create one task per file (type, complexity, strategy, hunks) and display the Conflict Analysis table. Trivial files auto-proceed when `autoResolveTrivial` is true; semantic, structural, and delete-modify files show both sides and the proposed strategy via `AskUserQuestion` first. Never "take ours for everything" — analyze each conflict individually, and verify that "identical" changes really are identical.
 
 ## Resolve Each Hunk
 
 1. Parse the ours block (`<<<<<<<` to `=======`) and theirs block (`=======` to `>>>>>>>`).
 2. Identify each side's intent.
-3. Compatible (different imports, non-overlapping logic) → combine both. Competing (two implementations of the same thing) → `AskUserQuestion` showing both sides with context.
+3. [ask: decision] Compatible (different imports, non-overlapping logic) → combine both. Competing (two implementations of the same thing) → `AskUserQuestion` showing both sides with context.
 4. Write the resolved content with all markers removed; `grep -n '<<<<<<<\|=======\|>>>>>>>' "$FILE"` must return nothing.
 5. `git add "$FILE"`; mark the task completed.
 

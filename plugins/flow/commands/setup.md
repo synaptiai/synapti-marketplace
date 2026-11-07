@@ -93,7 +93,7 @@ done
 
 Flow settings follow the standard Claude Code cascade — `local > project > user > plugin default`. Setup writes the project-shared file, which gives the whole team a baseline. Any user can then override locally via `.claude/settings.flow.local.json` (gitignored), set cross-project preferences in `$HOME/.claude/settings.flow.json`, or rely on the plugin's bundled defaults.
 
-**Before writing**, read your user settings file — the file `bin/cascade-resolve.sh --user-settings-path` prints: `$FLOW_USER_SETTINGS` when you set it (a value inside the repository or set by it is ignored), otherwise `$HOME/.claude/settings.flow.json` — (if present) and skip writing any key that the user has already set there with a non-default value. Under the unified cascade, project-shared overrides user-global, so writing a key that matches the plugin default would silently override a user's existing personal preference for it. The intent of `/flow:setup` is to establish a team baseline, not to override individual user choices. Use `AskUserQuestion` if any conflict is detected:
+[ask: none] **Before writing**, read your user settings file — the file `bin/cascade-resolve.sh --user-settings-path` prints: `$FLOW_USER_SETTINGS` when you set it (a value inside the repository or set by it is ignored), otherwise `$HOME/.claude/settings.flow.json` — (if present) and skip writing any key that the user has already set there with a non-default value. Under the unified cascade, project-shared overrides user-global, so writing a key that matches the plugin default would silently override a user's existing personal preference for it. The intent of `/flow:setup` is to establish a team baseline, not to override individual user choices. Use `AskUserQuestion` if any conflict is detected:
 
 > Your user settings file (`{user-settings-path}`: `$FLOW_USER_SETTINGS` when you set it, otherwise `$HOME/.claude/settings.flow.json`) already sets `{key}` to `{user-value}`. The team baseline would set it to `{baseline-value}`, which would override your user-global preference because the project-shared tier wins.
 >
@@ -132,7 +132,7 @@ fi
 true
 ```
 
-If the output is `MIGRATE=none` or `MIGRATE=skip`, there is nothing to upgrade — proceed silently. Otherwise it reports the pending change(s) (`MIGRATE_FROM=...` / `MIGRATE_TO=...`). Surface them and use `AskUserQuestion`:
+[ask: default] If the output is `MIGRATE=none` or `MIGRATE=skip`, there is nothing to upgrade — proceed silently. Otherwise it reports the pending change(s) (`MIGRATE_FROM=...` / `MIGRATE_TO=...`). Surface them and use `AskUserQuestion`: Under `ASK_POLICY=autonomous`, do not ask: take **Upgrade now**, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 > Your committed `.claude/settings.flow.json` uses deprecated settings keys that can be upgraded to the current schema:
 > {the `MIGRATE_FROM` → `MIGRATE_TO` lines}
@@ -171,7 +171,7 @@ If the output is `STRIP_AUTO_LOG=none` or `STRIP_AUTO_LOG=skip`, there is nothin
 
 **A `STRIP_AUTO_LOG_WARN=` line is not part of that count and must be surfaced separately.** It names a journal left partially stripped because it ends inside an unbalanced code fence, and a run can emit it with `0 files, 0 lines` — so an operator shown only the FILE lines would be told nothing about the journal that needs a manual look. When it appears, name the journal and say it was left as-is.
 
-Surface the pending changes and use `AskUserQuestion`:
+[ask: default] Surface the pending changes and use `AskUserQuestion`: Under `ASK_POLICY=autonomous`, do not ask: take **Strip them now**, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 > Your tracked decision journals carry {m} auto-log lines written by the hooks before they were moved to a local, gitignored trail:
 > {the STRIP_AUTO_LOG_FILE lines}
@@ -234,7 +234,7 @@ command -v ruby-lsp 2>/dev/null && printf '%s\n' "RUBY-LSP: installed" || printf
 
 ### Step 3.4: Present LSP Setup Plan
 
-Use the **AskUserQuestion tool** to present the LSP installation plan:
+[ask: decision] Use the **AskUserQuestion tool** to present the LSP installation plan:
 
 > "Flow uses LSP code intelligence for semantic code understanding across workflow phases. Here's what's needed for your tech stack:"
 
@@ -283,7 +283,7 @@ Then restart Claude Code for the change to take effect.
 claude plugins list 2>/dev/null | grep -i "claude-code-lsps" || printf '%s\n' "NO_LSP_MARKETPLACE"
 ```
 
-If no LSP marketplace found, register one. Use the **AskUserQuestion tool**:
+[ask: decision] If no LSP marketplace found, register one. Use the **AskUserQuestion tool**:
 
 **Options:**
 1. "Piebald-AI/claude-code-lsps (Recommended)" — Comprehensive marketplace with 20+ languages
@@ -408,7 +408,7 @@ fi
 # SETUP_RULESETS_END
 ```
 
-On `flow`, report that flow's rulesets are in place and go on. On `unavailable` or `unreadable`, add a line to **Manual Steps Required** in the Phase 7 summary: rulesets could not be read or created here, and an owner of the repository can add them under Settings → Rules. On `noremote`, skip this phase. Otherwise (`none` or `other`, naming the existing rulesets on `other`; a flow ruleset that already exists is reported as `FAILED=` with GitHub's message when created again), use the AskUserQuestion tool, saying what each choice does on GitHub and what it does not:
+[ask: permission] On `flow`, report that flow's rulesets are in place and go on. On `unavailable` or `unreadable`, add a line to **Manual Steps Required** in the Phase 7 summary: rulesets could not be read or created here, and an owner of the repository can add them under Settings → Rules. On `noremote`, skip this phase. Otherwise (`none` or `other`, naming the existing rulesets on `other`; a flow ruleset that already exists is reported as `FAILED=` with GitHub's message when created again), use the AskUserQuestion tool, saying what each choice does on GitHub and what it does not:
 
 - **Protect the default branch and tags** (recommended): the default branch accepts changes only through a pull request and cannot be force-pushed or deleted; a tag cannot be moved or deleted once it is on GitHub. Merging a pull request and creating a new tag or release still need only write access.
 - **The same, and require one approving review**: a pull request also needs an approving review from someone other than its author, given after its last push, before it can be merged; a push after the approval dismisses it. This is the setting that stops a merge made with your own credentials, by you or by an agent. A maintainer who works alone cannot then merge their own pull requests.
@@ -459,7 +459,7 @@ Report each line in the Phase 7 summary. A `FAILED=` line goes under **Manual St
 
 ## Phase 6: CLAUDE.md Integration
 
-Use the AskUserQuestion tool with contextual options to ask: "Add flow workflow section to CLAUDE.md?"
+[ask: default] Use the AskUserQuestion tool with contextual options to ask: "Add flow workflow section to CLAUDE.md?" Under `ASK_POLICY=autonomous`, do not ask: add the section, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 If yes, append the workflow section from `templates/CLAUDE-flow.md` to the existing CLAUDE.md.
 
