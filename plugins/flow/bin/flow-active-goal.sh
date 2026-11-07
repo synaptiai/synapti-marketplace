@@ -215,7 +215,24 @@ def _repo_top():
     except Exception:
         return None
     top = r.stdout.strip() if r.returncode == 0 else ""
-    return top if top and os.path.isdir(top) else None
+    if not top or not os.path.isdir(top):
+        return None
+    # A home directory kept in git is the user's, not a repository
+    # (cascade-resolve.sh treats it the same way): under it the working
+    # directory is where the goals are, as before.
+    homes = [os.environ.get("HOME", "")]
+    try:
+        import pwd
+        homes.append(pwd.getpwuid(os.getuid()).pw_dir)
+    except Exception:
+        pass
+    for h in homes:
+        try:
+            if h and os.path.samefile(top, h):
+                return None
+        except OSError:
+            pass
+    return top
 _top = _repo_top()
 GOALS_REL = GOALS_DIR
 if _top is not None:
