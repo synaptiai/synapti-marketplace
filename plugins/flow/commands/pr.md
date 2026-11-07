@@ -698,7 +698,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 
    - **Goal**: `<GOAL_ID>` (from `<runtime dir>/goals/<id>.goal.yaml`; `<runtime dir>` is `flow.runtime.stateDir`, default `.flow`)
    - **Lifecycle**: `<status>` (not yet `achieved`)
-   - **Note**: `/flow:merge` will block until this goal is `achieved` or the user explicitly overrides.
+   - **Note**: `/flow:merge` stops before merging until this goal is `achieved`; its goal gate has no override.
    ```
 
    If visual verification ran, include visual evidence section:
