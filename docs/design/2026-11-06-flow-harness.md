@@ -1,7 +1,7 @@
 # Design record: a separate harness that orchestrates Claude Code with flow built in
 
 **Date**: 2026-11-06
-**Status**: Proposed (decisions taken by the maintainer on 2026-11-06; nothing built)
+**Status**: Proposed (decisions taken by the maintainer on 2026-11-06; nothing built). Option H1-b, running on T3 Code with a thin layer of our own on top, was added on 2026-11-07 after the hands-on tests below and is open for decision.
 **Alternative to**: `2026-11-06-flow-router-and-worker-mode.md` (the plugin-only router). Both records are kept so they can be compared; its Phase 1 (flow fixes) applies to both.
 **Layout**: the decision-record layout of `plugins/flow/references/architecture-decision-record.md`
 
@@ -35,6 +35,29 @@ The plugin-only record puts the router inside Claude Code: a tool-restricted `fl
 
 Several open-source orchestrators run coding agents in parallel git worktrees. The closest is Agent Orchestrator (`OrchestratorInc/agent-orchestrator`, Apache-2.0, Go daemon, desktop and mobile apps, routes CI and review feedback to the owning agent). Its own status page says its modes "are not OS or network isolation". It documents no plugin or extension API and no mapping of `AskUserQuestion` to its approval flow. Its roadmap is its own.
 
+### T3 Code, tested with flow (2026-11-07)
+
+T3 Code (`pingdotgg/t3code`, MIT, TypeScript) is a local server that runs coding agents, with desktop, web, iOS and Android clients. Its README says it is "very very early" and "(mostly) not accepting contributions yet", and its releases are nightly pre-releases. Its Claude driver is built on the Claude Agent SDK, found by searching its source: `ClaudeAdapterV2.ts` imports `@anthropic-ai/claude-agent-sdk` and passes `canUseTool`. It adds MCP tools that let one agent thread start, message and wait on others. Its documentation calls this "orchestration v2".
+
+Tested on the npm release `t3` 0.1.7 (Claude Code 2.1.319 inside T3). Flow 3.14.0 was installed in a separate Claude config directory that T3's Claude sessions used, and threads ran in a scratch repository. Each result was read from T3's own thread state, from the file system, or from its web UI, not from the agent's reply.
+
+| # | Question | Result |
+|---|---|---|
+| T1 | Does flow load in a T3 Claude thread? | Yes. T3's Claude provider listed 58 `flow:` slash commands and 32 flow skills; the thread confirmed it had them |
+| T2 | Does a question surface, and can it be answered later from outside the thread? | Yes. `t3 thread start --wait` exited 2 with status `waiting`. About two minutes later, a second thread used T3's `t3_pending_request` tool (`list`, `read`, `respond`) to answer it, and the first thread went on with the answer |
+| T3 | Does flow's Tier 3 gate reach a person? | Yes. This held even in T3's default "full access" mode, which runs the SDK in `bypassPermissions`. The web UI showed flow's reason ("Flow tier gate… Tier 3 action (tiers.release)") with Approve and Decline. Decline made the tool call fail with "User declined tool execution"; no tag was created |
+| T4 | Does a pending question survive a server restart? | Partly. The restart cancelled the run, but the question stayed listed. Answering it afterwards started a new turn with the answer as a message, and the thread finished with it. The original tool call was not resumed |
+| T5 | Does Claude Code's sandbox apply to T3's workers? | Yes, with `sandbox.enabled` in the settings T3 loads. A write to the home directory failed with "Read-only file system", even in full-access mode. (Writes under the temporary directory are allowed by design.) |
+| T6 | Can the sandbox deny a host to a T3 worker? | Yes. A host that answered 200 outside the sandbox returned a 403 to the worker once it was on `sandbox.network.deniedDomains` |
+| T7 | Can a thread delegate to a child thread? | Yes. `delegate_task` in wait mode created a child thread, recorded as a subagent of its parent, and returned its reply |
+
+What the tests did not settle:
+
+- T3's MCP tools state that `t3_pending_request` "cannot approve a permission request": approvals need a person in a T3 client.
+- An outside program could not reach T3's MCP endpoint with a scoped bearer token; it asks for an OAuth client or an agent session's token. Driving T3 from a deterministic program, through OAuth or the WebSocket API its clients use, is untested.
+- A full `/flow:start` run inside T3, worktree-per-thread, and webhook-triggered tasks (`schedule_task`) were not tested.
+- T3 has no gated path to GitHub: with GitHub denied in the sandbox, something other than the worker has to push. It has no intake from GitHub issues and no mirroring of questions to GitHub.
+
 ## Decisions, options and trade-offs
 
 ### H1. How flow gets orchestration
@@ -42,6 +65,7 @@ Several open-source orchestrators run coding agents in parallel git worktrees. T
 | Option | For | Against |
 |---|---|---|
 | **Own harness on the Agent SDK (chosen)** | the router is deterministic code; every flow question and approval arrives as a callback with no flow change; no research-preview dependency; one process owns state, credentials and sends | a new product to build and maintain; SDK is 0.x and releases often |
+| H1-b: T3 Code as the runtime, with a thin deterministic layer of ours on top for intake, policy, the send path and the GitHub mirror (open for decision) | T3 already provides sessions, questions that can be answered later, approvals in desktop and mobile apps, and delegation. Claude Code's sandbox applies to its workers (T1–T7 above). Much less to build | an approval needs a person in a T3 client; driving T3 from our own process is untested; pre-release and not taking contributions, so we follow its roadmap; its orchestrator is an agent session, so our layer, not T3, must hold the deterministic routing |
 | Plugin-only router (the other record) | no new repository | relies on background sessions and agent view; flow must store questions itself |
 | Extend Agent Orchestrator | desktop and mobile apps exist | no sandbox, no plugin API, asynchronous `AskUserQuestion` not shown; not our roadmap |
 | Own harness driving `claude -p` processes | any language | reimplements what the SDK wraps; the permission-prompt tool's contract is not documented |
@@ -149,6 +173,7 @@ The harness pins a marketplace release tag, for example the one that ships flow 
 | C3 | With `env` built by the harness (no `GH_TOKEN`), does flow's pipeline run to a ready result, with every GitHub action turned into a send request? |
 | C4 | Can commits leave a worker clone without running anything the worker could have planted in its `.git` (hooks, `core.fsmonitor`, filters, `commondir`, alternates)? Each vector is tested against a naive command first, so the test can fail. |
 | C5 | Personal mode: does a session started by the SDK on the person's own login behave as with an API key, and is the policy question settled? If not, personal mode stays off. |
+| C6 | For H1-b only: can a separate program create threads, read pending questions and answer them through T3's OAuth or WebSocket API? Does a full `/flow:start` run complete in a T3 worktree thread with the sandbox on? |
 
 ## Testing
 
