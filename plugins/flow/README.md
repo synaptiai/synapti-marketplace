@@ -335,7 +335,9 @@ TESTS (not part of what a user runs)
   ├── plugins/flow/tests/run.sh  — the plugin suite. The e2e-*.test.sh scenarios run a shipped command
   │                                block or hook the way Claude Code does (arguments substituted, under
   │                                zsh and bash) in a scratch repository, and write one artifact file per
-  │                                scenario; set FLOW_E2E_ARTIFACT_DIR to keep them. Files run in
+  │                                scenario; set FLOW_E2E_ARTIFACT_DIR to keep them. A failed file
+  │                                keeps only its artifacts (FLOW_E2E_KEEP_SCRATCH=1 keeps its
+  │                                scratch repositories too). Files run in
   │                                parallel (FLOW_TEST_JOBS=N; default the number of CPUs) and each
   │                                file's time is reported. FLOW_TEST_SHARD=K/N runs part K of N
   │                                (every Nth file), as CI does on Linux

@@ -88,7 +88,7 @@ e2e_new ask-unreadable-settings
 e2e_describe "autonomous: true, but the policy helper cannot read the settings (cascade-resolve.sh removed from a plugin copy): the question is allowed (A4)"
 _policy_repo true
 E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
-cp -R "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" && rm -f "$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh"
+e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" && rm -f "$E2E_ACTIVE_PLUGIN/bin/cascade-resolve.sh"
 printf 'plugin for this scenario: a copy without bin/cascade-resolve.sh\n' | _e2e_art
 e2e_run_hook "$HOOK" "$(_q "")"
 e2e_expect_equal 0 "$E2E_RC" "the hook's exit status"

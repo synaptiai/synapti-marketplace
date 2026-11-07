@@ -59,6 +59,25 @@ Each entry below describes the change against 3.14.0.
   - `/flow:status` has an Open Questions section; `/flow:resume` shows the
     open questions of the run it resumes and of its goal's issue.
 
+### Changed
+
+- The e2e test harness leaves far less on disk. A failing test file used to
+  keep its whole scratch root, every scenario's repository, home and plugin
+  copy included, and a scenario that copies the plugin copied all 38 MB of
+  it, most of that recorded eval runs: one failing file could leave 2.4 GB
+  behind on each run.
+  - `e2e_copy_plugin` (in `tests/lib/e2e.sh`) copies the plugin without
+    `tests/` and the recorded eval runs (`evals/results-*`), which no shipped
+    code reads at run time; the code, the manifest, the references and the
+    eval cases are all copied. `e2e_plugin_copy` and every test that copied
+    the plugin use it.
+  - After a failure only the artifacts are kept, and their path is printed;
+    the rest of the scratch root is removed, without following a symlink.
+    `FLOW_E2E_KEEP_SCRATCH=1` keeps the whole scratch root to look at a
+    scenario by hand.
+  - `tests/e2e-harness-scratch.test.sh` checks both, with the harness run on
+    a small test file of its own.
+
 ### Fixed
 
 - `/flow:merge`'s FlowGoal gate no longer lets a pull request through when

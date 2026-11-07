@@ -457,8 +457,8 @@ if _want cc-inside-repo-installed-outside; then
   _flow_test_begin "cc-inside-repo-installed-outside"
   _cc_setup cc-inside-repo-installed-outside "C11: the plugin is loaded from a copy inside the repository and flow is also installed outside it: the probe and the block skip the copy inside and use the install outside, so the site the user switched on prints its mode and the item is raised from P3 to P1"
   mkdir -p "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow"
-  cp -R "$E2E_PLUGIN_DIR" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/$(jq -r .version "$E2E_PLUGIN_DIR/.claude-plugin/plugin.json")"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/$(jq -r .version "$E2E_PLUGIN_DIR/.claude-plugin/plugin.json")"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
   e2e_stub_start a "$P1_SURE"
   _cc_user on a

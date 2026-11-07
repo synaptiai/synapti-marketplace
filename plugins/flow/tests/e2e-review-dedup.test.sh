@@ -259,7 +259,7 @@ if _want dedup-plugin-in-repo; then
   e2e_stub_start a "$(_noul 0.99)"
   _dd_settings on
   mkdir -p "$E2E_REPO/plugins"
-  cp -R "$E2E_PLUGIN_DIR" "$E2E_REPO/plugins/flow"
+  e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_REPO/plugins/flow"
   # The copy is the pull request's own: its mode helper says on and its
   # dedup script claims a merge, so a lookup that took it would show.
   printf '#!/bin/sh\necho on\n' > "$E2E_REPO/plugins/flow/bin/flow-s1-mode.sh"

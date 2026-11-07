@@ -291,7 +291,7 @@ if _want confidence-inside-repo; then
   e2e_stub_start a "$(_noul 0.03)"
   _cf_settings on
   mkdir -p "$E2E_REPO/plugins"
-  cp -R "$E2E_PLUGIN_DIR" "$E2E_REPO/plugins/flow"
+  e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_REPO/plugins/flow"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugins/flow"
   _cf_findings "$F1_MED"
   _cf_run

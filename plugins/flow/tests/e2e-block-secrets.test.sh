@@ -120,7 +120,7 @@ e2e_new sec-no-parser
 e2e_describe "lib/command-parse.sh is missing: the hook falls back to the whole-line check and refuses what it always refused"
 e2e_repo feature/issue-241-e2e
 E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
-cp -R "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" && rm -f "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/command-parse.sh"
+e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" && rm -f "$E2E_ACTIVE_PLUGIN/hooks/scripts/lib/command-parse.sh"
 printf 'plugin for this scenario: a copy without hooks/scripts/lib/command-parse.sh\n' | _e2e_art
 e2e_run_hook "$HOOK" "$(_payload 'echo "api_key=your-key-here-0000"')"
 e2e_expect_equal 2 "$E2E_RC" "the hook's exit status (2 refuses)"
