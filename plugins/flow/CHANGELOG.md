@@ -55,6 +55,77 @@
 
 ### Fixed
 
+- A goal created or updated from a subdirectory of the repository is now the
+  one the Stop hook, the evaluator and the `/flow:merge` gate read.
+  `bin/flow-goal-record.sh` writes `<runtime dir>/goals` at the repository
+  top, as `bin/flow-active-goal.sh` reads it, through one shared rule
+  (`from_repo_top()` in `bin/_repo_dir.py`). Before, it wrote
+  `packages/app/.flow/goals`, which nothing read, and `--update-lifecycle`
+  there said the top's goal did not exist. Paths printed at the top stay
+  relative. `bin/flow-runtime-dir.sh --goals` names the same directory for
+  shell callers, and `bin/flow-goal-judge-run.sh` now reads the goal from it
+  (#337)
+- `/flow:merge`'s block reason for a `failed` or `cancelled` goal no longer
+  says that finishing the work under a new goal is enough. That goal still
+  decides over an `achieved` one on the branch, so the reason now says the
+  merge stays blocked while its file is on the branch: finish the work under a
+  new goal and remove the file, or just remove the file. Read from the pull
+  request's head commit, the reason names the file without the commit prefix
+  (#335)
+- `[ask: decision]` and `[ask: permission]` places outside the six pipeline
+  commands, and in skills, now say which `metadata.source` to pass
+  (`flow:decision` or `flow:permission`). Before, with `autonomous: true`, the
+  ask-policy hook denied Tier 3 confirmations such as `/flow:goal evaluate`'s
+  terminal transition and `/flow:goal clear` as if they were defaults.
+  `tests/e2e-ask-policy.test.sh` checks that every such place names its source
+  (#339).
+- `/flow:start`'s end-of-VERIFY goal evaluation no longer erases
+  `turns_evaluated`, `current_phase` and `current_activity` from the goal's
+  lifecycle, so the evaluator-loop budget no longer starts again from zero.
+  `bin/flow-goal-record.sh` takes `--patch` as another name for `--merge`, for
+  command blocks that cannot name that word (#338).
+- `/flow:start`'s end-of-VERIFY goal evaluation never moves a goal outside the
+  trust ledger to `achieved`, even when
+  `flow.goals.executeVerificationCommands: true` ran its commands and they
+  passed. The result is `incomplete`, and `/flow:pr` asks (#338).
+- `/flow:goal clear` now says a cancelled goal keeps the merge blocked while
+  its file is on the branch. The work is finished under a new goal and the
+  cancelled goal's file is removed, or the file is just removed when the
+  branch no longer ships the work (#335).
+- `flow-dep-diff.sh` now reads a Gemfile `gem` call written without
+  parentheses whose options continue onto the next lines (a trailing comma, a
+  backslash or an open bracket). A `git:`, `github:` or `branch:` written one
+  per line is reported as `DEP_REPLACED` and no longer dropped. If the
+  continuation runs past the end of the file or into another statement, the
+  Gemfile is reported as `MANIFEST_UNPARSED` (#248)
+- The `end` of an `if`, `unless`, `case`, `while`, `until`, `for`, `begin`,
+  `def`, `class` or `module` block inside a Gemfile `git`/`path` block no
+  longer closes the git block, so the gems after it are still reported as
+  redirects. An `end` that closes no block the parser has seen now makes the
+  Gemfile `MANIFEST_UNPARSED` instead of being skipped (#248)
+- The project's own gem in `Gemfile.lock` (the `PATH` section with `remote:
+  .`, which a `gemspec` line resolves to) is no longer reported as
+  `DEP_REPLACED`. Other `PATH` redirects now print `(unpinned)` instead of the
+  gem version, so a version bump of a path gem is not reported as a new
+  redirect (#248)
+- The secrets guard now finds the command a simple command runs past shell
+  keywords and wrappers (#241). `{ export API_TOKEN=…; }`, `if …; then export
+  PASSWORD=…; fi`, `for …; do curl -d password=…; done`, `! export …`, `sudo
+  docker run -e DB_PASSWORD=…`, `time curl -H "Authorization: Bearer …"`,
+  `timeout 5 curl …` and `exec env PASSWORD=…` were allowed because the
+  keyword or wrapper was read as the command. The lookup is now
+  `_bd_command_word` in `lib/command-parse.sh`, the same keyword and wrapper
+  lists the piped-into-a-shell check uses. A secret given to a sender is also
+  refused when it arrives in a here-string (`curl -d @- … <<< "password=…"`)
+  or is piped into the sender (`echo "password=…" | curl -d @- …`). `gh api`,
+  `gh secret`, `gh variable`, vault, heroku, fly, flyctl, aws, gcloud, az and
+  `npm`/`yarn`/`pnpm config set` count as commands that send what they are
+  given. In any command, a URL with a secret-shaped query parameter
+  (`?token=…`) or a literal password in its userinfo (`https://user:…@host`)
+  is refused. An inline `python -c`, `node -e`, `ruby -e` or `perl -e` script,
+  which is not shell, is checked as a whole. `gh issue create --body`, `echo`,
+  `grep`, `printf >> README` and `git commit -m` are still allowed.
+
 - The `bin/` helpers that run `python3` with a path do their work on Windows
   (#246). Git Bash hands a script POSIX paths (`/d/a/proj/...`), and a native
   Windows `python3` reads them as another place, so a helper importing the
@@ -141,17 +212,20 @@
   backslash escape reaches `jq` as written.
 - The pattern checks no longer miss a command hidden after an escaped
   separator and a `#` (#304). `ls x\ #y ; rm -rf ~` and `ls x\;#y ; git push
-  --force origin main` ran their second command in bash and zsh, but the
+  --force origin main` ran their second command in bash and zsh. The
   destructive-command and force-push checks read the rest of the line as a
-  comment: the space or `;` before the `#` is escaped, so it is part of the
-  word and the `#` opens no comment. The same held for `ls /(#|tmp) ; …`,
-  where zsh reads `(#` as part of a glob. A `#` now opens a comment only
-  after an unescaped space, tab or separator, and after a `(` only when that
-  `(` opens a word itself. Every reader that decides where a comment starts
-  follows the rule: `lib/command-parse.sh` (the destructive-command check,
-  the merge check and the tier gate), `block-force-push.sh`, and
-  `ask-issue-create.sh`. A real comment, `ls # rm -rf ~` or `ls x\\;#y`,
-  is still one.
+  comment, but the space or `;` before the `#` is escaped, so it is part of
+  the word and the `#` opens no comment. The same held for `ls /(#|tmp) ; …`,
+  where zsh reads `(#` as part of a glob, and for `echo $(true)#x ; rm -rf ~`
+  and `echo $((1))#x ; …`, where the `)` closing a substitution leaves the
+  word going on. A `#` now opens a comment only after an unescaped space, tab
+  or separator. After a `(` it opens one only when that `(` opens a word
+  itself, and after a `)` only when that `)` closes a subshell or a `((`, not
+  a `$( )`, `$(( ))` or `<( )`. Every reader that decides where a comment
+  starts follows the rule: `lib/command-parse.sh` (the destructive-command
+  check, the merge check and the tier gate), `block-force-push.sh`, and
+  `ask-issue-create.sh`. A real comment, `ls # rm -rf ~`, `ls x\\;#y` or
+  `(ls)#x`, is still one.
 - `/flow:pr` no longer asks on most runs (#338). `/flow:start` created a goal
   but never evaluated it, so the goal was still `active` when `/flow:pr`'s
   gate looked, and the gate asked even when VERIFY had passed every
