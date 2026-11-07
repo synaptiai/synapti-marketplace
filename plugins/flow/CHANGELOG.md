@@ -15,7 +15,7 @@
     `[ask: decision]` (a product or scope decision), `[ask: permission]` (a
     Tier 3 action, or a skip outside the runtime-verification list) or
     `[ask: default]`; `[ask: none]` marks a mention that is not a place to
-    ask. The 14 default places say what to take under the autonomous policy,
+    ask. The 15 default places say what to take under the autonomous policy,
     and the choice is recorded as a `default-taken` journal artifact.
   - `hooks/scripts/ask-policy.sh`, a `PreToolUse` hook on `AskUserQuestion`,
     denies a question whose `metadata.source` is not `flow:decision` or
