@@ -69,8 +69,10 @@ Each entry below describes the change against 3.14.0.
   - `e2e_copy_plugin` (in `tests/lib/e2e.sh`) copies the plugin without
     `tests/` and the recorded eval runs (`evals/results-*`), which no shipped
     code reads at run time; the code, the manifest, the references and the
-    eval cases are all copied. `e2e_plugin_copy` and every test that copied
-    the plugin use it.
+    eval cases are all copied, and a scenario that runs a recorded eval run's
+    scripts from the copy names that run. `e2e_plugin_copy` and every test
+    that copied the plugin use it; called twice in one scenario,
+    `e2e_plugin_copy` replaces the second file in the same copy.
   - After a failure only the artifacts are kept, and their path is printed;
     the rest of the scratch root is removed, without following a symlink.
     `FLOW_E2E_KEEP_SCRATCH=1` keeps the whole scratch root to look at a

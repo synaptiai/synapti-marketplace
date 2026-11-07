@@ -25,6 +25,11 @@
 #   H7 after a clean run anything of the scratch root is left
 #   H8 clearing the scratch follows a symlink and removes or changes what it
 #      points at
+#   H9 a second e2e_plugin_copy in one scenario does not replace its file in
+#      the copy the scenario runs (a test that swaps the file per case runs
+#      every case against the first one)
+#   H10 a path named to e2e_copy_plugin (a recorded eval run whose scripts a
+#      scenario runs from the copy) is missing from the copy
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -153,4 +158,33 @@ if _want hs-pass-leaves-nothing; then
   _hs_ok '[ ! -e "$HS_ROOT" ]' "the scratch root is removed"
   e2e_expect_equal "" "$(cd "$E2E_DIR/tmp" && ls -A)" "what the inner run left in TMPDIR"
   _hs_ok '! grep -q "artifacts kept" "$E2E_DIR/inner.err"' "nothing is reported as kept"
+fi
+
+if _want hs-copy-twice; then
+  _hs_case hs-copy-twice "H9: a second e2e_plugin_copy in the same scenario replaces its file in the copy the first one made, and nests no second copy inside it"
+  _hs_inner pass 'e2e_plugin_copy bin/flow-e2e-marker-2.sh "echo second"
+e2e_plugin_copy bin/flow-e2e-marker-3.sh "echo third"
+printf "%s\n" "$E2E_ACTIVE_PLUGIN" > "$HS_OUT/active"
+cat "$E2E_ACTIVE_PLUGIN/bin/flow-e2e-marker-2.sh" "$E2E_ACTIVE_PLUGIN/bin/flow-e2e-marker-3.sh" > "$HS_OUT/markers"
+( cd "$E2E_ACTIVE_PLUGIN" && ls -A ) > "$HS_OUT/top"'
+  _hs_run
+  { printf -- '--- marker files in the copy\n'; cat "$HS_OUT/markers"; printf -- '--- top of the copy\n'; cat "$HS_OUT/top"; } | _e2e_art
+  e2e_expect_equal "$HS_DIR/plugin" "$(cat "$HS_OUT/active")" "the plugin the scenario runs"
+  e2e_expect_equal "echo second
+echo third" "$(cat "$HS_OUT/markers")" "both replaced files in that copy"
+  _hs_ok '! grep -qx plugin "$HS_OUT/top" && ! grep -qx flow "$HS_OUT/top"' "no copy nested inside the copy"
+  _hs_ok '! grep -q "cannot copy the plugin" "$E2E_DIR/inner.out"' "no copy failed"
+fi
+
+if _want hs-copy-keeps-named; then
+  _hs_case hs-copy-keeps-named "H10: a recorded eval run named to e2e_copy_plugin is in the copy, byte for byte, and the other recorded runs are not"
+  keep=$(cd "$E2E_PLUGIN_DIR" && ls -d evals/results-* | head -n 1)
+  other=$(cd "$E2E_PLUGIN_DIR" && ls -d evals/results-* | sed -n 2p)
+  if e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_DIR/copy" "$keep"; then rc=0; else rc=$?; fi
+  printf 'named: %s\nexit status: %s\n' "$keep" "$rc" | _e2e_art
+  e2e_expect_equal 0 "$rc" "exit status"
+  _hs_ok 'diff -r "$E2E_PLUGIN_DIR/$keep" "$E2E_DIR/copy/$keep" >/dev/null' "the named run is copied whole"
+  _hs_ok '[ ! -e "$E2E_DIR/copy/$other" ]' "another recorded run is not copied"
+  if e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_DIR/copy2" ../outside; then rc=0; else rc=$?; fi
+  _hs_ok '[ "$rc" != 0 ]' "a path that leaves the plugin is refused"
 fi

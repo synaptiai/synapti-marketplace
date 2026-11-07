@@ -335,36 +335,47 @@ e2e_repo() {
   ) || _flow_assert_fail "$E2E_NAME: could not create the scratch repository"
 }
 
-# e2e_copy_plugin <plugin dir> <new dir> — a copy of the plugin to run, without
-# tests/ and the recorded eval runs (evals/results-*). Those are three quarters
-# of the plugin's size, no shipped code reads them at run time, and a test
-# file makes dozens of copies. A scenario that needs either reads it from
-# E2E_PLUGIN_DIR. The new directory must not exist yet.
+# e2e_copy_plugin <plugin dir> <new dir> [path...] — a copy of the plugin to
+# run, without tests/ and the recorded eval runs (evals/results-*). Those are
+# three quarters of the plugin's size, no shipped code reads them at run time,
+# and a test file makes dozens of copies. Each path named after the new
+# directory (one recorded eval run whose scripts the scenario runs from the
+# copy, say evals/results-2026-10-12-s1-guard) is copied as well. The new
+# directory must not exist yet.
 e2e_copy_plugin() {
-  [ -d "$1" ] && [ ! -e "$2" ] && [ ! -L "$2" ] || return 1
-  mkdir -p "$2" || return 1
+  local src="$1" dst="$2" p
+  [ -d "$src" ] && [ ! -e "$dst" ] && [ ! -L "$dst" ] || return 1
+  shift 2
+  mkdir -p "$dst" || return 1
   (
     shopt -s dotglob nullglob
-    for e in "$1"/*; do
+    for e in "$src"/*; do
       case "${e##*/}" in
         tests) ;;
         evals)
-          mkdir "$2/evals" || exit 1
+          mkdir "$dst/evals" || exit 1
           for f in "$e"/*; do
-            case "${f##*/}" in results-*) ;; *) cp -R "$f" "$2/evals/" || exit 1 ;; esac
+            case "${f##*/}" in results-*) ;; *) cp -R "$f" "$dst/evals/" || exit 1 ;; esac
           done ;;
-        *) cp -R "$e" "$2/" || exit 1 ;;
+        *) cp -R "$e" "$dst/" || exit 1 ;;
       esac
     done
-  )
+  ) || return 1
+  for p in "$@"; do
+    case "$p" in ''|/*|*..*) return 1 ;; esac
+    [ -e "$src/$p" ] && [ ! -e "$dst/$p" ] || return 1
+    mkdir -p "$dst/$(dirname -- "$p")" && cp -R "$src/$p" "$dst/$p" || return 1
+  done
 }
 
 # e2e_plugin_copy <file under the plugin> <new content> — run this scenario
 # against a copy of the plugin with one file replaced. For scenarios about a
-# helper failing, which no input to the real helper produces.
+# helper failing, which no input to the real helper produces. Called again in
+# the same scenario, it replaces the file in the copy it already made.
 e2e_plugin_copy() {
   E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
-  e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" || { _flow_assert_fail "$E2E_NAME: cannot copy the plugin"; return 0; }
+  [ -d "$E2E_ACTIVE_PLUGIN" ] \
+    || e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" || { _flow_assert_fail "$E2E_NAME: cannot copy the plugin"; return 0; }
   printf '%s\n' "$2" > "$E2E_ACTIVE_PLUGIN/$1"
   chmod +x "$E2E_ACTIVE_PLUGIN/$1"
   printf 'plugin for this scenario: a copy with %s replaced by: %s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ')" | _e2e_art
