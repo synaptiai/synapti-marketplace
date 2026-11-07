@@ -27,7 +27,10 @@
 #   - any secret-shaped word given to export, declare, typeset, local,
 #     readonly or env, which set it;
 #   - a secret-shaped option word (`--password=abcdefghij`, `-token=...`),
-#     whatever the command, since an option is read by the program as a value;
+#     whatever the command but a text command (below), since an option is
+#     read by the program as a value; a text command's options carry text
+#     (`git commit --message=...`, `-m"..."`, `gh issue create --body=...`,
+#     `git log -S"..."`);
 #   - any secret-shaped word, or a literal auth header, given to a command
 #     that sends data or sets another process's environment (curl, wget,
 #     httpie, nc, ssh, mysql, psql, docker, kubectl and the others in
@@ -51,7 +54,8 @@
 #     any command but a text command (TEXTS below: echo, printf, cat, grep,
 #     sed and the like; git commit, log, show, diff, tag, notes and grep;
 #     gh issue create, edit and comment, gh pr create, edit, comment and
-#     review, gh release create and edit), or assigned in command position:
+#     review, gh release create and edit; awk or sed only when it cannot run
+#     a program, below), or assigned in command position:
 #     `git ls-remote URL`, `pip install --index-url URL` and `svn checkout
 #     URL` are refused, `echo URL >> README.md` and `git log --grep URL`
 #     are text. A heredoc body fed to cat, tee, echo, printf or gh on a
@@ -65,7 +69,8 @@
 #     above apply to it as to any command, so a secret-shaped assignment at
 #     its start (`cat <<EOF > .env` with an `API_TOKEN=...` line), a
 #     secret-shaped option word, or a secret-shaped word after a sender or
-#     a setter is refused;
+#     a setter is refused, and the flow rule below reads its secrets wherever
+#     they stand on the line (`curl <<EOF`, `mysql <<EOF`);
 #   - a script given inline to python (`-c`), perl (`-e`, `-E`, also in a
 #     bundle such as `-ne` or `-pie`, and after `-i` and its attached backup
 #     extension, `-pi.bak -e`, `-i.pre -pe`), ruby (`-e`) or node (`-e`, `-p`,
@@ -75,15 +80,45 @@
 #     arguments, and its whole text is checked, as before #241. Only the
 #     interpreter's own options before the script file are read
 #     (_inline_scripts): `python3 -Wignore x.py "token=..."` and
-#     `python3 x.py -e prod` pass their words to the script.
+#     `python3 x.py -e prod` pass their words to the script;
+#   - any secret-shaped word, literal auth header or URL with a secret given
+#     to a program that runs what it is given: eval, source or a shell (`sh
+#     -c "..."`); find or fd with -exec, -execdir, -ok, -okdir, -x or
+#     --exec; awk whose program may run one (system(), a `|`, getline,
+#     /inet, or a program file, _awk_runs); sed whose script may (its e
+#     command or the e flag of s, or a script file, _sed_runs); git given it
+#     before its subcommand (`git -c core.pager=...`), which is
+#     configuration; or a command this hook does not name, or a wrapper with
+#     no program it names, whose words name a sender, a setter, a shell, an
+#     interpreter or eval (`chroot / curl ...`, `watch "curl ..."`), which
+#     may be the program it runs (_names_runner);
+#   - the flow rule: when the command has a pipe, a command or process
+#     substitution, a kept heredoc body, a /dev/tcp or /dev/udp path, or a
+#     simple command holding a secret that writes to a file (a redirection
+#     but to /dev/null, /dev/stdout, /dev/stderr or a descriptor, or tee),
+#     a secret held by one simple command refuses the command if any other
+#     simple command in it is not a text command, a line of a heredoc body,
+#     or shell syntax that runs nothing (_flow_record). Following a secret
+#     through groups, subshells, loops and substitutions is where a reading
+#     goes wrong, so it is not followed: `{ echo ...; } | curl`, `curl <
+#     <(echo ...)`, `curl -d "$(echo ...)"`, `curl <<EOF` and `mysql <<EOF`
+#     with the secret anywhere in the body, `echo ... > f; curl -d @f`, and
+#     `echo ... | xargs ./send.sh` are refused; `echo ... | grep`, a loop of
+#     greps piped into wc, and `git commit -m "$(printf ...)"` are text.
+#     A gh or git subcommand that is not a text one counts as a command, so
+#     `gh run view --log | grep "token=..."` is refused too.
 # Allowed: the same text as an argument of any other command: echo, printf,
 # grep, git commit -m, gh issue create --body, and so on. That is the policy
 # #241 asked to settle: text that names a secret-shaped assignment is not a
 # secret being passed. So echo, printf or tee writing a secret-shaped word to
 # a file (`echo "API_TOKEN=..." > .env`, `printf ... >> .env`, `tee .env
 # <<< "API_TOKEN=..."`, `tee .env <<EOF`) is allowed too, which the
-# whole-line check refused before #241. A kept heredoc body line that is
-# the assignment itself (`cat <<EOF > .env`) is refused, as above.
+# whole-line check refused before #241, as long as no other command on the
+# line could read the file (the flow rule). A program this hook does not
+# name may still be given such a word as its argument (`python3 x.py
+# "token=..."`), unless its words name a program that sends or runs. A kept
+# heredoc body line that is the assignment itself (`cat <<EOF > .env`) is
+# refused, as above.
 #
 # Not a general shell parser: a variable is not expanded, as in the
 # force-push guard. When the parser cannot be loaded or cannot split the
@@ -121,6 +156,9 @@ HEADER_RE='^\s*(Authorization|X-API-Key):\s*(Bearer\s+)?[A-Za-z0-9+/=_-]{20,}'
 # A value with a `$` in it is read from the environment, as above.
 USERINFO_RE='[A-Za-z][A-Za-z0-9+.-]*://[^/?#@[:space:]]*:[^/?#@$`[:space:]]{8,}@'
 URL_RE='(^|=)([A-Za-z][A-Za-z0-9+.-]*://[^/?#@[:space:]]*:[^/?#@$`[:space:]]{8,}@|[A-Za-z][A-Za-z0-9+.-]*://[^?#[:space:]]*[?]([^#[:space:]]*&)?[^#&=[:space:]]*('"$SECRET_NAMES"')[^#&=[:space:]]*=[A-Za-z0-9+/=_.~%-]{8,})'
+# Any of the above in a word, unanchored, for the rules that ask whether a
+# command holds one at all (held in _judge).
+HELD_RE="$SECRET_RE|(Authorization|X-API-Key):\s*(Bearer\s+)?[A-Za-z0-9+/=_-]{20,}|$URL_RE"
 SECRET_MSG="BLOCKED: Possible secret detected in command. Use environment variables or config files instead of inline secrets."
 HEADER_MSG="BLOCKED: Literal auth token detected in curl command. Use environment variables for tokens."
 
@@ -222,18 +260,84 @@ _fed_secret() {
 # (TOK[BD_CMDI]) that are not options, up to `--`, stepping over the word
 # after each option named in <value-options> (" -R --repo "), its value. A
 # global option before a subcommand (`gh -R o/r secret set`) then does not
-# hide it. The caller declares POS and n.
+# hide it. POSI gets the index in TOK of each. The caller declares POS, POSI
+# and n.
 _positional() {
   local j w
   POS=()
+  POSI=()
   for ((j = BD_CMDI + 1; j < n; j++)); do
     w=${TOK[j]}
     case "$w" in
       --) break ;;
       -*) case "$1" in *" $w "*) j=$((j + 1)) ;; esac ;;
-      *) POS+=("$w") ;;
+      *) POS+=("$w"); POSI+=("$j") ;;
     esac
   done
+}
+
+# Programs that run what they are given, or send it: a word naming one in the
+# arguments of a command this hook does not name (`chroot / curl ...`,
+# `find . -exec curl ...`, `uv run curl ...`) may be the program that command
+# runs. Shells are added by _bd_is_shell.
+RUNNERS=" $SENDERS $SETTERS $CREDS $INTERPS eval exec source gh npm npx yarn pnpm aws gcloud az "
+
+# _names_runner: does a word of TOK after the command's first word (but the
+# program itself), or a space-separated piece of one (`sh -c "curl ..."`),
+# name a program in RUNNERS or a shell? Read loosely: a piece that only looks
+# like one counts. The caller declares first and n.
+_names_runner() {
+  local j p b nc=0 r=1
+  local -a P=()
+  shopt -q nocasematch && nc=1
+  shopt -s nocasematch
+  for ((j = first + 1; j < n && r == 1; j++)); do
+    [ "$j" != "$BD_CMDI" ] || continue
+    [ "${#TOK[j]}" -le 65536 ] || { r=0; break; }
+    read -r -a P <<< "${TOK[j]//[\(\)\{\}\;\&\|\`\"\']/ }"
+    for p in "${P[@]}"; do
+      b=${p##*/}
+      case "$RUNNERS" in *" $b "*) r=0; break ;; esac
+      if _bd_is_shell "$b"; then r=0; break; fi
+    done
+  done
+  [ "$nc" = 1 ] || shopt -u nocasematch
+  return "$r"
+}
+
+# _sed_runs: may the sed command TOK[BD_CMDI] run a program? GNU sed runs one
+# with its e command (`1e curl ...`) and the e flag of s (`s/x/curl .../e`),
+# and a script read from a file (-f) cannot be seen. Read loosely: any `e`
+# after an address, a separator or a delimiter, with nothing but other
+# flags between, counts, so a script that only looks like one does too.
+_sed_runs() {
+  local j w
+  for ((j = BD_CMDI + 1; j < n; j++)); do
+    w=${TOK[j]}
+    case "$w" in
+      --file|--file=*|-[!-]*f*) return 0 ;;
+      --expression=*) w=${w#*=} ;;
+      -*) continue ;;
+    esac
+    printf '%s\n' "$w" | grep -qE '(^|[^A-Za-z0-9\\])[gpiImMw0-9]*e[gpiImMw0-9]*([[:space:];}]|$)' && return 0
+  done
+  return 1
+}
+
+# _awk_runs: may the awk command TOK[BD_CMDI] run a program? awk runs one with
+# system(), a pipe to or from a command (`print | "curl ..."`, `"cmd" |
+# getline`), and gawk opens a network connection through /inet; a program
+# read from a file (-f) cannot be seen.
+_awk_runs() {
+  local j w
+  for ((j = BD_CMDI + 1; j < n; j++)); do
+    w=${TOK[j]}
+    case "$w" in
+      -f|-f?*|--file|--file=*|--exec|--exec=*|-E|--include|--include=*|-i|-l|--load|--load=*) return 0 ;;
+      *system*|*'|'*|*getline*|*/inet*) return 0 ;;
+    esac
+  done
+  return 1
 }
 
 # _in_order <word>...: are these words among POS, in this order? Options
@@ -332,16 +436,52 @@ _body_line() {
   return 0
 }
 
+# The flow rule, applied after every simple command is judged. A secret that
+# one simple command holds can reach another through a pipe, a command or
+# process substitution, a heredoc body, a file it writes, or a /dev/tcp or
+# /dev/udp connection, and following each of these through groups,
+# subshells and loops is where a reading goes wrong. So when the command has
+# any of them (FLOW=1), a secret held by one simple command (HELD) refuses
+# the command if any other simple command (RISKY) is not a text command, a
+# line of a heredoc body, or shell syntax that runs nothing (`done`, `}`,
+# `cd`, `true`, `read` and the others in _flow_record). SEGNO numbers the
+# simple commands.
+FLOW=0
+HELD=()
+RISKY=()
+SEGNO=0
+
+# _flow_record <held> <body>: called by _judge for each simple command, with
+# its cmd, text, BD_RDIR and BD_WRAPI. A simple command that holds a secret
+# and writes to a file (any redirection but to /dev/null, /dev/stdout,
+# /dev/stderr or a file descriptor), or is tee, sets FLOW.
+_flow_record() {
+  local t
+  if [ "$1" = 1 ]; then
+    HELD+=("$SEGNO")
+    [ "$cmd" != tee ] || FLOW=1
+    for t in ${BD_RDIR[@]+"${BD_RDIR[@]}"}; do
+      case "$t" in /dev/null|/dev/stdout|/dev/stderr|-|[0-9]|[0-9]-) ;; *) FLOW=1 ;; esac
+    done
+  fi
+  if [ "$2" = 1 ] || [ "$text" = 1 ]; then return 0; fi
+  case " } ) done fi esac for case select in true false : test [ [[ read cd pushd popd pwd " in
+    *" $cmd "*) return 0 ;;
+  esac
+  if [ -z "$cmd" ] && [ "${#BD_WRAPI[@]}" = 0 ]; then return 0; fi
+  RISKY+=("$SEGNO")
+}
+
 # _judge <simple command> <piped> <body>: exits 2 with the reason when it
 # passes a secret. <piped> is 1 when a pipe feeds it the output of FEED,
 # <body> 1 when it is a line of a heredoc body (_body_line).
 _judge() {
   # shellcheck disable=SC2034
-  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=() POS=() SCRIPTS=()
+  local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=() POS=() POSI=() SCRIPTS=()
   # shellcheck disable=SC2034
   local BD_RIN=0 BD_CMDI=0
   _bd_words "$1"
-  local n=${#TOK[@]} i=0 j k w f first cmd="" sender=0 setter=0 text=0 urls=0 gitnet=0 ghapi=0
+  local n=${#TOK[@]} i=0 j k w f first cmd="" sender=0 setter=0 text=0 urls=0 gitnet=0 ghapi=0 runs=0 held=0
   # Keywords and assignments in command position are set in the shell or the
   # command's environment, a URL holding a secret among them.
   while [ "$i" -lt "$n" ]; do
@@ -443,6 +583,28 @@ _judge() {
     ruby) _inline_scripts ruby ;;
     node|nodejs) _inline_scripts node ;;
   esac
+  # Programs that run what they are given (runs=1), for the rule after the
+  # word loop: eval, source and a shell run their words as a command, find
+  # and fd the words after -exec (-execdir, -ok, -x and the like), and awk
+  # and sed a program their script names (_awk_runs, _sed_runs), which makes
+  # them no text command. git reads a value given before its subcommand
+  # (`git -c core.pager=...`) as configuration, not text, and may run it.
+  case "$cmd" in
+    eval|source|.) runs=1 ;;
+    find|fd|fdfind)
+      for ((k = BD_CMDI + 1; k < n; k++)); do
+        case "${TOK[k]}" in -exec|-execdir|-ok|-okdir|-x|-X|--exec|--exec=*|--exec-batch|--exec-batch=*) runs=1 ;; esac
+      done ;;
+    awk|gawk|mawk|nawk) if _awk_runs; then runs=1; text=0; fi ;;
+    sed|gsed) if _sed_runs; then runs=1; text=0; fi ;;
+    git)
+      if [ "$text" = 1 ]; then
+        for ((k = BD_CMDI + 1; k < ${POSI[0]:-$n}; k++)); do
+          if printf '%s\n' "${TOK[k]}" | grep -qiE "$HELD_RE"; then runs=1; text=0; fi
+        done
+      fi ;;
+  esac
+  if [ -n "$cmd" ] && _bd_is_shell "$cmd"; then runs=1; fi
   # The URL rule: every command but a text command. A line of a heredoc body
   # that nothing on its line runs (<body> 1, `cat <<EOF > notes.md`) is not
   # a command, and keeps the narrower rule it had before: a sender, a setter,
@@ -459,6 +621,8 @@ _judge() {
     printf '%s\n' "${SCRIPTS[k]}" | grep -qiE "$SCRIPT_RE" && _refuse "$SECRET_MSG"
     printf '%s\n' "${SCRIPTS[k]}" | grep -qiE "$SCRIPT_HEADER_RE" && _refuse "$HEADER_MSG"
   done
+  # HW: the words judged below, which the rules after the loop read again.
+  local -a HW=("${TOK[first]}")
   for ((j = first + 1; j < n; j++)); do
     w=${TOK[j]}
     # gcloud --set-secrets and --update-secrets take Secret Manager references
@@ -487,10 +651,16 @@ _judge() {
         continue
       fi
     fi
+    HW+=("$w")
     if [ "$urls" = 1 ] && _url_word "$w"; then _refuse "$SECRET_MSG"; fi
     if _secret_word "$w"; then
       if [ "$sender" = 1 ] || [ "$setter" = 1 ]; then _refuse "$SECRET_MSG"; fi
-      case "$w" in -*) _refuse "$SECRET_MSG" ;; esac
+      # An option is read by the program as a value, but the text options of
+      # a text command (`git commit --message=...`, `git log -S...`, `gh
+      # issue create --body=...`) carry text like any other word of it.
+      if [ "$text" = 0 ] || [ "$j" -le "$BD_CMDI" ]; then
+        case "$w" in -*) _refuse "$SECRET_MSG" ;; esac
+      fi
     fi
     if [ "$sender" = 1 ]; then
       # A header given as its own word (`-H "Authorization: Bearer ..."`) or
@@ -500,6 +670,18 @@ _judge() {
       fi
     fi
   done
+  # held: the command holds a secret-shaped word, a literal auth header or a
+  # URL with a secret, in its words or a here-string, that the rules above
+  # let through.
+  if printf '%s\n' "${HW[@]}" ${BD_HSTR[@]+"${BD_HSTR[@]}"} | grep -qiE "$HELD_RE"; then held=1; fi
+  # A program that runs what it is given (runs=1), or a command this hook does
+  # not name whose words name a program that sends or runs (`chroot / curl
+  # ...`, `watch "curl ..."`), may hand the secret to that program. Not for a
+  # line of a heredoc body nothing runs, which is text.
+  if [ "$held" = 1 ] && [ "$text" = 0 ] && [ "${3:-0}" = 0 ]; then
+    if [ "$runs" = 1 ] || _names_runner; then _refuse "$SECRET_MSG"; fi
+  fi
+  _flow_record "$held" "${3:-0}"
   [ "$sender" = 1 ] || return 0
   # What the sender reads on its input: a here-string, or a pipe.
   for ((j = 0; j < ${#BD_HSTR[@]}; j++)); do
@@ -513,16 +695,28 @@ _judge() {
 # FEED: the simple commands of the pipeline so far, which a pipe-fed command
 # reads the output of.
 FEED=""
+case "$BD_SEGS" in *__BD_PIPE__*|*__BD_SUBST__*) FLOW=1 ;; esac
+[ "${BD_KEPT_BODY:-0}" != 1 ] || FLOW=1
+case "$COMMAND" in */dev/tcp/*|*/dev/udp/*) FLOW=1 ;; esac
 while IFS= read -r SEG; do
   case "$SEG" in ''|__BD_UNBALANCED__|__BD_SEG_FAIL__) continue ;; esac
   PIPED=0
   case "$SEG" in __BD_PIPE__*) SEG=${SEG:11}; PIPED=1 ;; esac
   case "$SEG" in __BD_*) continue ;; esac
+  SEGNO=$((SEGNO + 1))
   BODY=0
   if _body_line "$SEG"; then BODY=1; fi
   _judge "$SEG" "$PIPED" "$BODY"
   if [ "$PIPED" = 1 ]; then FEED="$FEED
 $SEG"; else FEED=$SEG; fi
 done <<< "$BD_SEGS"
+
+if [ "$FLOW" = 1 ] && [ "${#HELD[@]}" -gt 0 ] && [ "${#RISKY[@]}" -gt 0 ]; then
+  for H in "${HELD[@]}"; do
+    for R in "${RISKY[@]}"; do
+      [ "$H" = "$R" ] || _refuse "$SECRET_MSG"
+    done
+  done
+fi
 
 exit 0
