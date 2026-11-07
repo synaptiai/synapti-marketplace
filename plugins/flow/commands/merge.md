@@ -456,13 +456,13 @@ elif [ -z "$PR_NUM" ]; then
   printf '%s\n' "FLOW_GOAL_BLOCK_REASON=PR number required (all-digit) to find the pull request's goal"
 else
   ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh"
-  # The goal judged is the pull request's, not the checked-out branch's: the
-  # goal whose scope.branch is the pull request's head branch. When that branch
-  # is checked out here, its goals are read from the working tree (a goal just
-  # evaluated but not yet committed counts). Otherwise they are read from the
-  # pull request's head commit, fetched from origin when it is not here yet,
-  # so another issue's goal on the checked-out branch neither blocks this
-  # merge nor stands in for this pull request's own.
+  # The goal judged is the goal of the pull request, not of the checked-out
+  # branch: the goal whose scope.branch is the head branch of the pull request.
+  # When that branch is checked out here, its goals are read from the working
+  # tree (a goal just evaluated but not yet committed counts). Otherwise they
+  # are read from the head commit of the pull request, fetched from origin
+  # when it is not here yet, so the goal of another issue on the checked-out
+  # branch neither blocks this merge nor stands in for the goal of this one.
   REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
   PR_HEAD=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefName,headRefOid --jq '"\(.headRefName) \(.headRefOid)"' 2>/dev/null) || PR_HEAD=""
   PR_HEAD_BRANCH=${PR_HEAD%% *}
@@ -492,14 +492,14 @@ else
     printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
     printf '%s\n' "FLOW_GOAL_BLOCK_REASON=$GOAL_SOURCE_ERR"
   else
-    # --any-status: the goal that owns the pull request's branch, whatever its
-    # status. A goal that failed, was cancelled, is blocked, a draft, or waits
-    # on a person or CI is still that branch's goal: without the flag the
+    # --any-status: the goal that owns the branch of the pull request, whatever
+    # its status. A goal that failed, was cancelled, is blocked, a draft, or
+    # waits on a person or CI is still the goal of that branch: without the flag the
     # helper sees only active and achieved goals, exits 1 for the rest, and the
     # gate below read that as "no goal, not applicable" and let the merge
     # through.
-    # --branch-strict with --branch: resolve ONLY a goal owning the pull
-    # request's head branch — never a goal on another branch.
+    # --branch-strict with --branch: resolve ONLY a goal owning the head branch
+    # of the pull request — never a goal on another branch.
     GOAL_ARGS=(--any-status --branch-strict --branch "$PR_HEAD_BRANCH" "${GOAL_SOURCE[@]}")
     GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status "${GOAL_ARGS[@]}" 2>/dev/null); GOAL_EXIT=$?
     case "$GOAL_EXIT" in
@@ -537,9 +537,9 @@ else
         fi
         ;;
       1)
-        # No goal on the pull request's branch, in any status — gate not applicable: the gate
-        # keys on goal existence. A PR without a FlowGoal is not blocked; the
-        # PR's own review state remains the durable record, so default installs
+        # No goal on the branch of the pull request, in any status — gate not
+        # applicable: the gate keys on goal existence. A PR without a FlowGoal
+        # is not blocked; the review state of the PR remains the durable record, so default installs
         # (goalCreation:auto) do not block goal-less merges.
         printf '%s\n' "FLOW_GOAL_GATE_STATE=ok"
         printf '%s\n' "FLOW_GOAL_GATE_NOTE=no FlowGoal for $PR_HEAD_BRANCH — gate not applicable"
