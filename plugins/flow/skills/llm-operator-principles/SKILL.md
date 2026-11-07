@@ -10,7 +10,7 @@ allowed-tools: Read
 
 **CONVERGENCE = NO COUNTED P1 OR P2 LEFT. NOT ZERO FINDINGS, NOT EXHAUSTED BUDGET.**
 
-A finding counts only when it names a trigger inside `references/review-scope.md`; from cycle 2 a P3, from cycle 3 a P2, is listed and not counted (`bin/flow-finding-route.sh`). Iteration ceilings (below) are infinite-loop safety nets, not planned stop points.
+A finding counts only when it names a trigger inside `references/review-scope.md`; from cycle 2 a P3, from cycle 3 a P2, is listed and not counted (`bin/flow-finding-route.sh`). Iteration ceilings are infinite-loop safety nets, not planned stop points.
 
 ## You Are An LLM Agent
 
@@ -18,7 +18,7 @@ Iteration is cheap and you do not tire; work is measured in tool calls.
 
 ## Calendar-Time Estimates Are Prohibited
 
-Never write or imply calendar-unit estimates (weeks, days, hours, sprints, ETAs, deadlines) in any output. Convey size only when the user asked, in t-shirt sizing (S/M/L); otherwise describe the work ("3 file edits + a test re-run").
+Never write, suggest, or imply calendar-unit estimates (weeks, days, hours, sprints, ETAs, deadlines) in any output. Convey size only when asked, in t-shirt sizing (S/M/L); otherwise describe the work ("3 file edits + a test re-run").
 
 ## Default Finding Disposition: Fix In This PR
 
@@ -37,14 +37,12 @@ Default to ONE PR. Split only when the user asks, the work crosses a deployment 
 
 ## Iteration Ceiling Semantics
 
-Defaults: `fixForwardMaxIterations: 10`, `reviewCycleLimit: 10`, `closedLoop.maxDebugIterations: 5`, `timeouts.qualityCheckMaxIterations: 3`. [ask: none] Approaching a ceiling: re-read findings against the diff, check whether two are in tension, then continue. Escalate only when you cannot progress.
+Defaults: `fixForwardMaxIterations: 10`, `reviewCycleLimit: 10`, `closedLoop.maxDebugIterations: 5`, `timeouts.qualityCheckMaxIterations: 3`. [ask: none] Approaching a ceiling: re-read findings against the diff, check whether two are in tension, then continue. Escalate only when you cannot progress at all.
 
 ### Genuine non-convergence
 
-Two signals:
-
-1. **Stuck signal**: the same findings recur over the last 3 iterations, or fixes oscillate (fix A flags B, fix B flags A).
-2. **Reach-limit signal**: the iteration count equals `fixForwardMaxIterations` (or `reviewCycleLimit`) with findings still open.
+1. **Stuck signal**: the same findings recur over the last 3 iterations with no progress, or fixes oscillate (fix A flags B, fix B flags A).
+2. **Reach-limit signal**: the iteration count equals `fixForwardMaxIterations` (or `reviewCycleLimit`) with findings open.
 
 [ask: decision] Only when BOTH fire: halt (do not exceed the ceiling or push with unresolved P1/P2) and file a six-field escalation (`flow:decision`) citing **"genuinely ambiguous architecture decision"** (NOT finding-triage). Situation: the findings in tension; options: accept one fix, ask for clarification, or revert and rethink.
 
