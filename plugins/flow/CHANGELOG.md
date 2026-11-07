@@ -285,6 +285,15 @@ Each entry below describes the change against 3.14.0.
   `bin/lib/py-path.sh`'s header names them. `docs/windows-support.md` names
   the helpers `tests/windows-hooks-smoke.sh` calls on the Windows runner
   (`flow-dep-diff.sh` among them) and what it checks for each.
+- Two Windows faults the new helper checks in `tests/windows-hooks-smoke.sh`
+  found (#246). A journal could not be rewritten: `bin/_journal_atomic.py`
+  published with `os.rename`, which on Windows refuses a target that exists,
+  so `journal-record.sh` failed on every journal that already had an entry;
+  it uses `os.replace`, the same atomic rename on Linux and macOS. And under
+  Git Bash `bin/cascade-resolve.sh` found no repository top, because Git for
+  Windows prints it as `D:/a/repo`, so every `FLOW_STATE_DIR` and
+  `FLOW_USER_SETTINGS` was ignored; it now takes the top as the shell
+  reaches it (`/d/a/repo`).
 - `flow-eval-run.sh --trap` no longer refuses, now and then, a trap the case
   has. It checked the name by piping the case's trap list into `grep -q`,
   which stops reading at the match; a list still being written was cut off,

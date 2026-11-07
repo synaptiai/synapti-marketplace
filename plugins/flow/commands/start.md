@@ -1216,7 +1216,7 @@ Prove everything works with fix-forward:
      printf '%s\n' "STATE=unavailable" "REASON=the goal's verification commands could not be run (the goal could not be read, or the checks could not start)"
      exit 0
    fi
-   _ids() { printf '%s' "$REPORT" | jq -r --arg k "$1" '[.[$k][]?] | join(", ")'; }
+   _ids() { printf '%s' "$REPORT" | jq -r --arg k "${1}" '[.[$k][]?] | join(", ")'; }
    FAILING=$(_ids failing)
    VIOLATIONS=$(_ids path_violations)
    NOT_EXECUTED=$(_ids not_executed)

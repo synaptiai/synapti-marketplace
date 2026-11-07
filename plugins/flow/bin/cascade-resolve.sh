@@ -252,8 +252,13 @@ _cr_db_home() {
 # _cr_top: git's toplevel; when git cannot say, the nearest parent holding
 # .git, else the working directory.
 _cr_top() {
-  local top up
+  local top up phys
   top=$(git rev-parse --show-toplevel 2>/dev/null)
+  # Git for Windows prints the top as D:/a/repo; the shell reaches it as
+  # /d/a/repo, the form every other path here is in. Without this the top read
+  # as not absolute, so no top was found and every FLOW_STATE_DIR and
+  # FLOW_USER_SETTINGS was ignored under Git Bash.
+  if [ -n "$top" ] && phys=$(_cr_phys "$top"); then top=$phys; fi
   if [ -z "$top" ]; then
     top=$(pwd -P 2>/dev/null)
     up=$top
