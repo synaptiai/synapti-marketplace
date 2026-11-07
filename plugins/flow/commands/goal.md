@@ -252,7 +252,7 @@ Examples:
 - `/flow:goal create issue 42` — explicit issue number
 - `/flow:goal create pr-review 123` — captures review goal for PR #123
 - `/flow:goal create pr-address 123` — captures address goal for PR #123
-- [ask: decision] `/flow:goal create adhoc <id>` — user-supplied outcome via AskUserQuestion
+- [ask: decision] `/flow:goal create adhoc <id>` — user-supplied outcome via AskUserQuestion (with `metadata: {"source": "flow:decision"}`)
 
 Workflow:
 1. Resolve `<id>` from `<kind>` + branch state.
@@ -299,10 +299,10 @@ Skipping the write breaks delta computation for the next turn (everything become
 
 **Terminal-transition Tier 3 confirmation**:
 
-[ask: permission] When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion. The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
+[ask: permission] When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion (with `metadata: {"source": "flow:permission"}`). The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
 
 ```text
-[ask: permission] AskUserQuestion: "FlowGoal $GOAL_ID evaluation produced verdict: <achieved|failed>.
+[ask: permission] AskUserQuestion (with `metadata: {"source": "flow:permission"}`): "FlowGoal $GOAL_ID evaluation produced verdict: <achieved|failed>.
                   Confirm transition to terminal status '<proposed_to>'?
                   Reason: <proposed_reason>"
 
@@ -351,7 +351,7 @@ Print the resulting verdict + per-AC table. If lifecycle transitioned to `achiev
 
 **When the deterministic-check report lists any AC under `not_executed`** (the deterministic-checks runner skipped its command because the goal is not trusted and `flow.goals.executeVerificationCommands` defaults to `false`; the goal file itself does not record this), append this hint to the printed output:
 
-> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to let the Stop hook auto-run each AC's `verification_command` during evaluator-loop and deterministic-check passes. This setting governs the Stop hook path (`hooks/scripts/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` always executes verification commands when present, so the hint applies only to ACs whose last evaluation came from a Stop hook pass.
+> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to let the Stop hook auto-run each AC's `verification_command` during evaluator-loop and deterministic-check passes. This setting governs the deterministic-checks runner (`hooks/scripts/flow-run-deterministic-checks.sh`) the Stop hook and `/flow:start`'s end-of-VERIFY evaluation use, and `/flow:start` still never moves a goal outside the trust ledger to `achieved`; `/flow:goal evaluate` always executes verification commands when present, so the hint applies only to ACs whose last evaluation came from a Stop hook pass.
 
 ### `/flow:goal pause <id>`
 
@@ -365,11 +365,11 @@ Transition `{waiting_for_user, waiting_for_ci, blocked} → active` via `Skill(g
 
 ### `/flow:goal clear <id>`
 
-Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `<runtime dir>/goals/` as audit trail; status is terminal.
+Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `<runtime dir>/goals/` with its terminal status until it is removed (below); the `goal-evaluation` artifact `goal-lifecycle` writes to the decision journal keeps the record of the cancellation.
 
-A cancelled goal still belongs to its branch: `/flow:merge` blocks a pull request whose branch carries a goal that is not `achieved`, cancelled and failed included. If the branch no longer ships the goal's work, remove the goal file from the branch before merging; if it does, finish the work under a new goal.
+A cancelled goal keeps `/flow:merge` blocked while its file is on the branch: the merge gate blocks a pull request whose branch carries a goal that is not `achieved`, cancelled and failed included, even next to an achieved goal on the same branch. So the cancelled goal's file is always removed from the branch before merging. When the branch still ships the goal's work, finish that work under a new goal (`/flow:goal create`) and remove the cancelled goal's file; when it no longer ships the work, just remove the file.
 
-[ask: permission] Confirmation via AskUserQuestion is mandatory (Tier 3 action: cancels potentially in-flight work).
+[ask: permission] Confirmation via AskUserQuestion (with `metadata: {"source": "flow:permission"}`) is mandatory (Tier 3 action: cancels potentially in-flight work).
 
 ### `/flow:goal history`
 

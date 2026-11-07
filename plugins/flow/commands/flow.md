@@ -184,7 +184,7 @@ If the verb doesn't match any known command, attempt to infer intent:
 - "how should we build" / "what approach" → route to brainstorm
 - "design this" / "architecture" → route to design
 
-[ask: decision] Use the AskUserQuestion tool with contextual options to confirm: "I understood your request as '{inferred verb}'. Is that correct?"
+[ask: decision] Use the AskUserQuestion tool (with `metadata: {"source": "flow:decision"}`) with contextual options to confirm: "I understood your request as '{inferred verb}'. Is that correct?"
 
 ## Tier Classification
 

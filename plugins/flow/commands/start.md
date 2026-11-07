@@ -1174,7 +1174,7 @@ Prove everything works with fix-forward:
    - Option 3 → Provide Playwright MCP installation guidance, then retry browser tool cascade
 9a. **Goal evaluation** — when this run has a FlowGoal, evaluate it now, on this run's evidence, so `/flow:pr` finds it already decided. Run the block below once the completion gate holds, with `GOAL_EVAL_VERDICT` set to the verdict judge's result from step 6: `PASS` (or the criteria the user approved there under `verdict.requireAllPass: false`), `FAIL`, `NEEDS-HUMAN-REVIEW`, or `DISABLED` when `VERDICT_JUDGE_STATE=disabled`.
 
-   The block runs the goal's verification commands (`hooks/scripts/flow-run-deterministic-checks.sh`, which runs them for a goal in the trust ledger, as every goal `/flow:start` creates is) and records the result in the goal's `lifecycle.last_evaluation`. It is `pass` only when every command that ran exited 0, nothing is outside the goal's allowed paths, no command was skipped, and every criterion without a command was passed by the verdict judge. On `pass` the goal moves to `achieved` without a question: why no confirmation is needed here is written in `references/goal-lifecycle-transitions.md`. On anything else the goal stays `active`, and the block names the criteria that are not met; report them in the summary, and `/flow:pr`'s goal gate asks about them as before.
+   The block runs the goal's verification commands (`hooks/scripts/flow-run-deterministic-checks.sh`, which runs them for a goal in the trust ledger, as every goal `/flow:start` creates is) and records the result in the goal's `lifecycle.last_evaluation`, keeping the rest of the lifecycle (`turns_evaluated`, `current_phase`, `current_activity`). It is `pass` only when the goal is in the trust ledger, every command that ran exited 0, nothing is outside the goal's allowed paths, no command was skipped, and every criterion without a command was passed by the verdict judge. A goal outside the ledger is `incomplete` even when `flow.goals.executeVerificationCommands: true` ran its commands and they passed. On `pass` the goal moves to `achieved` without a question: why no confirmation is needed here is written in `references/goal-lifecycle-transitions.md`. On anything else the goal stays `active`, and the block names the criteria that are not met; report them in the summary, and `/flow:pr`'s goal gate asks about them as before.
 
    ```bash
    # GOAL_EVALUATE_BLOCK_BEGIN
@@ -1204,6 +1204,7 @@ Prove everything works with fix-forward:
    VIOLATIONS=$(_ids path_violations)
    NOT_EXECUTED=$(_ids not_executed)
    NO_COMMAND=$(_ids no_command)
+   TRUSTED=$(printf '%s' "$REPORT" | jq -r '.trusted == true')
    if [ -n "$FAILING" ]; then
      RESULT=fail; REASON="verification commands failed for: $FAILING"
    elif [ -n "$VIOLATIONS" ]; then
@@ -1216,6 +1217,11 @@ Prove everything works with fix-forward:
      RESULT=incomplete; REASON="criteria without a verification command were not passed by the verdict judge ($GOAL_EVAL_VERDICT): $NO_COMMAND"
    elif [ "$GOAL_EVAL_VERDICT" = NEEDS-HUMAN-REVIEW ]; then
      RESULT=incomplete; REASON="the verdict judge could not decide every criterion"
+   elif [ "$TRUSTED" != true ]; then
+     # Commands can run for a goal outside the trust ledger when
+     # flow.goals.executeVerificationCommands is true; such a goal is still
+     # not moved to achieved without the question /flow:goal evaluate asks.
+     RESULT=incomplete; REASON="the goal is not in the trust ledger, so it is not moved to achieved without a question: run /flow:goal evaluate $GOAL_ID"
    else
      RESULT=pass; REASON="every verification command passed and the verdict judge passed the criteria ($GOAL_EVAL_VERDICT)"
    fi
@@ -1225,8 +1231,10 @@ Prove everything works with fix-forward:
    jq -n --arg status "$NEW_STATUS" --arg result "$RESULT" --arg reason "$REASON" \
      --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
      '{lifecycle: {status: $status, last_evaluation: {result: $result, reason: $reason, at: $at}}}' > "$LIFE_TMP"
+   # --patch keeps every lifecycle field the fragment does not name
+   # (turns_evaluated, current_phase, current_activity), read under the lock.
    if "$FLOW_ROOT/bin/flow-goal-record.sh" --update-lifecycle --goal-id "$GOAL_ID" \
-        --lifecycle-file "$LIFE_TMP" --from-status active >/dev/null 2>"$LIFE_TMP.err"; then
+        --lifecycle-file "$LIFE_TMP" --from-status active --patch >/dev/null 2>"$LIFE_TMP.err"; then
      printf '%s\n' "STATE=ok" "GOAL_EVAL_RESULT=$RESULT" "GOAL_LIFECYCLE=$NEW_STATUS" "GOAL_EVAL_REASON=$REASON"
      # The audit trail every lifecycle write leaves (skills/goal-lifecycle):
      # a goal-evaluation artifact in the issue journal, or the session journal

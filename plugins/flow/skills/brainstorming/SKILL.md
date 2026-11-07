@@ -18,7 +18,7 @@ Track the four tasks `/flow:brainstorm` creates — explore existing patterns, g
 
 ### 1. Clarify the goal
 
-[ask: decision] Confirm **what** must happen (outcome, not implementation), **why** (motivation, constraints), and **who** is affected. Ambiguous → `AskUserQuestion`; do not guess.
+[ask: decision] Confirm **what** must happen (outcome, not implementation), **why** (motivation, constraints), and **who** is affected. Ambiguous → `AskUserQuestion` (`metadata.source`: `flow:decision`); do not guess.
 
 ### 2. Check existing patterns
 
@@ -55,7 +55,7 @@ Pick the dimensions relevant to THIS decision from these tensions: Simplicity vs
 
 ### 5. Recommend and decide
 
-[ask: decision] State the recommendation with rationale and the single most important trade-off. Play devil's advocate on your own pick — what could go wrong? Then `AskUserQuestion` for the decision and log it.
+[ask: decision] State the recommendation with rationale and the single most important trade-off. Play devil's advocate on your own pick — what could go wrong? Then `AskUserQuestion` (`metadata.source`: `flow:decision`) for the decision and log it.
 
 ## Not Reasons to Skip
 

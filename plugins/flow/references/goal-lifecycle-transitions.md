@@ -87,14 +87,14 @@ Used by `goal-evaluator` Step 6. "Candidate" is the deterministic verdict from t
 
 ### `/flow:start` at the end of VERIFY: `achieved` without a question
 
-`/flow:start` Phase 4 step 9a (`GOAL_EVALUATE_BLOCK` in `commands/start.md`) evaluates the run's own goal once the completion gate holds, and writes `achieved` itself when the evaluation is `pass`: every verification command ran (the goal is in the trust ledger) and exited 0, no file is outside the goal's allowed paths, and the verdict judge passed every criterion that has no command. Any other result keeps the goal `active` and records the result and the criteria not met in `last_evaluation`.
+`/flow:start` Phase 4 step 9a (`GOAL_EVALUATE_BLOCK` in `commands/start.md`) evaluates the run's own goal once the completion gate holds, and writes `achieved` itself when the evaluation is `pass`: the goal is in the trust ledger, every verification command ran and exited 0, no file is outside the goal's allowed paths, and the verdict judge passed every criterion that has no command. Any other result keeps the goal `active` and records the result and the criteria not met in `last_evaluation`. The write merges into the lifecycle, so `turns_evaluated`, `current_phase` and `current_activity` are kept.
 
 The confirmation `/flow:goal evaluate` asks for is not asked here, for these reasons:
 
 - The question in `/flow:goal evaluate` exists because a person runs that command at any time, on whatever evidence happens to be there. At the end of VERIFY the evidence is this run's: the commands just ran on the code the run produced, and the independent verdict judge saw the evidence bundle.
 - Asking there turned the check into a routine prompt: `/flow:start` never evaluated, so `/flow:pr` asked on almost every run, including runs whose criteria had all passed, and a run without a person watching could not get past it.
 - What `achieved` unlocks still goes through a person: the merge is a Tier 3 action, confirmed every time, and the review findings ledger gates it separately.
-- A pass on a goal that is not trusted cannot happen here: its commands are not run, so the result is `incomplete`.
+- A goal that is not in the trust ledger is never moved to `achieved` here: its commands are not run, so the result is `incomplete`; and when `flow.goals.executeVerificationCommands: true` runs them anyway and they pass, the result is still `incomplete`, with a reason that says the goal is not in the trust ledger, so `/flow:pr` asks.
 
 So `/flow:pr`'s goal gate asks only when the goal was evaluated and is not met, or `/flow:start` did not reach the end of VERIFY.
 

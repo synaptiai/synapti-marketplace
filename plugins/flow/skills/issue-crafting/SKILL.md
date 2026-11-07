@@ -20,7 +20,7 @@ agent: Explore
 
 ## Requirements Gathering
 
-[ask: decision] Collect four elements; for each gap, use the AskUserQuestion tool with contextual options (e.g., "What's the current behavior?"):
+[ask: decision] Collect four elements; for each gap, use the AskUserQuestion tool (`metadata.source`: `flow:decision`) with contextual options (e.g., "What's the current behavior?"):
 
 1. **Context** — background and motivation
 2. **Current State** — what happens now, what the problem is. Every number and observation in it names where it came from (the command, the run, the pull request); one that cannot is left out

@@ -21,7 +21,7 @@ agent: Explore
 
 Mixed diffs (a whitelisted category plus one `.py` file, a new dependency, or a behavior-changing config value) get full verification. "Small change", "CI-only", "tests cover this", "just a refactor" are not categories.
 
-[ask: permission] **Out-of-whitelist skips** (anything uncovered): raise a Proactive-Autonomy escalation per [`references/escalation-format.md`](../../references/escalation-format.md) via `AskUserQuestion` and wait for approval; Situation cites why the whitelist misses the change, Tried lists the fast-path, build, and smoke attempts. Blanket authorization is never valid.
+[ask: permission] **Out-of-whitelist skips**: raise a Proactive-Autonomy escalation per [`references/escalation-format.md`](../../references/escalation-format.md) via `AskUserQuestion` (`metadata.source`: `flow:permission`) and wait for approval; Situation cites why the whitelist misses the change, Tried lists the fast-path, build, and smoke attempts. Blanket authorization is never valid.
 
 ## Sequence
 

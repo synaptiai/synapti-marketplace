@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, AskUserQuestion, Skill
 
 # Merge PR #$ARGUMENTS
 
-[ask: permission] Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion before it runs the merge. The `tier-gate.sh` hook then asks again when the merge command runs (`tiers.merge` cannot be set below `confirm`), showing the exact command; it is a second check, and it also covers a merge typed outside flow. You may see two prompts for one merge.
+[ask: permission] Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion (with `metadata: {"source": "flow:permission"}`) before it runs the merge. The `tier-gate.sh` hook then asks again when the merge command runs (`tiers.merge` cannot be set below `confirm`), showing the exact command; it is a second check, and it also covers a merge typed outside flow. You may see two prompts for one merge.
 
 ## Required Skills
 
@@ -848,7 +848,7 @@ fi
 # DESCRIPTION_CHECK_BLOCK_END
 ```
 
-[ask: permission] Show the assessment as text. Then use the AskUserQuestion tool with contextual
+[ask: permission] Show the assessment as text. Then use the AskUserQuestion tool (with `metadata: {"source": "flow:permission"}`) with contextual
 options to confirm, naming what will actually run: "PR #{PR_NUMBER} in
 {OWNER/NAME} is ready to merge. Proceed with a {strategy} merge{, deleting the
 branch}?" The strategy and the branch clause come from `MERGE_STRATEGY` and

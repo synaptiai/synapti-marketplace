@@ -22,10 +22,13 @@
 # Usage:
 #   flow-goal-record.sh --create --goal-file <path-to-yaml>
 #   flow-goal-record.sh --update-lifecycle --goal-id <id> --lifecycle-file <path-to-yaml-fragment>
-#                       [--from-status <status>] [--merge] [--increment-turns]
+#                       [--from-status <status>] [--merge | --patch] [--increment-turns]
 #
 #   --merge            the fragment's lifecycle fields are merged into the
 #                      goal's current lifecycle instead of replacing it
+#   --patch            the same as --merge, for a command block that cannot
+#                      name the word: block-unchecked-merge.sh reads a command
+#                      that names it next to a $(...) as a possible gh pr merge
 #   --increment-turns  lifecycle.turns_evaluated becomes its current value + 1
 #   --runtime-dir DIR  the runtime directory the caller already resolved (a
 #                      hook asks once per run); otherwise it is resolved here
@@ -105,7 +108,7 @@ fi
 wants_help() {
   while [ $# -gt 0 ]; do
     case "$1" in
-      --create|--update-lifecycle|--merge|--increment-turns) shift ;;
+      --create|--update-lifecycle|--merge|--patch|--increment-turns) shift ;;
       --goal-file|--goal-id|--lifecycle-file|--from-status|--runtime-dir) [ $# -ge 2 ] || return 1; shift 2 ;;
       -h|--help) return 0 ;;
       *) return 1 ;;
@@ -163,7 +166,7 @@ def _make_goals_dir():
 options = messages.read_arguments(
     sys.argv[2:],
     ("--goal-file", "--goal-id", "--lifecycle-file", "--from-status", "--runtime-dir"),
-    ("--create", "--update-lifecycle", "--merge", "--increment-turns"),
+    ("--create", "--update-lifecycle", "--merge", "--patch", "--increment-turns"),
 )
 # The runtime directory is relative to the repository top: run from a
 # subdirectory, the goals are still the top's, joined to it by
@@ -182,7 +185,7 @@ goal_file_arg = options["--goal-file"]
 goal_id_arg = options["--goal-id"]
 lifecycle_file_arg = options["--lifecycle-file"]
 from_status_arg = options["--from-status"]
-merge_arg = options["--merge"]
+merge_arg = options["--merge"] or options["--patch"]
 increment_turns_arg = options["--increment-turns"]
 
 # A goal's id names <runtime dir>/goals/<id>.goal.yaml, <id>.goal.yaml.lock and,

@@ -336,7 +336,7 @@ fi
 true
 ```
 
-[ask: decision] When `FLOW_RESUME_UNLINKED=unknown`, treat it like `1` for safety: surface that the working tree could not be assessed and ask before suggesting continuation. When `FLOW_RESUME_UNLINKED=1`, you MUST surface the listed paths and **ask before suggesting continuation** — do not jump to the Step 5 next-action suggestion. Use `AskUserQuestion`:
+[ask: decision] When `FLOW_RESUME_UNLINKED=unknown`, treat it like `1` for safety: surface that the working tree could not be assessed and ask before suggesting continuation. When `FLOW_RESUME_UNLINKED=1`, you MUST surface the listed paths and **ask before suggesting continuation** — do not jump to the Step 5 next-action suggestion. Use `AskUserQuestion` (with `metadata: {"source": "flow:decision"}`):
 
 > Uncommitted changes exist that aren't linked to FlowRun `<RUN_ID>` (they're outside `<runtime dir>/` and the journal directory):
 > `<the listed paths>`

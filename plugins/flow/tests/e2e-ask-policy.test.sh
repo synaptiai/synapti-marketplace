@@ -22,6 +22,10 @@
 #   A7 a place in commands/ or skills/ that tells the agent to ask carries no
 #      class, so nobody can tell whether autonomous mode may drop it
 #   A8 the default-taken record the reference names cannot be written
+#   A9 a decision or permission place outside the six preflight commands does
+#      not say which metadata.source to pass, so under autonomous: true the
+#      hook denies it as a default (a terminal goal transition taken for the
+#      person)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -130,6 +134,35 @@ e2e_plugin_copy commands/explain.md "$(sed 's/\[ask: decision\] //' "$E2E_PLUGIN
 e2e_expect_equal 1 "$(_untagged "$E2E_ACTIVE_PLUGIN" | grep -c 'commands/explain.md')" "untagged places in a copy with the explain.md tag removed"
 # Every default place says what to do under the autonomous policy.
 e2e_expect_equal "" "$(cd "$E2E_PLUGIN_DIR" && grep -n '\[ask: default\]' commands/*.md skills/*/SKILL.md | grep -v '\[ask: none\]' | grep -v 'ASK_POLICY=autonomous' | grep -v '^commands/[a-z]*.md:[0-9]*:Which questions reach the person' || true)" "default places without their autonomous instruction"
+e2e_expect_clean_edges
+
+# --- every decision and permission place names its metadata.source (A9) -----
+# A line whose first tag is [ask: decision] names flow:decision, one whose
+# first tag is [ask: permission] names flow:permission, unless its file has the
+# preflight paragraph that names both for every place below it.
+_unsourced() {
+  ( cd "$1" && grep -n '\[ask: \(decision\|permission\)\]' commands/*.md skills/*/SKILL.md ) |
+    while IFS= read -r hit; do
+      file=${hit%%:*}; text=${hit#*:}; text=${text#*:}
+      class=$(printf '%s' "$text" | grep -o '\[ask: [a-z]*\]' | head -1 | sed 's/\[ask: \(.*\)\]/\1/')
+      case "$class" in decision|permission) ;; *) continue ;; esac
+      printf '%s' "$text" | grep -q "flow:$class" && continue
+      grep -q '^Which questions reach the person .*{"source": "flow:decision"}.*{"source": "flow:permission"}' "$1/$file" && continue
+      printf '%s\n' "$hit"
+    done
+}
+_flow_test_begin "ask-sources"
+e2e_new ask-sources
+e2e_describe "every [ask: decision] and [ask: permission] place in commands/ and skills/ names the metadata.source to pass, on its line or in its command's preflight paragraph (A9)"
+e2e_repo feature/issue-339-e2e
+e2e_expect_equal "" "$(_unsourced "$E2E_PLUGIN_DIR")" "decision and permission places without their metadata.source"
+# The scan can fail: a copy of goal.md without its sources, and a copy of
+# start.md without its preflight paragraph, are reported.
+e2e_plugin_copy commands/goal.md "$(sed 's/flow:permission/flow:other/g; s/flow:decision/flow:other/g' "$E2E_PLUGIN_DIR/commands/goal.md")"
+e2e_expect_equal 1 "$([ "$(_unsourced "$E2E_ACTIVE_PLUGIN" | grep -c '^commands/goal.md:')" -ge 4 ] && echo 1 || echo 0)" "goal.md places reported in a copy without their sources"
+grep -v '^Which questions reach the person' "$E2E_PLUGIN_DIR/commands/start.md" > "$E2E_ACTIVE_PLUGIN/commands/start.md"
+printf 'and commands/start.md without its "Which questions reach the person" paragraph\n' | _e2e_art
+e2e_expect_equal 1 "$([ "$(_unsourced "$E2E_ACTIVE_PLUGIN" | grep -c '^commands/start.md:')" -ge 4 ] && echo 1 || echo 0)" "start.md places reported in a copy without its preflight paragraph"
 e2e_expect_clean_edges
 
 # --- the default-taken record (A8) -------------------------------------------

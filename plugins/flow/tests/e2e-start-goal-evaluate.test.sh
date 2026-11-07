@@ -18,6 +18,13 @@
 #      verdict judge did not pass it
 #   V5 an untrusted goal (its commands not run) is moved to achieved
 #   V6 a run with no goal fails, or writes one
+#   V7 the lifecycle write replaces the block, so turns_evaluated,
+#      current_phase and current_activity are lost and the evaluator-loop
+#      budget starts again from zero
+#   V8 with flow.goals.executeVerificationCommands: true, a goal that is not
+#      in the trust ledger has its commands run, and a pass moves it to
+#      achieved without the question references/goal-lifecycle-transitions.md
+#      says only a trusted goal skips
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -61,19 +68,20 @@ _start_repo() {
   e2e_gh_fixture issue-42 '{"title":"Search returns empty results","body":"","labels":[]}'
 }
 
-# _trusted_goal <command for AC1, or "" for none> — create issue-42's goal the
-# way /flow:start does, on this branch.
+# _trusted_goal <command for AC1, or "" for none> [<lifecycle JSON>] — create
+# issue-42's goal the way /flow:start does, on this branch; the lifecycle is
+# {"status": "active"} unless given.
 _trusted_goal() {
-  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$E2E_DIR/goal.yaml" "$1" <<'PY'
-import sys, yaml
-src, dst, cmd = sys.argv[1:4]
+  python3 - "$REPO_ROOT/plugins/flow/tests/fixtures/goal/valid.yaml" "$E2E_DIR/goal.yaml" "$1" "${2:-}" <<'PY'
+import json, sys, yaml
+src, dst, cmd, life = sys.argv[1:5]
 g = yaml.safe_load(open(src, encoding="utf-8"))
 ac = g["objective"]["acceptance_criteria"][0]
 if cmd:
     ac["verification_command"] = cmd
 else:
     ac.pop("verification_command", None)
-g["lifecycle"] = {"status": "active"}
+g["lifecycle"] = json.loads(life) if life else {"status": "active"}
 yaml.safe_dump(g, open(dst, "w", encoding="utf-8"), sort_keys=False)
 PY
   (_e2e_git_env; cd "$E2E_REPO" && "$E2E_ACTIVE_PLUGIN/bin/flow-goal-record.sh" --create --goal-file "$E2E_DIR/goal.yaml") \
@@ -138,6 +146,32 @@ e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "GOAL_EVAL_RESULT=incomplete"
 e2e_expect_line "GOAL_LIFECYCLE=active"
 e2e_expect_out "because the goal is not trusted: AC1"
+e2e_expect_clean_edges
+
+_start_repo start-goal-keeps-lifecycle "a goal three Stop-hook turns in that stays active: turns_evaluated, current_phase and current_activity are kept (V7)"
+_trusted_goal false '{"status":"active","current_phase":"verify","current_activity":"verdict","turns_evaluated":3}'
+e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_line "GOAL_LIFECYCLE=active"
+e2e_expect_equal fail "$(_goal_field lifecycle.last_evaluation.result)" "the goal file's last_evaluation.result"
+e2e_expect_equal 3 "$(_goal_field lifecycle.turns_evaluated)" "the goal file's lifecycle.turns_evaluated"
+e2e_expect_equal verify "$(_goal_field lifecycle.current_phase)" "the goal file's lifecycle.current_phase"
+e2e_expect_equal verdict "$(_goal_field lifecycle.current_activity)" "the goal file's lifecycle.current_activity"
+e2e_expect_clean_edges
+
+_start_repo start-goal-untrusted-exec-on "executeVerificationCommands: true and a goal not in the trust ledger whose command passes: incomplete, still active, so /flow:pr asks (V8)"
+e2e_goal issue-42 "$BRANCH" active true
+mkdir -p "$E2E_REPO/.claude"
+printf '%s\n' '{"flow":{"goals":{"executeVerificationCommands":true}}}' > "$E2E_REPO/.claude/settings.flow.json"
+e2e_run_block GOAL_EVAL_VERDICT=PASS "$START_MD" GOAL_EVALUATE_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_line "GOAL_EVAL_RESULT=incomplete"
+e2e_expect_line "GOAL_LIFECYCLE=active"
+e2e_expect_out "the goal is not in the trust ledger"
+e2e_expect_equal active "$(_goal_field lifecycle.status)" "the goal file's lifecycle.status"
+e2e_run_fence "$PR_MD" '### Branch Delta'
+e2e_expect_equal "$(printf 'STATE=ok\nGOAL_ID=issue-42\nGOAL_LIFECYCLE=active\nGATE=block')" \
+  "$(_section 'FlowGoal State')" "/flow:pr's FlowGoal State section"
 e2e_expect_clean_edges
 
 _start_repo start-goal-none "no goal on this branch: nothing is evaluated or written (V6)"

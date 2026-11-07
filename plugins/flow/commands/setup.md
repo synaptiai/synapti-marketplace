@@ -234,7 +234,7 @@ command -v ruby-lsp 2>/dev/null && printf '%s\n' "RUBY-LSP: installed" || printf
 
 ### Step 3.4: Present LSP Setup Plan
 
-[ask: decision] Use the **AskUserQuestion tool** to present the LSP installation plan:
+[ask: decision] Use the **AskUserQuestion tool** (with `metadata: {"source": "flow:decision"}`) to present the LSP installation plan:
 
 > "Flow uses LSP code intelligence for semantic code understanding across workflow phases. Here's what's needed for your tech stack:"
 
@@ -283,7 +283,7 @@ Then restart Claude Code for the change to take effect.
 claude plugins list 2>/dev/null | grep -i "claude-code-lsps" || printf '%s\n' "NO_LSP_MARKETPLACE"
 ```
 
-[ask: decision] If no LSP marketplace found, register one. Use the **AskUserQuestion tool**:
+[ask: decision] If no LSP marketplace found, register one. Use the **AskUserQuestion tool** (with `metadata: {"source": "flow:decision"}`):
 
 **Options:**
 1. "Piebald-AI/claude-code-lsps (Recommended)" — Comprehensive marketplace with 20+ languages
@@ -408,7 +408,7 @@ fi
 # SETUP_RULESETS_END
 ```
 
-[ask: permission] On `flow`, report that flow's rulesets are in place and go on. On `unavailable` or `unreadable`, add a line to **Manual Steps Required** in the Phase 7 summary: rulesets could not be read or created here, and an owner of the repository can add them under Settings → Rules. On `noremote`, skip this phase. Otherwise (`none` or `other`, naming the existing rulesets on `other`; a flow ruleset that already exists is reported as `FAILED=` with GitHub's message when created again), use the AskUserQuestion tool, saying what each choice does on GitHub and what it does not:
+[ask: permission] On `flow`, report that flow's rulesets are in place and go on. On `unavailable` or `unreadable`, add a line to **Manual Steps Required** in the Phase 7 summary: rulesets could not be read or created here, and an owner of the repository can add them under Settings → Rules. On `noremote`, skip this phase. Otherwise (`none` or `other`, naming the existing rulesets on `other`; a flow ruleset that already exists is reported as `FAILED=` with GitHub's message when created again), use the AskUserQuestion tool (with `metadata: {"source": "flow:permission"}`), saying what each choice does on GitHub and what it does not:
 
 - **Protect the default branch and tags** (recommended): the default branch accepts changes only through a pull request and cannot be force-pushed or deleted; a tag cannot be moved or deleted once it is on GitHub. Merging a pull request and creating a new tag or release still need only write access.
 - **The same, and require one approving review**: a pull request also needs an approving review from someone other than its author, given after its last push, before it can be merged; a push after the approval dismisses it. This is the setting that stops a merge made with your own credentials, by you or by an agent. A maintainer who works alone cannot then merge their own pull requests.

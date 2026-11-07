@@ -107,7 +107,7 @@ After the skill returns, treat the non-goals as a hard filter when generating ap
 
 **Clarify the goal:**
 
-[ask: decision] If `$ARGUMENTS` is vague or ambiguous, use the AskUserQuestion tool with contextual options to get clarifications from the user with the question "The topic needs clarification. What outcome are you trying to achieve?"
+[ask: decision] If `$ARGUMENTS` is vague or ambiguous, use the AskUserQuestion tool (with `metadata: {"source": "flow:decision"}`) with contextual options to get clarifications from the user with the question "The topic needs clarification. What outcome are you trying to achieve?"
 
 ## Phase 2: GENERATE
 
@@ -186,7 +186,7 @@ TaskUpdate("Compare trade-offs", status: "completed")
 
 TaskUpdate("Select approach", status: "in_progress")
 
-1. [ask: decision] Use the AskUserQuestion tool with contextual options to ask: "I recommend Approach {N} because {rationale}. Which approach would you like to go with?"
+1. [ask: decision] Use the AskUserQuestion tool (with `metadata: {"source": "flow:decision"}`) with contextual options to ask: "I recommend Approach {N} because {rationale}. Which approach would you like to go with?"
 
 2. **Log decision** to the decision journal. On a branch whose name contains `issue-N` the block below writes `issue-N.md`; on any other branch it writes today's session journal, `<journal dir>/session-YYYY-MM-DD.md` (dated by the local calendar day), and the manifest emit below records to the same file.
 
