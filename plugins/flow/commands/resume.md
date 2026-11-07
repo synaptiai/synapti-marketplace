@@ -285,7 +285,7 @@ fi
 # RESUME_QUESTIONS_BLOCK_END
 ```
 
-With `STATE=open`, show each question in the report (Step 4) with `bin/flow-question.sh get <id> --prompt`, and make the next safe action answering the blocking one: ask it with `AskUserQuestion` when the session can, then record the answer with `bin/flow-question.sh answer <id> --choice <n> --journal`.
+[ask: decision] With `STATE=open`, show each question in the report (Step 4) with `bin/flow-question.sh get <id> --prompt`, and make the next safe action answering the blocking one: ask it with `AskUserQuestion` when the session can (a stored escalation is a decision or a permission: pass `metadata.source` `flow:decision`, or `flow:permission` for a Tier 3 action or a skip), then record the answer with `bin/flow-question.sh answer <id> --choice <n> --journal`.
 
 ### Step 3.5: Detect unlinked working-tree changes
 
