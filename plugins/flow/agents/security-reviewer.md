@@ -212,9 +212,12 @@ the registry it normally comes from — a `go.mod` replace, a Cargo `[patch]` or
 direct reference (`requests @ https://...`), a `package.json` spec that is a
 URL, a GitHub shorthand (`github:user/repo`, `user/repo`) or a `file:`/`link:`
 path, a Gemfile `git:`, `github:` or `path:` source (or a gem inside a `git`
-block), or a gem resolved in a `Gemfile.lock` GIT or PATH section. The
+block), or a gem resolved in a `Gemfile.lock` GIT section or in a PATH
+section other than the project's own (`remote: .`, the gemspec gem, is not
+reported). The
 `<version>` is a ref or revision when the manifest names one. A `<version>` of `(unpinned)` is
-normal: most redirect forms name a place, not a version. **Judge the target exactly as you would an added
+normal: most redirect forms name a place, not a version, and a `Gemfile.lock`
+PATH redirect always reads `(unpinned)`. **Judge the target exactly as you would an added
 package**, because that is what it is: code this change starts fetching that it
 did not before, from somewhere the index does not vouch for. Name the module in
 the finding, not only the target, so a reader can see which dependency stopped

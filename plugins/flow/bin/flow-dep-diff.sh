@@ -44,8 +44,12 @@
 #     an environment marker's `;`), a tool.uv.sources or poetry git/url/path
 #     entry (names matched PEP 503 normalised); a package.json spec that is
 #     a URL, a hosted-git shorthand (github:, user/repo), or file:/link:; a
-#     Gemfile git:, github:, gitlab:, bitbucket: or path: option, or a gem
-#     inside a git/github/path block; and a Gemfile.lock GIT or PATH section
+#     Gemfile git:, github:, gitlab:, bitbucket: or path: option (also on
+#     the lines a gem call continues onto), or a gem inside a
+#     git/github/path block; a Gemfile.lock GIT section, at its revision;
+#     and a Gemfile.lock PATH section other than the project's own
+#     (remote: . is the gemspec gem, not a redirect), with no version, so
+#     a version bump of a path gem is not a new redirect
 #   DEP_NEAR_NAME=<added> ~ <baseline> distance=<n>
 #     two Python names are compared PEP 503 normalised (my_pkg is my-pkg);
 #     names from other ecosystems as written

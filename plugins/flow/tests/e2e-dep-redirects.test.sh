@@ -26,6 +26,17 @@
 #   R8 a direct reference with a scheme outside a fixed list becomes a
 #      version string; an environment marker becomes part of the target
 #   R9 a package.json spec that fetches from git or a path is not a redirect
+#   R10 a gem call without parentheses whose options continue on the next
+#      lines (a trailing comma or backslash) is read from its first line only,
+#      so its git:/github: source is dropped; or a continuation that never
+#      ends, or runs into another statement, is read as if it were whole
+#   R11 the end of an if/unless/case (or another keyword block) inside a git
+#      block closes the git block, so the gems after it read as from the
+#      registry; or a modifier `gem "x" if c` opens a block that swallows the
+#      git block's end; or an end that closes nothing is skipped silently
+#   R12 the project's own gem in Gemfile.lock (PATH remote: ., what a gemspec
+#      line resolves to) is reported as a redirect, and a version bump of any
+#      PATH gem reads as a new redirect
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -65,7 +76,7 @@ _dep() {
   e2e_expect_clean_edges
 }
 
-# --- Ruby (R1-R4) ------------------------------------------------------------
+# --- Ruby (R1-R4, R10-R12) ------------------------------------------------------------
 _dep dep-gem-git "a gem built from a fork with git: is a redirect (R1)" Gemfile \
 $'source "https://rubygems.org"\ngem "rails", "7.0.0"\n' \
 $'source "https://rubygems.org"\ngem "rails", "7.0.0"\ngem "nokogiri", git: "https://github.com/evil/nokogiri"\n' \
@@ -121,6 +132,77 @@ $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\ngem("rack",\n    "3.0.0")\n' \
 'STATE=unavailable
 MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 does not close on its line at head'
+
+_dep dep-gem-multiline-comma "a gem call continued with trailing commas keeps its git: source and branch (R10)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "devise",\n  git: "https://github.com/attacker/devise",\n  branch: "main"\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=devise@(unpinned) manifest=Gemfile:2
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:5
+DEP_REPLACED=devise -> https://github.com/attacker/devise@main manifest=Gemfile:2'
+
+_dep dep-gem-multiline-backslash "a gem call continued with a backslash keeps its github: source (R10)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "rack", "3.0.0", \\\n  github: "evil/rack" # a fork\n' \
+'STATE=ok
+DEP_ADDED=rack@3.0.0 manifest=Gemfile:2
+DEP_REPLACED=rack -> github:evil/rack@3.0.0 manifest=Gemfile:2'
+
+_dep dep-gem-multiline-eof "a gem call whose continuation runs past the end of the file makes it unreadable (R10)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "devise",\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 continues past the end of the file at head'
+
+_dep dep-gem-multiline-into-gem "a gem call whose continuation runs into another gem line makes it unreadable (R10)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngem "devise",\ngem "rack", git: "https://github.com/evil/rack"\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the gem call on line 2 continues into line 3, which is not part of it at head'
+
+_dep dep-gem-keyword-block "if, unless and case inside a git block do not close it; a modifier if opens nothing (R11)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://github.com/evil/rails.git" do\n  if ENV["EDGE"]\n    gem "actionpack"\n  end\n  gem "railties" if ENV["CI"]\n  unless ENV["SLIM"]\n    gem "actionview"\n  end\n  case RUBY_VERSION\n  when /^3/\n    gem "actioncable"\n  end\n  gem "activesupport"\nend\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=actioncable@(unpinned) manifest=Gemfile:12
+DEP_ADDED=actionpack@(unpinned) manifest=Gemfile:4
+DEP_ADDED=actionview@(unpinned) manifest=Gemfile:8
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:14
+DEP_ADDED=railties@(unpinned) manifest=Gemfile:6
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:16
+DEP_REPLACED=actioncable -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:12
+DEP_REPLACED=actionpack -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:4
+DEP_REPLACED=actionview -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:8
+DEP_REPLACED=activesupport -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:14
+DEP_REPLACED=railties -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:6'
+
+_dep dep-gem-keyword-block-forms "while ... do opens one block, an assigned if opens one, a one-line def opens none (R11)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\ngit "https://github.com/evil/rails.git" do\n  def self.edge?; false; end\n  while false do\n  end\n  pin = if ENV["PIN"]\n    "1"\n  end\n  gem "activesupport"\nend\ngem "rspec", "3.12.0"\n' \
+'STATE=ok
+DEP_ADDED=activesupport@(unpinned) manifest=Gemfile:9
+DEP_ADDED=rspec@3.12.0 manifest=Gemfile:11
+DEP_REPLACED=activesupport -> https://github.com/evil/rails.git@(unpinned) manifest=Gemfile:9'
+
+_dep dep-gem-stray-end "an end that closes no block makes the file unreadable (R11)" Gemfile \
+$'gem "rails", "7.0.0"\n' \
+$'gem "rails", "7.0.0"\nENV["X"] && begin_edge\ngem "rack", "3.0.0"\nend\n' \
+'STATE=unavailable
+MANIFEST_UNPARSED=Gemfile reason=the end on line 4 closes no block this can see at head'
+
+_dep dep-gemfile-lock-own-gemspec "the project's own gem (PATH remote: .) is not a redirect when its version moves (R12)" Gemfile.lock \
+$'PATH\n  remote: .\n  specs:\n    mygem (0.1.0)\n\nGEM\n  remote: https://rubygems.org/\n  specs:\n    rails (7.0.0)\n' \
+$'PATH\n  remote: .\n  specs:\n    mygem (0.2.0)\n\nGEM\n  remote: https://rubygems.org/\n  specs:\n    rails (7.0.0)\n' \
+'STATE=ok
+DEP_CHANGED=mygem 0.1.0->0.2.0 manifest=Gemfile.lock:4'
+
+_dep dep-gemfile-lock-path-bump "a PATH gem elsewhere is a redirect when it arrives, not again when its version moves (R12)" Gemfile.lock \
+$'PATH\n  remote: ./\n  specs:\n    mygem (0.1.0)\n\nPATH\n  remote: ../shared\n  specs:\n    shared (1.0.0)\n' \
+$'PATH\n  remote: ./\n  specs:\n    mygem (0.1.0)\n\nPATH\n  remote: ../shared\n  specs:\n    shared (1.1.0)\n\nPATH\n  remote: ../vendored\n  specs:\n    vendored (2.0.0)\n' \
+'STATE=ok
+DEP_ADDED=vendored@2.0.0 manifest=Gemfile.lock:14
+DEP_CHANGED=shared 1.0.0->1.1.0 manifest=Gemfile.lock:9
+DEP_REPLACED=vendored -> ../vendored@(unpinned) manifest=Gemfile.lock:14'
 
 # --- Python names, PEP 503 (R5-R7) --------------------------------------------
 _dep dep-uv-source-normalised "tool.uv.sources my_pkg redirects the dependency my-pkg (R5)" pyproject.toml \

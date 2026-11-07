@@ -787,6 +787,48 @@ _GEM_OPTION = re.compile(
 _GEM_BLOCK = re.compile(r"^\s*(git|github|gitlab|bitbucket|path)\b\s*\(?\s*(?:(['\"])(.*?)\2)?.*\bdo\s*(\|[^|]*\|)?\s*$")
 _DO = re.compile(r"\bdo\s*(\|[^|]*\|)?\s*$")
 _END = re.compile(r"^\s*end\b")
+# A line that opens a keyword block closed by `end`: the keyword starts the
+# statement (`if ENV["X"]`) or is the value of an assignment
+# (`pin = if ENV["X"]`, `x ||= begin`). A modifier (`gem "x" if c`) follows an
+# expression instead and opens nothing. A label (`if:`) is not the keyword.
+_KEYWORD_OPEN = re.compile(
+    r"(?:^\s*|(?<![=!<>])=(?![=~>])\s*)"
+    r"(?:if|unless|case|while|until|for|begin|def|class|module)(?![A-Za-z0-9_?!:])"
+)
+# A keyword block that also closes on its line (`def x; end`,
+# `if c then y end`), and an endless method (`def x = 1`), which takes no end.
+_ENDS_ON_LINE = re.compile(r"(?:^|[\s;])end\s*$")
+_ENDLESS_DEF = re.compile(r"^\s*def\s+[^\s(=;]+\s*(?:\([^)]*\))?\s*=(?![=~>])")
+# A gem call without parentheses carries on to the next line when its line
+# ends where Ruby cannot end a statement: after a comma, a backslash, a hash
+# rocket, a label with no value yet, `||`/`&&`, or an open bracket.
+_GEM_CONTINUES = re.compile(r"(?:,|\\|=>|[A-Za-z0-9_]:|\|\||&&|[(\[{])\s*$")
+_RUBY_STRING = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'")
+# A line a continued gem call cannot run into: a statement of its own.
+_GEMFILE_STATEMENT = re.compile(
+    r"^\s*(?:gem|gemspec|git|github|gitlab|bitbucket|path|group|platforms?"
+    r"|source|ruby|git_source|install_if|eval_gemfile|end|else|elsif|when"
+    r"|if|unless|case|while|until|for|begin|def|class|module)(?![A-Za-z0-9_?!:])"
+)
+
+
+def _ruby_code(raw):
+    """A Gemfile line without its comment, as this parser reads it."""
+    return raw.split("#", 1)[0].rstrip()
+
+
+def _gem_call_continues(line):
+    if _GEM_CONTINUES.search(line):
+        return True
+    bare = _RUBY_STRING.sub('""', line)
+    return sum(bare.count(c) for c in "([{") > sum(bare.count(c) for c in ")]}")
+
+
+def _keyword_block_opens(line):
+    """Whether `line` opens a keyword block that a later `end` closes."""
+    if not _KEYWORD_OPEN.search(line):
+        return False
+    return not (_ENDS_ON_LINE.search(line) or _ENDLESS_DEF.match(line))
 
 
 def _gem_source(kind, value):
@@ -800,21 +842,34 @@ def parse_gemfile(text):
 
     A `gem` call whose name is a literal is read, written `gem "x"` or
     `gem("x")`. A `gem` line this cannot read (the name a variable, a method
-    call or an interpolation; a call that does not close on its line; a source
-    option whose value is not a literal) is NOT guessed at: the file is
-    reported unreadable, because a dependency this cannot see is one a
-    reviewer would be told does not exist.
+    call or an interpolation; a `gem(` call that does not close on its line;
+    a call without parentheses whose continuation runs past the end of the
+    file or into another statement; a source option whose value is not a
+    literal; an `end` that closes no block this has seen) is NOT guessed at:
+    the file is reported unreadable, because a dependency this cannot see is
+    one a reviewer would be told does not exist. A call without parentheses
+    whose line ends with a comma, a backslash or an open bracket is read
+    together with the lines that continue it, so options written one per
+    line are read like options written on one.
 
     A gem fetched from somewhere other than its registry, by a `git:`,
     `github:`, `gitlab:`, `bitbucket:` or `path:` option or inside a
     `git`/`github`/`path ... do` block, is also a redirect: the same record a
     go.mod replace makes, so a gem built from a fork does not read as an
-    unpinned gem from rubygems.org.
+    unpinned gem from rubygems.org. Every other block a later `end` closes
+    (`group ... do`, and `if`, `unless`, `case`, `while`, `until`, `for`,
+    `begin`, `def`, `class` and `module` other than their modifier and
+    one-line forms) is tracked too, so its `end` does not close the git block
+    around it.
     """
     r = ParseResult()
     blocks = []
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        line = raw.split("#", 1)[0].rstrip()
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        lineno = index + 1
+        line = _ruby_code(lines[index])
+        index += 1
         if not line.strip():
             continue
         bm = _GEM_BLOCK.match(line)
@@ -825,6 +880,20 @@ def parse_gemfile(text):
             continue
         m = _GEM_START.match(line)
         if m:
+            if not m.group(1):
+                while _gem_call_continues(line):
+                    while index < len(lines) and not _ruby_code(lines[index]).strip():
+                        index += 1
+                    if index >= len(lines):
+                        raise ParseError("the gem call on line %d continues past the end of the file" % lineno)
+                    nxt = _ruby_code(lines[index])
+                    if _GEMFILE_STATEMENT.match(nxt):
+                        raise ParseError("the gem call on line %d continues into line %d, which is not part of it" % (lineno, index + 1))
+                    if line.endswith("\\"):
+                        line = line[:-1]
+                    line = "%s %s" % (line.rstrip(), nxt.strip())
+                    index += 1
+                m = _GEM_START.match(line)
             args = m.group(2).strip()
             if m.group(1):
                 if not args.endswith(")"):
@@ -853,10 +922,12 @@ def parse_gemfile(text):
                 blocks.append(None)
             continue
         if _END.match(line):
-            if blocks:
-                blocks.pop()
+            if not blocks:
+                raise ParseError("the end on line %d closes no block this can see" % lineno)
+            blocks.pop()
             continue
-        if _DO.search(line):
+        if _keyword_block_opens(line) or _DO.search(line):
+            # One frame even for `while c do`: its do is part of the loop.
             blocks.append(None)
     return r
 
@@ -873,7 +944,12 @@ _GEMFILE_LOCK_FIELD = re.compile(r"^ {2}(remote|revision|ref|tag|branch):\s*(.*?
 def parse_gemfile_lock(text):
     """Gemfile.lock's specs. A gem resolved in a GIT or PATH section comes
     from that section's remote, not from the registry: each is also a
-    redirect, to the remote at its revision."""
+    redirect. A GIT gem is redirected to the remote at its revision. A PATH
+    gem is redirected to the path with no version, since a path names no
+    revision and a version bump there is not a new place to fetch from. The
+    PATH section whose remote is the project root (`.` or `./`, what a
+    Gemfile `gemspec` line resolves to) is the project's own gem, not a
+    redirect."""
     r = ParseResult()
     in_specs = False
     section = None
@@ -903,6 +979,10 @@ def parse_gemfile_lock(text):
                 remote = fields.get("remote")
                 if not remote:
                     raise ParseError("the %s section above line %d names no remote" % (section, lineno))
+                if section == "PATH":
+                    if remote not in (".", "./"):
+                        r.replaces.append((name, remote, None, lineno))
+                    continue
                 ref = fields.get("revision") or fields.get("ref") or fields.get("tag") or fields.get("branch")
                 r.replaces.append((name, remote, ref or m.group(2), lineno))
     return r
