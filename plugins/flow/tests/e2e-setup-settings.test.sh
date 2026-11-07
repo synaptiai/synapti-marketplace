@@ -32,6 +32,9 @@
 #      cascade does not read (or fails), so the top keeps its deprecated key
 #   P7 flow-migrate-settings.sh with no file named upgrades a file in the
 #      working directory instead of the one the cascade reads
+#   P8 the Phase 2 ignore fence, run in a subdirectory, leaves the shell in
+#      the repository top: the Bash tool keeps a fence's working directory,
+#      so every command the session runs after setup would run at the top
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -123,6 +126,21 @@ e2e_expect_no_out "GITIGNORE=skipped"
 e2e_expect_file_has .gitignore ".claude/settings.flow.local.json"
 e2e_expect_file_has .gitignore ".flow/watch/"
 e2e_expect_file_has .gitignore ".decisions/auto-log/"
+e2e_expect_equal no "$([ -e "$E2E_REPO/$SUB/.gitignore" ] && echo yes || echo no)" "a .gitignore exists in $SUB"
+
+_flow_test_begin "/flow:setup Phase 2 ignore fence in a subdirectory leaves the working directory where it was (P8)"
+e2e_new setup-ignore-cwd
+e2e_describe "the Phase 2 ignore fence runs in $SUB from a copy of setup.md that prints the working directory after the fence's last line, as the Bash tool would find it for the next command"
+e2e_repo feature/issue-1-setup
+mkdir -p "$E2E_REPO/$SUB"
+e2e_plugin_copy commands/setup.md "$(awk -v m="$IGNORE_FENCE" '
+  index($0, m) { seen = 1 }
+  seen && /^```[[:space:]]*$/ { print "printf '"'"'PWD_AFTER=%s\\n'"'"' \"$(pwd -P)\""; seen = 0 }
+  { print }' "$SETUP_MD")"
+_in "$SUB" e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/setup.md" "$IGNORE_FENCE"
+e2e_expect_equal 0 "$E2E_RC" "the ignore fence's exit status"
+e2e_expect_line "PWD_AFTER=$(_top_physical)/$SUB"
+e2e_expect_file_has .gitignore ".claude/settings.flow.local.json"
 e2e_expect_equal no "$([ -e "$E2E_REPO/$SUB/.gitignore" ] && echo yes || echo no)" "a .gitignore exists in $SUB"
 
 _flow_test_begin "/flow:setup Phase 2 at the top writes the ignore lines there, as before (P3, P5)"

@@ -105,33 +105,37 @@ Also ignore the auto-log trail, `<journal.dir>/auto-log/`. The PostToolUse hooks
 
 Also ignore `<runtime dir>/watch/` (the runtime directory, `flow.runtime.stateDir`, default `.flow`, as `bin/flow-runtime-dir.sh` resolves it), where `/flow:watch issue <N>` keeps the issue snapshot of each loop iteration. It is local state; `/flow:watch` also writes a `.gitignore` of `*` inside it.
 
-The lines go in the `.gitignore` at the repository top, beside the `.claude` directory `SETTINGS_FILE` is in, so they name the files Flow reads wherever setup runs.
+The lines go in the `.gitignore` at the repository top, beside the `.claude` directory `SETTINGS_FILE` is in, so they name the files Flow reads wherever setup runs. The block changes to the top inside a subshell, so the session stays in the directory it was in.
 
 ```bash
 RESOLVER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
-# The directory holding the .claude directory Flow reads: the repository top.
-SETTINGS_FILE=$("$RESOLVER" --project-settings-path 2>/dev/null) || SETTINGS_FILE=""
-case "$SETTINGS_FILE" in
-  /*) cd "${SETTINGS_FILE%/.claude/settings.flow.json}" || SETTINGS_FILE="" ;;
-esac
-JOURNAL_DIR=".decisions"
-[ -x "$RESOLVER" ] && JOURNAL_DIR=$("${RESOLVER%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
-[ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
-RUNTIME_DIR=".flow"
-[ -x "$RESOLVER" ] && RUNTIME_DIR=$("${RESOLVER%/cascade-resolve.sh}/flow-runtime-dir.sh")
-RUNTIME_DIR=${RUNTIME_DIR#./}
-[ -n "$RUNTIME_DIR" ] || RUNTIME_DIR=".flow"
-if [ -z "$SETTINGS_FILE" ]; then
-  printf '%s\n' "GITIGNORE=skipped (the repository top could not be found)"
-else
-  for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$RUNTIME_DIR/watch/" "$JOURNAL_DIR/auto-log/"; do
-    if [ -f .gitignore ]; then
-      grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
-    else
-      printf '%s\n' "$IGNORE" > .gitignore
-    fi
-  done
-fi
+# A subshell: the cd to the repository top below does not carry over to the
+# commands the session runs after this one.
+(
+  # The directory holding the .claude directory Flow reads: the repository top.
+  SETTINGS_FILE=$("$RESOLVER" --project-settings-path 2>/dev/null) || SETTINGS_FILE=""
+  case "$SETTINGS_FILE" in
+    /*) cd "${SETTINGS_FILE%/.claude/settings.flow.json}" || SETTINGS_FILE="" ;;
+  esac
+  JOURNAL_DIR=".decisions"
+  [ -x "$RESOLVER" ] && JOURNAL_DIR=$("${RESOLVER%/cascade-resolve.sh}/journal-dir.sh" 2>/dev/null)
+  [ -n "$JOURNAL_DIR" ] || JOURNAL_DIR=".decisions"
+  RUNTIME_DIR=".flow"
+  [ -x "$RESOLVER" ] && RUNTIME_DIR=$("${RESOLVER%/cascade-resolve.sh}/flow-runtime-dir.sh")
+  RUNTIME_DIR=${RUNTIME_DIR#./}
+  [ -n "$RUNTIME_DIR" ] || RUNTIME_DIR=".flow"
+  if [ -z "$SETTINGS_FILE" ]; then
+    printf '%s\n' "GITIGNORE=skipped (the repository top could not be found)"
+  else
+    for IGNORE in '.claude/settings.flow.local.json' '.claude/*.lock' "$RUNTIME_DIR/watch/" "$JOURNAL_DIR/auto-log/"; do
+      if [ -f .gitignore ]; then
+        grep -qxF "$IGNORE" .gitignore || printf '%s\n' "$IGNORE" >> .gitignore
+      else
+        printf '%s\n' "$IGNORE" > .gitignore
+      fi
+    done
+  fi
+)
 ```
 
 On `GITIGNORE=skipped`, list the four lines under **Manual Steps Required** in the Phase 7 summary, for the `.gitignore` at the repository top.
