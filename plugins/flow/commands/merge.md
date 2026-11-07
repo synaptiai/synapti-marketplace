@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, AskUserQuestion, Skill
 
 # Merge PR #$ARGUMENTS
 
-Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion before it runs the merge. The `tier-gate.sh` hook then asks again when the merge command runs (`tiers.merge` cannot be set below `confirm`), showing the exact command; it is a second check, and it also covers a merge typed outside flow. You may see two prompts for one merge.
+[ask: permission] Tier 3 operation — **always requires human confirmation**, even in autonomous mode. This command asks you with AskUserQuestion (with `metadata: {"source": "flow:permission"}`) before it runs the merge. The `tier-gate.sh` hook then asks again when the merge command runs (`tiers.merge` cannot be set below `confirm`), showing the exact command; it is a second check, and it also covers a merge typed outside flow. You may see two prompts for one merge.
 
 ## Required Skills
 
@@ -22,6 +22,21 @@ Tier 3 operation — **always requires human confirmation**, even in autonomous 
 # Skill(<name>). Output per `references/command-output-format.md`.
 "$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-load-skills.sh" llm-operator-principles merge-and-release run-state-management
 
+true
+```
+
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
 true
 ```
 
@@ -248,7 +263,8 @@ REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
 
 # MARKERTRUST_GATE_BEGIN
 # Resolve trust list from the standard Claude Code settings cascade.
-# Precedence (highest first — first valid value wins):
+# Precedence (highest first — first valid value wins; 1 and 2 are read at
+# the repository top, whatever directory this runs in):
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json — project-shared; committed (visible in PR review)
 #   3. the user settings file (cascade-resolve.sh --user-settings-path) — user-global default
@@ -276,6 +292,10 @@ PLUGIN_SETTINGS=""
 # the helper cannot answer there is none: HOME, which a repository can set,
 # does not choose it.
 [ -n "$FLOW_INSTALL" ] && __us=$("$FLOW_INSTALL/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
+# The two repository files are read at the repository top, where the
+# settings cascade reads them (cascade-resolve.sh --project-settings-path),
+# wherever in the repository this runs.
+[ -n "$FLOW_INSTALL" ] && __ps=$("$FLOW_INSTALL/bin/cascade-resolve.sh" --project-settings-path 2>/dev/null) && [ -n "$__ps" ] && { PROJECT_SETTINGS="$__ps"; LOCAL_SETTINGS="${__ps%settings.flow.json}settings.flow.local.json"; }
 for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue
   # Capture jq stderr/exit so a parse error in $HOME does not silently mask
@@ -427,7 +447,7 @@ true
 
 ### FlowGoal Gate
 
-Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**: when an active goal exists for this branch it must have reached `lifecycle.status == achieved` to merge; when **no** active goal exists the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
+Independent of the finding-ledger gate, the FlowGoal gate **gates on goal existence**. It judges the pull request being merged, whatever branch is checked out: the goal whose `scope.branch` is the pull request's head branch, read from the working tree when that branch is checked out at the pull request's head commit, and from that head commit otherwise (a local branch of the same name that is behind, ahead or diverged, or a fork's branch that shares its name, is not the pull request) (fetched from origin when it is not in the clone; when it cannot be read, the gate blocks). When that goal exists, in any status, it must have reached `lifecycle.status == achieved` to merge. A goal that is `active`, `draft`, `waiting_for_user`, `waiting_for_ci`, `blocked`, `failed` or `cancelled` blocks, and the reason names the goal, its status and what it waits for. A `failed` or `cancelled` goal decides over an `achieved` goal with another id on the same branch, so the merge stays blocked while its file is on the branch. If the pull request still ships the work, finish it under a new goal with the same id (`/flow:goal create` or `/flow:start` replaces a failed or cancelled goal), or under another id and remove the failed or cancelled goal's file from the branch. If it does not, remove the file. When the pull request's branch has **no** goal the gate is **not applicable** and merge proceeds (a PR without a FlowGoal is not blocked). The gate is disabled entirely when `flow.goals.enabled` is `false` or `flow.goals.goalCreation` is `off`; a legacy `requireGoalForStart: false` with no `goalCreation` is read as `off`.
 
 ```!
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -441,54 +461,132 @@ ENABLED=$("$HELPER" --default "true" '.flow.goals.enabled' 2>/dev/null)
 [ -z "$ENABLED" ] && ENABLED="true"
 
 printf '%s\n' "### FlowGoal Gate"
+# The pull request being merged, as the Finding-Ledger Gate reads it: the
+# first token, all digits, or nothing.
+_RAW="$ARGUMENTS"  # Claude Code substitutes the bare arg token, not bash parameter-expansion
+ARG1="${_RAW%% *}"
+case "$ARG1" in
+  ''|*[!0-9]*) PR_NUM="" ;;
+  *) PR_NUM="$ARG1" ;;
+esac
 if [ "$ENABLED" != "true" ] || [ "$GOAL_MODE" = "off" ]; then
   printf '%s\n' "FLOW_GOAL_GATE_STATE=disabled"
+elif [ -z "$PR_NUM" ]; then
+  printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
+  printf '%s\n' "FLOW_GOAL_BLOCK_REASON=PR number required (all-digit) to find the pull request's goal"
 else
   ACTIVE_GOAL_HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-active-goal.sh"
+  # The goal judged is the goal of the pull request, not of the checked-out
+  # branch: the goal whose scope.branch is the head branch of the pull request.
+  # When that branch is checked out here at the head commit of the pull
+  # request, its goals are read from the working tree (a goal just evaluated
+  # but not yet committed counts). Otherwise they are read from the head
+  # commit of the pull request, fetched from origin when it is not here yet,
+  # so the goal of another issue on the checked-out branch neither blocks this
+  # merge nor stands in for the goal of this one. A branch name alone is not
+  # enough: a local branch of that name that is behind or has diverged holds
+  # a goal the merge does not land, and a pull request from a fork can carry the
+  # name of a branch here.
+  REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  PR_HEAD=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefName,headRefOid --jq '"\(.headRefName) \(.headRefOid)"' 2>/dev/null) || PR_HEAD=""
+  PR_HEAD_BRANCH=${PR_HEAD%% *}
+  PR_HEAD_OID=${PR_HEAD##* }
+  case "$PR_HEAD_OID" in *[!0-9a-f]*|'') PR_HEAD_OID="" ;; esac
+  CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+  CURRENT_OID=$(git rev-parse --verify --quiet HEAD 2>/dev/null) || CURRENT_OID=""
+  GOAL_SOURCE=()
+  GOAL_SOURCE_ERR=""
   if [ ! -x "$ACTIVE_GOAL_HELPER" ]; then
-    printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
-    printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh missing or non-executable"
+    GOAL_SOURCE_ERR="flow-active-goal.sh missing or non-executable"
+  elif [ -z "$REPO" ] || [ -z "$PR_HEAD_BRANCH" ] || [ -z "$PR_HEAD_OID" ]; then
+    GOAL_SOURCE_ERR="could not read pull request #$PR_NUM's head branch and commit (gh pr view failed); its goal is unknown"
+  elif [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" = "$PR_HEAD_BRANCH" ] && [ "$CURRENT_OID" = "$PR_HEAD_OID" ]; then
+    printf '%s\n' "FLOW_GOAL_SOURCE=working tree of $PR_HEAD_BRANCH"
   else
-    # --allow-terminal: surface a goal that already reached `achieved` so the
-    # success branch below is reachable (without it the helper is active-only,
-    # exits 1, and an achieved goal is mislabeled "no active FlowGoal").
-    # --branch-strict: resolve ONLY a goal owning the current branch — never a
-    # stale active goal on another branch, which would falsely block this merge.
-    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict 2>/dev/null); GOAL_EXIT=$?
+    if ! git cat-file -e "$PR_HEAD_OID^{commit}" 2>/dev/null; then
+      GIT_TERMINAL_PROMPT=0 git fetch --quiet --no-tags origin "pull/$PR_NUM/head" >/dev/null 2>&1
+    fi
+    if git cat-file -e "$PR_HEAD_OID^{commit}" 2>/dev/null; then
+      printf '%s\n' "FLOW_GOAL_SOURCE=commit $PR_HEAD_OID of $PR_HEAD_BRANCH"
+      GOAL_SOURCE=(--commit "$PR_HEAD_OID")
+    else
+      GOAL_SOURCE_ERR="pull request #$PR_NUM's head $PR_HEAD_OID is not in this clone and could not be fetched from origin; its goal is unknown"
+    fi
+  fi
+  if [ -n "$GOAL_SOURCE_ERR" ]; then
+    printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
+    printf '%s\n' "FLOW_GOAL_BLOCK_REASON=$GOAL_SOURCE_ERR"
+  else
+    # --any-status: the goal that owns the branch of the pull request, whatever
+    # its status. A goal that failed, was cancelled, is blocked, a draft, or
+    # waits on a person or CI is still the goal of that branch: without the flag the
+    # helper sees only active and achieved goals, exits 1 for the rest, and the
+    # gate below read that as "no goal, not applicable" and let the merge
+    # through.
+    # --branch-strict with --branch: resolve ONLY a goal owning the head branch
+    # of the pull request — never a goal on another branch.
+    GOAL_ARGS=(--any-status --branch-strict --branch "$PR_HEAD_BRANCH" "${GOAL_SOURCE[@]}")
+    GOAL_STATUS=$("$ACTIVE_GOAL_HELPER" --status "${GOAL_ARGS[@]}" 2>/dev/null); GOAL_EXIT=$?
     case "$GOAL_EXIT" in
       0)
-        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id --allow-terminal --branch-strict 2>/dev/null)
+        GOAL_ID=$("$ACTIVE_GOAL_HELPER" --id "${GOAL_ARGS[@]}" 2>/dev/null)
         printf '%s\n' "FLOW_GOAL_ID=$GOAL_ID"
         printf '%s\n' "FLOW_GOAL_LIFECYCLE=$GOAL_STATUS"
         if [ "$GOAL_STATUS" = "achieved" ]; then
           printf '%s\n' "FLOW_GOAL_GATE_STATE=ok"
         else
-          # Active goal exists but is not achieved — fail closed.
-          # The "no incomplete shipments" hard boundary applies: merging a
-          # PR whose own contract reports incomplete is exactly what the
-          # "no incomplete shipments" boundary is designed to prevent.
+          # The branch has a goal and it is not achieved — fail closed. The
+          # "no incomplete shipments" hard boundary applies: merging a PR whose
+          # own contract reports incomplete is what it is designed to prevent.
+          # The reason names the goal, its status, and what it waits for.
+          GOAL_WHY=$("$ACTIVE_GOAL_HELPER" --reason "${GOAL_ARGS[@]}" 2>/dev/null | head -1)
+          case "$GOAL_STATUS" in
+            active)
+              GOAL_NEXT="run /flow:goal evaluate $GOAL_ID to advance" ;;
+            failed|cancelled)
+              # A failed or cancelled goal wins over an achieved goal with
+              # another id on the same branch. A new goal under the same id
+              # replaces the file (flow-goal-record.sh --create), and that
+              # alone unblocks the merge; under another id the old file has to
+              # leave the branch. Read from the head commit, the path is
+              # <commit>:<path>; the path is what to name.
+              GOAL_PATH=$("$ACTIVE_GOAL_HELPER" --path "${GOAL_ARGS[@]}" 2>/dev/null | head -1)
+              [ -z "$PR_HEAD_OID" ] || GOAL_PATH=${GOAL_PATH#"$PR_HEAD_OID":}
+              GOAL_PATH=${GOAL_PATH:-the goal file}
+              GOAL_NEXT="a $GOAL_STATUS goal does not merge, and the merge stays blocked while $GOAL_PATH is on the branch: if this PR still ships the work, finish it under a new goal with the same id (/flow:goal create replaces $GOAL_PATH), or under another id and remove $GOAL_PATH from the branch; if it does not, remove $GOAL_PATH from the branch" ;;
+            waiting_for_user)
+              GOAL_NEXT="it waits for a person's answer; answer it, then /flow:goal resume $GOAL_ID and /flow:goal evaluate $GOAL_ID" ;;
+            waiting_for_ci)
+              GOAL_NEXT="it waits for CI; when CI has finished, /flow:goal resume $GOAL_ID and /flow:goal evaluate $GOAL_ID" ;;
+            blocked)
+              GOAL_NEXT="it is blocked; clear what blocks it, then /flow:goal resume $GOAL_ID and /flow:goal evaluate $GOAL_ID" ;;
+            draft)
+              GOAL_NEXT="it is a draft that was never activated; activate and evaluate it before merging" ;;
+            *)
+              GOAL_NEXT="the status is not one flow knows; inspect it with /flow:goal inspect $GOAL_ID" ;;
+          esac
           printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
-          printf '%s\n' "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — run /flow:goal evaluate $GOAL_ID to advance"
+          printf '%s\n' "FLOW_GOAL_BLOCK_REASON=FlowGoal $GOAL_ID lifecycle is '$GOAL_STATUS' — $GOAL_NEXT${GOAL_WHY:+ (last evaluation: $GOAL_WHY)}"
         fi
         ;;
       1)
-        # No active goal on this branch — gate not applicable: the gate keys
-        # on goal existence. A PR without a FlowGoal is not blocked; the PR
-        # own review state remains the durable record, so default installs
+        # No goal on the branch of the pull request, in any status — gate not
+        # applicable: the gate keys on goal existence. A PR without a FlowGoal
+        # is not blocked; the review state of the PR remains the durable record, so default installs
         # (goalCreation:auto) do not block goal-less merges.
         printf '%s\n' "FLOW_GOAL_GATE_STATE=ok"
-        printf '%s\n' "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
+        printf '%s\n' "FLOW_GOAL_GATE_NOTE=no FlowGoal for $PR_HEAD_BRANCH — gate not applicable"
         ;;
       3)
         # >1 active goal on the current branch (after branch-scoping).
         printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
-        printf '%s\n' "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals on the current branch"
+        printf '%s\n' "FLOW_GOAL_BLOCK_REASON=degenerate state — multiple active FlowGoals on $PR_HEAD_BRANCH"
         ;;
       *)
         # The helper says why on stderr, which the call above discards. Its first
         # line is asked for again here, so the reason names what was refused (a
         # symlinked runtime directory, say) and not only the exit status.
-        GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status --allow-terminal --branch-strict >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
+        GOAL_ERR=$({ "$ACTIVE_GOAL_HELPER" --status "${GOAL_ARGS[@]}" >/dev/null; } 2>&1 | head -1 | LC_ALL=C tr -d '\n' | LC_ALL=C tr '\000-\037\177' ' ')
         GOAL_ERR=${GOAL_ERR#flow-active-goal.sh: }
         printf '%s\n' "FLOW_GOAL_GATE_STATE=blocked"
         printf '%s\n' "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited $GOAL_EXIT${GOAL_ERR:+: $GOAL_ERR}"
@@ -520,7 +618,7 @@ PR #$PR_NUM cannot be merged — one or more gates report unresolved items.
 1. Run `/flow:address $PR_NUM` to resolve remaining findings
 2. Ensure every finding in `FLOW_REVIEW_CYCLE:FINDINGS` has a matching `RESOLVED` entry in `FLOW_RESOLUTION_CYCLE`
 3. Ensure `ESCALATED:[]` is empty (all escalated items must be resolved or have explicit human override)
-4. If the FlowGoal gate blocks, run `/flow:goal evaluate $FLOW_GOAL_ID` and verify the verdict reaches `achieved`
+4. If the FlowGoal gate blocks, follow `FLOW_GOAL_BLOCK_REASON` for the goal's status: an `active` goal is advanced with `/flow:goal evaluate $FLOW_GOAL_ID` until the verdict reaches `achieved`; a `waiting_for_user`, `waiting_for_ci` or `blocked` goal is resumed (`/flow:goal resume $FLOW_GOAL_ID`) once what it waits for is done, then evaluated; a `failed` or `cancelled` goal cannot be evaluated, so finish the work under a new goal with the same id (`/flow:goal create` replaces it) or under another id and remove the old goal's file from the branch, or remove the file when the pull request no longer ships the work; a `draft` goal is activated and evaluated; when the gate could not read the pull request's head (no `FLOW_GOAL_ID`), the reason says why: fix that (`gh` access, or a head commit the clone can fetch) and re-run
 5. Re-run `/flow:merge $PR_NUM`
 
 This gate enforces the "no incomplete shipments" hard boundary.
@@ -716,7 +814,7 @@ If any check fails, explain what needs to be fixed and suggest actions.
 
 If the Mergeable check fails (has conflicts):
 
-Use the AskUserQuestion tool with a Proactive-Autonomy escalation:
+[ask: default] Use the AskUserQuestion tool with a Proactive-Autonomy escalation: Under `ASK_POLICY=autonomous`, do not ask: take Option 1, resolve the conflicts now, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 > **Situation** — PR #$PR_NUM has merge conflicts that prevent merging.
 >
@@ -777,7 +875,7 @@ fi
 # DESCRIPTION_CHECK_BLOCK_END
 ```
 
-Show the assessment as text. Then use the AskUserQuestion tool with contextual
+[ask: permission] Show the assessment as text. Then use the AskUserQuestion tool (with `metadata: {"source": "flow:permission"}`) with contextual
 options to confirm, naming what will actually run: "PR #{PR_NUMBER} in
 {OWNER/NAME} is ready to merge. Proceed with a {strategy} merge{, deleting the
 branch}?" The strategy and the branch clause come from `MERGE_STRATEGY` and
@@ -841,7 +939,7 @@ git pull origin $DEFAULT_BRANCH
 
 **FlowRun terminal transition** (when `FLOW_RUN_STATE=create`): after a successful merge, invoke `Skill(run-state-management)` to transition the `merge-pr` FlowRun to `state.status: completed` and update its `workflow-run` journal artifact to `status=completed`. Then transition the linked FlowGoal to a terminal status if it is not already — the merge itself is the achievement signal. If the merge was cancelled, transition the run to `cancelled` (with `blocked_reason`) so it is not treated as resumable.
 
-**Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each:
+[ask: none] **Manifest emit** — if this merge resolved any escalations (a Proactive-Autonomy escalation surfaced via `AskUserQuestion` during Phase 1's finding-ledger check, Phase 2's stale-approval warning, or the conflict-resolution path closed because the user provided one of the six canonical fields), record an `escalation-resolved` artifact for each that was not stored with `bin/flow-question.sh` (`answer <id> --journal` already recorded a stored one):
 
 ```bash
 # ESCALATION_RESOLVED_BLOCK_BEGIN

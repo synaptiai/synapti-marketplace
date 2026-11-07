@@ -24,6 +24,21 @@ When a session ends mid-workflow (interrupted, paused, blocked), `<runtime dir>/
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## Pre-flight
 
 ```bash
@@ -255,7 +270,50 @@ Extract from `run.yaml`:
 
 Read the last 5 lines of `events.jsonl` for additional context, unless `events.jsonl` is a symlink: then read none, and say that it is not read through the link.
 
-Read the linked goal (if any): `<runtime dir>/goals/<metadata.goal>.goal.yaml`. Show AC pass/fail state. Read none through a symlink: when `bin/flow-mkdir.sh --check <runtime dir>/goals` refuses, or the goal file is itself a symlink, say so and show no goal — a repository can commit `<runtime dir>` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
+Read the linked goal (if any): `<runtime dir>/goals/<metadata.goal>.goal.yaml`, at the repository top wherever below it the working directory is (`bin/flow-runtime-dir.sh --goals` prints that directory as a path from the working directory). Show AC pass/fail state. Read none through a symlink: when `bin/flow-mkdir.sh --check <runtime dir>/goals` refuses, or the goal file is itself a symlink, say so and show no goal — a repository can commit `<runtime dir>` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
+
+### Step 3.2: Open questions
+
+A question stored for this run, or for the issue of its goal, that nobody has answered is what the run waits on: show it before suggesting anything.
+
+```bash
+# RESUME_QUESTIONS_BLOCK_BEGIN
+# RUN_ID is the run from Step 1; GOAL_ID is metadata.goal from run.yaml, or
+# empty. A goal named issue-N gives the issue whose questions are listed too.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+printf '%s\n' "### Open Questions"
+Q_ISSUE=$(printf '%s' "${GOAL_ID:-}" | sed -n 's/^issue-\([0-9][0-9]*\)$/\1/p')
+Q_RC=0
+Q_LIST=$("$FLOW_ROOT/bin/flow-question.sh" list --status open --run "$RUN_ID" 2>/dev/null) || Q_RC=$?
+if [ -n "$Q_ISSUE" ] && [ "$Q_RC" -eq 0 ]; then
+  Q_MORE=$("$FLOW_ROOT/bin/flow-question.sh" list --status open --issue "$Q_ISSUE" 2>/dev/null) || Q_RC=$?
+  Q_LIST=$(printf '%s\n%s\n' "$Q_LIST" "$Q_MORE" | sed '/^$/d' | sort -u)
+fi
+if [ "$Q_RC" -ne 0 ]; then
+  printf '%s\n' "STATE=unavailable" "REASON=flow-question.sh exited $Q_RC"
+elif [ -z "$Q_LIST" ]; then
+  printf '%s\n' "STATE=none"
+else
+  printf '%s\n' "STATE=open"
+  printf '%s\n' "$Q_LIST" | sed 's/^/QUESTION=/'
+  # How each one is asked: with the class it was stored with, under the ask
+  # policy of this session (references/ask-policy.md). A default is not asked
+  # under the autonomous policy; a record with no class is never lifted past
+  # it, so it is shown and left open.
+  Q_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || Q_POLICY=attended
+  printf '%s\n' "$Q_LIST" | while IFS='|' read -r Q_ID Q_STATE Q_CLASS Q_REST; do
+    case "$Q_CLASS" in
+      decision|permission) Q_HOW="flow:$Q_CLASS" ;;
+      default) if [ "$Q_POLICY" = autonomous ]; then Q_HOW=take-recommendation; else Q_HOW=ask; fi ;;
+      *) if [ "$Q_POLICY" = autonomous ]; then Q_HOW=leave-open; else Q_HOW=ask; fi ;;
+    esac
+    printf '%s\n' "ASK=$Q_ID|$Q_HOW"
+  done
+fi
+# RESUME_QUESTIONS_BLOCK_END
+```
+
+[ask: decision] [ask: permission] [ask: default] With `STATE=open`, show each question in the report (Step 4) with `bin/flow-question.sh get <id> --prompt`, and make the next safe action answering the blocking one, the way its `ASK=<id>|<how>` line says, which is the class it was stored with: `flow:decision` or `flow:permission` — ask it with `AskUserQuestion` when the session can, passing that as `metadata.source`; `ask` (a default, or a record with no class, while attended) — ask it with no `metadata`; `take-recommendation` (a default under `ASK_POLICY=autonomous`) — do not ask: record option 1 with `bin/flow-question.sh answer <id> --choice 1 --by recommendation --journal` and list it in the summary; `leave-open` (a record with no class under `ASK_POLICY=autonomous`) — do not ask and do not answer it: show it as waiting for a person. Record an answer the person gave with `bin/flow-question.sh answer <id> --choice <n> --journal`.
 
 ### Step 3.5: Detect unlinked working-tree changes
 
@@ -306,7 +364,7 @@ fi
 true
 ```
 
-When `FLOW_RESUME_UNLINKED=unknown`, treat it like `1` for safety: surface that the working tree could not be assessed and ask before suggesting continuation. When `FLOW_RESUME_UNLINKED=1`, you MUST surface the listed paths and **ask before suggesting continuation** — do not jump to the Step 5 next-action suggestion. Use `AskUserQuestion`:
+[ask: decision] When `FLOW_RESUME_UNLINKED=unknown`, treat it like `1` for safety: surface that the working tree could not be assessed and ask before suggesting continuation. When `FLOW_RESUME_UNLINKED=1`, you MUST surface the listed paths and **ask before suggesting continuation** — do not jump to the Step 5 next-action suggestion. Use `AskUserQuestion` (with `metadata: {"source": "flow:decision"}`):
 
 > Uncommitted changes exist that aren't linked to FlowRun `<RUN_ID>` (they're outside `<runtime dir>/` and the journal directory):
 > `<the listed paths>`
@@ -344,6 +402,9 @@ Recent events:
 
 Blocked reason (when applicable): <state.blocked_reason>
 
+Open questions (when Step 3.2 printed STATE=open):
+  <id> (blocking: <yes|soft|no>) — <situation>
+
 Next safe action:
   <suggestion based on workflow + current_phase>
 ```
@@ -365,7 +426,7 @@ When the run is `blocked` with a `blocked_reason`, the suggestion includes resol
 
 ### Step 6: Optional AskUserQuestion
 
-If the user explicitly wants to act on the resume rather than just inspect, offer the suggested next command via AskUserQuestion. Otherwise just print the report and exit.
+[ask: default] If the user explicitly wants to act on the resume rather than just inspect, offer the suggested next command via AskUserQuestion. Otherwise just print the report and exit. Under `ASK_POLICY=autonomous`, do not ask: print the suggested next command and stop; `/flow:resume` never runs it, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 ## Anti-patterns
 

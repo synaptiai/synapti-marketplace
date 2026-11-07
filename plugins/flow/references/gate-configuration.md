@@ -11,6 +11,8 @@ Settings cascade — highest precedence first; first non-empty value wins:
 3. `~/.claude/settings.flow.json` — user-global; cross-project default
 4. `${CLAUDE_PLUGIN_ROOT}/settings.json` — plugin default; bundled with flow
 
+The two project files are read at the top of the repository (`git rev-parse --show-toplevel`), whatever directory a command, hook or the git and gh wrappers run in, by `bin/cascade-resolve.sh` and by the command blocks that read them directly (the marker trust list of `/flow:merge`, `/flow:status` and `/flow:address`, and the `agentTeams` gate of `/flow:review`, which take the path from `bin/cascade-resolve.sh --project-settings-path`), so a setting such as `tiers.push: confirm` holds for a push started in a subdirectory. Outside a git repository, or when git's top is your home directory (a home kept in git is yours, not a repository), they are read in the working directory. `/flow:setup` writes and upgrades the project file in the same place (`bin/cascade-resolve.sh --project-settings-path` names it), from whatever directory it runs in, and reports a `.claude/settings.flow*.json` in the working directory or in `CLAUDE_PROJECT_DIR` below the top, which is not read.
+
 See [Settings Cascade](#settings-cascade) below for the full precedence rules and worked examples.
 
 ## Tier Settings
@@ -165,7 +167,7 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `debugging.maxHypotheses` | `3` | `debugging-patterns` skill |
 | `reviewCycleLimit` | `10` | `/flow:address`, `llm-operator-principles` skill |
 | `fixForwardMaxIterations` | `10` | `/flow:start`, `/flow:pr`, `/flow:review`, `/flow:address` fix loops |
-| `autonomous` | `false` | `llm-operator-principles` skill, `/flow:setup`; merge and release still ask |
+| `autonomous` | `false` | `bin/flow-ask-policy.sh`, the `ask-policy.sh` hook on `AskUserQuestion`, `llm-operator-principles`: `true` sets the ask policy to autonomous, so a question that only asks for a default is not asked (the agent takes its recommendation and records it); decisions and permissions, merge and release among them, still ask ([`ask-policy.md`](ask-policy.md)) |
 | `minimalScope` | `false` | `hooks/scripts/ask-issue-create.sh`, `/flow:review`, `/flow:address` |
 | `closedLoop.enabled` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`CLOSED_LOOP=`): false runs each build-and-run and runtime check once and asks on a failure |
 | `closedLoop.requireRuntimeVerification` | `true` | `/flow:start` and `/flow:pr` verification settings blocks (`RUNTIME_VERIFICATION=`): false lets Phase 4 skip runtime verification without an escalation |

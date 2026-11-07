@@ -38,9 +38,117 @@
 #   DEP_BASELINE_TRUNCATED=<n> name(s) not printed
 #   DEP_INSTALL_HOOK=<name> manifest=<path>:<line>
 #   DEP_REPLACED=<module> -> <target>@<version> manifest=<path>:<line>
-#     a go.mod replace: the named module no longer comes from upstream
+#     the named package no longer comes from its registry. These forms are
+#     reported: a go.mod replace; a Cargo [patch] or [replace] table; a
+#     Python direct reference (`name @ <any scheme>://...`, cut at an
+#     environment marker's `;`), a tool.uv.sources or poetry git/url/path
+#     entry (names matched PEP 503 normalised); a requirements*.txt line
+#     that is a URL (`git+https://...#egg=x`, `https://.../x-1.0-py3-none-any.whl`),
+#     a local path (`../x#egg=x`, `./dist/x-1.0-py3-none-any.whl`) or an
+#     editable install (`-e ...`, `--editable ...`, `--edit ...`, also after
+#     another option on its line, its target read with shell quoting as pip
+#     reads it: `-e "../x#egg=x"`), named by its #egg= fragment or wheel
+#     file name, with the target as written, every line read once each
+#     trailing backslash has joined the next line to it, as pip joins them
+#     (`-\` then `e git+...` is an -e line); a
+#     package.json spec that is a URL, a hosted-git shorthand (github:,
+#     user/repo), an scp-style git spec (git@host:path), file:/link:, or a
+#     path without them (one starting with ., ~/, / or \, a drive letter,
+#     any other spec holding a slash, a .tgz/.tar.gz/.tar file name), each
+#     prefix and file name in any case and the file name's second dot any
+#     character, as npm-package-arg reads them (FILE:x, GITHUB:u, u.tar_gz;
+#     an NPM: alias in any case adds its target); a Gemfile git:, github:, gitlab:, bitbucket:, gist: or path:
+#     option, or an option a `git_source(:name)` line declared, keyed by a
+#     label, a symbol or a string (`git: url`, `:git => url`,
+#     `"git" => url`, also on the lines a gem call continues onto), or a gem
+#     inside a git/github/path block, written `do ... end` or `{ ... }`,
+#     also when its opening call runs over several lines or passes its
+#     options as a hash literal (`git "u", { branch: "x" } do`); a
+#     Gemfile.lock GIT section, at its revision;
+#     and a Gemfile.lock PATH section other than the project's own
+#     (remote: . or ./ is the gemspec gem, not a redirect). A Gemfile git
+#     redirect's version is its ref, tag or branch (the gem's own, or its
+#     block's), and a path redirect, in either file, has none, so a version
+#     bump of a path or git gem is a DEP_CHANGED, not a new redirect. The
+#     project itself in requirements*.txt (`.`, `-e .`, `-e ".[dev]"`) is
+#     not a redirect either. A Gemfile target is reported
+#     only as a literal: a double-quoted gem name, source option or block
+#     target that interpolates (#{...}, #@ivar, #@@cvar, #$gvar) makes the
+#     Gemfile MANIFEST_UNPARSED; a single-quoted one is as written.
+#     Not reported, because they change the registry rather than name a
+#     package's source: a requirements*.txt option line other than -e and
+#     --editable (`-r`, `-c`, `--index-url`, `--extra-index-url`,
+#     `--find-links`: nothing in a file -r names is read either), a
+#     Gemfile `source:` option or `source "url" do` block, and a
+#     Gemfile.lock GEM section's remote
 #   DEP_NEAR_NAME=<added> ~ <baseline> distance=<n>
+#     two Python names are compared PEP 503 normalised (my_pkg is my-pkg);
+#     names from other ecosystems as written
 #   MANIFEST_UNPARSED=<path> reason=<why>
+#     a requirements*.txt URL, path or editable line that names no package
+#     (no #egg= fragment and no wheel file name: `-e ../x`, an sdist URL)
+#     makes the file unreadable rather than guessed at. A Gemfile is Ruby,
+#     and is unreadable rather than guessed at when: a gem name, source
+#     option or git/path block target is not a string literal (a variable,
+#     a method call, a `%q()` string, or a double-quoted string that
+#     interpolates); a gem argument after the name is neither a string nor
+#     an option (a variable, a method call such as `ENV["V"]`, a hash
+#     literal, a `*args` or `**opts` splat: each can carry a source option);
+#     a gem call is not at the start of its statement
+#     (`%w(a b).each { |g| gem g }`, `group :test do gem "x" end`); a gem
+#     line holds a second statement after a `;`, or another gem call in its
+#     arguments; a `git_source` name is not a literal; a parenthesised gem
+#     call does not close on its line or carries a trailing modifier
+#     (`gem("x") if c`); a continued call, or a git/github/path block's
+#     continued opening call, runs past the end of the file or into another
+#     statement; a git/github/path or gem call does not start its statement
+#     (`x = 1; path("v") {`, `x = 1; git "u" do`, glued to its string as
+#     `x = 1; path"v" do`, `x = 1; git"u" do` or `x = 1; gem"x"`, or called
+#     on self as `self.path("v") do`), or starts its line but is not read as
+#     the block call it is (`path ::File.join("v") do`); a line anywhere in
+#     the file holds code whose quote, `#` or brace the parser's quote and
+#     brace pairing could misread, so a gem call, source option or block
+#     call after it could be lost. The parser does not lex Ruby, so it
+#     refuses each of these wherever it appears outside a string, in a
+#     line's code or in an interpolation's:
+#       - a character literal: a `?` followed by anything but a space or the
+#         line's end (`?"`, `?$`, `?#`, `?}`), other than the `?` ending a
+#         method name before `( ) [ ] { } , . ; & | = !` (`key?(x)`); a
+#         ternary written without its space is refused with it
+#       - a regex literal or a division: any `/`, but a regex of plain
+#         characters (letters, digits, `_`, spaces, `^ $ . * + ? | -`, a `\`
+#         before a letter or digit) right after `=~`, `!~`, `when`, `(` or
+#         `,` (`if RUBY_PLATFORM =~ /darwin/`, `when /^3/`)
+#       - a %-literal (`%w %q %Q %i %I %W %r %s %x %(...)`) or a modulo:
+#         any `%`, but a `%w` or `%i` array of plain words (letters, digits,
+#         `_ . -`, spaces) closed on its line (`platforms: %i[ windows jruby ]`)
+#       - a special global: `$` followed by anything but a letter or `_`
+#         (`$" $' $` $~ $! $; $, $/ $\ $. $< $> $0 $* $$ $? $: $@ $& $+ $1`,
+#         `$-w`), `$_` alone, and `#$` before one of those in a
+#         double-quoted string or backtick command (`"#$""`)
+#       - a heredoc: `<<` followed by `~`, `-`, a quote, a letter or `_`
+#       - a `#` inside an interpolation's code, which comments out its `}`
+#       - a string, backtick command or interpolation still open at the end
+#         of its line
+#       - a backtick outside a string: a command string, or a method or
+#         symbol named with one (`` :` ``)
+#     or a line calls a source method (gem, git, github, gitlab, bitbucket,
+#     gist, path, source, git_source) on a receiver other than `self`
+#     written directly before it (`itself.gem`, `(self).gem`, `self .gem`,
+#     `x.path`), or uses Ruby's metaprogramming (send, public_send,
+#     __send__, instance_eval, instance_exec, class_eval, module_eval,
+#     eval, define_method, alias_method, alias, method, itself). A Gemfile
+#     is Ruby: the parser reads the calls Gemfiles make and refuses what it
+#     cannot follow, but it runs nothing, so a source computed at run time
+#     is not seen;
+#     an `end` closes no block it has seen, or closes a `{`
+#     block; inside a `{` block, the only place a `}` is counted, a `}`
+#     closes no block it has seen or closes a `do` block, or a line holds a
+#     regex, a %-literal, a character literal, a heredoc, an interpolation
+#     or an unclosed string, any of which can hide a brace (`x = ?}`); a
+#     git/path `{` block's opening call holds one of those; or a `=begin`
+#     has no `=end`. A requirements*.txt -e line with an
+#     unclosed quote is unreadable too
 #
 # MANIFESTS_EXAMINED=0 with STATE=none means no manifest was in the diff.
 # MANIFESTS_EXAMINED=1 with no DEP_ lines means a manifest was read and nothing
@@ -60,6 +168,8 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
 # imports sitecustomize from each element at startup. An isolated python3 (-I:
 # it reads neither PYTHONPATH nor the working directory) keeps only elements
@@ -144,18 +254,7 @@ fi
 # import of the parser module beside this script fails before any work starts.
 # `cygpath -m` renders a path in the one form bash, git and a native Python all
 # resolve. On POSIX this is the identity and the conversion is unreachable.
-# Shape copied from bin/journal-append.sh; issue #246 consolidates the copies.
-py_path() {
-  case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*)
-      if command -v cygpath >/dev/null 2>&1; then
-        cygpath -m "$1" 2>/dev/null || printf '%s' "$1"
-      else
-        printf '%s' "$1"
-      fi ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
+# py_path comes from lib/py-path.sh, sourced above, the one copy (#246).
 
 PYTHONSAFEPATH=1 FLOW_DEP_BASE="$BASE" FLOW_DEP_HEAD="$HEAD_REF" FLOW_DEP_TREE="$DEP_TREE" \
   FLOW_DEP_BIN="$(py_path "$BIN_DIR")" python3 - <<'PYEOF'
@@ -177,6 +276,7 @@ try:
         ParseError,
         classify,
         edit_distance,
+        pep503,
         safe_name,
         safe_scalar,
     )
@@ -288,6 +388,12 @@ hooks = []
 unparsed = []
 replaced = []
 baseline_names = set()
+# Names that come from a Python manifest, at the base and in the change: two
+# of them are compared PEP 503 normalised (pep503), as pip and PyPI compare
+# them. Names from any other ecosystem are compared as written: npm's my_pkg
+# and my-pkg are two packages, and a near-name between them is the point.
+python_baseline = set()
+python_new = set()
 examined = 0
 
 for path, parser in manifests:
@@ -351,8 +457,15 @@ for path, parser in manifests:
     if bad:
         continue
 
+    is_python = (classify(path) or ("", None))[0] == "python"
     for name in base_deps:
         baseline_names.add(safe_name(name))
+        if is_python:
+            python_baseline.add(safe_name(name))
+    if is_python:
+        python_new.update(safe_name(n) for n in head_deps)
+        if head_res:
+            python_new.update(safe_name(m) for m, _t, _v, _l in head_res.replaces)
 
     if head_res:
         base_replaces = set(
@@ -485,7 +598,14 @@ for name in _near_candidates:
     for existing in baseline_names:
         if existing == name:
             continue
-        distance = edit_distance(name.lower(), existing.lower())
+        a, b = name.lower(), existing.lower()
+        if name in python_new and existing in python_baseline:
+            # The same project spelled another way (my_pkg, my-pkg) is not a
+            # near-name of itself; and the distance is the one PyPI sees.
+            a, b = pep503(name), pep503(existing)
+            if a == b:
+                continue
+        distance = edit_distance(a, b)
         if distance <= 2:
             near.add((name, existing, distance))
 for name, existing, distance in sorted(near):

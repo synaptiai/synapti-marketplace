@@ -10,6 +10,7 @@ The flow plugin's runtime layer stores project-local execution state in the runt
 ├── workflows/<id>.workflow.yaml       # FlowWorkflow definitions (tracked; rare overrides)
 ├── triggers/<id>.trigger.yaml         # FlowTrigger configs (tracked)
 ├── watch/                             # issue-watch snapshots (ignored by a `.gitignore` of `*` that flow writes inside it)
+├── questions/<id>.yaml                # stored escalations: bin/flow-question.sh (not committed: a `.gitignore` of `*` that flow writes inside it)
 └── runs/<ISO-timestamp-id>/           # FlowRun records (per-developer; see Gitignore policy)
     ├── run.yaml                       # the run document
     ├── activities/<NNN>-<name>.yaml   # sequence-numbered FlowActivity records
@@ -49,6 +50,7 @@ It does not ignore `.flow/runs/`. Add that line yourself to keep run records out
 Rationale:
 - **`runs/`** (activities, events and evidence sidecars) is session-bound, per-developer execution noise. Committing it would bloat history and surface non-reproducible artifacts.
 - **`goals/`** and **`workflows/`** are intentional team contracts — teams may want to share goal contracts across developers (e.g., a project-wide quality goal). The schemas keep these files diff-friendly.
+- **`questions/`** holds the escalations `bin/flow-question.sh` stores (`references/escalation-format.md`): one `<id>.yaml` per question, with the six fields, the options with the recommendation first, the blocking level, the `class` of the place that asked (`decision`, `permission` or `default`, `references/ask-policy.md`), `status` (`open`, `answered`, `withdrawn`), the issue, pull request and FlowRun, the command that asked, and when it was asked and answered or withdrawn. The helper reads and writes them at the repository top, from any directory below it (`from_repo_top()` in `bin/_repo_dir.py`, as for the goals), so a question added in `packages/app` is the one `/flow:status` and `/flow:resume` list at the top. They are per-developer state and are not committed: the directory ignores itself with a `.gitignore` of `*`, written the first time a question is stored, so a repository that never ran `/flow:setup` does not commit them either. Writes take `questions/.lock` (and `questions/.update.lock` around an answer or a withdrawal) and go through `bin/_journal_atomic.py`; a new record is created exclusively, so two concurrent `add` calls never share an id.
 - **`triggers/`** holds `<id>.trigger.yaml` files, the shared trigger configs. Flow reads only files with that suffix; it has no per-developer trigger file.
 
 Teams wanting fully-private goals add `.flow/goals/` to their personal `.gitignore`. The helper writes don't depend on git state.
@@ -59,7 +61,7 @@ All `.flow/` writes go through `bin/_journal_atomic.py` (or one of its wrappers)
 
 | Helper | Writes |
 |---|---|
-| `bin/flow-goal-record.sh` | `.flow/goals/<id>.goal.yaml` (create + update-lifecycle modes) |
+| `bin/flow-goal-record.sh` | `.flow/goals/<id>.goal.yaml` (create + update-lifecycle modes), at the repository top wherever below it the helper runs: the directory `bin/flow-active-goal.sh` (and so the Stop hook and the merge gate) reads, and `bin/flow-runtime-dir.sh --goals` names (`from_repo_top()` in `bin/_repo_dir.py`) |
 | `bin/flow-record-activity.sh` | `.flow/runs/<id>/activities/<NNN>-<name>.yaml` + appends `events.jsonl` |
 | `bin/flow-record-evidence.sh` | `.flow/runs/<id>/evidence/<id>.evidence.yaml` + optional `<id>.txt` |
 | `bin/journal-record.sh` | `.decisions/issue-N.md` (or `session-YYYY-MM-DD.md` with `--session`) manifest entries (not `.flow/`) |

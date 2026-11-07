@@ -122,6 +122,8 @@ set -uo pipefail
 # cd prints the directory it found through an exported CDPATH, which turns a
 # captured `cd X && pwd -P` into two lines and sends a relative path elsewhere.
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
 # imports sitecustomize from each element at startup. An isolated python3 (-I:
 # it reads neither PYTHONPATH nor the working directory) keeps only elements
@@ -513,7 +515,10 @@ if [ -n "$TRAP_NAME" ] && [ -z "$BUILD_REPO_DIR" ]; then
   if [ "$CASE_FILTER" = "all" ] || [ "${CASE_FILTER#*,}" != "$CASE_FILTER" ]; then
     echo "flow-eval-run: --trap needs exactly one --case, because trap names belong to a case" >&2; exit 1
   fi
-  python3 "$HELPER" list-traps "$EVALS_DIR/$CASE_FILTER" | grep -Fxq -- "$TRAP_NAME" || {
+  # grep reads the whole list: with -q it stops at the match, and a lister
+  # still writing is killed by the closed pipe, which pipefail reports as a
+  # trap the case does not have.
+  python3 "$HELPER" list-traps "$EVALS_DIR/$CASE_FILTER" | grep -Fx -- "$TRAP_NAME" >/dev/null || {
     echo "flow-eval-run: case '$CASE_FILTER' has no trap '$TRAP_NAME' (list them with: python3 $HELPER list-traps $EVALS_DIR/$CASE_FILTER)" >&2
     exit 1
   }

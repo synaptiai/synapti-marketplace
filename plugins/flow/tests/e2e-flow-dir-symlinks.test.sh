@@ -335,6 +335,13 @@
 #      text, or on a goal whose status is not text or whose turn count is
 #      not a whole number; or, when the trust ledger script cannot be
 #      started, writes the goal and then exits 1, so a retry is refused
+#   L74 run from a subdirectory, journal-dir.sh looks for the repository's
+#      settings files where the cascade does not read them (relative to the
+#      working directory, while the cascade reads them at the repository
+#      top): it finds no file, so a committed or local journal.dir outside
+#      the checkout goes unchecked, --user-owned calls it the user's own, and
+#      journal-append.sh writes outside the repository; or, the other way, a
+#      repository value inside the checkout is refused from a subdirectory
 
 # Only tests/run.sh runs this file: it sets REPO_ROOT and loads assert.sh. Run
 # any other way, the file stops here with a non-zero exit, because `return`
@@ -996,7 +1003,11 @@ if _want merge-gate-flow-link; then
   e2e_repo feature/issue-42-e2e
   e2e_goal g-link feature/issue-42-e2e achieved true
   _plant .flow
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/merge.md" "$MERGE_GOAL_FENCE"
+  # PR #7, whose head is the checked-out branch at the commit checked out:
+  # the gate reads its goals from the working tree.
+  e2e_gh_fixture repo '{"nameWithOwner":"o/r"}'
+  e2e_gh_fixture pr-head-7 "$(jq -nc --arg o "$(_e2e_git_env; cd "$E2E_REPO" && git rev-parse HEAD)" '{headRefName:"feature/issue-42-e2e",headRefOid:$o}')"
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/merge.md" "$MERGE_GOAL_FENCE" 7
   e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
   # The gate says which path was refused, not only the exit status (L37).
   e2e_expect_line "FLOW_GOAL_BLOCK_REASON=flow-active-goal.sh exited 2: refusing — .flow is a symlink; $READ_NOTE"
@@ -1077,7 +1088,7 @@ if _want start-goal-flow-link; then
   e2e_repo feature/issue-42-e2e
   e2e_goal issue-42 feature/issue-42-e2e active true
   _plant .flow
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_line "FLOW_GOAL_STATE=create"
   e2e_expect_no_line "FLOW_GOAL_STATE=exists"
   e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
@@ -1091,7 +1102,7 @@ if _want start-goal-real; then
   e2e_describe "an active goal issue-42, no symlink under the repository; /flow:start 42"
   e2e_repo feature/issue-42-e2e
   e2e_goal issue-42 feature/issue-42-e2e active true
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_line "FLOW_GOAL_STATE=exists"
   e2e_expect_line "GOAL_STATUS=active"
   e2e_expect_clean_edges
@@ -1152,6 +1163,58 @@ if _want journal-append-local-absolute; then
   e2e_expect_err "$REPO_REFUSED"
   e2e_expect_file_has ".decisions/issue-42.md" "$BRAINSTORM"
   _expect_untouched
+fi
+
+if _want journal-dir-subdir-project-absolute; then
+  _flow_test_begin "journal-dir.sh run from a subdirectory: an absolute journal.dir outside the repository in the committed settings is refused, is not the user's own, and journal-append.sh does not write there (L74)"
+  e2e_new journal-dir-subdir-project-absolute
+  e2e_describe "journal.dir in the committed .claude/settings.flow.json at the repository top is the physical path of an empty directory beside the repository; every step runs with the working directory in sub/"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/sub"
+  _outside_empty
+  _settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/outside")\"}}"
+  _run_in sub bin/journal-dir.sh
+  e2e_expect_equal 0 "$E2E_RC" "journal-dir.sh exit status"
+  e2e_expect_equal ".decisions" "$E2E_OUT" "what journal-dir.sh prints"
+  e2e_expect_err "$REPO_REFUSED"
+  e2e_expect_err "/.claude/settings.flow.json: "
+  _run_in sub bin/journal-dir.sh --user-owned
+  e2e_expect_equal 1 "$E2E_RC" "journal-dir.sh --user-owned exit status"
+  e2e_expect_equal "" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
+  _run_in sub bin/journal-append.sh --issue 42 --text entry
+  e2e_expect_equal 0 "$E2E_RC" "journal-append.sh exit status"
+  e2e_expect_err "$REPO_REFUSED"
+  _expect_untouched
+fi
+
+if _want journal-dir-subdir-local-absolute; then
+  _flow_test_begin "journal-dir.sh --user-owned run from a subdirectory: an absolute journal.dir outside the repository in the local settings file is not the user's own (L74)"
+  e2e_new journal-dir-subdir-local-absolute
+  e2e_describe "journal.dir in .claude/settings.flow.local.json at the repository top is the physical path of an empty directory beside the repository; the working directory is sub/deeper"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/sub/deeper"
+  _outside_empty
+  _local_settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_DIR/outside")\"}}"
+  _run_in sub/deeper bin/journal-dir.sh --user-owned
+  e2e_expect_equal 1 "$E2E_RC" "journal-dir.sh --user-owned exit status"
+  e2e_expect_equal "" "$E2E_OUT" "what journal-dir.sh --user-owned prints"
+  e2e_expect_err "/.claude/settings.flow.local.json: "
+  e2e_expect_err "$REPO_REFUSED"
+fi
+
+if _want journal-dir-subdir-inside; then
+  _flow_test_begin "journal-dir.sh run from a subdirectory: an absolute repository journal.dir inside the repository is used, and is not the user's own (L74)"
+  e2e_new journal-dir-subdir-inside
+  e2e_describe "journal.dir in the committed .claude/settings.flow.json is <physical repository path>/docs/j, a real directory; the working directory is sub/"
+  e2e_repo feature/issue-42-e2e
+  mkdir -p "$E2E_REPO/sub" "$E2E_REPO/docs/j"
+  _settings "{\"journal\":{\"dir\":\"$(_physical "$E2E_REPO")/docs/j\"}}"
+  _run_in sub bin/journal-dir.sh
+  e2e_expect_equal 0 "$E2E_RC" "journal-dir.sh exit status"
+  e2e_expect_equal "$(_physical "$E2E_REPO")/docs/j" "$E2E_OUT" "what journal-dir.sh prints"
+  _expect_err_lacks "refusing"
+  _run_in sub bin/journal-dir.sh --user-owned
+  e2e_expect_equal 1 "$E2E_RC" "journal-dir.sh --user-owned exit status"
 fi
 
 if _want journal-record-local-prefix; then
@@ -1748,7 +1811,7 @@ if _want start-goal-unchecked; then
   e2e_repo feature/issue-42-e2e
   e2e_goal issue-42 feature/issue-42-e2e active true
   _python_dead
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_line "FLOW_GOAL_STATE=blocked"
   e2e_expect_out "FLOW_GOAL_ERROR=$UNCHECKED"
   e2e_expect_no_line "FLOW_GOAL_STATE=create"
@@ -3726,7 +3789,7 @@ if _want start-goal-flow-link-crlf; then
   e2e_goal issue-42 feature/issue-42-e2e active true
   _plant .flow
   _python_crlf
-  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$RT/goals/${GOAL_ID}.goal.yaml"' 42
+  e2e_run_fence "$E2E_ACTIVE_PLUGIN/commands/start.md" 'GOAL_PATH="$GOALS_DIR/${GOAL_ID}.goal.yaml"' 42
   e2e_expect_err "refusing — .flow is a symlink; $READ_NOTE"
 fi
 
@@ -5504,10 +5567,11 @@ if python3 -c 'import jsonschema' 2>/dev/null && _want goal-writer-refusals; the
   e2e_expect_file_has .flow/goals/g-unread.goal.yaml "turns_evaluated: many"
 
   # A trust ledger script that cannot be started: the goal is created, and
-  # the ledger is a note, exit 0, as for a ledger that fails.
+  # the ledger is a note, exit 0, as for a ledger that fails. The script runs
+  # through bash, so a missing script is what cannot be started.
   e2e_plugin_copy bin/flow-goal-trust.sh "$(cat "$E2E_PLUGIN_DIR/bin/flow-goal-trust.sh")"
-  chmod -x "$E2E_ACTIVE_PLUGIN/bin/flow-goal-trust.sh"
-  printf 'plugin for this scenario: flow-goal-trust.sh is not executable\n' >> "$E2E_ARTIFACT"
+  rm -f "$E2E_ACTIVE_PLUGIN/bin/flow-goal-trust.sh"
+  printf 'plugin for this scenario: flow-goal-trust.sh is missing\n' >> "$E2E_ARTIFACT"
   sed 's/^  id: .*/  id: g-no-ledger/' "$FIXTURES/goal/valid.yaml" > "$E2E_REPO/goal-no-ledger.yaml"
   _run_bin bin/flow-goal-record.sh --create --goal-file goal-no-ledger.yaml
   e2e_expect_equal 0 "$E2E_RC" "no-ledger: the exit status"

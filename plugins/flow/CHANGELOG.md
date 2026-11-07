@@ -1,5 +1,391 @@
 # Changelog
 
+## Unreleased
+
+Each entry below describes the change against 3.14.0.
+
+### Added
+
+- `autonomous: true` is enforced by a hook, not left to the model's memory
+  of a setting (#339). No script read it in 3.14.0; whether a question was
+  asked depended on the model having read the settings file.
+  - `bin/flow-ask-policy.sh` prints the ask policy, `attended` or
+    `autonomous`, from the settings cascade (the highest-precedence file that
+    sets `autonomous` decides). The preflight of `/flow:start`, `/flow:pr`,
+    `/flow:address`, `/flow:review`, `/flow:commit`, `/flow:resolve`,
+    `/flow:merge`, `/flow:setup`, `/flow:goal` and `/flow:resume` prints it
+    (`ASK_POLICY=...`).
+  - Every place in `commands/` and `skills/` that asks, asks the user or
+    escalates, whether or not it names `AskUserQuestion`, carries a class:
+    `[ask: decision]` (a product or scope decision), `[ask: permission]` (a
+    Tier 3 action, or a skip outside the runtime-verification list) or
+    `[ask: default]`; `[ask: none]` marks a mention that is not a place to
+    ask. A decision or permission place names the `metadata.source` to pass
+    (`flow:decision` or `flow:permission`). A default place says what to take
+    under the autonomous policy, and the choice is recorded as a
+    `default-taken` journal artifact. `tests/e2e-ask-policy.test.sh` fails on
+    an untagged place, pseudocode fences included.
+  - `hooks/scripts/ask-policy.sh`, a `PreToolUse` hook on `AskUserQuestion`,
+    denies a question whose `metadata.source` is not `flow:decision` or
+    `flow:permission` while the policy is autonomous, with a reason telling
+    the agent to take its recommendation and record it. Attended, or with
+    settings it cannot read, it allows every question.
+  - Before it was built on, the mechanism was checked on Claude Code 2.1.319:
+    a deny-only hook on `AskUserQuestion` takes effect, no permission request
+    reaches the host, and the hook sees `metadata.source`
+    (`references/ask-policy.md` records how, and what was not checked).
+  - Saying "autonomous mode" in the conversation no longer turns it on; the
+    setting does.
+
+- Escalations are stored with their status, not kept only in the live
+  `AskUserQuestion` call (#340). A question was lost when the session ended,
+  was compacted, or ran where `AskUserQuestion` does not exist, and
+  `/flow:status` and `/flow:resume` could not show it.
+  - `bin/flow-question.sh` (`add`, `answer`, `withdraw`, `list`, `get`)
+    keeps each question as `<runtime dir>/questions/<id>.yaml` at the
+    repository top: the six fields, two or three options with the
+    recommendation first, the blocking level, `status` (`open`, `answered`,
+    `withdrawn`), the issue, pull request and FlowRun, the command that asked,
+    and the times. Writes take the directory's lock and go through
+    `bin/_journal_atomic.py`; a new record is created exclusively, so
+    concurrent adds never share an id. A missing field, one option or more
+    than three, or another blocking level is refused with the field named.
+    `add` takes the class of the place that asks (`--class decision|
+    permission|default`), which `list` shows and the `escalation-asked`
+    artifact records. `answer`, `withdraw` and `get` exit 3 for a question
+    that does not exist, also before any was stored.
+    The directory ignores itself, so the questions are not committed.
+    `get <id> --prompt` renders the six-field body.
+  - Store before asking, record the answer after: the
+    `llm-operator-principles` skill says so for the commands that inline it,
+    and `references/escalation-format.md` for the others (`escalation-asked` and `escalation-resolved` journal
+    artifacts with `--journal`); where `AskUserQuestion` is not available, a
+    `Blocking: yes` question stops the pipeline naming its id, and a `soft`
+    one goes on with the recommendation, recorded and listed in the pull
+    request body under `## Decisions taken on a recommendation`.
+  - `/flow:status` has an Open Questions section; `/flow:resume` shows the
+    open questions of the run it resumes and of its goal's issue, and asks
+    each with the class it was stored with, so under `autonomous: true` a
+    default question takes its recommendation.
+
+### Changed
+
+- The e2e test harness leaves far less on disk. A failing test file used to
+  keep its whole scratch root, every scenario's repository, home and plugin
+  copy included, and a scenario that copies the plugin copied all 38 MB of
+  it, most of that recorded eval runs: one failing file could leave 2.4 GB
+  behind on each run.
+  - `e2e_copy_plugin` (in `tests/lib/e2e.sh`) copies the plugin without
+    `tests/` and the recorded eval runs (`evals/results-*`), which no shipped
+    code reads at run time; the code, the manifest, the references and the
+    eval cases are all copied, and a scenario that runs a recorded eval run's
+    scripts from the copy names that run. `e2e_plugin_copy` and every test
+    that copied the plugin use it; called twice in one scenario,
+    `e2e_plugin_copy` replaces the second file in the same copy.
+  - After a failure only the artifacts are kept, and their path is printed;
+    the rest of the scratch root is removed, without following a symlink.
+    `FLOW_E2E_KEEP_SCRATCH=1` keeps the whole scratch root to look at a
+    scenario by hand.
+  - `tests/e2e-harness-scratch.test.sh` checks both, with the harness run on
+    a small test file of its own.
+
+### Fixed
+
+- `/flow:merge`'s FlowGoal gate no longer lets a pull request through when
+  its goal failed, was cancelled, is blocked, is a draft, or waits on a person
+  or CI (#335). The lookup saw only `active` and `achieved` goals, so every
+  other status read as "no goal, gate not applicable". The gate now asks
+  `bin/flow-active-goal.sh` for the branch's goal in any status (the new
+  `--any-status`; `--reason` prints the last evaluation's reason), passes
+  only an `achieved` goal or a branch with no goal, and blocks every other
+  status with a reason that names the goal, its status and what to do. A
+  failed or cancelled goal decides over an achieved goal with another id on
+  the same branch: finish the work under a new goal with the same id
+  (`/flow:goal create` and `/flow:start` replace a failed or cancelled goal),
+  or under another id and remove the old goal's file, or remove the file when
+  the branch no longer ships the work. `/flow:goal clear` and `/flow:goal
+  pause` say that a cancelled or paused goal keeps the merge blocked.
+- `/flow:merge`'s FlowGoal gate judges the goal of the pull request being
+  merged, not the goal of whatever branch is checked out (#309). On
+  2026-10-15 it blocked #306 on the unfinished goal of #304, whose branch
+  happened to be checked out; and with a goal-less branch checked out, a pull
+  request whose own goal was not achieved passed. The gate now takes the pull
+  request's `headRefName` and `headRefOid` from `gh pr view` and looks up the
+  goal owning that branch: in the working tree when the checked-out branch
+  is at the pull request's head commit, and in the head commit otherwise
+  (`bin/flow-active-goal.sh --commit <rev>`, which applies the same symlink
+  refusals), fetched from origin when the clone lacks it. A local branch
+  that has the head branch's name but is ahead of or has diverged from it,
+  and a fork's branch that shares the name, are not judged in its place. When the head cannot be read the gate blocks and says
+  why. The block now needs the pull request number, as the finding-ledger
+  gate does.
+- The goal Stop hook judges the goal that owns the current branch, not the
+  first active goal in sorted order (#336). Goal files are committed, so a
+  branch can carry other issues' active goals; on a branch for issue 7 the
+  hook reported, and in `block` mode enforced, issue 1's criteria. It now
+  selects with `bin/flow-active-goal.sh --branch-strict`, the lookup the
+  evaluator and the merge gate use, and with no goal for the branch it
+  approves with `no active flow goal`. Two active goals owning the branch are
+  reported (`FLOW_GOAL_UNCHECKED`), not one picked, and so is a goals
+  directory the lookup cannot inspect: `flow-active-goal.sh` exits 4 for it,
+  as for a goal file it cannot read, and keeps 2 for a refusal.
+- A repository's settings and goals are read at its top, whatever directory a
+  command or hook runs in (#337).
+  - `bin/cascade-resolve.sh` looked for `.claude/settings.flow.json` and
+    `.claude/settings.flow.local.json` relative to the working directory, so
+    from a subdirectory a repository's `tiers.push: confirm` read as the
+    default `journal`, and the git wrapper let a push started there, inside a
+    script the tier gate cannot read, run without asking. The same miss
+    reached the Stop hook's `stopHookEnforcement`, `ask-issue-create.sh`'s
+    `minimalScope` and `verify-task-completion.sh`'s `taskCompletionGate`.
+    Both files are now read at `git rev-parse --show-toplevel`; at the top the
+    paths, and the messages that name them, are unchanged. Outside a
+    repository, or under a home directory kept in git (which flow treats as
+    the user's, not a repository), the working directory's files are read as
+    before.
+  - Goals are written and read at the repository top through one rule
+    (`from_repo_top()` in `bin/_repo_dir.py`): `bin/flow-goal-record.sh`,
+    `bin/flow-active-goal.sh`, `bin/flow-goal-judge-run.sh`, and the goal
+    checks of `/flow:start`, `/flow:goal status` and `/flow:learn`.
+    `bin/flow-runtime-dir.sh --goals` names the directory for shell callers.
+    Paths printed at the top stay relative.
+  - `bin/flow-goal-record.sh --create` follows the pre-flight
+    `goal-contract-capture` documents: it replaces a `failed` or `cancelled`
+    goal, so `/flow:goal clear` and then `/flow:start` create the goal again
+    under the same id. It no longer replaces an `achieved` goal, which never
+    changes, and it refuses a goal still in progress, naming the file and its
+    status. An existing goal whose `lifecycle.status` is missing, not text or
+    not a status is refused with exit 2, saying its lifecycle cannot be read,
+    instead of being overwritten.
+  - Everything else that reads or writes the repository's settings files
+    uses the same top: `bin/cascade-resolve.sh --project-settings-path` and
+    `--repo-settings-paths` name the files the cascade reads.
+    `bin/journal-dir.sh` judges where a `journal.dir` came from by those
+    files, so from a subdirectory a committed `journal.dir` outside the
+    checkout is refused and never counts as the user's own (`--user-owned`).
+    `/flow:setup` and `bin/flow-migrate-settings.sh` detect, write and
+    upgrade the file at the top, and setup names a Flow settings file left in
+    a subdirectory as not read (`UNREAD_SETTINGS`). The marker trust list of
+    `/flow:merge`, `/flow:status` and `/flow:address`, and `/flow:review`'s
+    `agentTeams` gate, read the top's files.
+  - Upgrading from 3.14.0 or earlier: those versions put a goal created from
+    a subdirectory (say `packages/app`) in `packages/app/.flow/goals/`, which
+    no reader looks at now, so such a goal no longer gates the merge.
+    `/flow:status` lists each one as a `STRAY_GOAL` line; move it to the top
+    with `git mv` (`references/flow-goals.md`, Where goals are kept).
+- `/flow:pr` no longer asks on most runs (#338). `/flow:start` created a goal
+  but never evaluated it, so the goal was still `active` when `/flow:pr`'s
+  gate looked, and the gate asked even when VERIFY had passed every
+  criterion. `/flow:start` Phase 4 now ends with a goal evaluation
+  (`GOAL_EVALUATE_BLOCK`): it runs the goal's verification commands, combines
+  them with the verdict judge's result, records the result and the criteria
+  not met in `lifecycle.last_evaluation` (keeping `turns_evaluated`,
+  `current_phase` and `current_activity`) and a `goal-evaluation` journal
+  artifact, and moves the goal to `achieved` when everything passed. A goal
+  outside the trust ledger is never moved to `achieved` there, even when
+  `flow.goals.executeVerificationCommands: true` ran its commands. A goal that
+  is not active (paused, blocked, failed) is reported and not evaluated. The
+  move to `achieved` asks no question; `references/goal-lifecycle-transitions.md`
+  says why. A criterion whose verification command could not be started (a
+  NUL byte in it, no bash) makes the result `incomplete`, never a pass. When
+  the evaluation is not a pass the goal stays `active` and `/flow:pr` asks as
+  before. `bin/flow-goal-record.sh` takes `--patch` as
+  another name for `--merge`.
+- The pattern checks no longer miss a command hidden after an escaped
+  separator and a `#` (#304). `ls x\ #y ; rm -rf ~` and `ls x\;#y ; git push
+  --force origin main` ran their second command in bash and zsh, but the
+  destructive-command and force-push checks read the rest of the line as a
+  comment: the space or `;` before the `#` is escaped, so it is part of the
+  word and the `#` opens no comment. The same held for `ls /(#|tmp) ; …`,
+  where zsh reads `(#` as part of a glob, for `echo $(true)#x ; rm -rf ~` and
+  `echo $((1))#x ; …`, where the `)` closing a substitution leaves the word
+  going on, and for `(( x = (1)#2 )) ; …` and `[[ a =~ (a)#x ]] ; …`, where
+  the `#` belongs to the arithmetic or the regex. In `lib/command-parse.sh`
+  (the destructive-command check, the merge check and the tier gate) and
+  `block-force-push.sh`, a `#` now opens a comment only after an unescaped
+  space, tab or separator, and never inside `(( ))` or `[[ ]]`; after a `(`
+  only when that `(` opens a word itself; and after a `)` only when that `)`
+  closes a subshell and no `$`, backquote, `((`, `[[` or in-word `(` came
+  before it on that line or on an earlier line still open, since the scan
+  cannot always tell which `(` such a `)` closes.
+  `ask-issue-create.sh` removes a comment only at the start of a line or after
+  an unescaped space or tab, a narrower rule that keeps more text as code, so
+  it errs toward asking. A real comment, `ls # rm -rf ~`, `ls x\\;#y` or
+  `(ls)#x`, is still one.
+- The secrets guard judges how secret-shaped text is used, not that it
+  appears (#241). In 3.14.0 it matched its pattern against the whole line, so
+  filing an issue about a leaked token, writing the pattern into a README,
+  grepping for it, or committing a message about a rotation was refused. It
+  now reads the command with `lib/command-parse.sh` and judges each simple
+  command, finding the program past shell keywords (`{ }`, `if … then`, loops,
+  `!`) and wrappers (`sudo`, `time`, `timeout N`, `nohup`, `exec`, `xargs`).
+  The payload is read with `printf`, not `echo`, so a backslash escape
+  reaches `jq` as written. When the parser cannot be loaded or cannot split
+  the command, the hook falls back to the whole-line check.
+  - Refused: a secret-shaped assignment set in the shell (in command
+    position, or given to `export`, `declare`, `readonly`, `local`, `env`); a
+    secret-shaped option (`--password=…`) to any command; any secret-shaped
+    argument or literal `Authorization`/`X-API-Key` header given to a command
+    that sends data or sets another process's environment (curl, wget,
+    httpie, ssh, mysql, psql, docker, kubectl and others; gh secret, gh
+    variable, vault, heroku, fly, `npm`/`yarn`/`pnpm config set`, `npm set`;
+    aws, gcloud and az for every subcommand but their log and monitoring
+    searches), including what reaches it in a here-string or through a pipe;
+    a `gh api` field whose name is secret-shaped (`-f token=…`, `-f
+    encrypted_value=…`); and the same inside a script run with `bash -c`.
+  - Refused as well, because the program runs what it is given: a secret
+    given to `eval`, `source`, a shell, `find`/`fd` with `-exec`/`-execdir`/
+    `-ok`, `awk` whose program can run one (`system()`, a pipe, `getline`),
+    `sed` whose script can (the `e` command or flag), or a command whose words
+    name a sender, a shell or an interpreter (`watch "curl …"`, `"!curl …"`);
+    a secret in any git option before the subcommand (`git -c …`,
+    `--config-env`), in `git grep -O<pager>` or `--open-files-in-pager`, and
+    in any value `git config` sets (an alias, `credential.helper`,
+    `core.pager`, `core.sshCommand` and every other key: several run their
+    value, and the guard does not list them).
+  - Refused when the secret can reach another program: when the command has
+    a pipe, a command or process substitution, a heredoc body a command reads,
+    or a command holding a secret that writes a file, a secret held by one
+    simple command refuses the whole command unless every other simple
+    command is a text command or shell syntax that runs nothing. So
+    `{ echo token=…; } | curl -d @-`, `curl -d "$(echo token=…)" …`, `curl -d
+    @- … <<EOF` with the secret in the body, and `echo token=… > f; curl -d @f
+    …` are refused, while `echo … | grep` and `git commit -m "$(printf …)"`
+    are not. A command that writes to or reads from a device (`/dev/tcp`,
+    `/dev/udp`, `/dev/fd/N`, any `/dev/` path but `/dev/null`, `/dev/stdout`
+    and `/dev/stderr`, or a target held in a variable), also after a
+    subshell's `)`, is refused when any part of it holds a secret.
+  - A URL with a secret-shaped query parameter (`?token=…`) or a literal
+    password in its userinfo is refused in every command but a text command
+    (`echo`, `printf`, `cat`, `tee`, `grep`, `sed`, `jq` and the like, `git
+    commit`/`log`/`show`/`diff`/`tag`/`notes`/`grep`, and the text
+    subcommands of `gh issue`, `gh pr` and `gh release`); a `gh api` field
+    value gets the URL rule too. After a wrapper, a word naming a text command
+    is the program only when nothing but options or a duration stands before
+    it, so `sudo pip install --index-url <URL with a password> jq` is refused.
+  - An inline `python -c`, `node -e`, `ruby -e` or `perl -e` script, which is
+    not shell, is checked as a whole (also after perl's or ruby's `-i` and its
+    backup extension); options before the script file that are not inline
+    scripts, and words after it, belong to the script.
+  - Allowed: the same text given to a text command (`gh issue create --body`,
+    a `gh api` field such as `body`, `echo`, `printf >> README`, `grep`, `git
+    commit -m`), also glued to its option (`git commit --message="…"`,
+    `gh issue create --body="…"`), including a secret written to a file by
+    `echo`, `printf` or `tee` when nothing else in the command is more than
+    text; `gcloud --set-secrets`/`--update-secrets`, which name stored
+    secrets. It does not catch a secret passed as two separate words (`aws
+    configure set aws_secret_access_key <value>`) or one that appears only
+    when a variable or `$(...)` is expanded; the README lists what the guard
+    does and does not cover.
+- A dependency redirected away from its registry is reported the same way in
+  every ecosystem `bin/flow-dep-diff.sh` reads, and a manifest it cannot read
+  says so (#248). The header of `bin/flow-dep-diff.sh` lists every form.
+  - Ruby: a Gemfile gem with a `git:`, `github:`, `gitlab:`, `bitbucket:`,
+    `gist:` or `path:` source (either hash syntax, also on continued lines),
+    or inside a `git`/`github`/`gitlab`/`bitbucket`/`gist`/`path` block
+    (`do … end` or `{ … }`, also when the opening call runs over several
+    lines), and a gem resolved in a `Gemfile.lock` GIT or PATH section, print
+    `DEP_REPLACED`; in 3.14.0 each read as an unpinned gem from rubygems.org.
+    The project's own gem (`PATH` with `remote: .`) is not a redirect. A
+    redirect's version is its ref, tag or branch (none for a path), so a
+    change to the gem's version constraint is a `DEP_CHANGED`, not a new
+    redirect.
+  - The Gemfile is read as Ruby statements rather than one line at a time:
+    `gem("x")` and calls continued over several lines are read, the `end` of
+    an `if`/`def`/`class`/… block inside a `git` block closes that block and
+    not the git block, `=begin`/`=end` comments are skipped, and a `#` inside
+    a string is not a comment. What it cannot read makes the Gemfile
+    `MANIFEST_UNPARSED` instead of being skipped with `STATE=ok` (3.14.0
+    skipped `gem("x")` silently): a name, source or block target that is not
+    a string literal or that interpolates (`#{…}`, `#@x`, `#$x`), a `gem`,
+    `git` or `path` call that does not start its statement or is followed by
+    another statement after a `;`, an argument that is neither a string
+    literal nor an option (a variable, `ENV["V"]`, a splat), a call that
+    does not close, an `end` or `}` that closes nothing or the wrong kind of
+    block, a `=begin` without `=end`. The parser pairs quotes and counts
+    braces without lexing Ruby, so it also refuses, wherever they appear
+    outside a string, the tokens that pairing could misread and that could
+    hide a gem call after them: a character literal (`?"`, `?#`), a regex or
+    a division (a plain regex after `=~`, `!~`, `when`, `(` or `,` is read),
+    a %-literal or a modulo (a `%w`/`%i` array of plain words is read), a
+    special global (`$"`, `$~`, `$_`), a heredoc, a `#` inside an
+    interpolation, a string open at the end of its line, and a backtick. A
+    source method called through another receiver (`itself.gem`,
+    `(self).gem`) or Ruby's metaprogramming (`send`, `instance_eval`,
+    `alias`) is refused too. A Gemfile is Ruby and this runs nothing, so a
+    source computed at run time is not seen; the README says so. Every
+    `rails new`, GitLab-style and Discourse-style Gemfile tried reads as
+    before.
+    An option keyed by a string (`"git" => url`) is read as an option, and a
+    `git_source(:name)` makes `name:` a source.
+  - npm: a `package.json` spec npm installs from outside the registry prints
+    `DEP_REPLACED`, read as npm-package-arg reads it: a URL, a hosted-git
+    shorthand (`github:user/repo`, `user/repo`), an scp-style git spec
+    (`git@host:path`), a `file:`/`link:` spec, a path (`../a`, `~/x`, `/abs`,
+    `C:/x`), a tarball file name, and an `npm:` alias, with prefixes and
+    tarball extensions matched in any case.
+  - Python: a direct reference is recognised by any URL scheme, not a fixed
+    list, so `pkg @ sftp://…` is a redirect rather than a version string, and
+    an environment marker after `;` is no longer part of the target. A
+    `requirements*.txt` VCS or URL requirement and an editable or local path
+    (`-e …`) are a redirect when a name can be read (`#egg=name`, a wheel file
+    name), and make the file `MANIFEST_UNPARSED` when none can; 3.14.0
+    reported nothing for them. Lines ending in a backslash are joined first,
+    as pip joins them, and an option line is split as pip splits it, so a
+    quoted `-e ".[dev]"` or `-e "git+…"` is read. Comments are cut by pip's
+    rule (a `#` at the start of a line or after whitespace), so a URL fragment
+    is kept; the project itself (`.`, `-e .`, `-e ".[dev]"`) is not a
+    dependency. Other option lines
+    (`-r`, `-c`, `--index-url`, `--find-links`) are still not read.
+  - Python names are compared PEP 503 normalised where one is matched against
+    another: `[tool.uv.sources] my_pkg` redirects the dependency `my-pkg`,
+    and the near-name check measures two Python names as PyPI does
+    (`django_rest_framewrk` is now reported against `django-rest-framework`,
+    and `my_pkg` is not a near-name of the project `my-pkg`). npm names are
+    still compared as written, since npm's `my_pkg` and `my-pkg` are two
+    packages.
+- The `bin/` helpers that run `python3` with a path do their work on Windows
+  (#246). Git Bash hands a script POSIX paths (`/d/a/proj/...`), and a native
+  Windows `python3` reads them as another place, so a helper importing the
+  module beside it failed before doing anything, and a hook swallowed the
+  failure. `bin/lib/py-path.sh` is now the one conversion: `py_path` (which
+  replaces the three copies in `journal-append.sh`, `flow-mkdir.sh` and
+  `flow-dep-diff.sh`), and, under Git Bash, MSYS2 or Cygwin only, a `python3`
+  function that runs `cygpath -m` on each argument naming an existing path
+  (or a file about to be written in an existing directory) and on
+  `FLOW_PY_BIN`, `FLOW_DEP_BIN` and `FLOW_BIN_LIB`, then runs the real
+  interpreter. Text that only starts with a slash is left alone. Every
+  helper and hook that puts a directory on `sys.path`, and
+  `flow-eval-run.sh`, `flow-mine-corrections.sh` and `flow-quality-ledger.sh`,
+  source it; on Linux and macOS nothing changes. Other helpers that hand
+  `python3` a path but put nothing on `sys.path` do not source it yet;
+  `bin/lib/py-path.sh`'s header names them. `docs/windows-support.md` names
+  the helpers `tests/windows-hooks-smoke.sh` calls on the Windows runner
+  (`flow-dep-diff.sh` among them) and what it checks for each.
+- Four Windows faults the new helper checks in `tests/windows-hooks-smoke.sh`
+  found (#246). `flow-goal-record.sh --create` never recorded the goal in the
+  trust ledger, because a native Windows `python3` cannot start
+  `flow-goal-trust.sh` by its name; it runs it through the bash it runs
+  under, so the Stop hook can run that goal's verification commands. Under
+  Git Bash, `bin/cascade-resolve.sh` reads a `FLOW_STATE_DIR` or
+  `FLOW_USER_SETTINGS` in Windows form (`D:\a\state`, which MSYS2 hands to
+  a script a native `python3` starts) as the shell reaches it; it ignored it
+  before, so the ledger was written to one place and read from another. A journal could not be
+  rewritten: `bin/_journal_atomic.py`
+  published with `os.rename`, which on Windows refuses a target that exists,
+  so `journal-record.sh` failed on every journal that already had an entry;
+  it uses `os.replace`, the same atomic rename on Linux and macOS. And under
+  Git Bash `bin/cascade-resolve.sh` found no repository top, because Git for
+  Windows prints it as `D:/a/repo`, so every `FLOW_STATE_DIR` and
+  `FLOW_USER_SETTINGS` was ignored; it now takes the top as the shell
+  reaches it (`/d/a/repo`).
+- `flow-eval-run.sh --trap` no longer refuses, now and then, a trap the case
+  has. It checked the name by piping the case's trap list into `grep -q`,
+  which stops reading at the match; a list still being written was cut off,
+  and the closed pipe read as "case has no trap". It showed under load (5 of
+  40 runs of one command while other tests ran). `grep` now reads the whole
+  list; `tests/e2e-eval-run-trap.test.sh` forces the slow writer.
+
 ## 3.14.0 (2026-11-05)
 
 Review rounds end when no P1 or P2 with a realistic trigger is left (#326).

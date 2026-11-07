@@ -32,7 +32,7 @@
 #   commands/merge.md#1       gh pr merge
 #   commands/release.md#4     pushes the release tag (git push origin "$TAG")
 #   commands/release.md#5     gh release create, for a tag already on origin
-#   commands/merge.md!2       a GraphQL query of review threads written in
+#   commands/merge.md!3       a GraphQL query of review threads written in
 #                             double quotes with $OWNER, $NAME and $PR_NUM in
 #                             it: what bash expands there could make it a
 #                             mutation, so the hook cannot read it and asks
@@ -58,7 +58,7 @@ TGF_EXPECT_ASK="
 commands/merge.md#2|gh pr merge
 commands/release.md#4|git push origin \"\$TAG\"
 commands/release.md#5|gh release create
-commands/merge.md!2|gh api graphql -f query=\"query {
+commands/merge.md!3|gh api graphql -f query=\"query {
 "
 
 _flow_test_begin "tier-gate-fences"

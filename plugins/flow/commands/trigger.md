@@ -85,7 +85,7 @@ case "$RUN_ARGS" in *" "*) TRIGGER_ID=${RUN_ARGS#* } ;; esac
 
 ### `/flow:trigger delete <id>`
 
-Remove the trigger YAML. Confirmation via AskUserQuestion (Tier 3 — irreversible removal of a possibly-enabled trigger).
+[ask: permission] Remove the trigger YAML. Confirmation via AskUserQuestion, with `metadata: {"source": "flow:permission"}` (Tier 3 — irreversible removal of a possibly-enabled trigger).
 
 ## Architectural notes
 

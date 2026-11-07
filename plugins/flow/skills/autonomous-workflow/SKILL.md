@@ -40,11 +40,11 @@ TaskCreate in PLAN (one per deliverable, imperative subject, acceptance criteria
 - **2** Push, PR creation, issue creation and assignment follow `tiers.*` (default journal: run, one breadcrumb to the git-ignored auto-log trail; confirm asks).
 - **3** Always confirm: merge, release, tag push or delete, force operations.
 
-`tier-gate.sh` applies them to every Bash command. Tables: `references/three-tier-safety.md`.
+`tier-gate.sh` applies them to every Bash command (`references/three-tier-safety.md`).
 
 ## AskUserQuestion Enforcement
 
-"Use the AskUserQuestion tool" means invoke the tool with contextual options, never plain text.
+[ask: none] "Use the AskUserQuestion tool" means calling it with options, never plain text.
 
 ## Decision Journal
 
@@ -55,15 +55,15 @@ TaskCreate in PLAN (one per deliverable, imperative subject, acceptance criteria
 
 ## Bounded Verification
 
-Ceilings (`timeouts.qualityCheckMaxIterations`, `closedLoop.maxDebugIterations`, `fixForwardMaxIterations`) are safety nets, not budgets. Run, fix, re-run until convergence. Halt only for **genuine non-convergence**, then file a six-field escalation per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence. Never silently loop past the ceiling.
+[ask: decision] Ceilings (`timeouts.qualityCheckMaxIterations`, `closedLoop.maxDebugIterations`, `fixForwardMaxIterations`) are safety nets, not budgets: run, fix, re-run until convergence, never past a ceiling. Halt only for **genuine non-convergence**, then escalate (`metadata.source` `flow:decision`) per `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence.
 
 ## Stop Conditions
 
-Plan >10 tasks for one issue: decompose first. Contradictory EXPLORE signals: ask before planning. >5 files modified without a commit: stop; tasks too large.
+[ask: decision] Plan >10 tasks for one issue: decompose first. Contradictory EXPLORE signals: ask (`flow:decision`) before planning. >5 files modified without a commit: stop; tasks too large.
 
 ## Closed-Loop Mandate
 
-Fix failures yourself; never report and move on. Minimum runtime verification per project type: `runtime-verification`. Only `markdown-only`, `config-only`, `dependency-bump-only` may skip runtime checks (with the evidence that skill requires); any other skip requires a six-field escalation.
+[ask: permission] Fix failures yourself; never report and move on. Runtime verification: `runtime-verification`. Only `markdown-only`, `config-only`, `dependency-bump-only` may skip runtime checks (with the evidence that skill requires); any other skip requires a six-field escalation (`metadata.source` `flow:permission`).
 
 ## Graceful Degradation
 
@@ -71,4 +71,4 @@ No agent teams: sequential. No quality commands: `Skill(capability-discovery)`, 
 
 ## Proactive Autonomy
 
-Try first; present 2-3 options with a recommendation, never open questions; use the six fields in `references/escalation-format.md`. Escalate only for: irreversible actions (Tier 3); genuinely ambiguous product/architecture decisions; out-of-whitelist runtime skips; genuine non-convergence. Never for: Tier 1/2 actions; decisions with clear policy; any P1/P2/P3 disposition (fix it — no follow-up issues in default mode); approaching a ceiling.
+[ask: none] Try first; present 2-3 options with a recommendation, never open questions; six fields per `references/escalation-format.md`. Escalate only for: irreversible actions (Tier 3); genuinely ambiguous product/architecture decisions; out-of-whitelist runtime skips; genuine non-convergence. Never for: Tier 1/2 actions; decisions with clear policy; any P1/P2/P3 disposition (fix it; no follow-up issues by default); approaching a ceiling.

@@ -72,6 +72,8 @@ What breaks if the user defers, and who bears the cost. This is the "wake me at 
 
 Every escalation MUST be delivered via the `AskUserQuestion` tool, NEVER as inline text in a markdown response. Inline text is bypassable; the tool surfaces a structured prompt the user definitively sees and answers.
 
+The call carries the class of its place ([`ask-policy.md`](ask-policy.md)): `metadata: {"source": "flow:decision"}` for a product or scope decision, `{"source": "flow:permission"}` for a Tier 3 action or an out-of-whitelist skip. Under `autonomous: true` a question without one of those is denied by the `ask-policy.sh` hook, and a place tagged `[ask: default]` takes its recommendation instead of escalating.
+
 The `AskUserQuestion` invocation should structure the six fields as the question prefix and use the **Options** as the actual options the user selects from:
 
 ```
@@ -92,6 +94,28 @@ AskUserQuestion(
 ```
 
 This shape gives the user the full context (in the question body) AND a structured choice (in the options array). When the user picks an option, the agent has unambiguous direction.
+
+### Every escalation is stored
+
+An escalation is a record with an id and a status, not only a live tool call, so it survives the session ending, a compaction, or a session where nobody can answer it. `bin/flow-question.sh` keeps it under `<runtime dir>/questions/` ([`flow-runtime-state.md`](flow-runtime-state.md)):
+
+1. **Before asking**, store it, the recommended option first:
+
+   ```bash
+   "$FLOW_ROOT/bin/flow-question.sh" add --journal \
+     --situation "..." --tried "..." \
+     --option "<recommended option>" --option "<another>" [--option "<a third>"] \
+     --recommendation "..." --blocking yes|soft|no --risk "..." \
+     --command "<command and step>" --class decision|permission|default \
+     [--issue N] [--pr N] [--run <FlowRun id>]
+   ```
+
+   `--class` is the `[ask: ...]` tag of the place that asks ([`ask-policy.md`](ask-policy.md)), so the question is asked the same way when it is asked again later: `/flow:resume` asks a `decision` or `permission` record with that `metadata.source`, and under `autonomous` takes the recommendation of a `default` one. It prints `QUESTION_ID=<id>` and, with `--journal`, writes an `escalation-asked` artifact. A missing field, fewer than two options or more than three, another blocking level or another class is refused with the field named. `bin/flow-question.sh get <id> --prompt` prints the six-field body for the question.
+2. **When the session has `AskUserQuestion`** (under either ask policy for a decision or a permission; under `autonomous` an `[ask: default]` place is not asked and takes its recommendation, [`ask-policy.md`](ask-policy.md)): ask it as above, then record the answer: `bin/flow-question.sh answer <id> --choice <option number> --journal`, which writes `escalation-resolved` (`escalation_field: options`, `outcome`: the option chosen); the `/flow:merge` manifest emit then records only escalations that were not stored, so none is recorded twice. A question that no longer applies is withdrawn: `withdraw <id> --reason "..." --journal`.
+3. **Where `AskUserQuestion` is not available** (it is not among the session's tools, as in `claude -p`): store the question and do not wait for it.
+   - `Blocking: yes` — stop the pipeline. The final reply says the run is waiting and names the question id; `/flow:status` and `/flow:resume` show it, and whoever answers it records the answer with `answer`.
+   - `Blocking: soft` — go on with the recommended option and record that with `answer <id> --choice 1 --by recommendation --journal`. The pull request body lists it under `## Decisions taken on a recommendation` (`/flow:pr` reads them with `flow-question.sh list --status answered --issue N`).
+   - `Blocking: no` — record it the same way as `soft`; it is not listed in the pull request body.
 
 ## Anti-patterns
 

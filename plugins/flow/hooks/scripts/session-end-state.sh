@@ -33,6 +33,8 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../bin" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # Inside a judge's session (bin/flow-judge.sh runs the judge with
 # CLAUDE_HOOK_GOAL_JUDGE_MODE=true, no tools, in a per-user directory) this
 # hook has nothing to do: the session is not the user's work.

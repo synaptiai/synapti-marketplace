@@ -28,6 +28,21 @@ Invoke these skills as part of the subcommand workflows below:
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## Pre-flight
 
 Before any subcommand:
@@ -105,9 +120,12 @@ import os, sys, glob
 sys.path.insert(0, sys.argv[1])
 import yaml
 from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
+from _repo_dir import from_repo_top
 
 READ_NOTE = "goals are not read through it"
-GOALS_DIR = os.path.join(sys.argv[2], "goals")
+# The goals are at the repository top, wherever below the top this runs: the
+# directory bin/flow-goal-record.sh writes and bin/flow-active-goal.sh reads.
+GOALS_DIR = from_repo_top(os.path.join(sys.argv[2], "goals"))
 try:
     ensure_repo_dir(GOALS_DIR)
 except RepoDirRefused as exc:
@@ -241,7 +259,7 @@ Stop hook mode:    <stopHookEnforcement value>
 Next safe action:  /flow:goal evaluate <id>
 ```
 
-No subcommand reads a goal through a symlink. The scan above refuses a symlinked `<runtime dir>` or `<runtime dir>/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check <runtime dir>/goals`, then no goal file that is a symlink). Run files are read the same way: the delta in `status` and the events in `inspect` come from `<runtime dir>/runs/<run-id>/` only when `bin/flow-mkdir.sh --check <runtime dir>/runs/<run-id>` passes and neither `last-verdict.json` nor `events.jsonl` is itself a symlink; otherwise say the run file is not read through a symlink and show none. A repository can commit `<runtime dir>` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
+Every subcommand reads the goals at the repository top, wherever below it the working directory is: `bin/flow-runtime-dir.sh --goals` prints that directory as a path from the working directory (relative at the top), the directory `bin/flow-goal-record.sh` writes, and `<runtime dir>/goals` in this file means it. No subcommand reads a goal through a symlink. The scan above refuses a symlinked `<runtime dir>` or `<runtime dir>/goals` on stderr and answers `STATE=none`, and names a goal file that is a symlink as not read; `inspect`, `history` and the `create` pre-flight follow the same rule (`bin/flow-mkdir.sh --check <runtime dir>/goals`, then no goal file that is a symlink). Run files are read the same way: the delta in `status` and the events in `inspect` come from `<runtime dir>/runs/<run-id>/` only when `bin/flow-mkdir.sh --check <runtime dir>/runs/<run-id>` passes and neither `last-verdict.json` nor `events.jsonl` is itself a symlink; otherwise say the run file is not read through a symlink and show none. A repository can commit `<runtime dir>` as a link to a directory outside the checkout, and a goal read there belongs to the link's target.
 
 ### `/flow:goal create <kind> [id]`
 
@@ -252,11 +270,11 @@ Examples:
 - `/flow:goal create issue 42` — explicit issue number
 - `/flow:goal create pr-review 123` — captures review goal for PR #123
 - `/flow:goal create pr-address 123` — captures address goal for PR #123
-- `/flow:goal create adhoc <id>` — user-supplied outcome via AskUserQuestion
+- [ask: decision] `/flow:goal create adhoc <id>` — user-supplied outcome via AskUserQuestion (with `metadata: {"source": "flow:decision"}`)
 
 Workflow:
 1. Resolve `<id>` from `<kind>` + branch state.
-2. Pre-flight check: refuse if `<runtime dir>/goals/<id>.goal.yaml` already exists with non-terminal status.
+2. Pre-flight check: when `<runtime dir>/goals/<id>.goal.yaml` already exists, continue only if its `lifecycle.status` is `failed` or `cancelled`: the new goal replaces it. Refuse a goal in progress (clear it first with `/flow:goal clear <id>`, which cancels it), an `achieved` goal (it never changes: remove its file first or give the new goal another id), and a goal whose `lifecycle.status` cannot be read. `bin/flow-goal-record.sh --create` refuses the same goals.
 3. Invoke `Skill(goal-contract-capture)` with the inputs documented in its SKILL.md.
 4. After the skill writes the YAML, transition `lifecycle: draft → active` via `Skill(goal-lifecycle)`.
 5. Print: `Created <runtime dir>/goals/<id>.goal.yaml (status: active).`
@@ -299,10 +317,10 @@ Skipping the write breaks delta computation for the next turn (everything become
 
 **Terminal-transition Tier 3 confirmation**:
 
-When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion. The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
+[ask: permission] When `Skill(goal-evaluator)` returns a `proposed_transition` to `achieved` or `failed`, the command (NOT the skill) is responsible for writing the terminal lifecycle status — gated by AskUserQuestion (with `metadata: {"source": "flow:permission"}`). The skill leaves the goal at its current non-terminal status; this step finalizes (or rejects) the transition.
 
 ```text
-AskUserQuestion: "FlowGoal $GOAL_ID evaluation produced verdict: <achieved|failed>.
+[ask: permission] AskUserQuestion (with `metadata: {"source": "flow:permission"}`): "FlowGoal $GOAL_ID evaluation produced verdict: <achieved|failed>.
                   Confirm transition to terminal status '<proposed_to>'?
                   Reason: <proposed_reason>"
 
@@ -345,19 +363,19 @@ On **Re-evaluate**, recursively invoke `/flow:goal evaluate $GOAL_ID` for anothe
 
 On **Cancel**, exit cleanly. The goal stays at its current non-terminal status; the verdict has been persisted to `last-verdict.json` (so next-turn delta is correct) but lifecycle is unchanged.
 
-For **non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`), the skill writes lifecycle itself per Step 6 of `goal-evaluator/SKILL.md` — no AskUserQuestion is needed for these reversible states.
+[ask: none] For **non-terminal transitions** (`active`, `blocked`, `waiting_for_user`, `waiting_for_ci`), the skill writes lifecycle itself per Step 6 of `goal-evaluator/SKILL.md` — no AskUserQuestion is needed for these reversible states.
 
 Print the resulting verdict + per-AC table. If lifecycle transitioned to `achieved`, print celebration. If `failed`, print the failing AC + suggested next action.
 
 **When the deterministic-check report lists any AC under `not_executed`** (the deterministic-checks runner skipped its command because the goal is not trusted and `flow.goals.executeVerificationCommands` defaults to `false`; the goal file itself does not record this), append this hint to the printed output:
 
-> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to let the Stop hook auto-run each AC's `verification_command` during evaluator-loop and deterministic-check passes. This setting governs the Stop hook path (`hooks/scripts/flow-run-deterministic-checks.sh`); `/flow:goal evaluate` always executes verification commands when present, so the hint applies only to ACs whose last evaluation came from a Stop hook pass.
+> Set `flow.goals.executeVerificationCommands: true` in `.claude/settings.flow.json` to let the Stop hook auto-run each AC's `verification_command` during evaluator-loop and deterministic-check passes. This setting governs the deterministic-checks runner (`hooks/scripts/flow-run-deterministic-checks.sh`) the Stop hook and `/flow:start`'s end-of-VERIFY evaluation use, and `/flow:start` still never moves a goal outside the trust ledger to `achieved`; `/flow:goal evaluate` always executes verification commands when present, so the hint applies only to ACs whose last evaluation came from a Stop hook pass.
 
 ### `/flow:goal pause <id>`
 
-Transition `active → waiting_for_user` via `Skill(goal-lifecycle)`. Use when stepping away mid-flow and the Stop hook should fall silent.
+Transition `active → waiting_for_user` via `Skill(goal-lifecycle)`. Use when stepping away mid-flow and the Stop hook should fall silent. A paused goal keeps `/flow:merge` blocked until it is resumed and achieved.
 
-Reason for the lifecycle transition is collected via AskUserQuestion if not provided as `--reason "..."`.
+[ask: default] Reason for the lifecycle transition is collected via AskUserQuestion if not provided as `--reason "..."`. Under `ASK_POLICY=autonomous`, do not ask: write the reason yourself from what the session was doing, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
 ### `/flow:goal resume <id>`
 
@@ -365,9 +383,11 @@ Transition `{waiting_for_user, waiting_for_ci, blocked} → active` via `Skill(g
 
 ### `/flow:goal clear <id>`
 
-Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `<runtime dir>/goals/` as audit trail; status is terminal.
+Transition `<any non-terminal> → cancelled` via `Skill(goal-lifecycle)`. The goal YAML stays in `<runtime dir>/goals/` with its terminal status until it is removed (below); the `goal-evaluation` artifact `goal-lifecycle` writes to the decision journal keeps the record of the cancellation.
 
-Confirmation via AskUserQuestion is mandatory (Tier 3 action: cancels potentially in-flight work).
+A cancelled goal keeps `/flow:merge` blocked while its file is on the branch: the merge gate blocks a pull request whose branch carries a goal that is not `achieved`, cancelled and failed included, even next to an achieved goal with another id on the same branch. When the branch still ships the goal's work, finish it under a new goal with the same id (`/flow:goal create` or `/flow:start` replaces the cancelled goal), or under another id and remove the cancelled goal's file. When the branch no longer ships the work, remove the file.
+
+[ask: permission] Confirmation via AskUserQuestion (with `metadata: {"source": "flow:permission"}`) is mandatory (Tier 3 action: cancels potentially in-flight work).
 
 ### `/flow:goal history`
 
@@ -383,7 +403,7 @@ Filter via flag:
 
 ## Stop hook interaction
 
-This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `<runtime dir>/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no goal has `status: active`.
+This command does NOT directly invoke the Stop hook. The Stop hook (`hooks/scripts/flow-goal-stop.sh`) fires on every conversation turn and reads the `<runtime dir>/goals/` directory independently. If the user runs `/flow:goal pause` or `/flow:goal clear`, the Stop hook silences itself on the next turn because no active goal owns the current branch (active goals on other branches are never judged).
 
 When `flow.goals.stopHookEnforcement: evaluator-loop`, the Stop hook evaluates the active goal after every turn, with throttling and budget enforcement: it runs the deterministic checks and, when criteria without a command remain, runs the same judge `/flow:goal evaluate` runs, through the same helper. It cannot ask, so it never writes `achieved`; run `/flow:goal evaluate <id>` to finalize.
 

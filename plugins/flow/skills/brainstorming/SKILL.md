@@ -10,7 +10,7 @@ agent: Explore
 
 ## Contract
 
-Iron law: **explore before committing — choosing wrong costs ten times what exploring costs.** Invoked by `/flow:brainstorm` Phase 2 (GENERATE), Phase 3 (COMPARE), and Phase 4 (DECIDE), and whenever several valid approaches exist, requirements are ambiguous, or the team defaults to its first idea. Returns 2–4 genuinely distinct, implementable approaches (name, summary, pros, cons, effort, risk), a comparison table across the dimensions that matter for this decision, a recommendation with its key trade-off, and the user's choice via `AskUserQuestion`, logged to the decision journal. Permitted skips: none — the recommendation is never the decision; the user chooses.
+[ask: none] Iron law: **explore before committing — choosing wrong costs ten times what exploring costs.** Invoked by `/flow:brainstorm` Phase 2 (GENERATE), Phase 3 (COMPARE), and Phase 4 (DECIDE), and whenever several valid approaches exist, requirements are ambiguous, or the team defaults to its first idea. Returns 2–4 genuinely distinct, implementable approaches (name, summary, pros, cons, effort, risk), a comparison table across the dimensions that matter for this decision, a recommendation with its key trade-off, and the user's choice via `AskUserQuestion`, logged to the decision journal. Permitted skips: none — the recommendation is never the decision; the user chooses.
 
 ## Process
 
@@ -18,7 +18,7 @@ Track the four tasks `/flow:brainstorm` creates — explore existing patterns, g
 
 ### 1. Clarify the goal
 
-Confirm **what** must happen (outcome, not implementation), **why** (motivation, constraints), and **who** is affected. Ambiguous → `AskUserQuestion`; do not guess.
+[ask: decision] Confirm **what** must happen (outcome, not implementation), **why** (motivation, constraints), and **who** is affected. Ambiguous → `AskUserQuestion` (`metadata.source`: `flow:decision`); do not guess.
 
 ### 2. Check existing patterns
 
@@ -55,7 +55,7 @@ Pick the dimensions relevant to THIS decision from these tensions: Simplicity vs
 
 ### 5. Recommend and decide
 
-State the recommendation with rationale and the single most important trade-off. Play devil's advocate on your own pick — what could go wrong? Then `AskUserQuestion` for the decision and log it.
+[ask: decision] State the recommendation with rationale and the single most important trade-off. Play devil's advocate on your own pick — what could go wrong? Then `AskUserQuestion` (`metadata.source`: `flow:decision`) for the decision and log it.
 
 ## Not Reasons to Skip
 

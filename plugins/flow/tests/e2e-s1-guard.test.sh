@@ -1082,7 +1082,7 @@ if _want g-harness-bad-row; then
   e2e_expect_err "texts.jsonl has no rows"
   # A summarize.py that cannot be loaded stops it with a message (review
   # round 18 F7).
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/brokenplugin"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/brokenplugin" evals/results-2026-10-12-s1-guard
   printf 'raise RuntimeError("boom")\n' > "$E2E_DIR/brokenplugin/evals/results-2026-10-12-s1-guard/summarize.py"
   printf '%s\n' '{"id": "t7", "command": "gh issue view 1", "output": "x"}' > "$E2E_DIR/sets/texts.jsonl"
   python3 "$E2E_DIR/brokenplugin/evals/results-2026-10-12-s1-guard/run.py" --set texts --out "$E2E_DIR/results" \
@@ -1297,7 +1297,7 @@ if _want g-summarize-errors; then
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac1 --plugin "$E2E_DIR/missing"
   e2e_expect_equal "2" "$E2E_RC" "exit with a missing plugin directory"
   e2e_expect_err_lacks "Traceback"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nolib" && rm -f "$E2E_DIR/nolib/hooks/scripts/lib/s1-guard.sh"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nolib" && rm -f "$E2E_DIR/nolib/hooks/scripts/lib/s1-guard.sh"
   e2e_run_bin evals/results-2026-10-12-s1-guard/summarize.py --dir "$E2E_DIR/sum" --check ac3 --plugin "$E2E_DIR/nolib"
   # The message gives the library's own error (PR #307 review round 1 ERR-5).
   e2e_expect_out "AC3: the shipped library did not build a state for row x0 (exit 9: "
@@ -1359,7 +1359,7 @@ if _want g-check-ac1; then
   e2e_expect_equal "0" "$E2E_RC" "exit with the shipped plugin"
   e2e_expect_line "AC1=OK"
   P="$E2E_DIR/shipping"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$P"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$P"
   printf '#!/bin/bash\nexit 0\n' > "$P/hooks/scripts/s1-command-intent.sh"
   jq '.hooks.PreToolUse[0].hooks += [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/s1-command-intent.sh"}]' "$P/hooks/hooks.json" > "$E2E_DIR/h.tmp" && mv "$E2E_DIR/h.tmp" "$P/hooks/hooks.json"
   jq '.systemOne.uses["guard.command-intent"] = "off"' "$P/settings.json" > "$E2E_DIR/s.tmp" && mv "$E2E_DIR/s.tmp" "$P/settings.json"
@@ -1745,7 +1745,7 @@ GH
   # The state is built with the options the hook uses: a library that reads
   # an unset variable fails there, and the message gives its error (review
   # round 2, test runner).
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/unset"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/unset" evals/results-2026-10-12-s1-guard
   printf ': "$S1_PROBE_UNSET"\n' >> "$E2E_DIR/unset/hooks/scripts/lib/s1-guard.sh"
   mkdir -p "$E2E_DIR/unsetsets"
   printf '%s\n' '{"id": "t1", "command": "gh issue view 1", "output": "title: x"}' > "$E2E_DIR/unsetsets/texts.jsonl"
@@ -1755,7 +1755,7 @@ GH
   python3 "$E2E_DIR/unset/evals/results-2026-10-12-s1-guard/summarize.py" --check ac3 > "$E2E_DIR/unset2.out" 2>&1
   e2e_expect_equal "1 true" "$? $(grep -q 'did not build a state for row .*unbound variable' "$E2E_DIR/unset2.out" && echo true || echo false)" "summarize.py with a library that reads an unset variable: $(head -c 200 "$E2E_DIR/unset2.out")"
   # questions.yaml without the site's threshold: the message names it.
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nothr"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nothr" evals/results-2026-10-12-s1-guard
   python3 - "$E2E_DIR/nothr/system-one/questions.yaml" <<'PY'
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
@@ -1772,7 +1772,7 @@ PY
   e2e_expect_equal "1" "$E2E_RC" "fetch_texts.py exit when gh fails"
   e2e_expect_err "HTTP 401: Bad credentials"
   # A plugin whose settings.json has no systemOne.uses: the message names it.
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nouses"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nouses" evals/results-2026-10-12-s1-guard
   printf '{}\n' > "$E2E_DIR/nouses/settings.json"
   python3 "$E2E_DIR/nouses/evals/results-2026-10-12-s1-guard/summarize.py" --check ac1 > "$E2E_DIR/nouses.out" 2>&1
   e2e_expect_equal "2" "$?" "summarize.py exit with no systemOne.uses"
@@ -1984,7 +1984,7 @@ PY
   e2e_expect_equal "1 false" "$E2E_RC $([ -e "$E2E_DIR/s.jsonl" ] && echo true || echo false)" "fetch_texts.py exit on an item that is not an object, with no file written"
   e2e_expect_err "returned an item that is not an object"
   # settings.json missing.
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nosettings"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/nosettings" evals/results-2026-10-12-s1-guard
   mv "$E2E_DIR/nosettings/settings.json" "$E2E_DIR/nosettings/settings.json.away"
   python3 "$E2E_DIR/nosettings/evals/results-2026-10-12-s1-guard/summarize.py" --check ac1 > "$E2E_DIR/nos.out" 2>&1
   e2e_expect_equal "2 true" "$? $(grep -q 'cannot read settings.json' "$E2E_DIR/nos.out" && echo true || echo false)" "summarize.py without settings.json: $(head -c 200 "$E2E_DIR/nos.out")"

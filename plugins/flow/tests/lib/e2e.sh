@@ -22,8 +22,12 @@
 # expectation with its result. Nothing in it depends on the clock, so two runs
 # on the same commit write the same file. Artifacts go to FLOW_E2E_ARTIFACT_DIR
 # when it is set (CI sets it and uploads them). Otherwise they go to the scratch
-# root, which is removed at exit unless an expectation failed; then it is kept
-# and its path printed.
+# root, which is removed at exit. When an expectation failed, the artifacts are
+# kept and their path printed, and everything else under the scratch root (each
+# scenario's repository, home and plugin copy) is still removed: a failing file
+# would otherwise leave hundreds of megabytes behind on every run.
+# FLOW_E2E_KEEP_SCRATCH=1 keeps the whole scratch root after a failure, to look
+# at a scenario's repository by hand.
 #
 # E2E_PLUGIN_DIR points the harness at another copy of the plugin, so a mutated
 # copy can be run to check that a scenario fails for its own reason.
@@ -81,10 +85,24 @@ _e2e_stop_stubs() {
   : > "$E2E_ROOT/stub.pids"
 }
 _e2e_cleanup() {
+  local e
   _e2e_stop_stubs
   if [ "$E2E_KEEP" = 1 ]; then
-    printf 'e2e: an expectation failed; artifacts kept in %s\n' "$E2E_ARTIFACT_DIR" >&2
-    [ -n "${FLOW_E2E_ARTIFACT_DIR:-}" ] && rm -rf "$E2E_ROOT" 2>/dev/null
+    if [ "${FLOW_E2E_KEEP_SCRATCH:-}" = 1 ]; then
+      printf 'e2e: an expectation failed; artifacts kept in %s, scratch kept in %s\n' "$E2E_ARTIFACT_DIR" "$E2E_ROOT" >&2
+      return 0
+    fi
+    printf 'e2e: an expectation failed; artifacts kept in %s (FLOW_E2E_KEEP_SCRATCH=1 also keeps the scenario scratch)\n' "$E2E_ARTIFACT_DIR" >&2
+    if [ -n "${FLOW_E2E_ARTIFACT_DIR:-}" ]; then
+      rm -rf "$E2E_ROOT" 2>/dev/null
+    else
+      for e in "$E2E_ROOT"/* "$E2E_ROOT"/.[!.]* "$E2E_ROOT"/..?*; do
+        [ "$e" = "$E2E_ROOT/artifacts" ] && continue
+        if [ -L "$e" ]; then rm -f "$e"
+        elif [ -e "$e" ]; then chmod -R u+rwx "$e" 2>/dev/null; rm -rf "$e" 2>/dev/null
+        fi
+      done
+    fi
   else
     rm -rf "$E2E_ROOT" 2>/dev/null
   fi
@@ -164,6 +182,8 @@ case "$args" in
     n=${args%/replies}; f=reply-${n##*/} ;;
   # The merge guard's calls, and the branch-delete guard's.
   "pr view "*" --json number,baseRefName,statusCheckRollup") n=${args#pr view }; f=pr-${n%% *} ;;
+  # /flow:merge's FlowGoal gate: the pull request's head branch and commit.
+  "pr view "*" --json headRefName,headRefOid") n=${args#pr view }; f=pr-head-${n%% *} ;;
   # bin/flow-pr-feedback.sh's review list.
   "pr view "*" --json reviews") n=${args#pr view }; f=pr-reviews-${n%% *} ;;
   # Each is keyed on the values the guard passes, so a call that asks about
@@ -315,12 +335,47 @@ e2e_repo() {
   ) || _flow_assert_fail "$E2E_NAME: could not create the scratch repository"
 }
 
+# e2e_copy_plugin <plugin dir> <new dir> [path...] — a copy of the plugin to
+# run, without tests/ and the recorded eval runs (evals/results-*). Those are
+# three quarters of the plugin's size, no shipped code reads them at run time,
+# and a test file makes dozens of copies. Each path named after the new
+# directory (one recorded eval run whose scripts the scenario runs from the
+# copy, say evals/results-2026-10-12-s1-guard) is copied as well. The new
+# directory must not exist yet.
+e2e_copy_plugin() {
+  local src="$1" dst="$2" p
+  [ -d "$src" ] && [ ! -e "$dst" ] && [ ! -L "$dst" ] || return 1
+  shift 2
+  mkdir -p "$dst" || return 1
+  (
+    shopt -s dotglob nullglob
+    for e in "$src"/*; do
+      case "${e##*/}" in
+        tests) ;;
+        evals)
+          mkdir "$dst/evals" || exit 1
+          for f in "$e"/*; do
+            case "${f##*/}" in results-*) ;; *) cp -R "$f" "$dst/evals/" || exit 1 ;; esac
+          done ;;
+        *) cp -R "$e" "$dst/" || exit 1 ;;
+      esac
+    done
+  ) || return 1
+  for p in "$@"; do
+    case "$p" in ''|/*|*..*) return 1 ;; esac
+    [ -e "$src/$p" ] && [ ! -e "$dst/$p" ] || return 1
+    mkdir -p "$dst/$(dirname -- "$p")" && cp -R "$src/$p" "$dst/$p" || return 1
+  done
+}
+
 # e2e_plugin_copy <file under the plugin> <new content> — run this scenario
 # against a copy of the plugin with one file replaced. For scenarios about a
-# helper failing, which no input to the real helper produces.
+# helper failing, which no input to the real helper produces. Called again in
+# the same scenario, it replaces the file in the copy it already made.
 e2e_plugin_copy() {
   E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
-  cp -R "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" || { _flow_assert_fail "$E2E_NAME: cannot copy the plugin"; return 0; }
+  [ -d "$E2E_ACTIVE_PLUGIN" ] \
+    || e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" || { _flow_assert_fail "$E2E_NAME: cannot copy the plugin"; return 0; }
   printf '%s\n' "$2" > "$E2E_ACTIVE_PLUGIN/$1"
   chmod +x "$E2E_ACTIVE_PLUGIN/$1"
   printf 'plugin for this scenario: a copy with %s replaced by: %s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ')" | _e2e_art

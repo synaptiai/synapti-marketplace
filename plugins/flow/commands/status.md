@@ -162,6 +162,7 @@ fi
 # When goals are enabled, surface the active FlowGoal lifecycle + per-AC
 # pass/fail so the user sees what the Stop hook is watching. A project whose
 # settings set the flag to false emits STATE=disabled.
+# GOAL_STATE_BLOCK_BEGIN
 printf '%s\n' ""
 printf '%s\n' "### FlowGoal State"
 HELPER="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
@@ -202,8 +203,21 @@ else
         printf '%s\n' "REASON=flow-active-goal.sh exited $GOAL_EXIT${GOAL_ERR:+: $GOAL_ERR}"
         ;;
     esac
+    # Goal files under a runtime directory below the top. Flow 3.14 and
+    # earlier wrote the goals of a session working in a subdirectory there;
+    # every reader now looks only at the top, so those goals are not seen by
+    # the Stop hook or the merge gate. Listed so they can be moved (at most
+    # 20, tracked or untracked and not ignored; control characters removed).
+    STRAY_RT=$("${ACTIVE_GOAL_HELPER%/flow-active-goal.sh}/flow-runtime-dir.sh" 2>/dev/null) || STRAY_RT=""
+    STRAY_RT=${STRAY_RT#./}
+    STRAY_TOP=$(git rev-parse --show-toplevel 2>/dev/null) || STRAY_TOP=""
+    if [ -n "$STRAY_RT" ] && [ -n "$STRAY_TOP" ]; then
+      git -C "$STRAY_TOP" ls-files -z --cached --others --exclude-standard -- ":(glob)*/**/$STRAY_RT/goals/*.goal.yaml" 2>/dev/null |
+        LC_ALL=C tr -d '\001-\037\177' | tr '\000' '\n' | head -20 | sed 's/^/STRAY_GOAL=/'
+    fi
   fi
 fi
+# GOAL_STATE_BLOCK_END
 
 # Section: Runtime Directory — where the runs and triggers below are read:
 # flow.runtime.stateDir, default .flow (bin/flow-runtime-dir.sh).
@@ -212,6 +226,23 @@ printf '%s\n' "### Runtime Directory"
 RT=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/flow-runtime-dir.sh") || RT=""
 [ -n "$RT" ] || RT=".flow"
 printf '%s\n' "RUNTIME_DIR=$RT"
+
+# Section: Open Questions — escalations stored with bin/flow-question.sh that
+# nobody has answered or withdrawn (references/escalation-format.md). One
+# QUESTION= line each: id|status|class|blocking|issue|pr|command|situation.
+printf '%s\n' ""
+printf '%s\n' "### Open Questions"
+# OPEN_QUESTIONS_BLOCK_BEGIN
+Q_LIST=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"/bin/flow-question.sh list --status open 2>/dev/null); Q_RC=$?
+if [ "$Q_RC" -ne 0 ]; then
+  printf '%s\n' "STATE=unavailable" "REASON=flow-question.sh exited $Q_RC"
+elif [ -z "$Q_LIST" ]; then
+  printf '%s\n' "STATE=none"
+else
+  printf '%s\n' "STATE=open" "COUNT=$(printf '%s\n' "$Q_LIST" | wc -l | tr -d ' ')"
+  printf '%s\n' "$Q_LIST" | sed 's/^/QUESTION=/'
+fi
+# OPEN_QUESTIONS_BLOCK_END
 
 # Section: Recent Runs (last 3 by modification time)
 # The runs directory under the runtime directory holds FlowActivity ledgers
@@ -442,6 +473,10 @@ PLUGIN_SETTINGS=""
 # the helper cannot answer there is none: HOME, which a repository can set,
 # does not choose it.
 [ -n "$FLOW_INSTALL" ] && __us=$("$FLOW_INSTALL/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
+# The two repository files are read at the repository top, where the
+# settings cascade reads them (cascade-resolve.sh --project-settings-path),
+# wherever in the repository this runs.
+[ -n "$FLOW_INSTALL" ] && __ps=$("$FLOW_INSTALL/bin/cascade-resolve.sh" --project-settings-path 2>/dev/null) && [ -n "$__ps" ] && { PROJECT_SETTINGS="$__ps"; LOCAL_SETTINGS="${__ps%settings.flow.json}settings.flow.local.json"; }
 for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -f "$SETTINGS_PATH" ] || continue
   CONFIGURED=$(jq -c '.merge.markerTrust.allowedAssociations // empty' "$SETTINGS_PATH" 2>&1)
@@ -605,6 +640,7 @@ A five-line operational dashboard — the fastest read of "where am I, and what'
 - **Goal**: {GOAL_ID} {lifecycle} — {verifiable}/{total} ACs verified  (or "none (no active goal on this branch)", or the ⚠ degenerate / needs-attention marker when 0 verifiable ACs)
 - **Workflow**: {workflow} @ {phase} ({status}) — run {run id}, verdict {verdict}, {activities} activities (from the first `RUN=` line, the most recent; or "no runs")
 - **Evidence**: {Findings Ledger one-liner — P1/P2/P3 per Render Rules}
+- **Questions**: {COUNT} open, {N} blocking — `{id}`: {situation} (the first blocking one, else the first) (or "none"; the line is left out when the Open Questions section reports `STATE=none`)
 - **Next safe action**: {from Suggestions Logic}
 ```
 
@@ -647,6 +683,7 @@ The complete verbose dashboard (every section):
 {When STATE=degenerate: render "⚠ Degenerate state: multiple active goals — run `/flow:goal history` and clear extras"}
 {When STATE=unavailable: render "Unavailable: {REASON}"}
 {When STATE=ok: render the goal id + lifecycle + AC table}
+{When STRAY_GOAL lines are present, in any state but disabled: render "⚠ Goal files below the repository top are not read: {each STRAY_GOAL path}. Flow reads goals only from `<runtime dir>/goals` at the top; move each there (`git mv <path> {RUNTIME_DIR}/goals/` from the top, `mv` for an untracked one; see `references/flow-goals.md` § Where goals are kept) so the Stop hook and the `/flow:merge` goal gate see it." Show it in every mode.}
 
 | Goal | Lifecycle | ACs |
 |------|-----------|-----|
@@ -663,6 +700,17 @@ The complete verbose dashboard (every section):
 | `{run}` | `{workflow}` | `{phase}` | `{status}` | `{verdict}` | {activities} |
 
 `verdict=-` means the run recorded no verdict; `verdict=unreadable` means it recorded one that could not be read; `verdict=not-read` and `activities=not-read` mean the file is a symlink, which is not read through (the block names it on stderr). `workflow`, `phase` and `status` come from the run's `run.yaml` (`metadata.workflow`, `state.current_phase`, `state.status`) with the same values: `-` when the file or the field is absent, `unreadable` when the file does not parse or is not shaped as a run, `not-read` when it is a symlink, and `unknown` when the reader could not run (python3 or PyYAML missing). Render them differently — never collapse `unreadable`, `not-read` or `unknown` into `-`, or `activities=not-read` into 0.
+
+### Open Questions
+{When STATE=none: render "No open questions."}
+{When STATE=unavailable: render "Unavailable: {REASON}"}
+{When STATE=open: render a table, one row per QUESTION= line, blocking ones first}
+
+| Question | Class | Blocking | Issue | PR | Asked by | Situation |
+|----------|-------|----------|-------|----|----------|-----------|
+| `{id}` | {class} | {blocking} | {issue} | {pr} | {command} | {situation} |
+
+Answer one with `bin/flow-question.sh answer <id> --choice <n>`, or `withdraw <id> --reason ...`.
 
 ### Active Triggers
 {When STATE=disabled: render "(Triggers turned off — `flow.triggers.enabled` is false in your settings; set it to true to turn them back on)"}
@@ -693,6 +741,7 @@ A single machine-readable JSON object for tooling/debugging — no prose, no tab
   "goal": {"id": "{GOAL_ID}", "lifecycle": "{status}", "acs": {"total": N, "verifiable": M}},
   "run": {"id": "{RUN_ID}", "workflow": "{workflow}", "phase": "{phase}", "status": "{status}", "verdict": "{verdict}", "activities": N},
   "findings": {"p1": N, "p2": N, "p3": N},
+  "questions": [{"id": "{id}", "blocking": "{blocking}", "issue": N, "pr": N, "command": "{command}", "situation": "{situation}"}],
   "next_action": "{suggestion}"
 }
 ```
@@ -762,6 +811,7 @@ Edge cases (driven by `LEDGER_STATE=`, NOT by silence):
 | Read `~/.claude/flow-learn-pending` flag | 1 | Autonomous, read-only |
 | Findings-ledger aggregation across open PRs (`gh api` paginated) | 1 | Autonomous, read-only |
 | Read `<runtime dir>/goals/*.goal.yaml` for active goal + ACs | 1 | Autonomous, read-only |
+| List goal files under a runtime directory below the repository top (`git ls-files`) | 1 | Autonomous, read-only |
 | Read `<runtime dir>/runs/*/` for recent run summaries | 1 | Autonomous, read-only |
 | Render status tables | 1 | Autonomous, output-only |
 

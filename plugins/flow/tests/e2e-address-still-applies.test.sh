@@ -218,7 +218,7 @@ fi
 if _want sa-inside-repo; then
   _flow_test_begin "sa-inside-repo"
   _sa_setup sa-inside-repo "W4: the plugin sits inside the repository, as it does in synapti-marketplace, and no install outside the repository exists: the probe prints nothing, and the block, which never uses a copy inside the repository, finds no plugin and sends nothing"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
   e2e_stub_start a "$(_noul_reply 0.03)"
   _sa_user on a
@@ -236,8 +236,8 @@ if _want sa-inside-repo-installed-outside; then
   _flow_test_begin "sa-inside-repo-installed-outside"
   _sa_setup sa-inside-repo-installed-outside "W18: the plugin is loaded from a copy inside the repository and flow is also installed outside it: the probe and the block skip the copy inside and use the install outside, so the site the user switched on prints its mode and the comment is asked about once per shell"
   mkdir -p "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow"
-  cp -R "$E2E_PLUGIN_DIR" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/$(jq -r .version "$E2E_PLUGIN_DIR/.claude-plugin/plugin.json")"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/$(jq -r .version "$E2E_PLUGIN_DIR/.claude-plugin/plugin.json")"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
   e2e_stub_start a "$(_noul_reply 0.03)"
   _sa_user on a

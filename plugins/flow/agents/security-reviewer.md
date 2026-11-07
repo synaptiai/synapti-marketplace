@@ -208,9 +208,38 @@ For each `DEP_ADDED=`, `DEP_CHANGED=` and `DEP_REPLACED=` line, record all five.
 A `DEP_REPLACED=<module> -> <target>@<version>` line is a dependency redirected
 away from
 the registry it normally comes from — a `go.mod` replace, a Cargo `[patch]` or
-`[replace]` entry, a `tool.uv.sources` or poetry `git =` entry, or a PEP 508
-direct reference (`requests @ https://...`). A `<version>` of `(unpinned)` is
-normal: most redirect forms name a place, not a version. **Judge the target exactly as you would an added
+`[replace]` entry, a `tool.uv.sources` or poetry `git =` entry, a PEP 508
+direct reference (`requests @ https://...`), a `requirements*.txt` line that
+is a URL, a local path or an `-e` editable install named by its `#egg=`
+fragment or wheel file name (one that names neither makes the file
+`MANIFEST_UNPARSED=`; the project itself, `-e .` or `-e ".[dev]"`, is not
+reported), a `package.json` spec that is a URL, a GitHub shorthand
+(`github:user/repo`, `user/repo`), an scp-style git spec (`git@host:path`)
+or a local path (`file:`/`link:`, or a bare `../x`, `~/x`, `/x`, `C:/x`,
+`x.tgz`), each prefix in any case, as npm reads it (`FILE:x`, `NPM:` aliases
+too), a Gemfile `git:`, `github:`, `gitlab:`, `bitbucket:`, `gist:` or
+`path:` source or an option a `git_source(:name)` line declared, keyed by a
+label, a symbol or a string (or a gem inside a `git`, `github` or `path`
+block, `do`/`end` or `{`/`}`), or a gem resolved in a `Gemfile.lock` GIT
+section or in a PATH section other than the project's own (`remote: .`, the
+gemspec gem, is not reported). A Gemfile target is always one written as a
+literal: a gem name, source or `git` block target in double quotes that
+interpolates (`#{...}`, `#@ivar`, `#@@cvar`, `#$gvar`) is decided only when
+the Gemfile runs, so the Gemfile is reported `MANIFEST_UNPARSED=` instead, as
+it is for a gem argument passed through a variable or a `**` splat, for a
+second statement after a `;` on a gem line, and for a Gemfile holding code
+the parser does not lex anywhere in it (a character literal, a regex or
+%-literal other than the plain forms `bin/flow-dep-diff.sh` lists, a special
+global such as `$"`, a heredoc, a string that runs past its line, or a
+`path`/`git`/`gem` call glued to its string after another statement): read
+such a Gemfile in the diff yourself. A registry change is not a
+`DEP_REPLACED=`: a `requirements*.txt` `--index-url` or `--extra-index-url`
+line, a Gemfile `source:` option or `source` block, and a `Gemfile.lock` GEM
+remote are not reported, so read those lines in the diff yourself. The
+`<version>` is a ref or revision when the manifest names one. A `<version>` of `(unpinned)` is
+normal: most redirect forms name a place, not a version, and a Gemfile or
+`Gemfile.lock` path redirect always reads `(unpinned)`; a version bump of a
+path or git gem is a `DEP_CHANGED=`, not a new redirect. **Judge the target exactly as you would an added
 package**, because that is what it is: code this change starts fetching that it
 did not before, from somewhere the index does not vouch for. Name the module in
 the finding, not only the target, so a reader can see which dependency stopped

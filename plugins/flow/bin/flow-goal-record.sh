@@ -4,10 +4,22 @@
 # default .flow).
 #
 # Two modes:
-#   --create:           write a new goal YAML from scratch (refuses if existing
-#                       goal has non-terminal status — goal-contract-capture
-#                       does the pre-flight check, this is a second line of
-#                       defense against race conditions)
+#   --create:           write a new goal YAML from scratch. A goal already
+#                       there under that id is replaced only when its
+#                       lifecycle.status is failed or cancelled. The create
+#                       refuses, exit 1, one that is achieved (it never
+#                       changes) or in progress (draft, active,
+#                       waiting_for_user, waiting_for_ci, blocked:
+#                       /flow:goal clear cancels it first); and, exit 2, one
+#                       it cannot read: a symlink or a file that is not
+#                       regular, not UTF-8, not valid YAML or nested too
+#                       deep, a goal or a lifecycle that is not a mapping, or a
+#                       lifecycle.status that is missing, not text (a list,
+#                       a mapping, null, a number) or none of the eight
+#                       statuses. goal-contract-capture does the same
+#                       pre-flight check; this is a second line of defense
+#                       against race conditions and a caller that read the
+#                       goals in the wrong place
 #   --update-lifecycle: merge a new lifecycle block into an existing goal
 #                       (used by goal-lifecycle skill)
 #
@@ -22,17 +34,23 @@
 # Usage:
 #   flow-goal-record.sh --create --goal-file <path-to-yaml>
 #   flow-goal-record.sh --update-lifecycle --goal-id <id> --lifecycle-file <path-to-yaml-fragment>
-#                       [--from-status <status>] [--merge] [--increment-turns]
+#                       [--from-status <status>] [--merge | --patch] [--increment-turns]
 #
 #   --merge            the fragment's lifecycle fields are merged into the
 #                      goal's current lifecycle instead of replacing it
+#   --patch            the same as --merge, for a command block that cannot
+#                      name the word: block-unchecked-merge.sh reads a command
+#                      that names it next to a $(...) as a possible gh pr merge
 #   --increment-turns  lifecycle.turns_evaluated becomes its current value + 1
 #   --runtime-dir DIR  the runtime directory the caller already resolved (a
 #                      hook asks once per run); otherwise it is resolved here
 #   Both read the current lifecycle under the goal's lock, so a caller that
 #   changes one field never writes back a stale copy of the others.
 #
-# <runtime dir>/goals is created if it is missing, and never through a
+# <runtime dir>/goals is the repository top's, wherever below the top this
+# runs (bin/flow-active-goal.sh reads the same directory; from_repo_top() in
+# bin/_repo_dir.py), and the paths printed are relative when the working
+# directory is the top. It is created if it is missing, and never through a
 # symlink: when a directory on the way to it is one (a repository can commit such a link to a
 # directory outside the checkout), nothing is written and the helper exits 2.
 #
@@ -54,23 +72,26 @@
 #       holds '..' or '/' or is too long for the names written for it; a
 #       fragment with no top-level lifecycle block, or whose lifecycle is not
 #       a mapping or whose status is not text; a goal that does not
-#       match the schema (with jsonschema installed); an existing goal with a
-#       non-terminal status (--create); a goal to update that does not exist,
-#       is not a mapping, has a lifecycle that is not a mapping, a status that
-#       is not text or a turns_evaluated that is not a whole number (with
-#       --increment-turns), is terminal, or is not in the --from-status given;
-#       a transition the lifecycle does not permit
+#       match the schema (with jsonschema installed); an existing goal that
+#       is achieved or in progress (--create); a goal to update that does not
+#       exist, is not a mapping, has a lifecycle that is not a mapping, a
+#       status that is not text or a turns_evaluated that is not a whole
+#       number (with --increment-turns), is terminal, or is not in the
+#       --from-status given; a transition the lifecycle does not permit
 #   2 — python3 or PyYAML missing; an input that cannot be read for a reason
 #       of the system; <runtime dir>/goals refused or not made (a symlink
 #       included); an existing goal that cannot be read (not UTF-8, not valid
 #       YAML, nested too deep, a symlink or not a regular file), or whose
-#       status cannot be determined (--create); the goal's lock refused; the
-#       write refused or failing
+#       status cannot be determined: not a mapping, a lifecycle that is not
+#       a mapping, or a lifecycle.status missing, not text or not a status
+#       (--create); the goal's lock refused; the write refused or failing
 
 set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
 # imports sitecustomize from each element at startup. An isolated python3 (-I:
 # it reads neither PYTHONPATH nor the working directory) keeps only elements
@@ -100,7 +121,7 @@ fi
 wants_help() {
   while [ $# -gt 0 ]; do
     case "$1" in
-      --create|--update-lifecycle|--merge|--increment-turns) shift ;;
+      --create|--update-lifecycle|--merge|--patch|--increment-turns) shift ;;
       --goal-file|--goal-id|--lifecycle-file|--from-status|--runtime-dir) [ $# -ge 2 ] || return 1; shift 2 ;;
       -h|--help) return 0 ;;
       *) return 1 ;;
@@ -115,6 +136,10 @@ fi
 
 # All diagnostics go to stderr; python3 also records a created goal in the
 # trust ledger, so that its note is printed the same way.
+# The bash this script runs under, which runs the trust ledger script: a
+# native Windows python3 looks a bare `bash` up in System32 before PATH, where
+# WSL's bash.exe can sit, so it is handed the path, as python3 reads it.
+FLOW_RECORD_BASH=$(py_path "${BASH:-bash}"); export FLOW_RECORD_BASH
 python3 - "$SCRIPT_DIR" "$@" <<'PYTHON'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
@@ -133,7 +158,7 @@ import os
 import subprocess
 import yaml
 from _flow_cli import Messages, name_max, open_regular, schema_problem, shown, yaml_problem
-from _repo_dir import runtime_dir
+from _repo_dir import from_repo_top, runtime_dir
 from _journal_atomic import (
     JournalAtomicError,
     acquire_lock,
@@ -158,9 +183,13 @@ def _make_goals_dir():
 options = messages.read_arguments(
     sys.argv[2:],
     ("--goal-file", "--goal-id", "--lifecycle-file", "--from-status", "--runtime-dir"),
-    ("--create", "--update-lifecycle", "--merge", "--increment-turns"),
+    ("--create", "--update-lifecycle", "--merge", "--patch", "--increment-turns"),
 )
-GOALS_DIR = os.path.join(runtime_dir(options["--runtime-dir"] or None), "goals")
+# The runtime directory is relative to the repository top: run from a
+# subdirectory, the goals are still the top's, joined to it by
+# from_repo_top() exactly as bin/flow-active-goal.sh reads them (relative when
+# the working directory is the top, so what is printed there does not change).
+GOALS_DIR = from_repo_top(os.path.join(runtime_dir(options["--runtime-dir"] or None), "goals"))
 # The last of --create and --update-lifecycle given wins, as the shell's
 # loop had it.
 mode = ""
@@ -173,7 +202,7 @@ goal_file_arg = options["--goal-file"]
 goal_id_arg = options["--goal-id"]
 lifecycle_file_arg = options["--lifecycle-file"]
 from_status_arg = options["--from-status"]
-merge_arg = options["--merge"]
+merge_arg = options["--merge"] or options["--patch"]
 increment_turns_arg = options["--increment-turns"]
 
 # A goal's id names <runtime dir>/goals/<id>.goal.yaml, <id>.goal.yaml.lock and,
@@ -264,6 +293,7 @@ LIFECYCLE_TRANSITIONS = {
     # terminal: achieved, failed, cancelled — no outgoing transitions
 }
 TERMINAL_STATES = {"achieved", "failed", "cancelled"}
+STATUSES = set(LIFECYCLE_TRANSITIONS) | TERMINAL_STATES
 
 # When jsonschema is unavailable, emit a stderr WARN dedup'd PER DAY via a
 # sentinel file. The original
@@ -358,10 +388,12 @@ if mode == "create":
     target = os.path.join(GOALS_DIR, f"{goal_id}.goal.yaml")
     lockfile = target + ".lock"
 
-    # Pre-flight: refuse to overwrite a non-terminal goal. The skill should
-    # have caught this; second line of defense against TOCTOU. Goal YAML
-    # files are pure YAML (no frontmatter), so we parse directly with
-    # safe_load — no parse_frontmatter branch needed.
+    # Pre-flight: replace only a failed or cancelled goal, as
+    # goal-contract-capture's pre-flight does. The skill should have caught
+    # the rest; this is the second line of defense against TOCTOU and a
+    # caller that read the goals in the wrong place. Goal YAML files are pure
+    # YAML (no frontmatter), so we parse directly with safe_load — no
+    # parse_frontmatter branch needed.
     if os.path.lexists(target):
         existing = read_existing(target, "refusing to overwrite")
         if not isinstance(existing, dict):
@@ -387,9 +419,37 @@ if mode == "create":
                 2,
             )
         existing_status = (existing_lifecycle or {}).get("status")
-        if existing_status in ("draft", "active", "waiting_for_user", "waiting_for_ci", "blocked"):
-            say(f"refusing to overwrite — {target} exists with non-terminal status '{shown(existing_status)}'")
+        # A status that is not one of the lifecycle's (missing, null, a
+        # number, a list, a mapping, a word no status is) says nothing about
+        # whether the goal is done: it is refused, never read as no goal. A
+        # list or a mapping is never looked up in a set, which raised.
+        if not isinstance(existing_status, str) or existing_status not in STATUSES:
+            if existing_lifecycle is None:
+                found = "it has no lifecycle"
+            elif "status" not in existing_lifecycle:
+                found = "it has no lifecycle.status"
+            elif isinstance(existing_status, str):
+                found = f"lifecycle.status '{shown(existing_status)}' is not a status"
+            else:
+                kinds = ((type(None), "null"), (bool, "a boolean"), ((int, float), "a number"),
+                         (list, "a list"), (dict, "a mapping"))
+                kind = next((k for t, k in kinds if isinstance(existing_status, t)), type(existing_status).__name__)
+                found = f"lifecycle.status is {kind}, not text"
+            refuse(
+                f"refusing to overwrite — {target} has a lifecycle that cannot be read ({found}); "
+                "investigate manually.",
+                2,
+            )
+        if existing_status not in TERMINAL_STATES:
+            say(f"refusing to overwrite — {target} exists with non-terminal status '{existing_status}'")
             refuse("use /flow:goal clear to cancel before re-creating")
+        # An achieved goal never changes (goal-lifecycle/SKILL.md): it is the
+        # record the merge gate and the audit trail read. A failed or
+        # cancelled goal is replaced, so /flow:goal clear and then
+        # /flow:start work under the same id.
+        if existing_status == "achieved":
+            say(f"refusing to overwrite — {target} exists with terminal status 'achieved'")
+            refuse("an achieved goal never changes; remove its file before creating a goal under the same id, or use a new id")
 
     try:
         write_yaml_file(target, lockfile, goal, text=goal_text)
@@ -400,12 +460,14 @@ if mode == "create":
     # Record the freshly created goal in the per-user trust ledger. Best-effort:
     # the goal is already on disk and valid; a ledger problem is a note, not a
     # failure (the Stop hook simply treats the goal as untrusted until recorded).
-    # A ledger script that cannot be started (not executable, gone, or a .sh
-    # a native Windows python3 cannot run) is the same note: the goal stands.
+    # The script runs through bash, not by its own name: a native Windows
+    # python3 cannot start a .sh file, so the goal was never recorded there.
+    # A ledger script that cannot be started (gone, or no bash) is the same
+    # note: the goal stands.
     trust = os.path.join(script_dir, "flow-goal-trust.sh")
     try:
         ledger = subprocess.run(
-            [trust, "record", "--goal-file", target],
+            [os.environ.get("FLOW_RECORD_BASH") or "bash", trust, "record", "--goal-file", target],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace",
         )
         problem = None if ledger.returncode == 0 else shown(ledger.stderr.strip())

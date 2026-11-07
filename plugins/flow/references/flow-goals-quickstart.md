@@ -90,7 +90,7 @@ You'll see a per-AC table and the verdict.
 /flow:goal status
 ```
 
-If lifecycle is `achieved`, the goal is complete. When an active goal exists for the branch, `/flow:merge` requires it to be `achieved`, and `/flow:pr` asks before opening a pull request with the goal not yet achieved (you can proceed; the choice is journaled). The gate is on goal *existence*, so a branch with no goal is not blocked.
+If lifecycle is `achieved`, the goal is complete. When the pull request's branch carries a goal, in any status, `/flow:merge` requires it to be `achieved` (a draft, paused, waiting-for-CI, blocked, failed or cancelled goal blocks the merge too). `/flow:pr` asks before opening a pull request while the branch's goal is still `active` (you can proceed; the choice is journaled). It looks only for an `active` or `achieved` goal on the branch, so a goal in any other status is not caught until `/flow:merge`. The gates are on goal *existence*, so a branch with no goal is not blocked.
 
 ## Common adjustments
 

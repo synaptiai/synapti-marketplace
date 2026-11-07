@@ -7,6 +7,12 @@
 #
 #   1. .claude/settings.flow.local.json — project-local; gitignored
 #   2. .claude/settings.flow.json       — project-shared; committed
+#      Both are read at the top of the repository the working directory is in
+#      (git rev-parse --show-toplevel), so a command or hook run from a
+#      subdirectory reads the same settings as one run at the top. Outside a
+#      repository, or when git's top is the user's home kept in git (the
+#      user's, not a repository; see _cr_find_tops), they are read in the
+#      working directory, as before.
 #   3. the user settings file — user-global: $FLOW_USER_SETTINGS when it is
 #      set to an absolute path, otherwise .claude/settings.flow.json in the
 #      user's home (HOME when Flow keeps it, see _cr_home_check, otherwise
@@ -35,6 +41,20 @@
 #                         names resolves inside the repository (or is a symlink):
 #                         then it is skipped with a WARN, and a script that is
 #                         itself inside the repository refuses to answer.
+#   --repo-settings-paths print the two repository settings files this script
+#                         reads, the local file then the project file, each
+#                         followed by a NUL byte (a path can hold a newline),
+#                         whether or not they exist, and exit 0. A caller that
+#                         must know which file a value came from (journal-dir.sh)
+#                         reads these, so it judges the same files the cascade
+#                         reads, from any directory.
+#   --project-settings-path print the project file (.claude/settings.flow.json)
+#                         this script reads, one line, whether or not it
+#                         exists, and exit 0: relative at the repository top,
+#                         absolute below it. A path holding a control character
+#                         is not printed (exit 2). /flow:setup and
+#                         flow-migrate-settings.sh write and upgrade this file,
+#                         so the file they write is the one that is read.
 #   --user-settings-path  print the user settings file this script would read
 #                         (FLOW_USER_SETTINGS or .claude/settings.flow.json in
 #                         the user's home, after the checks below), or nothing
@@ -137,6 +157,8 @@ USER_PATH_ONLY=0
 STATE_DIR_ONLY=0
 USER_HOME_ONLY=0
 USER_ENV_NAME=""
+REPO_PATHS_ONLY=0
+PROJECT_PATH_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -161,6 +183,14 @@ while [ $# -gt 0 ]; do
       ;;
     --no-repo-settings)
       NO_REPO_SETTINGS=1
+      shift
+      ;;
+    --repo-settings-paths)
+      REPO_PATHS_ONLY=1
+      shift
+      ;;
+    --project-settings-path)
+      PROJECT_PATH_ONLY=1
       shift
       ;;
     --user-settings-path)
@@ -201,6 +231,8 @@ EXPR="${1:-}"
 [ "$USER_PATH_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ "$STATE_DIR_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ "$USER_HOME_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
+[ "$REPO_PATHS_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
+[ "$PROJECT_PATH_ONLY" -eq 1 ] && EXPR="${EXPR:-.}"
 [ -n "$USER_ENV_NAME" ] && EXPR="${EXPR:-.}"
 [ -z "$EXPR" ] && {
   echo "cascade-resolve: missing <jq-expression>. Usage: $0 [--default <v>] [--compact] <jq-expression>" >&2
@@ -246,8 +278,13 @@ _cr_db_home() {
 # _cr_top: git's toplevel; when git cannot say, the nearest parent holding
 # .git, else the working directory.
 _cr_top() {
-  local top up
+  local top up phys
   top=$(git rev-parse --show-toplevel 2>/dev/null)
+  # Git for Windows prints the top as D:/a/repo; the shell reaches it as
+  # /d/a/repo, the form every other path here is in. Without this the top read
+  # as not absolute, so no top was found and every FLOW_STATE_DIR and
+  # FLOW_USER_SETTINGS was ignored under Git Bash.
+  if [ -n "$top" ] && phys=$(_cr_phys "$top"); then top=$phys; fi
   if [ -z "$top" ]; then
     top=$(pwd -P 2>/dev/null)
     up=$top
@@ -456,6 +493,20 @@ _cr_user_value() {
   local name="$1" kind="$2" value why="" rc repo=0
   value=${!name-}
   [ -n "$value" ] || return 0
+  # Under Git Bash, MSYS2 or Cygwin a value can arrive in Windows form (D:\a\x
+  # or D:/a/x): MSYS2 rewrites a path in the environment of a native Windows
+  # program, such as python3, which passes it on unchanged to a script it
+  # starts. It is read as the shell reaches it. FLOW_PY_PATH_PLATFORM stands in for
+  # uname -s, as in bin/lib/py-path.sh.
+  case "$value" in
+    [A-Za-z]:[\\/]*)
+      case "${FLOW_PY_PATH_PLATFORM:-$(uname -s 2>/dev/null)}" in
+        MINGW*|MSYS*|CYGWIN*)
+          if command -v cygpath >/dev/null 2>&1; then
+            value=$(cygpath -u "$value" 2>/dev/null) || value=${!name-}
+          fi ;;
+      esac ;;
+  esac
   case "$value" in
     *[[:cntrl:]]*) why="it holds a control character" ;;
     /*)
@@ -505,7 +556,7 @@ if [ "$STATE_DIR_ONLY" -eq 1 ]; then
   exit 0
 fi
 
-if ! command -v jq >/dev/null 2>&1; then
+if [ "$REPO_PATHS_ONLY" -eq 0 ] && [ "$PROJECT_PATH_ONLY" -eq 0 ] && ! command -v jq >/dev/null 2>&1; then
   echo "cascade-resolve: WARN: jq not installed; cannot resolve cascade" >&2
   if [ $DEFAULT_SET -eq 1 ]; then
     printf '%s\n' "$DEFAULT_VALUE"
@@ -517,6 +568,34 @@ fi
 LOCAL_SETTINGS=".claude/settings.flow.local.json"
 PROJECT_SETTINGS=".claude/settings.flow.json"
 _cr_home_check
+# The repository's settings files are at its top, wherever in it the command
+# runs. A relative path made the answer depend on the working directory: from
+# a subdirectory, a repository's tiers.push: confirm read as the default
+# journal, and the git shim let a push from a script there run unasked. At the
+# top the paths stay relative, so messages name them as before; outside a
+# repository nothing changes. A home directory kept in git is not a
+# repository (_cr_find_tops): its .claude/settings.flow.json is the user's own
+# file, so under it the working directory's files are read, as before.
+_cr_repo_top=$(git rev-parse --show-toplevel 2>/dev/null) || _cr_repo_top=""
+if [ -n "$_cr_repo_top" ] && [ -d "$_cr_repo_top" ] && ! [ "$_cr_repo_top" -ef . ] &&
+   ! { [ -n "${_cr_home:-}" ] && [ "$_cr_repo_top" -ef "$_cr_home" ]; } &&
+   ! { [ -n "${_cr_user_home:-}" ] && [ "$_cr_repo_top" -ef "$_cr_user_home" ]; }; then
+  LOCAL_SETTINGS="$_cr_repo_top/$LOCAL_SETTINGS"
+  PROJECT_SETTINGS="$_cr_repo_top/$PROJECT_SETTINGS"
+fi
+if [ "$REPO_PATHS_ONLY" -eq 1 ]; then
+  printf '%s\0%s\0' "$LOCAL_SETTINGS" "$PROJECT_SETTINGS"
+  exit 0
+fi
+if [ "$PROJECT_PATH_ONLY" -eq 1 ]; then
+  case "$PROJECT_SETTINGS" in
+    *[[:cntrl:]]*)
+      echo "cascade-resolve: ERROR: the repository's path holds a control character; not printing the project settings file" >&2
+      exit 2 ;;
+  esac
+  printf '%s\n' "$PROJECT_SETTINGS"
+  exit 0
+fi
 USER_SETTINGS="${_cr_user_home}/.claude/settings.flow.json"
 # FLOW_USER_SETTINGS names a different user settings file. The review-precision
 # eval uses it to give each session its own settings, because changing HOME

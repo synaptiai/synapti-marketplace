@@ -30,6 +30,12 @@
 #      from where it was not written
 #   D9 a hook resolves the runtime directory more than once per run (each
 #      bin script it calls asking again)
+#   D10 /flow:status says nothing about goal files under a runtime directory
+#      below the repository top (where Flow 3.14 and earlier wrote the goals
+#      of a session working in a subdirectory, and where no reader looks any
+#      more), so such a goal silently stops gating; or it lists the goals at
+#      the top, or goal files under a directory other than the runtime
+#      directory's name
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -379,3 +385,42 @@ e2e_expect_equal 0 "$E2E_RC" "the hook's exit status"
 e2e_expect_equal yes "$([ -s "$E2E_REPO/$RT/runs/run-e2e/system-one.jsonl" ] && echo yes || echo no)" "$RT/runs/run-e2e/system-one.jsonl written"
 e2e_expect_equal 1 "$(wc -l < "$E2E_DIR/resolver-calls" | tr -d ' ')" "resolver calls during the Stop hook run"
 _no_default_dir
+
+_flow_test_begin "/flow:status: goal files under a runtime directory below the top are listed, the top's are not (D10)"
+for v in default "$RT"; do
+  e2e_new "status-stray-goals-$(printf '%s' "$v" | tr -c 'a-z0-9' '_')"
+  if [ "$v" = default ]; then d=.flow; else d="$v"; fi
+  e2e_describe "flow.runtime.stateDir is $v; goals at $d/goals (the top), packages/app/$d/goals (committed) and tools/$d/goals (untracked); one under packages/lib/other-dir/goals"
+  e2e_repo feature/issue-7-x
+  [ "$v" = default ] || _state_dir "\"$v\""
+  e2e_goal g-top feature/issue-7-x active false
+  if [ "$d" != .flow ]; then mkdir -p "$E2E_REPO/$d"; mv "$E2E_REPO/.flow/goals" "$E2E_REPO/$d/goals"; rmdir "$E2E_REPO/.flow"; fi
+  for sub in packages/app tools packages/lib/other-dir; do
+    case "$sub" in */other-dir) g="$E2E_REPO/$sub/goals" ;; *) g="$E2E_REPO/$sub/$d/goals" ;; esac
+    mkdir -p "$g"
+    cp "$E2E_REPO/$d/goals/g-top.goal.yaml" "$g/g-${sub##*/}.goal.yaml"
+  done
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    git add -A
+    git reset -q -- tools
+    git commit -q -m "goals"
+  ) || _flow_assert_fail "$E2E_NAME: could not commit the goals"
+  e2e_run_block commands/status.md GOAL_STATE_BLOCK
+  e2e_expect_line "STATE=ok"
+  e2e_expect_line "GOAL_ID=g-top"
+  e2e_expect_line "STRAY_GOAL=packages/app/$d/goals/g-app.goal.yaml"
+  e2e_expect_line "STRAY_GOAL=tools/$d/goals/g-tools.goal.yaml"
+  e2e_expect_no_line "STRAY_GOAL=$d/goals/g-top.goal.yaml"
+  e2e_expect_no_line "STRAY_GOAL=packages/lib/other-dir/goals/g-other-dir.goal.yaml"
+done
+
+_flow_test_begin "/flow:status: no goal file below the top, no STRAY_GOAL line (D10)"
+e2e_new status-stray-goals-none
+e2e_describe "the only goal is at .flow/goals at the top"
+e2e_repo feature/issue-7-x
+e2e_goal g-top feature/issue-7-x active false
+e2e_run_block commands/status.md GOAL_STATE_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_no_out "STRAY_GOAL="

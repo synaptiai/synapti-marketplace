@@ -440,8 +440,8 @@ if _want lc-plugin-in-repo; then
   _lc_setup lc-plugin-in-repo "the plugin being run sits inside the repository, as in synapti-marketplace, and an installed copy sits in the plugin cache: the copy inside the repository reads no provider settings, but the block takes flow-s1-mode.sh and flow-s1.sh from the installed copy, so with the user's site in shadow every candidate is sent and recorded (the exception the reference names under Working inside the Flow repository itself)"
   _lc_stub
   mkdir -p "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_HOME/.claude/plugins/cache/synapti-marketplace/flow/9.9.9"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
   # The copy inside the repository has a miner that logs each jsonl run: the
   # screening must run the installed copy's miner, never this one (L15).
   mv "$E2E_REPO/plugin-copy/bin/flow-mine-corrections.sh" "$E2E_REPO/plugin-copy/bin/flow-mine-corrections-real.sh"

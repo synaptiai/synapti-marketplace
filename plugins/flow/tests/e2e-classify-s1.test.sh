@@ -693,7 +693,7 @@ if _want plugin-in-repository; then
   e2e_stub_start a "$(_reply 0.93)"
   _settings on
   mkdir -p "$E2E_REPO/plugins"
-  cp -R "$E2E_PLUGIN_DIR" "$E2E_REPO/plugins/flow"
+  e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_REPO/plugins/flow"
   # e2e_run_bin runs the helper from E2E_ACTIVE_PLUGIN.
   # shellcheck disable=SC2034
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugins/flow"

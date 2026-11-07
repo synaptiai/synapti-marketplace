@@ -21,11 +21,18 @@
 # bin/_repo_dir.py; .flow itself needs none, since a refused value gives
 # .flow too.
 #
-# Usage: flow-runtime-dir.sh
+# Usage: flow-runtime-dir.sh [--goals]
 #
 # Output: the directory, one line, relative to the repository top,
 # normalized (no `.` component, no doubled or trailing /); a name starting
 # with `-` is printed as ./<name>. Warnings on stderr.
+#
+# --goals prints <runtime dir>/goals instead, as a path to open from the
+# working directory: as it is at the repository top, joined to the top below
+# it (from_repo_top() in bin/_repo_dir.py). It is the directory
+# bin/flow-goal-record.sh writes and bin/flow-active-goal.sh reads, wherever
+# below the top a block runs. Outside a git work tree, or under a home
+# directory kept in git, it is <runtime dir>/goals from the working directory.
 #
 # Exits:
 #   0 — printed the directory
@@ -33,6 +40,8 @@
 
 set -uo pipefail
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
 # imports sitecustomize from each element at startup. An isolated python3 (-I:
 # it reads neither PYTHONPATH nor the working directory) keeps only elements
@@ -47,13 +56,15 @@ export PYTHONSAFEPATH=1
 
 DEFAULT=".flow"
 
+GOALS=0
 case "${1:-}" in
   "") ;;
+  --goals) GOALS=1 ;;
   -h|--help)
     awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
     exit 0 ;;
   *)
-    echo "flow-runtime-dir.sh: usage: flow-runtime-dir.sh" >&2
+    echo "flow-runtime-dir.sh: usage: flow-runtime-dir.sh [--goals]" >&2
     exit 1 ;;
 esac
 
@@ -69,7 +80,38 @@ while [ -L "$_self" ] && [ "$_hops" -lt 40 ]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$_self")" 2>/dev/null && pwd -P)" || {
   printf 'flow-runtime-dir: WARN: cannot find its own directory; using %s\n' "$DEFAULT" >&2
-  printf '%s\n' "$DEFAULT"
+  if [ "$GOALS" = 1 ]; then printf '%s\n' "$DEFAULT/goals"; else printf '%s\n' "$DEFAULT"; fi
+  exit 0
+}
+
+# _emit <runtime dir> — print it and exit; with --goals, print its goals
+# directory as a path from the working directory (from_repo_top()). When
+# python3 cannot answer, the goals directory is printed as the runtime
+# directory names it.
+_emit() {
+  if [ "$GOALS" = 0 ]; then
+    printf '%s\n' "$1"
+    exit 0
+  fi
+  _goals=$(python3 - "$SCRIPT_DIR" "$1/goals" <<'PYTHON'
+# Keep the working directory (the repository) off sys.path before any other
+# import; tests/syspath-guard.test.sh has the reasons.
+import os, sys
+try:
+    _flow_cwd = os.path.realpath(os.getcwd())
+except OSError:
+    _flow_cwd = None
+sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+
+sys.path.insert(0, sys.argv[1])
+
+from _repo_dir import from_repo_top  # noqa: E402
+
+sys.stdout.write(from_repo_top(sys.argv[2]) + "\n")
+PYTHON
+) || _goals=""
+  _goals=${_goals%$'\r'}
+  printf '%s\n' "${_goals:-$1/goals}"
   exit 0
 }
 
@@ -77,8 +119,7 @@ DIR=$("${BASH:-bash}" "$SCRIPT_DIR/cascade-resolve.sh" --default "$DEFAULT" '.fl
 # A Windows jq ends the line in \r\n, which $(...) keeps the \r of.
 DIR=${DIR%$'\r'}
 if [ -z "$DIR" ] || [ "$DIR" = "$DEFAULT" ]; then
-  printf '%s\n' "$DEFAULT"
-  exit 0
+  _emit "$DEFAULT"
 fi
 
 # check_runtime_dir() gives the directory, or .flow and the reason it refused
@@ -110,4 +151,4 @@ if [ -z "$OUT" ]; then
   printf 'flow-runtime-dir: WARN: refusing flow.runtime.stateDir: it could not be checked (python3 did not run); using %s\n' "$DEFAULT" >&2
   OUT="$DEFAULT"
 fi
-printf '%s\n' "$OUT"
+_emit "$OUT"

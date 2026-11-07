@@ -29,6 +29,8 @@ set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # PYTHONPATH and sys.path are cleaned first: the trigger comes with the
 # repository, and so could a planted yaml.py or sitecustomize.py.
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter

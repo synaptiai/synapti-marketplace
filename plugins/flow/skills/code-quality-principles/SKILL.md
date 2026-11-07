@@ -34,7 +34,7 @@ Leave every file you touch better than you found it. Touching a file means ownin
 4. Would benefit from its own issue to explain motivation
 5. Is a subjective style preference (P3 at most, not a fix-blocker)
 
-P1/P2 in the expanded-scope bucket: fix in-PR with an appropriate commit message. Finding triage is NEVER a valid escalation trigger — do NOT file a six-field escalation to ask whether to fix a finding (see `skills/llm-operator-principles/SKILL.md` and `references/escalation-format.md`). "Disagree to fix" and "ask the user whether to fix" are not options.
+[ask: none] P1/P2 in the expanded-scope bucket: fix in-PR with an appropriate commit message. Finding triage is NEVER a valid escalation trigger — do NOT file a six-field escalation to ask whether to fix a finding (see `skills/llm-operator-principles/SKILL.md` and `references/escalation-format.md`). "Disagree to fix" and "ask the user whether to fix" are not options.
 
 **Default mode:** cosmetic P3 in truly untouched files is fixed in this PR with an `improve:` commit. Do NOT create follow-up issues for them.
 

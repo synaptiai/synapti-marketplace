@@ -732,14 +732,28 @@ assert_contains 'DEP_ADDED=rails@"~> 7.0" manifest=Gemfile:2' "$OUT" \
 # =============================================================================
 
 _flow_test_begin "a VCS or URL requirement is not read as a package called git"
+# The package is the one its #egg= fragment or wheel file name names, and it
+# is a redirect (#248); tests/e2e-dep-redirects.test.sh has the full records.
+# Before #248 these lines were skipped, and this asserted only STATE=ok.
 R=$(_dd_repo)
 printf 'flask==2.0.0\n' > "$R/requirements.txt"; _dd_commit "$R" "base"
-printf 'flask==2.0.0\ngit+https://example.invalid/x.git#egg=thing\nhttps://example.invalid/w.whl\n' \
+printf 'flask==2.0.0\ngit+https://example.invalid/x.git#egg=thing\nhttps://example.invalid/w-1.0-py3-none-any.whl\n' \
   > "$R/requirements.txt"; _dd_commit "$R" "head"
 OUT=$(_dd_run "$R" HEAD~1 HEAD)
 assert_not_contains "DEP_ADDED=git@" "$OUT" "the scheme is not a package"
 assert_not_contains "DEP_ADDED=https@" "$OUT" "nor is a bare URL"
+assert_contains "DEP_ADDED=thing@(unpinned) manifest=requirements.txt:2" "$OUT" "the egg names the package"
+assert_contains "DEP_ADDED=w@(unpinned) manifest=requirements.txt:3" "$OUT" "the wheel file names the package"
 assert_contains "STATE=ok" "$OUT" "and the manifest still reads"
+
+_flow_test_begin "a URL requirement that names no package makes the file unreadable"
+R=$(_dd_repo)
+printf 'flask==2.0.0\n' > "$R/requirements.txt"; _dd_commit "$R" "base"
+printf 'flask==2.0.0\nhttps://example.invalid/w.whl\n' > "$R/requirements.txt"; _dd_commit "$R" "head"
+OUT=$(_dd_run "$R" HEAD~1 HEAD)
+assert_contains "STATE=unavailable" "$OUT" "the answer is incomplete"
+assert_contains "MANIFEST_UNPARSED=requirements.txt reason=the requirement on line 2 is a URL or path that names no package" "$OUT" \
+  "and says which line"
 
 _flow_test_begin "a Gemfile.lock requirement line is not read as a resolved gem"
 # Under specs: a resolved gem is indented four spaces and its own requirements

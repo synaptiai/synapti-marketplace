@@ -6,12 +6,17 @@
 # state is. Centralized so changes to the goals layout or YAML schema only
 # touch one reader. Goals are read from <runtime dir>/goals/, the runtime
 # directory being flow.runtime.stateDir (bin/flow-runtime-dir.sh, default
-# .flow).
+# .flow), under the repository top wherever below it this runs: the directory
+# bin/flow-goal-record.sh writes (from_repo_top() in bin/_repo_dir.py).
 #
 # Output modes (exactly one allowed, default --status):
-#   --path             absolute-or-relative path to <runtime dir>/goals/<id>.goal.yaml
+#   --path             path to <runtime dir>/goals/<id>.goal.yaml: relative at
+#                      the repository top, absolute below it; with --commit
+#                      <rev>, <rev>:<path relative to the top>
 #   --id               metadata.id
 #   --status           lifecycle.status (e.g., active, waiting_for_user)
+#   --reason           lifecycle.last_evaluation.reason on one line (empty when
+#                      the goal records none)
 #   --json             full goal as JSON, sorted keys (jq-compatible)
 #   --ac-summary       one line per AC: <id>|<status>|<evidence_ref>|<last_result>
 #   --verifiable-count <total>/<verifiable> — AC count and the subset carrying a
@@ -28,18 +33,32 @@
 #   resolve cleanly.
 #   Exit codes: 0 resolved · 1 no applicable goal · 2 refused (a symlink on the
 #   way to a goal, bad arguments) · 3 degenerate (>1 active on this branch) · 4 a goal file exists
-#   but could not be read, and no other goal answered. 4 is distinct from 1
+#   but could not be read, and no other goal answered, or the goals directory
+#   could not be inspected. 4 is distinct from 1
 #   because callers gate on existence: the merge gate treats 1 as "no goal, not
 #   applicable" and proceeds, which is the wrong answer when a goal is sitting
 #   there unreadable. Unreadable goals are still skipped when some other goal
 #   does answer, so one corrupt file never blocks a legitimate sibling.
-#   --branch <name>    override the detected current branch (test-only / scripting)
+#   --branch <name>    override the detected current branch: the branch whose
+#                      goal is wanted (/flow:merge passes the pull request's
+#                      head branch; tests and scripts use it too)
 #   --allow-terminal   also consider a terminal `achieved` goal, but ONLY when it
 #                      owns the current branch (never cross-branch) — lets the
 #                      merge/pr gate observe a goal that already left the active
 #                      window. Active goals on the current branch still take
 #                      precedence. Stop hook + /flow:status omit the flag to keep
 #                      their narrow active-only semantics.
+#   --any-status       consider a goal on the current branch whatever its
+#                      status: draft, waiting_for_user, waiting_for_ci, blocked,
+#                      failed, cancelled as well as achieved (implies
+#                      --allow-terminal). Like --allow-terminal, a goal that is
+#                      not active is only selected when it owns the current
+#                      branch. An active goal on the branch still wins; then a
+#                      goal that is neither active nor achieved, so a branch
+#                      carrying a failed goal and an achieved one is judged by
+#                      the failed one (fail closed). The merge gate uses it: a
+#                      goal that failed, was cancelled, or waits on a person is
+#                      still this branch's goal, not "no goal".
 #   --branch-strict    when the current branch is KNOWN and owns no goal, exit 1
 #                      (not applicable) instead of falling back to a goal on
 #                      another branch. Used by callers that must act on the
@@ -51,6 +70,18 @@
 #                      omit the flag.
 #   --runtime-dir <dir> the runtime directory the caller already resolved (a
 #                      hook asks once per run); otherwise it is resolved here
+#   --commit <rev>     read the goals committed in <rev> (a commit the local
+#                      repository has) instead of the working tree: the goals
+#                      directory at the same path, relative to the repository
+#                      top. /flow:merge uses it, with --branch set to the pull
+#                      request's head branch, to judge the goal the pull
+#                      request carries when another branch is checked out.
+#                      The same symlink rule applies inside the commit: a
+#                      directory on the way to the goals, or a goal file,
+#                      committed as a symlink is refused with exit 2. A <rev>
+#                      that git cannot resolve to a commit is exit 2 as well.
+#                      No goal has a modification time there, so ties go to
+#                      the alphabetically first path.
 #
 # Exit codes:
 #   0  active goal found; output on stdout
@@ -71,6 +102,8 @@ set -euo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
 # captured `cd X && pwd` into two lines.
 unset CDPATH
+# Paths handed to python3 are converted for a native Windows python3 (#246).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/py-path.sh" 2>/dev/null || py_path() { printf '%s' "$1"; }
 # Keep the repository out of PYTHONPATH before python3 starts: the interpreter
 # imports sitecustomize from each element at startup. An isolated python3 (-I:
 # it reads neither PYTHONPATH nor the working directory) keeps only elements
@@ -87,12 +120,14 @@ MODE="--status"
 SAW_MODE=0
 OVERRIDE_BRANCH=""
 ALLOW_TERMINAL=0
+ANY_STATUS=0
 BRANCH_STRICT=0
 RUNTIME_DIR_ARG=""
+COMMIT_ARG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --path|--id|--status|--json|--ac-summary|--verifiable-count)
+    --path|--id|--status|--reason|--json|--ac-summary|--verifiable-count)
       [ "$SAW_MODE" = "1" ] && { echo "flow-active-goal.sh: only one mode flag allowed (got both $MODE and $1)" >&2; exit 2; }
       MODE="$1"
       SAW_MODE=1
@@ -107,6 +142,11 @@ while [ $# -gt 0 ]; do
       ALLOW_TERMINAL=1
       shift
       ;;
+    --any-status)
+      ANY_STATUS=1
+      ALLOW_TERMINAL=1
+      shift
+      ;;
     --branch-strict)
       BRANCH_STRICT=1
       shift
@@ -114,6 +154,14 @@ while [ $# -gt 0 ]; do
     --runtime-dir)
       [ $# -lt 2 ] && { echo "flow-active-goal.sh: --runtime-dir requires a value" >&2; exit 2; }
       RUNTIME_DIR_ARG="$2"
+      shift 2
+      ;;
+    --commit)
+      [ $# -lt 2 ] && { echo "flow-active-goal.sh: --commit requires a value" >&2; exit 2; }
+      case "$2" in
+        ''|-*) echo "flow-active-goal.sh: --commit needs a revision, not '$2'" >&2; exit 2 ;;
+      esac
+      COMMIT_ARG="$2"
       shift 2
       ;;
     -h|--help)
@@ -138,7 +186,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" "$RUNTIME_DIR_ARG" <<'PYEOF'
+python3 - "$MODE" "${OVERRIDE_BRANCH:-}" "$ALLOW_TERMINAL" "$BRANCH_STRICT" "$SCRIPT_DIR" "$RUNTIME_DIR_ARG" "$ANY_STATUS" "$COMMIT_ARG" <<'PYEOF'
 # Keep the working directory (the repository) off sys.path before any other
 # import; tests/syspath-guard.test.sh has the reasons.
 import os, sys
@@ -151,28 +199,129 @@ import sys, glob, os, json, subprocess
 sys.path.insert(0, sys.argv[5])
 import yaml
 from _flow_cli import open_regular
-from _journal_atomic import JournalAtomicError, ensure_repo_dir
-from _repo_dir import runtime_dir
+from _journal_atomic import JournalAtomicError, RepoDirRefused, ensure_repo_dir
+from _repo_dir import from_repo_top, runtime_dir
 
 mode = sys.argv[1]
 override_branch = sys.argv[2] if len(sys.argv) > 2 else ""
 allow_terminal = (sys.argv[3] if len(sys.argv) > 3 else "0") == "1"
 branch_strict = (sys.argv[4] if len(sys.argv) > 4 else "0") == "1"
+any_status = (sys.argv[7] if len(sys.argv) > 7 else "0") == "1"
+commit = sys.argv[8] if len(sys.argv) > 8 else ""
 
-GOALS_DIR = os.path.join(runtime_dir(sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None), "goals")
+GOALS_REL = os.path.join(runtime_dir(sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None), "goals")
+# The runtime directory is relative to the repository top. Run from a
+# subdirectory, the goals are still the top's: from_repo_top() joins them to
+# it (the path stays relative when the working directory is the top, so what
+# callers print does not change there), as bin/flow-goal-record.sh does for
+# the goals it writes. A --commit lookup keeps the relative path, which is
+# what git's tree is keyed by.
+GOALS_DIR = from_repo_top(GOALS_REL)
 
 # Symlink defense — no goal is read through a symlinked runtime directory or goals.
 READ_NOTE = "goals are not read through it"
-try:
-    ensure_repo_dir(GOALS_DIR)
-except JournalAtomicError as exc:
-    # "refusing — .flow is a symlink", which names the component: the
-    # summary set where the rule refused, never the message cut at a "; ".
-    print(f"flow-active-goal.sh: {exc.summary}; {READ_NOTE}", file=sys.stderr)
-    sys.exit(2)
 
-if not os.path.isdir(GOALS_DIR):
-    sys.exit(1)
+
+def _git(args, text=True):
+    return subprocess.run(["git"] + args, capture_output=True, text=text, timeout=30)
+
+
+def _committed_goals(rev):
+    """[(display path, loader)] for the *.goal.yaml files directly in the goals
+    directory of commit `rev`, sorted by path. Exits 2 when `rev` is not a
+    commit, or when a directory on the way or a goal file is committed as a
+    symlink (mode 120000) or is not what it should be: the working-tree rule,
+    applied to the tree git would check out."""
+    r = _git(["rev-parse", "--verify", "--quiet", "--end-of-options", rev + "^{commit}"])
+    oid = r.stdout.strip() if r.returncode == 0 else ""
+    if not oid:
+        print(f"flow-active-goal.sh: --commit {rev} is not a commit in this repository; {READ_NOTE}", file=sys.stderr)
+        sys.exit(2)
+    rel = os.path.normpath(GOALS_REL).replace(os.sep, "/")
+    parts = [n for n in rel.split("/") if n and n != "."]
+    # Each directory on the way, as git stores it: 040000 is a tree, 120000 a
+    # symlink. A missing component means the commit has no goals.
+    for i in range(1, len(parts) + 1):
+        sub = "/".join(parts[:i])
+        r = _git(["ls-tree", "--full-tree", "-z", oid, "--", sub])
+        if r.returncode != 0:
+            print(f"flow-active-goal.sh: cannot list {sub} in {rev}: {r.stderr.strip()}", file=sys.stderr)
+            sys.exit(2)
+        entry = next((e for e in r.stdout.split("\0") if e.endswith("\t" + sub)), "")
+        if not entry:
+            return []
+        mode = entry.split(" ", 1)[0]
+        if mode == "120000":
+            print(f"flow-active-goal.sh: refusing — {sub} is a symlink in {rev}; {READ_NOTE}", file=sys.stderr)
+            sys.exit(2)
+        if mode != "040000":
+            print(f"flow-active-goal.sh: refusing — {sub} is not a directory in {rev}; {READ_NOTE}", file=sys.stderr)
+            sys.exit(2)
+    r = _git(["ls-tree", "--full-tree", "-z", oid, "--", "/".join(parts) + "/"])
+    if r.returncode != 0:
+        print(f"flow-active-goal.sh: cannot list {rel} in {rev}: {r.stderr.strip()}", file=sys.stderr)
+        sys.exit(2)
+    found = []
+    for e in r.stdout.split("\0"):
+        if "\t" not in e:
+            continue
+        meta, name = e.split("\t", 1)
+        if not name.endswith(".goal.yaml") or "/" in name[len("/".join(parts)) + 1:]:
+            continue
+        mode, typ, blob = meta.split(" ")
+        shown = f"{rev}:{name}"
+        if mode == "120000":
+            print(f"flow-active-goal.sh: refusing — {shown} is a symlink; {READ_NOTE}", file=sys.stderr)
+            sys.exit(2)
+        if typ != "blob":
+            continue
+        def _load(blob=blob):
+            out = _git(["cat-file", "blob", blob], text=False)
+            if out.returncode != 0:
+                raise OSError(f"git cat-file failed for {blob}")
+            return yaml.safe_load(out.stdout.decode("utf-8")) or {}
+        found.append((shown, _load))
+    return sorted(found, key=lambda t: t[0])
+
+
+if commit:
+    SOURCES = [(shown, load, 0.0) for shown, load in _committed_goals(commit)]
+    if not SOURCES:
+        sys.exit(1)
+else:
+    try:
+        ensure_repo_dir(GOALS_DIR)
+    except RepoDirRefused as exc:
+        # "refusing — .flow is a symlink", which names the component: the
+        # summary set where the rule refused, never the message cut at a "; ".
+        print(f"flow-active-goal.sh: {exc.summary}; {READ_NOTE}", file=sys.stderr)
+        sys.exit(2)
+    except JournalAtomicError as exc:
+        # A directory that could not be inspected (no permission, say) is not
+        # a refusal: the goals may be there, so whether one is active is
+        # unknown, exit 4, as for a goal file that cannot be read.
+        print(f"flow-active-goal.sh: {GOALS_DIR} could not be read: {' '.join(str(exc).split())}", file=sys.stderr)
+        sys.exit(4)
+
+    if not os.path.isdir(GOALS_DIR):
+        sys.exit(1)
+
+    def _load_file(path):
+        # Never waits on, or reads, anything but a regular file: a FIFO named
+        # like a goal is opened at once and refused, and counted unreadable.
+        with open_regular(path) as f:
+            return yaml.safe_load(f) or {}
+
+    SOURCES = []
+    for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
+        if os.path.islink(path):
+            print(f"flow-active-goal.sh: refusing — {path} is a symlink; {READ_NOTE}", file=sys.stderr)
+            sys.exit(2)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = 0.0
+        SOURCES.append((path, (lambda p=path: _load_file(p)), mtime))
 
 # Determine the current branch for branch-first selection. An
 # explicit --branch override wins (test-only / scripting); otherwise ask git,
@@ -199,26 +348,23 @@ active = []
 # both answer the gate with an unrelated goal and be influenceable through file
 # mtime.
 terminal = []
+# Goals that are neither active nor achieved (draft, waiting_for_user,
+# waiting_for_ci, blocked, failed, cancelled, or a status nobody recognises),
+# collected only with --any-status, and like `terminal` selected only on the
+# current branch.
+other = []
 unreadable = []
-for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml"))):
-    if os.path.islink(path):
-        print(f"flow-active-goal.sh: refusing — {path} is a symlink; {READ_NOTE}", file=sys.stderr)
-        sys.exit(2)
+for path, load, mtime in SOURCES:
     try:
-        # Never waits on, or reads, anything but a regular file: a FIFO named
-        # like a goal is opened at once and refused, and counted unreadable.
-        with open_regular(path) as f:
-            data = yaml.safe_load(f) or {}
+        data = load()
         status = (data.get("lifecycle") or {}).get("status")
         branch = (data.get("scope") or {}).get("branch") or ""
-        try:
-            mtime = os.path.getmtime(path)
-        except OSError:
-            mtime = 0.0
         if status == "active":
             active.append((path, data, branch, mtime))
         elif allow_terminal and status == "achieved":
             terminal.append((path, data, branch, mtime))
+        elif any_status:
+            other.append((path, data, branch, mtime))
     except Exception as exc:
         # Tolerate unparseable goals — they would block lookup of a sibling
         # legitimate goal. The Stop hook + status subcommand follow the same
@@ -234,19 +380,21 @@ for path in sorted(glob.glob(os.path.join(glob.escape(GOALS_DIR), "*.goal.yaml")
 # is the whole question for a caller that gates on existence: the merge gate
 # reads exit 1 as "not applicable" and proceeds. Say the second thing when it
 # is true, and let the caller decide.
-if not active and not terminal and unreadable:
+if not active and not terminal and not other and unreadable:
     for path, exc in unreadable:
         print(f"flow-active-goal.sh: {path} could not be read: {exc}", file=sys.stderr)
     sys.exit(4)
 
-if not active and not terminal:
+if not active and not terminal and not other:
     sys.exit(1)
 
 # Branch-first selection. A goal that owns the current branch always wins over a
 # cross-branch goal, regardless of lifecycle status. Priority:
 #   1. active goal(s) on the current branch  (>1 -> exit 3, degenerate)
-#   2. achieved goal on the current branch    (only with --allow-terminal)
-#   3. most-recently-modified ACTIVE goal on any branch (legacy goals predating
+#   2. a goal on the current branch that is neither active nor achieved
+#      (only with --any-status): it fails closed over an achieved sibling
+#   3. achieved goal on the current branch    (only with --allow-terminal)
+#   4. most-recently-modified ACTIVE goal on any branch (legacy goals predating
 #      scope.branch, detached HEAD, or a caller run from main)
 # Terminal goals are never selected cross-branch (no tier-3 equivalent): if only
 # achieved goals exist and none own the current branch, there is no applicable
@@ -256,6 +404,7 @@ def _branch_matches(t):
 
 active_here = [t for t in active if _branch_matches(t)]
 terminal_here = [t for t in terminal if _branch_matches(t)]
+other_here = [t for t in other if _branch_matches(t)]
 
 if active_here:
     if len(active_here) > 1:
@@ -267,6 +416,12 @@ if active_here:
         )
         sys.exit(3)
     chosen = active_here[0]
+elif other_here:
+    # A goal on this branch that failed, was cancelled, is blocked, a draft, or
+    # waits on a person or CI. Most-recent wins; equal mtime -> alphabetically
+    # first path. It is chosen over an achieved goal on the same branch so the
+    # caller is told about the goal that is not done.
+    chosen = max(other_here, key=lambda t: t[3])
 elif terminal_here:
     # Achieved goal on the current branch (e.g. the gate after evaluation).
     # Most-recent wins; equal mtime -> alphabetically-first path (sorted glob
@@ -322,6 +477,10 @@ elif mode == "--id":
     print(_one_line((data.get("metadata") or {}).get("id", "")))
 elif mode == "--status":
     print(_one_line((data.get("lifecycle") or {}).get("status", "")))
+elif mode == "--reason":
+    _lc = data.get("lifecycle") or {}
+    _ev = _lc.get("last_evaluation") if isinstance(_lc, dict) else None
+    print(_one_line((_ev or {}).get("reason", "") if isinstance(_ev, dict) else ""))
 elif mode == "--json":
     print(json.dumps(data, sort_keys=True))
 elif mode == "--ac-summary":

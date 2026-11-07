@@ -30,6 +30,32 @@
 #      limited to the current branch)
 #   G4 two active goals on this branch pick one silently instead of blocking
 #   G5 flow.goals.enabled=false still gates
+#   G6 a goal on this branch that is draft, waiting_for_user, waiting_for_ci,
+#      blocked, failed or cancelled reads as "no goal" and lets the merge
+#      through (#335), or blocks without naming the goal and its status
+#   G7 a failed goal beside an achieved one on this branch is passed over for
+#      the achieved one
+#   G8 the gate judges the checked-out branch's goal, not the pull request's
+#      (#309): another branch's active goal blocks a pull request that has
+#      none, and a pull request whose own goal is not achieved passes when
+#      the checked-out branch has no goal
+#   G9 when the pull request's head cannot be read (gh fails, or the head
+#      commit is neither here nor fetchable), the gate reads "no goal" and
+#      passes
+#   G10 a goals directory committed as a symlink in the pull request's head
+#      is followed
+#   G11 a failed or cancelled goal's block reason says to finish the work
+#      under a new goal and stops there, but the failed goal still decides
+#      over the new achieved one while its file is on the branch (#335), so
+#      the remedy it gives never unblocks the merge
+#   G12 the gate reads the working tree because a local branch has the pull
+#      request's head branch name, though it is not at the pull request's
+#      head commit: a local branch that is ahead of or diverged from the head
+#      holds an achieved goal the merge does not land, and a fork's pull
+#      request whose branch shares the checked-out branch's name is judged by
+#      this clone's working tree; or, the other way, a branch checked out at
+#      the head commit with a goal evaluated but not yet committed is no
+#      longer read from the working tree
 #
 # status.md findings ledger
 #   S1 RESOLVED does not win over ESCALATED for the same finding
@@ -143,13 +169,52 @@ e2e_expect_clean_edges
 
 # --- merge.md FlowGoal gate --------------------------------------------------
 
-_goal_case() { e2e_new "$1"; e2e_describe "$2"; e2e_repo feature/e2e; }
+# The pull request is #7 and its head is the checked-out branch feature/e2e at
+# the commit checked out, unless a scenario says otherwise.
+_goal_case() {
+  e2e_new "$1"; e2e_describe "$2"; e2e_repo feature/e2e
+  e2e_gh_fixture repo '{"nameWithOwner":"o/r"}'
+  _pr_head feature/e2e "$(_head_oid)"
+}
+_pr_head() { e2e_gh_fixture pr-head-7 "$(jq -nc --arg b "$1" --arg o "$2" '{headRefName:$b,headRefOid:$o}')"; }
+# _head_oid — the commit checked out in the scratch repository.
+_head_oid() { (_e2e_git_env; cd "$E2E_REPO" && git rev-parse HEAD); }
+# _commit_all <message> — commit everything in the scratch repository.
+_commit_all() {
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    git add -A
+    git commit -q -m "$1"
+  ) || _flow_assert_fail "$E2E_NAME: could not commit: $1"
+}
+# _pr_branch <branch> [goal-id status] — commit a branch in the scratch
+# repository, carrying one goal when given, and go back to feature/e2e. Prints
+# nothing; the head commit is in $E2E_DIR/pr-oid.
+_pr_branch() {
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    git checkout -q -b "$1"
+  ) || _flow_assert_fail "$E2E_NAME: could not create branch $1"
+  if [ -n "${2:-}" ]; then e2e_goal "$2" "$1" "$3" false; fi
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    printf 'pr\n' > pr.txt
+    git add -A
+    git commit -q -m "pr head"
+    git rev-parse HEAD > "$E2E_DIR/pr-oid"
+    git checkout -q feature/e2e
+  ) || _flow_assert_fail "$E2E_NAME: could not commit branch $1"
+  _pr_head "$1" "$(cat "$E2E_DIR/pr-oid")"
+}
 
 _flow_test_begin "merge goal gate: an achieved goal on this branch passes and is named (G1)"
 _goal_case merge-goal-achieved "achieved goal on this branch, plus an active goal on another branch"
 e2e_goal g-mine feature/e2e achieved true
 e2e_goal g-other feature/other active false
-e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
 e2e_expect_line "FLOW_GOAL_GATE_STATE=ok"
 e2e_expect_line "FLOW_GOAL_ID=g-mine"
 e2e_expect_line "FLOW_GOAL_LIFECYCLE=achieved"
@@ -158,7 +223,7 @@ e2e_expect_clean_edges
 _flow_test_begin "merge goal gate: an unfinished goal on this branch blocks (G2)"
 _goal_case merge-goal-active "active goal on this branch that has not reached achieved"
 e2e_goal g-mine feature/e2e active false
-e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
 e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
 e2e_expect_out "FlowGoal g-mine lifecycle is 'active'"
 e2e_expect_clean_edges
@@ -166,9 +231,9 @@ e2e_expect_clean_edges
 _flow_test_begin "merge goal gate: an active goal on another branch does not block this one (G3)"
 _goal_case merge-goal-other-branch "the only active goal belongs to feature/other"
 e2e_goal g-other feature/other active false
-e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
 e2e_expect_line "FLOW_GOAL_GATE_STATE=ok"
-e2e_expect_line "FLOW_GOAL_GATE_NOTE=no active FlowGoal for this branch — gate not applicable"
+e2e_expect_line "FLOW_GOAL_GATE_NOTE=no FlowGoal for feature/e2e — gate not applicable"
 e2e_expect_no_line "FLOW_GOAL_ID=g-other"
 e2e_expect_clean_edges
 
@@ -176,9 +241,9 @@ _flow_test_begin "merge goal gate: two active goals on this branch block (G4)"
 _goal_case merge-goal-two-active "two active goals both own this branch"
 e2e_goal g-one feature/e2e active false
 e2e_goal g-two feature/e2e active false
-e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
 e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
-e2e_expect_out "multiple active FlowGoals on the current branch"
+e2e_expect_out "multiple active FlowGoals on feature/e2e"
 e2e_expect_clean_edges
 
 _flow_test_begin "merge goal gate: goals disabled in project settings turns the gate off (G5)"
@@ -186,8 +251,199 @@ _goal_case merge-goal-disabled "flow.goals.enabled=false, with an unfinished goa
 e2e_goal g-mine feature/e2e active false
 mkdir -p "$E2E_REPO/.claude"
 printf '%s\n' '{"flow":{"goals":{"enabled":false}}}' > "$E2E_REPO/.claude/settings.flow.json"
-e2e_run_fence "$MERGE_MD" "$GOAL_FENCE"
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
 e2e_expect_line "FLOW_GOAL_GATE_STATE=disabled"
+e2e_expect_clean_edges
+
+# G6: every status other than active and achieved, as the #335 table lists
+# them. Each blocks, and the reason names the goal, its status and what to do.
+_goal_status_case() {
+  local status=$1 expect=$2
+  _flow_test_begin "merge goal gate: a $status goal on this branch blocks (G6)"
+  _goal_case "merge-goal-$status" "the goal owning this branch is $status: the merge must be blocked and the reason name it"
+  e2e_goal g-mine feature/e2e "$status" false
+  e2e_goal g-other feature/other active false
+  e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+  e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+  e2e_expect_line "FLOW_GOAL_ID=g-mine"
+  e2e_expect_line "FLOW_GOAL_LIFECYCLE=$status"
+  e2e_expect_out "FlowGoal g-mine lifecycle is '$status' — $expect"
+  e2e_expect_no_line "FLOW_GOAL_GATE_NOTE=no FlowGoal for feature/e2e — gate not applicable"
+  e2e_expect_clean_edges
+}
+_goal_status_case failed "a failed goal does not merge"
+_goal_status_case cancelled "a cancelled goal does not merge"
+_goal_status_case waiting_for_user "it waits for a person's answer"
+_goal_status_case waiting_for_ci "it waits for CI"
+_goal_status_case blocked "it is blocked"
+_goal_status_case draft "it is a draft that was never activated"
+
+_flow_test_begin "merge goal gate: a failed goal is not hidden by an achieved one on the same branch (G7)"
+_goal_case merge-goal-failed-and-achieved "this branch carries an achieved goal and a failed one: the failed one decides"
+e2e_goal g-done feature/e2e achieved true
+e2e_goal g-failed feature/e2e failed false
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_line "FLOW_GOAL_ID=g-failed"
+e2e_expect_clean_edges
+
+# G11: the remedy the reason gives must be one that unblocks the merge.
+_retry_case() {
+  local status=$1
+  _flow_test_begin "merge goal gate: a $status goal's reason says to remove its file, which then unblocks the retry (G11)"
+  _goal_case "merge-goal-$status-retry" "issue-5 is $status and issue-5-retry achieved on this branch: the $status one decides, and its reason must say the file has to leave the branch"
+  e2e_goal issue-5 feature/e2e "$status" false
+  e2e_goal issue-5-retry feature/e2e achieved true
+  e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+  e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+  e2e_expect_line "FLOW_GOAL_ID=issue-5"
+  e2e_expect_out "FlowGoal issue-5 lifecycle is '$status' — a $status goal does not merge, and the merge stays blocked while .flow/goals/issue-5.goal.yaml is on the branch: if this PR still ships the work, finish it under a new goal with the same id (/flow:goal create replaces .flow/goals/issue-5.goal.yaml), or under another id and remove .flow/goals/issue-5.goal.yaml from the branch; if it does not, remove .flow/goals/issue-5.goal.yaml from the branch"
+  e2e_expect_clean_edges
+  # The remedy, followed: the file leaves the branch and the retry decides.
+  rm "$E2E_REPO/.flow/goals/issue-5.goal.yaml"
+  e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+  e2e_expect_line "FLOW_GOAL_GATE_STATE=ok"
+  e2e_expect_line "FLOW_GOAL_ID=issue-5-retry"
+  e2e_expect_clean_edges
+}
+_retry_case failed
+_retry_case cancelled
+
+_flow_test_begin "merge goal gate: read from the pull request's head, a failed goal's reason names the file to remove, not the commit (G11)"
+_goal_case merge-goal-pr-failed "checked out: feature/e2e with no goal; PR #7's head feature/pr carries a failed goal"
+_pr_branch feature/pr g-pr failed
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out "the merge stays blocked while .flow/goals/g-pr.goal.yaml is on the branch"
+e2e_expect_no_out "$(cat "$E2E_DIR/pr-oid"):"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: a waiting goal's reason is shown (G6)"
+_goal_case merge-goal-waiting-reason "a waiting_for_user goal whose last evaluation says what it waits for"
+e2e_goal g-mine feature/e2e waiting_for_user false
+python3 - "$E2E_REPO/.flow/goals/g-mine.goal.yaml" <<'PY'
+import sys, yaml
+p = sys.argv[1]
+g = yaml.safe_load(open(p, encoding="utf-8"))
+g["lifecycle"]["last_evaluation"] = {"result": "needs_human_review", "reason": "which API version to target"}
+yaml.safe_dump(g, open(p, "w", encoding="utf-8"), sort_keys=False)
+PY
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out "(last evaluation: which API version to target)"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: another branch's goal does not block a pull request without one (G8)"
+_goal_case merge-goal-pr-has-none "checked out: feature/e2e with an active goal; PR #7's head feature/pr carries no goal"
+_pr_branch feature/pr
+e2e_goal g-checked-out feature/e2e active false
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=ok"
+e2e_expect_line "FLOW_GOAL_GATE_NOTE=no FlowGoal for feature/pr — gate not applicable"
+e2e_expect_out "FLOW_GOAL_SOURCE=commit "
+e2e_expect_no_line "FLOW_GOAL_ID=g-checked-out"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: the pull request's own unfinished goal blocks with nothing checked out of it (G8)"
+_goal_case merge-goal-pr-own-active "checked out: feature/e2e with no goal; PR #7's head feature/pr carries an active goal"
+_pr_branch feature/pr g-pr active
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_line "FLOW_GOAL_ID=g-pr"
+e2e_expect_out "FlowGoal g-pr lifecycle is 'active'"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: the pull request's achieved goal passes whatever is checked out (G8)"
+_goal_case merge-goal-pr-own-achieved "checked out: feature/e2e with an active goal; PR #7's head feature/pr carries an achieved goal"
+_pr_branch feature/pr g-pr achieved
+e2e_goal g-checked-out feature/e2e active false
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=ok"
+e2e_expect_line "FLOW_GOAL_ID=g-pr"
+e2e_expect_line "FLOW_GOAL_LIFECYCLE=achieved"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: a pull request head gh cannot read blocks (G9)"
+_goal_case merge-goal-pr-gh-down "gh pr view fails for PR #7, and the checked-out branch has no goal"
+e2e_gh_fail pr-head-7
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out "could not read pull request #7's head branch and commit"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: a pull request head that is not here and cannot be fetched blocks (G9)"
+_goal_case merge-goal-pr-head-missing "PR #7's head is feature/pr at a commit this clone lacks, and there is no origin to fetch it from"
+_pr_head feature/pr 0123456789abcdef0123456789abcdef01234567
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out "is not in this clone and could not be fetched from origin"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: a goals directory committed as a symlink in the pull request's head is refused (G10)"
+_goal_case merge-goal-pr-symlink "PR #7's head commits .flow as a symlink"
+(
+  _e2e_git_env
+  cd "$E2E_REPO" || exit 1
+  git checkout -q -b feature/pr
+  ln -s /tmp .flow
+  git add .flow
+  git commit -q -m "symlinked runtime dir"
+  git rev-parse HEAD > "$E2E_DIR/pr-oid"
+  git checkout -q feature/e2e
+) || _flow_assert_fail "merge-goal-pr-symlink: could not commit the symlink"
+_pr_head feature/pr "$(cat "$E2E_DIR/pr-oid")"
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out ".flow is a symlink in"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: a local branch ahead of the pull request's head is not read in its place (G12)"
+_goal_case merge-goal-local-ahead "PR #7's head is feature/e2e at a commit whose goal g-mine is active; the checked-out feature/e2e has a later local commit that makes g-mine achieved"
+e2e_goal g-mine feature/e2e active false
+_commit_all "goal active"
+_pr_head feature/e2e "$(_head_oid)"
+e2e_goal g-mine feature/e2e achieved true
+_commit_all "goal achieved, not pushed"
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out "FLOW_GOAL_SOURCE=commit "
+e2e_expect_line "FLOW_GOAL_ID=g-mine"
+e2e_expect_line "FLOW_GOAL_LIFECYCLE=active"
+e2e_expect_no_line "FLOW_GOAL_SOURCE=working tree of feature/e2e"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: a fork's pull request whose branch shares the checked-out branch's name is read from its head commit (G12)"
+_goal_case merge-goal-fork-same-name "checked out: feature/e2e with no goal; PR #7 comes from a fork whose head branch is also named feature/e2e, at a commit (made here on fork-head) carrying an active goal for feature/e2e"
+(
+  _e2e_git_env
+  cd "$E2E_REPO" || exit 1
+  git checkout -q -b fork-head
+) || _flow_assert_fail "merge-goal-fork-same-name: could not create fork-head"
+e2e_goal g-fork feature/e2e active false
+_commit_all "fork head"
+_pr_head feature/e2e "$(_head_oid)"
+(
+  _e2e_git_env
+  cd "$E2E_REPO" || exit 1
+  git checkout -q feature/e2e
+) || _flow_assert_fail "merge-goal-fork-same-name: could not go back to feature/e2e"
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=blocked"
+e2e_expect_out "FLOW_GOAL_SOURCE=commit "
+e2e_expect_line "FLOW_GOAL_ID=g-fork"
+e2e_expect_no_line "FLOW_GOAL_GATE_NOTE=no FlowGoal for feature/e2e — gate not applicable"
+e2e_expect_clean_edges
+
+_flow_test_begin "merge goal gate: checked out at the pull request's head, a goal evaluated but not committed is read from the working tree (G12)"
+_goal_case merge-goal-head-uncommitted "PR #7's head is the checked-out feature/e2e commit, whose goal g-mine is active; the working tree holds g-mine achieved, not yet committed"
+e2e_goal g-mine feature/e2e active false
+_commit_all "goal active"
+_pr_head feature/e2e "$(_head_oid)"
+e2e_goal g-mine feature/e2e achieved true
+e2e_run_fence "$MERGE_MD" "$GOAL_FENCE" 7
+e2e_expect_line "FLOW_GOAL_GATE_STATE=ok"
+e2e_expect_line "FLOW_GOAL_SOURCE=working tree of feature/e2e"
+e2e_expect_line "FLOW_GOAL_LIFECYCLE=achieved"
 e2e_expect_clean_edges
 
 # --- status.md findings ledger -----------------------------------------------

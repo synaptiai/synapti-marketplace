@@ -10,7 +10,7 @@ agent: Explore
 
 ## Contract
 
-Iron law: classify before committing — every changed file gets a classification; unclassified files are not staged. Invoked by `/flow:commit` (Phase 2 CLASSIFY, cross-check), `/flow:start` (CODE phase per-task gate, step 8), `/flow:address` (after fixes), and `/flow:debug`. Returns a finding-first table — File | Classification | Signal | Notes — with each file marked in-context, uncertain, out-of-context, or RED FLAG, plus first-touch notes and proposed atomic commit groups. Permitted skips: none. Red-flag files are blocked regardless of context; uncertain or out-of-context files go to the user via a six-field AskUserQuestion escalation before any commit.
+[ask: default] Iron law: classify before committing — every changed file gets a classification; unclassified files are not staged. Invoked by `/flow:commit` (Phase 2 CLASSIFY, cross-check), `/flow:start` (CODE phase per-task gate, step 8), `/flow:address` (after fixes), and `/flow:debug`. Returns a finding-first table — File | Classification | Signal | Notes — with each file marked in-context, uncertain, out-of-context, or RED FLAG, plus first-touch notes and proposed atomic commit groups. Permitted skips: none. Red-flag files are blocked regardless of context; uncertain or out-of-context files go to the user via a six-field AskUserQuestion escalation before any commit. Under `ASK_POLICY=autonomous`: include cleanup files in a separate `improve:` or `chore:` commit and leave genuinely unrelated files unstaged, recorded as `default-taken`.
 
 ## Signals
 
@@ -46,7 +46,7 @@ A file is "first touch" when `git log $DEFAULT_BRANCH..HEAD -- file` is empty AN
 
 ## Out-of-Context Handling
 
-Uncertain or out-of-context files never get staged silently. Present them with the six-field escalation (`references/escalation-format.md`) offering: (1) include as a separate `improve:`/`chore:` commit when the change is Boy Scout cleanup; (2) exclude — leave unstaged for a separate branch. During `/flow:start` CODE, resolve them at task time, not commit time. Automatic changes (lock files) still need classification. Before asking about uncertain files, `/flow:commit` and `/flow:start` run `bin/flow-classify-s1.sh` through their `S1_CLASSIFY_BLOCK`, which adds a System One estimate of whether each change serves the issue to the Notes when the decision point `classify.serves-issue` is on; the estimate never changes the classification.
+[ask: default] Uncertain or out-of-context files never get staged silently. Present them with the six-field escalation (`references/escalation-format.md`) offering: (1) include as a separate `improve:`/`chore:` commit when the change is Boy Scout cleanup; (2) exclude — leave unstaged for a separate branch. Under `ASK_POLICY=autonomous`, do not ask: take (1) for cleanup and (2) for the rest, and record it as `default-taken`. During `/flow:start` CODE, resolve them at task time, not commit time. Automatic changes (lock files) still need classification. Before asking about uncertain files, `/flow:commit` and `/flow:start` run `bin/flow-classify-s1.sh` through their `S1_CLASSIFY_BLOCK`, which adds a System One estimate of whether each change serves the issue to the Notes when the decision point `classify.serves-issue` is on; the estimate never changes the classification.
 
 ## Atomic Commit Grouping
 

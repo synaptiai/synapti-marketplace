@@ -51,7 +51,7 @@ Valid only when one of these holds, with the evidence in the response:
 - **Would break existing tests** — name the test and its `file:line`.
 - **Contradicts CLAUDE.md** — quote the rule and its location.
 
-"I disagree" is not pushback; preferences resolve in the reviewer's favor. Never ignore feedback silently. Beyond these three grounds, a product or architecture judgment is a six-field escalation; finding triage never is (`references/feedback-resolution.md`).
+"I disagree" is not pushback; preferences resolve in the reviewer's favor. Never ignore feedback silently. [ask: decision] Beyond these three grounds, a product or architecture judgment is a six-field escalation (`flow:decision`); finding triage never is (`references/feedback-resolution.md`).
 
 ## Verify and Re-Request
 

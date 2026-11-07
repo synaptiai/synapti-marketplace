@@ -30,6 +30,21 @@ Full PR creation workflow with multi-faceted review, quality gates, and structur
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## References
 
 - [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 4's visual-verification BLOCKED escalation and any other Proactive-Autonomy escalation surfaced during PR creation
@@ -571,7 +586,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    if _off '.visualVerification.enabled'; then printf '%s\n' "VISUAL_VERIFICATION=off"; else printf '%s\n' "VISUAL_VERIFICATION=on"; fi
    ```
 
-   - `CLOSED_LOOP=off` (`closedLoop.enabled` is false): tell the agent to run each check once and report a failure without fixing and retrying; then ask the user with `AskUserQuestion` whether to fix it now or open the PR with the failure noted.
+   - [ask: default] `CLOSED_LOOP=off` (`closedLoop.enabled` is false): tell the agent to run each check once and report a failure without fixing and retrying; then ask the user with `AskUserQuestion` whether to fix it now or open the PR with the failure noted. Under `ASK_POLICY=autonomous`, do not ask: fix the failure now, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
    - `RUNTIME_VERIFICATION=optional` (`closedLoop.requireRuntimeVerification` is false): runtime verification may be skipped; record `skipped: closedLoop.requireRuntimeVerification is false` in the PR body.
    - `VISUAL_VERIFICATION=off` (`visualVerification.enabled` is false): leave the visual-verification sentence out of the prompt below, and record visual verification as `SKIP` with that reason.
 
@@ -593,7 +608,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 3. **TaskList**: Confirm all review tasks complete (including visual verification if created)
 4. **Runtime verification**: If integration-verifier returns SKIP without justification, run runtime verification directly (build, start, smoke test). Runtime verification must pass before PR creation, unless the block printed `RUNTIME_VERIFICATION=optional`.
 5. **Visual verification enforcement**: If `visualVerification.requireVisualVerification` is `true` and integration-verifier returned visual verification as BLOCKED:
-   - Use `AskUserQuestion` with a Proactive-Autonomy escalation:
+   - [ask: permission] Use `AskUserQuestion` with a Proactive-Autonomy escalation:
      > **Situation** — Visual verification is required (`requireVisualVerification: true`) but no browser tools are available. UI files changed: {list}.
      >
      > **What I tried** — Checked for Playwright MCP, headless browser tools, and gstack. None available.
@@ -611,17 +626,17 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
    - Based on response → `TaskUpdate` visual tasks to SKIP_USER_APPROVED or MANUAL, or provide installation guidance and retry
    - The PR body should note whether visual verification was PASS, MANUAL, SKIP_USER_APPROVED, or SKIP_WARN
 6. **Display findings** (finding-first pattern; fix-forward bounded by `fixForwardMaxIterations`, default 10 — safety net, not a budget; see `skills/llm-operator-principles/SKILL.md`):
-   - LOW-confidence findings, at any priority, including those the System One step after the grounding pass demoted → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `{"finding_id", "facet"}` (its id and the agent that raised it) to the `refuted` list of step 13's `DROPS_FILE`); when neither can settle it, escalate with the six-field structure and record it MEDIUM. A finding that names no trigger is LOW: name one inside `references/review-scope.md` and settle it as above, or drop it, with the outcome `dropped — names no trigger`; it is never escalated. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM, and are given a trigger when they have none: the command that failed, the claim and the `file:line` that contradicts it, or the rule a convention finding names.
+   - [ask: decision] LOW-confidence findings, at any priority, including those the System One step after the grounding pass demoted → investigate each one first, as `commands/review.md` Phase 4 step 5 does on your own PR: a test (or, for prose, a command) that fails on the current code confirms it (fix it, keep the test, record it HIGH); one that passes refutes it (keep the test, and add `{"finding_id", "facet"}` (its id and the agent that raised it) to the `refuted` list of step 13's `DROPS_FILE`); when neither can settle it, escalate with the six-field structure and record it MEDIUM. A finding that names no trigger is LOW: name one inside `references/review-scope.md` and settle it as above, or drop it, with the outcome `dropped — names no trigger`; it is never escalated. List every outcome, with the confidence the finding ended with, under `### Needs investigation` in the PR body, separate from the P1/P2/P3 counts; /flow:pr posts no marker, so the PR body is where that confidence is recorded. Escalated findings stay listed there and do not re-enter step 7's fix loop. Findings from holdout-validation, convention-checker and test-runner are MEDIUM, and are given a trigger when they have none: the command that failed, the claim and the `file:line` that contradicts it, or the rule a convention finding names.
    - P1 findings → must fix before PR
    - P2 findings → fix before PR (continue iterating until zero remain; finding triage is NEVER a valid escalation trigger)
    - P3 findings → fix in-PR in one batch after the P1 and P2 fixes, including cosmetic P3 in untouched files (an `improve:` commit). Do NOT add a section to the PR body that lists findings instead of fixing them. The P3 batch does not send the flow back to review.
    - Every fix covers its class: the other inputs of the same shape and the other callers of the same code are fixed in the same commit, or the shared code they all use is (`commands/review.md` Phase 4 step 5).
 7. **If P1 or P2 findings that are not escalated**: Fix them, then re-review only what those fixes changed, for regressions they introduced. A re-review raises P1 and P2 findings only; the review has converged when no P1 or P2 is left. An escalated finding keeps its priority but stays listed in the PR body and does not send the flow back here.
 
-7a. **FlowGoal gate** (on by default; off when `flow.goals.enabled` is false or `flow.goals.goalCreation` is `off`) — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
+7a. [ask: permission] **FlowGoal gate** (on by default; off when `flow.goals.enabled` is false or `flow.goals.goalCreation` is `off`) — when the Phase 1 `### FlowGoal State` section reported `GATE=block`, the active FlowGoal is not yet `achieved`. `/flow:start` evaluates its goal at the end of VERIFY and moves it to `achieved` when every criterion passed, so a block here means the goal was evaluated and is not met (its `lifecycle.last_evaluation.reason` names what), or the work did not go through `/flow:start`'s VERIFY. Do NOT push or create the PR with an incomplete goal — use the AskUserQuestion tool with these options:
 
    - **Option 1 (Recommended): Run `/flow:goal evaluate <id>` first** — produces a verdict that may transition the goal to `achieved`. If the verdict is `achieved`, return here and proceed with PR creation.
-   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved or the user overrides. This is a Proactive-Autonomy override of the gate, so record it to the decision journal with the block below: an `escalation-resolved` artifact whose `escalation_field` is `blocking`, because the user answered the escalation's Blocking? field (the gate said the incomplete goal blocks the PR, and the user chose to go on). On a branch whose name contains `issue-N` it goes to `issue-N.md`; on any other branch it goes to today's session journal, `<journal dir>/session-YYYY-MM-DD.md`:
+   - **Option 2: Create PR with goal not-yet-achieved** — proceed with PR creation; the PR body includes a `## FlowGoal Status` section noting the lifecycle is `<status>`. The `/flow:merge` gate will block until the goal is achieved; it has no override. Going on here is a Proactive-Autonomy override of this `/flow:pr` gate, so record it to the decision journal with the block below: an `escalation-resolved` artifact whose `escalation_field` is `blocking`, because the user answered the escalation's Blocking? field (the gate said the incomplete goal blocks the PR, and the user chose to go on). On a branch whose name contains `issue-N` it goes to `issue-N.md`; on any other branch it goes to today's session journal, `<journal dir>/session-YYYY-MM-DD.md`:
 
      ```bash
      # PR_GOAL_OVERRIDE_BLOCK_BEGIN
@@ -648,7 +663,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 
    When `STATE=none` (no active FlowGoal for this branch): the gate is **not applicable** (it keys on goal existence). Proceed with PR creation silently — a goal-less PR is not blocked and needs no prompt. The PR body omits the `## FlowGoal Status` section.
 
-8. **Generate PR body** from template + findings + journal + comprehension report, written from the branch as it is now: `git diff "$DEFAULT_BRANCH"...HEAD` and the journal, not the plan. Every count, test result and behaviour it states comes from a command run in this session or a `file:line` in the diff; what the issue asked for and this pull request does not do is said in the Summary.
+8. **Generate PR body** from template + findings + journal + comprehension report, written from the branch as it is now: `git diff "$DEFAULT_BRANCH"...HEAD` and the journal, not the plan. Every count, test result and behaviour it states comes from a command run in this session or a `file:line` in the diff; what the issue asked for and this pull request does not do is said in the Summary. Questions stored for this issue with `blocking: soft` that were answered on their recommendation, because nobody could be asked (`bin/flow-question.sh list --status answered --issue N`, then `get <id>` for `answered_by: recommendation` and `blocking: soft`; `references/escalation-format.md`), go under `## Decisions taken on a recommendation`; a `blocking: no` question is not listed; questions still open for the issue (`list --status open --issue N`) are named in the Summary.
 
    **Check it before it is published.** Run `git fetch origin "$DEFAULT_BRANCH"`, write the body to a file made with `mktemp`, with the Write tool, and run the block with `DESC_FILE=<that path>` and `DESC_BASE=$DEFAULT_BRANCH`: a bare branch name is read as its `origin/` ref, because `/flow:start` branches from it and never updates the local one, and `COMPARED=` shows the range the counts came from. Correct or remove every `MISMATCH` and `STALE_PATH` line it prints, and run it again until it prints `STATE=ok` (or `STATE=unavailable`, which goes into the body as a note with its `REASON`). The claims a script cannot check, what the change does, go to `Skill(holdout-validation)` with the body as its `Description` input; a claim it contradicts is corrected the same way.
 
@@ -683,7 +698,7 @@ FLOW_ROOT="$(__t=$(git rev-parse --show-toplevel 2>/dev/null);__x=0;[ -z "$__t" 
 
    - **Goal**: `<GOAL_ID>` (from `<runtime dir>/goals/<id>.goal.yaml`; `<runtime dir>` is `flow.runtime.stateDir`, default `.flow`)
    - **Lifecycle**: `<status>` (not yet `achieved`)
-   - **Note**: `/flow:merge` will block until this goal is `achieved` or the user explicitly overrides.
+   - **Note**: `/flow:merge` stops before merging until this goal is `achieved`; its goal gate has no override.
    ```
 
    If visual verification ran, include visual evidence section:

@@ -882,7 +882,7 @@ if _want ac4-check; then
   _b_setup ac4-check "summarize.py --check ac4 holds on the shipped plugin, and fails when the reference leaves out a per-item site, names one without a reason, or the client's list of sites that ask together changes"
   _summarize --check ac4
   e2e_expect_equal "0 AC4=OK" "$E2E_RC $E2E_OUT" "the shipped plugin"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p1"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p1"
   python3 - "$E2E_DIR/p1/references/system-one.md" <<'PY'
 import sys
 p = sys.argv[1]; s = open(p).read()
@@ -891,12 +891,12 @@ open(p, "w").write(s)
 PY
   _summarize --check ac4 --plugin "$E2E_DIR/p1"
   e2e_expect_equal "1 AC4=FAIL the section does not name review.dedup" "$E2E_RC $E2E_OUT" "a site left out"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p2"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p2"
   sed -i.bak 's/^- `review.challenge`, because /- `review.challenge`: /' "$E2E_DIR/p2/references/system-one.md"
   _summarize --check ac4 --plugin "$E2E_DIR/p2"
   e2e_expect_equal "1" "$E2E_RC" "a site named without a reason"
   e2e_expect_out "names review.challenge without a reason"
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p3"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_DIR/p3"
   sed -i.bak 's/^BATCH_SITES = ("goal.judge", /BATCH_SITES = ("review.dedup", "goal.judge", /' "$E2E_DIR/p3/bin/_flow_s1.py"
   _summarize --check ac4 --plugin "$E2E_DIR/p3"
   e2e_expect_equal "1" "$E2E_RC" "the client's list changed"

@@ -9,7 +9,7 @@ agent: Explore
 
 ## Contract
 
-Iron law: issues describe outcomes, never implementations — if the issue says "how," rewrite it. Invoked by `/flow:issue` (all phases), by `/flow:start` Phase 1 when the issue lacks acceptance criteria, and by `/flow:review` and `/flow:address` when a user-selected finding becomes a new issue. Returns a created and verified GitHub issue (`gh issue view <N> --json number,title,state,labels`) whose body follows the Context / Current State / Objective / Acceptance Criteria structure, with labels drawn from `gh label list`. Permitted skips: none — duplicate search (open and closed) always runs before creation, and any of the four requirement elements that is missing is gathered via the AskUserQuestion tool before composing.
+[ask: none] Iron law: issues describe outcomes, never implementations — if the issue says "how," rewrite it. Invoked by `/flow:issue` (all phases), by `/flow:start` Phase 1 when the issue lacks acceptance criteria, and by `/flow:review` and `/flow:address` when a user-selected finding becomes a new issue. Returns a created and verified GitHub issue (`gh issue view <N> --json number,title,state,labels`) whose body follows the Context / Current State / Objective / Acceptance Criteria structure, with labels drawn from `gh label list`. Permitted skips: none — duplicate search (open and closed) always runs before creation, and any of the four requirement elements that is missing is gathered via the AskUserQuestion tool before composing.
 
 ## Solution-Agnostic Rules
 
@@ -20,7 +20,7 @@ Iron law: issues describe outcomes, never implementations — if the issue says 
 
 ## Requirements Gathering
 
-Collect four elements; for each gap, use the AskUserQuestion tool with contextual options (e.g., "What's the current behavior?"):
+[ask: decision] Collect four elements; for each gap, use the AskUserQuestion tool (`metadata.source`: `flow:decision`) with contextual options (e.g., "What's the current behavior?"):
 
 1. **Context** — background and motivation
 2. **Current State** — what happens now, what the problem is. Every number and observation in it names where it came from (the command, the run, the pull request); one that cannot is left out

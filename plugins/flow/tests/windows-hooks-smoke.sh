@@ -244,6 +244,121 @@ if [ -f "$HOOKS/tier-session-start.sh" ] && command -v jq >/dev/null 2>&1; then
 fi
 printf '\n'
 
+# --- the bin/ helpers that source lib/py-path.sh do their work ----------------
+# Issue #246. Git Bash hands a script POSIX paths, and a native Windows python3
+# reads /d/a/... as another place, so a helper whose module sits beside it
+# imported nothing and did nothing, silently. Each helper below is called
+# once, against a scratch repository at an ordinary path, with the absolute
+# paths it is usually given, and what it was asked to do is checked: a file
+# written, an id printed, a record listed. lib/py-path.sh does the conversion.
+# Called here: flow-goal-record, flow-active-goal, flow-goal-trust,
+# flow-record-activity, flow-record-evidence, flow-record-verdict,
+# journal-record, flow-question, flow-strip-auto-log, flow-quality-ledger,
+# flow-mine-corrections, flow-eval-run and flow-dep-diff (flow-runtime-dir,
+# flow-mkdir and journal-dir run inside them; journal-append inside the
+# logging hooks above). The hooks flow-goal-stop, reply-style-check and
+# session-end-state are run above on an empty session only. Not called
+# anywhere in this file, though they source the library: promote-proposal,
+# the three flow-trigger-* checks, and the hooks flow-goal-evaluator and
+# flow-run-deterministic-checks. tests/e2e-windows-paths.test.sh checks that
+# every helper that puts a directory on sys.path sources the library.
+_helper_dir() {
+  local d="" _b _p
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      for _b in "${RUNNER_TEMP:-}" "${TEMP:-}" "${TMPDIR:-}" "${HOME:-}"; do
+        [ -n "$_b" ] || continue
+        _p=$(cygpath -u "$_b" 2>/dev/null) || continue
+        [ -d "$_p" ] || continue
+        d=$(mktemp -d "$_p/flow-helpers-smoke.XXXXXX" 2>/dev/null) || d=""
+        [ -n "$d" ] && [ -d "$d" ] && break
+        d=""
+      done ;;
+  esac
+  [ -n "$d" ] || d=$(mktemp -d -t flow-helpers-smoke.XXXXXX 2>/dev/null)
+  printf '%s' "$d"
+}
+# _helper <label> <check> -- <command...>: run the command in the scratch
+# repository; pass when it exits 0 and the check (a shell test, run there)
+# holds.
+_helper() {
+  local label="$1" check="$2" rc out
+  shift 3
+  out=$(cd "$HREPO" && "$@" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ] && (cd "$HREPO" && HOUT="$out" eval "$check"); then
+    _ok "$label"
+  else
+    _bad "$label — exit $rc: $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"
+  fi
+}
+if command -v python3 >/dev/null 2>&1 && python3 -c "import yaml" >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+  HWORK=$(_helper_dir)
+  if [ -n "$HWORK" ] && [ -d "$HWORK" ]; then
+    HREPO="$HWORK/repo"
+    mkdir -p "$HREPO" "$HWORK/state" "$HWORK/transcripts"
+    (
+      cd "$HREPO" || exit 1
+      git init -q -b main >/dev/null 2>&1
+      git config user.email smoke@example.invalid
+      git config user.name smoke
+      printf 'x\n' > README.md
+      mkdir -p .decisions
+      printf '# Journal\n' > .decisions/issue-42.md
+      git add -A >/dev/null 2>&1
+      git commit -qm init >/dev/null 2>&1
+      git checkout -q -b feature/issue-42-search-fix >/dev/null 2>&1
+    )
+    export FLOW_STATE_DIR="$HWORK/state"
+    RUN=2026-05-20T143000Z-issue-42
+    mkdir -p "$HREPO/.flow/runs/$RUN"
+    cp "$PLUGIN_ROOT/tests/fixtures/goal/valid.yaml" "$HWORK/goal.yaml"
+    cp "$PLUGIN_ROOT/tests/fixtures/activity/valid.yaml" "$HWORK/activity.yaml"
+    cp "$PLUGIN_ROOT/tests/fixtures/evidence/valid.yaml" "$HWORK/evidence.yaml"
+    printf '%s\n' '{"verdict":"not_achieved","confidence":0.5,"delta":"unchanged","reason":"smoke","next_step_hint":"none","source":"command"}' > "$HWORK/verdict.json"
+    B="$PLUGIN_ROOT/bin"
+    _helper "flow-goal-record.sh creates a goal from an absolute path and records its trust" '[ -f .flow/goals/issue-42.goal.yaml ] && case "$HOUT" in *"trust ledger record failed"*) false ;; *) true ;; esac' -- \
+      "$B/flow-goal-record.sh" --create --goal-file "$HWORK/goal.yaml"
+    _helper "flow-active-goal.sh finds it" '[ "$HOUT" = issue-42 ]' -- \
+      "$B/flow-active-goal.sh" --id --branch-strict
+    _helper "flow-goal-trust.sh reads the per-user ledger" 'case "$HOUT" in *TRUSTED=yes*) true ;; *) false ;; esac' -- \
+      "$B/flow-goal-trust.sh" check --goal-file .flow/goals/issue-42.goal.yaml
+    _helper "flow-record-activity.sh writes an activity" 'ls .flow/runs/'"$RUN"'/activities/001-*.yaml >/dev/null 2>&1' -- \
+      "$B/flow-record-activity.sh" --run-id "$RUN" --activity-file "$HWORK/activity.yaml"
+    _helper "flow-record-evidence.sh writes an evidence sidecar" 'ls .flow/runs/'"$RUN"'/evidence/*.evidence.yaml >/dev/null 2>&1' -- \
+      "$B/flow-record-evidence.sh" --run-id "$RUN" --evidence-file "$HWORK/evidence.yaml"
+    _helper "flow-record-verdict.sh writes the last verdict" '[ -f .flow/runs/'"$RUN"'/last-verdict.json ]' -- \
+      "$B/flow-record-verdict.sh" --run-id "$RUN" --verdict-file "$HWORK/verdict.json"
+    _helper "journal-record.sh records an artifact" 'grep -q "type: smoke" .decisions/issue-42.md' -- \
+      "$B/journal-record.sh" --issue 42 --type smoke --metadata note=windows
+    _helper "flow-question.sh stores a question and leaves slash text alone" 'case "$(cd "$HREPO" && "$B/flow-question.sh" list)" in *"|/flow:start Phase 1|"*) true ;; *) false ;; esac' -- \
+      "$B/flow-question.sh" add --situation s --tried t --option "a (Recommended)" --option b \
+        --recommendation r --blocking soft --risk k --command "/flow:start Phase 1" --class default
+    printf '<!-- auto-log: smoke -->\n' >> "$HREPO/.decisions/issue-42.md"
+    _helper "flow-strip-auto-log.sh reads a journal directory given absolutely" 'case "$HOUT" in *"STRIP_AUTO_LOG=1 files, 1 lines"*) true ;; *) false ;; esac' -- \
+      "$B/flow-strip-auto-log.sh" "$HREPO/.decisions"
+    _helper "flow-quality-ledger.sh appends and reads a session ledger" 'case "$("$B/flow-quality-ledger.sh" status --session smoke --cwd "$HREPO" 2>&1)" in *"LAST_PASSING_RUN=2026-05-20T14:00:00Z"*) true ;; *) false ;; esac' -- \
+      "$B/flow-quality-ledger.sh" append --session smoke --json '{"at":"2026-05-20T14:00:00Z","type":"quality_run","command":"npm test","exit_code":0,"kind":"test"}'
+    _helper "flow-mine-corrections.sh reads a transcript directory given absolutely" 'case "$HOUT" in *SESSION_COUNT=0*|*TRANSCRIPT_DIR_STATE=ok*) true ;; *) false ;; esac' -- \
+      "$B/flow-mine-corrections.sh" --project-dir "$HREPO" --transcript-dir "$HWORK/transcripts" --format jsonl
+    _helper "flow-eval-run.sh runs its Python helper (case check)" 'case "$HOUT" in *'"'"'"problems": []'"'"'*) true ;; *) false ;; esac' -- \
+      "$B/flow-eval-run.sh" --check-cases
+    (
+      cd "$HREPO" || exit 1
+      printf 'flask==2.0.0\n' > requirements.txt
+      git add requirements.txt >/dev/null 2>&1 && git commit -qm "deps base" >/dev/null 2>&1
+      printf 'flask==2.0.0\nredis==5.0.1\n' > requirements.txt
+      git add requirements.txt >/dev/null 2>&1 && git commit -qm "deps head" >/dev/null 2>&1
+    )
+    _helper "flow-dep-diff.sh imports its parser and reads the range" 'case "$HOUT" in *"STATE=ok"*"DEP_ADDED=redis@5.0.1 manifest=requirements.txt:2"*) true ;; *) false ;; esac' -- \
+      "$B/flow-dep-diff.sh" HEAD~1..HEAD --tree "$HREPO"
+    unset FLOW_STATE_DIR
+    rm -rf "$HWORK"
+  else
+    _bad "mktemp -d failed — could not build a scratch repo for the bin/ helpers"
+  fi
+fi
+printf '\n'
+
 # --- the settings resolver, which almost everything depends on ----------------
 if [ -x "$PLUGIN_ROOT/bin/cascade-resolve.sh" ]; then
   OUT=$("$PLUGIN_ROOT/bin/cascade-resolve.sh" --default "fallback" '.nothing.here' 2>/dev/null)

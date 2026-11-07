@@ -590,7 +590,7 @@ fi
 if _want cascade-refused; then
   _flow_test_begin "cascade-refused"
   _s1_setup cascade-refused "the plugin itself lives inside the repository, so cascade-resolve refuses to read provider settings: that is no answer, never a preset" fixture
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
   e2e_stub_start a "{\"body\":$ONE_CONFIDENT}"
   _s1_settings "$(jq -nc --arg u "$(e2e_stub_url a)" '{systemOne:{provider:"custom",baseUrl:$u,uses:{"e2e.one":"on"}}}')"
@@ -1149,7 +1149,7 @@ if _want mode-probe; then
   e2e_expect_equal 2 "$E2E_RC" "a malformed site id is a usage error"
   # With the plugin inside the repository the user's own settings cannot be
   # read: off, and --all says why rather than blaming the repository.
-  cp -R "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
+  e2e_copy_plugin "$E2E_ACTIVE_PLUGIN" "$E2E_REPO/plugin-copy"
   E2E_ACTIVE_PLUGIN="$E2E_REPO/plugin-copy"
   _probe e2e.one
   e2e_expect_equal "" "$E2E_OUT" "plugin inside the repository: nothing"
@@ -1896,7 +1896,7 @@ PY
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
     st="u$i"
     e2e_stub_start "$st" '{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
-    [ -d "$E2E_DIR/plugin" ] || cp -R "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
+    [ -d "$E2E_DIR/plugin" ] || e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
     E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
     cp "$E2E_DIR/unsendable/$i.yaml" "$E2E_ACTIVE_PLUGIN/system-one/questions.yaml"
     printf 'plugin for this scenario: a copy whose system-one/questions.yaml holds %s (sha256 %s)\n' \
@@ -2014,7 +2014,7 @@ if _want questions-depth-limit; then
   _flow_test_begin "questions-depth-limit"
   _s1_setup questions-depth-limit "questions nested exactly at this interpreter's JSON encoder limit are refused as questions-invalid, never internal-error (S49): under each python3 here, the client is run on chains of aliases whose length is searched by halving between 500 and 3000 until the longest it sends and the shortest it does not are one apart; the shorter is answered with one request, and the longer is questions-invalid with no request and no traceback. The search runs the client itself, so it finds the limit wherever the client's own calls put it. An interpreter that sends a chain of 3000 has no limit in the range, and the artifact says so"
   S1_ENV=()
-  [ -d "$E2E_DIR/plugin" ] || cp -R "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
+  [ -d "$E2E_DIR/plugin" ] || e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_DIR/plugin"
   E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
   answer='{"body":{"model":"jev-1.13.0","answers":{"q1":{"type":"noul","noul":0.95}}}}'
   # _chain_ask N STUB: the client, with the stub as its server, on a

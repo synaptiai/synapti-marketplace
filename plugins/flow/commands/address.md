@@ -30,6 +30,21 @@ Systematic feedback resolution. Follows Explore > Plan > Code > Verify loop.
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## References
 
 - [`references/escalation-format.md`](../references/escalation-format.md) — canonical six-field structure used by Phase 4's genuine non-convergence escalation (step 4), Phase 4's review-cycle-limit escalation (step 12), and any other Proactive-Autonomy escalation surfaced during feedback resolution
@@ -233,8 +248,14 @@ else
   # The user tier is the file cascade-resolve.sh --user-settings-path names. When
   # the helper cannot answer there is none: HOME, which a repository can set,
   # does not choose it.
-  __us=$("$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
-  for SETTINGS_PATH in ".claude/settings.flow.local.json" ".claude/settings.flow.json" "$USER_SETTINGS"; do
+  __cr="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")/bin/cascade-resolve.sh"
+  __us=$("$__cr" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
+  # The two repository files are read at the repository top, where the
+  # settings cascade reads them, wherever in the repository this runs.
+  PROJECT_SETTINGS=".claude/settings.flow.json"
+  __ps=$("$__cr" --project-settings-path 2>/dev/null) && [ -n "$__ps" ] && PROJECT_SETTINGS="$__ps"
+  LOCAL_SETTINGS="${PROJECT_SETTINGS%settings.flow.json}settings.flow.local.json"
+  for SETTINGS_PATH in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS"; do
     [ -f "$SETTINGS_PATH" ] || continue
     # `.merge...`, not `.flow.merge...`: commands/merge.md and
     # references/gate-configuration.md both use the top-level key, and this
@@ -914,13 +935,13 @@ For **Out-of-scope** items — finding triage is NEVER a valid escalation trigge
 
 A finding in a file the PR already modifies is NEVER out-of-scope — it must be fixed in this PR (Boy Scout Rule + ownership of known defects in touched files).
 
-P1 or P2 findings in untouched files must be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded). They MUST NOT be filed as a six-field Proactive-Autonomy escalation — finding triage is not a decision, it is work. See `skills/llm-operator-principles/SKILL.md`.
+[ask: none] P1 or P2 findings in untouched files must be addressed in-PR (expand scope with an `improve:` commit if the fix is bounded). They MUST NOT be filed as a six-field Proactive-Autonomy escalation — finding triage is not a decision, it is work. See `skills/llm-operator-principles/SKILL.md`.
 
-**Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed in this PR with an `improve:` commit. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
+[ask: none] **Default mode (no `minimalScope` set):** cosmetic P3 findings in truly untouched files are fixed in this PR with an `improve:` commit. Do NOT create follow-up issues, do NOT use AskUserQuestion to ask whether to defer.
 
 **Minimal-scope mode (`settings.json` → `minimalScope: true`, or user said "minimal scope" in-conversation):** for cosmetic P3 findings in truly untouched files only, use the follow-up issue workflow:
 
-1. Use the AskUserQuestion tool with contextual options: "This cosmetic P3 finding is in an untouched file. Create a follow-up issue to track it?"
+1. [ask: default] Use the AskUserQuestion tool with contextual options: "This cosmetic P3 finding is in an untouched file. Create a follow-up issue to track it?" Under `ASK_POLICY=autonomous`, do not ask: create the follow-up issue, as `minimalScope: true` asks, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 2. If yes, create a GitHub issue using issue-crafting skill knowledge:
    - Title: concise, solution-agnostic description
    - Body: Context, Current State (file:line), Objective, Acceptance Criteria
@@ -1013,8 +1034,8 @@ In the dispatches below, `$BASE_BRANCH` is the `BASE_BRANCH=` value from Phase 1
    - Cosmetic P3 in untouched files → fix in this PR (`improve:` commit). Default mode does not create follow-up issues; only `minimalScope` mode uses the follow-up issue workflow for this case.
    - After P1 and P2 fixes: re-run quality commands, re-review what those fixes changed (P1 and P2 only), re-run holdout-validation. After the P3 batch: re-run quality commands only
    - **Converged** when no P1 or P2 with a trigger is left (`skills/llm-operator-principles/SKILL.md`). A finding with no trigger (`references/review-scope.md`) is not fixed or re-reviewed: name its trigger, or drop it
-   - Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
-   - **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
+   - [ask: none] Approaching the iteration ceiling without convergence is a signal to re-check your understanding (are two findings in tension? are you fixing the wrong thing?), not to escalate the remaining findings.
+   - [ask: decision] **Genuine non-convergence** (terminal case): iteration `fixForwardMaxIterations` is reached AND the same findings persist across the last 3 iterations with no progress (or fixes oscillate — fix A flags B, fix B flags A). Halt the loop, do not silently exceed the ceiling, do not push with known unresolved P1/P2. File a six-field Proactive-Autonomy escalation citing the **"genuinely ambiguous architecture decision"** trigger (NOT finding-triage), naming the specific finding(s) in irreconcilable tension. See `skills/llm-operator-principles/SKILL.md` § Genuine non-convergence and `references/escalation-format.md`.
 5. **Verify Boy Scout cleanup** passes proximity test (no scope creep)
 6. **Change classification** — verify no out-of-context changes introduced
 7. **Push** (Tier 2, follows `tiers.push`; default `journal`: it runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks):
@@ -1435,7 +1456,7 @@ true
       ```bash
       gh pr edit "$PR_NUM" --add-reviewer @{reviewer}
       ```
-    - If cycle >= `reviewCycleLimit` → this signals genuine review deadlock (not a finding-triage decision). Use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
+    - [ask: decision] If cycle >= `reviewCycleLimit` → this signals genuine review deadlock (not a finding-triage decision). Use the AskUserQuestion tool with the following Proactive-Autonomy escalation:
 
       **Situation**: Review cycle {N} reached the configured limit (`reviewCycleLimit`). {remaining_count} finding(s) remain unresolved across {N} review-and-address cycles — this is a deadlock between reviewer and author, not a finding-triage question.
       **Tried**: {N} cycles of review-and-address with the current reviewer.
@@ -1447,7 +1468,7 @@ true
       **Blocking?**: Yes — PR cannot merge until findings are resolved or explicitly overridden with justification.
       **Risk**: Merging with unresolved findings violates the "no incomplete shipments" hard boundary. Open findings become production defects owned by the team.
 
-      Present via AskUserQuestion: "Review cycle {N} has reached the limit with {remaining_count} unresolved finding(s). Choose a path forward:"
+      [ask: decision] Present via AskUserQuestion: "Review cycle {N} has reached the limit with {remaining_count} unresolved finding(s). Choose a path forward:"
         - Option 1: "Re-request same reviewer"
         - Option 2: "Request fresh reviewer"
         - Option 3: "Override with written risk acceptance (will be recorded on PR)"

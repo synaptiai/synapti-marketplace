@@ -26,6 +26,21 @@ Multi-faceted code review with parallel analysis. Follows Explore > Plan > Code 
 true
 ```
 
+## Ask Policy
+
+Which questions reach the person ([`references/ask-policy.md`](../references/ask-policy.md)). Every place below that asks carries a tag. Under `ASK_POLICY=autonomous` (`autonomous: true`), an `[ask: default]` place does not ask: take its recommended option, record it with `bin/journal-record.sh --type default-taken`, and list it in the summary. `[ask: decision]` and `[ask: permission]` places ask under either policy, with `metadata: {"source": "flow:decision"}` or `{"source": "flow:permission"}` in the `AskUserQuestion` input; the `ask-policy.sh` hook denies any other question while the policy is autonomous.
+
+```!
+# ASK_POLICY_BLOCK_BEGIN
+printf '%s\n' "### Ask Policy"
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow" plugins/flow; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+# Settings that cannot be read leave the policy attended: a person is there.
+ASK_POLICY=$("$FLOW_ROOT/bin/flow-ask-policy.sh" 2>/dev/null) || ASK_POLICY=attended
+printf '%s\n' "ASK_POLICY=$ASK_POLICY"
+# ASK_POLICY_BLOCK_END
+true
+```
+
 ## Phase 1: EXPLORE
 
 The checkout step stays inline below (it writes a working tree); read-only context-gathering is in the `!` block.
@@ -834,7 +849,8 @@ Implements the paired-reviewer + challenge-round protocol. The `team-coordinatio
 printf '%s\n' "### Path A Gate"
 # AGENTTEAMS_GATE_BEGIN
 # Resolve agentTeams from the standard Claude Code settings cascade.
-# Precedence (highest first — first non-empty value wins):
+# Precedence (highest first — first non-empty value wins; 1 and 2 are read at
+# the repository top, whatever directory this runs in):
 #   1. .claude/settings.flow.local.json — project-local override; gitignored
 #      so a hostile fork PR via `gh pr checkout` cannot inject it (it is the
 #      machine-local pin belonging to the user).
@@ -883,6 +899,9 @@ fi
 # does not choose it.
 if [ -n "$PLUGIN_ROOT" ] && [ -x "${PLUGIN_ROOT%/}/bin/cascade-resolve.sh" ]; then
   __us=$("${PLUGIN_ROOT%/}/bin/cascade-resolve.sh" --user-settings-path 2>/dev/null) && USER_SETTINGS="$__us"
+  # The two repository files are read at the repository top, where the
+  # settings cascade reads them, wherever in the repository this runs.
+  __ps=$("${PLUGIN_ROOT%/}/bin/cascade-resolve.sh" --project-settings-path 2>/dev/null) && [ -n "$__ps" ] && { PROJECT_SETTINGS="$__ps"; LOCAL_SETTINGS="${__ps%settings.flow.json}settings.flow.local.json"; }
 fi
 AGENT_TEAMS=""
 SOURCE_USED=""
@@ -1757,7 +1776,7 @@ set -- --findings "$CHALLENGE_DIR/findings.json" --tree "$REVIEW_TREE" \
    - Write a test (for a prose or configuration finding, a command) that fails on the current code if the finding is real.
    - It fails → confirmed: fix it, keep the test, and re-record the finding HIGH. From here it is a fix-forwarded finding like the rest.
    - It passes → refuted: keep the test, cite its passing output as the evidence in the self-review body, remove the finding from the routing rows, and record it with the block below.
-   - No test or command can reproduce or refute it → escalate it with the six-field structure (`references/escalation-format.md`), re-record it MEDIUM, and list its ID in `ESCALATED` of the resolution marker. It is never left LOW and never recorded HIGH.
+   - [ask: decision] No test or command can reproduce or refute it → escalate it with the six-field structure (`references/escalation-format.md`), re-record it MEDIUM, and list its ID in `ESCALATED` of the resolution marker. It is never left LOW and never recorded HIGH.
    - **It names no trigger** (step 7 lists it in `NO_TRIGGER`) → name one: the input or condition, in a setup `references/review-scope.md` covers, that makes it happen, and confirm it with a failing test as above. When no such trigger exists, drop it with the block below and `REASON=no-trigger`. A finding with no trigger is never escalated: there is nothing for anyone to decide.
    - A finding whose only trigger the review scope lists as out of scope is dropped at synthesis with `REASON=out-of-scope`, and the self-review body lists it under `Out of scope` with the scope rule it falls under.
 
@@ -1886,7 +1905,7 @@ fi
    - After fixes: re-review only what the P1 and P2 fixes changed, for regressions they introduced; the P3 batch is not re-reviewed. The review has converged when no counted P1 or P2 is left
    - TaskUpdate(testCoverageTaskId, status: "completed", result: "Tests written/updated for {N} fixes")
    - No follow-up issue creation for fixable items — finding triage is NEVER a valid escalation trigger; fix in this PR
-   - Approaching the iteration ceiling without convergence is a signal to re-check the findings (are two findings in tension? misunderstood scope?), not to escalate
+   - [ask: none] Approaching the iteration ceiling without convergence is a signal to re-check the findings (are two findings in tension? misunderstood scope?), not to escalate
    - TaskCreate("Post self-review comment", "Post review findings summary to PR via gh pr review --comment")
    - TaskCreate("Post self-review resolution marker", "Post a FLOW_RESOLUTION_CYCLE issue comment (gh pr comment) recording the fix-forwarded finding IDs as RESOLVED — required so the merge finding-ledger gate balances for self-reviewed PRs. Skip only when zero findings were raised.")
 
@@ -1900,11 +1919,11 @@ fi
 
    Findings in files the PR already modifies are NEVER outside this pull request's scope (a different sense from a trigger the review scope excludes) — the author owns the known defects in any file they touch. Do NOT flag them as informational; flag them as blocking.
 
-   **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend fixing them in this PR with an `improve:` commit in the review comment.
+   [ask: none] **Default mode (no `minimalScope` set):** for cosmetic P3 findings in untouched files, do NOT create follow-up issues and do NOT present an AskUserQuestion asking the author to defer. Recommend fixing them in this PR with an `improve:` commit in the review comment.
 
    **Minimal-scope mode (`settings.json` → `minimalScope: true`):** for cosmetic P3 findings in untouched files only, use the follow-up issue workflow:
 
-   Present the findings and use the AskUserQuestion tool with contextual options: "These cosmetic P3 findings are in untouched files. Which ones should become follow-up issues?"
+   [ask: default] Present the findings and use the AskUserQuestion tool with contextual options: "These cosmetic P3 findings are in untouched files. Which ones should become follow-up issues?" Under `ASK_POLICY=autonomous`, do not ask: create follow-up issues for all of them, as `minimalScope: true` asks, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
 
    For each selected finding, create a GitHub issue using issue-crafting skill knowledge:
    - Title: concise, solution-agnostic description of the finding

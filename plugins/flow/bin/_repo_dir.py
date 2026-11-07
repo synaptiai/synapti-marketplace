@@ -735,6 +735,63 @@ def check_runtime_dir(value):
     return rel, None
 
 
+def _git_top():
+    """The repository top as git names it (`git rev-parse --show-toplevel`),
+    or None: outside a work tree, when git cannot run, or when the top is the
+    user's home kept in git, which is the user's and not a repository
+    (cascade-resolve.sh treats it the same way). The home is _user_home()'s,
+    and the user database's: a HOME the repository's settings set is not it."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, timeout=5)
+    except Exception:
+        return None
+    top = r.stdout.strip() if r.returncode == 0 else ""
+    if not top or not os.path.isdir(top):
+        return None
+    homes = [_user_home()]
+    try:
+        import pwd
+        homes.append(pwd.getpwuid(os.getuid()).pw_dir)
+    except Exception:
+        pass
+    for h in homes:
+        try:
+            if h and os.path.samefile(top, h):
+                return None
+        except OSError:
+            pass
+    return top
+
+
+def from_repo_top(rel):
+    """`rel`, a path relative to the repository top (the runtime directory or
+    a directory under it, such as <runtime dir>/goals), as a path to open
+    from the working directory.
+
+    The runtime directory is relative to the top, but a Flow block can run
+    with the working directory in a subdirectory, since the Bash tool keeps
+    its working directory between calls. Every reader and writer of the
+    goals takes their directory from here, so a goal written in
+    packages/app is the one the Stop hook and the merge gate read.
+
+    `rel` itself when the working directory is the top, so what callers print
+    there does not change; <top>/<rel> below it. Also `rel` itself outside a
+    git work tree, and under a home directory kept in git (_git_top()),
+    where the working directory is where the goals are, as before.
+    """
+    top = _git_top()
+    if top is None:
+        return rel
+    try:
+        if os.path.samefile(top, os.curdir):
+            return rel
+    except OSError:
+        return rel
+    return os.path.join(top, rel)
+
+
 _RUNTIME_DIR = []
 
 

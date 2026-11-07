@@ -45,7 +45,7 @@ Security defenses (preserved verbatim from journal-record.sh):
   - fcntl.flock(LOCK_EX) on the lockfile FD — serializes concurrent
     same-target writers so the read-modify-write of artifacts[] cannot
     lose entries.
-  - tempfile.mkstemp + os.rename in the same directory — POSIX-atomic
+  - tempfile.mkstemp + os.replace in the same directory — POSIX-atomic
     publish. Partial writes never replace the journal.
   - os.fsync on the file FD before rename, then on the directory FD
     after rename — durable across power loss.
@@ -274,14 +274,14 @@ class TargetExists(JournalAtomicError):
 def _atomic_write(target_path, content, exclusive=False):
     """Write content to target_path atomically.
 
-    tempfile.mkstemp in the same dir → write+flush+fsync → os.rename → fsync dir.
+    tempfile.mkstemp in the same dir → write+flush+fsync → os.replace → fsync dir.
     On any failure, creating the temporary file included, the tempfile is
     cleaned up, the original target (if any) is untouched, and the failure is
     a JournalAtomicError (exit 2), never a bare OSError. An interrupt before
     the target is published removes the tempfile too, and is raised again.
 
     With exclusive=True the file is published with os.link, which fails if the
-    target exists, instead of os.rename, which would replace it: an existing
+    target exists, instead of os.replace, which would replace it: an existing
     target raises TargetExists and is left as it is.
     """
     # The directory as the kernel reaches it. mkstemp makes its directory
@@ -329,7 +329,10 @@ def _atomic_write(target_path, content, exclusive=False):
                 # its lock is what keeps the write exclusive there.
                 os.rename(tmp, target_path)
         else:
-            os.rename(tmp, target_path)
+            # os.replace, not os.rename: on Windows os.rename refuses a
+            # target that exists, so every rewrite of a journal failed there.
+            # On POSIX the two are the same atomic rename.
+            os.replace(tmp, target_path)
     except JournalAtomicError:
         if os.path.exists(tmp):
             try:
@@ -884,7 +887,7 @@ def write_json_file(target_path, lockfile_path, data):
     Same security defenses as write_yaml_file:
       - O_NOFOLLOW probe rejects symlinked target atomically
       - flock(lockfile_path) serializes concurrent writers
-      - tempfile.mkstemp + os.rename + dual fsync for durability
+      - tempfile.mkstemp + os.replace + dual fsync for durability
       - Hostile-fork sys.path filter inherited via _harden_sys_path
 
     JSON is serialized with sort_keys=True so re-writing the same data

@@ -74,4 +74,4 @@ Finding triage never triggers escalation (`skills/llm-operator-principles/SKILL.
 
 ## Adversarial protocol
 
-With agent teams enabled, apply `skills/team-coordination/SKILL.md`: independent reviewers, mutual challenge, disputed findings escalate.
+[ask: none] With agent teams enabled, apply `skills/team-coordination/SKILL.md`: independent reviewers, mutual challenge, disputed findings escalate.
