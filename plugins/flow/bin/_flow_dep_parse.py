@@ -1105,7 +1105,27 @@ _RUBY_STRING = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\
 #     `<<-X`, `<<X`, `<<"X"`), whose body runs over the lines after it;
 #   a `#` inside an interpolation's code, which comments out its `}`;
 #   a string, backtick command or interpolation still open at the end of its
-#     line.
+#     line;
+#   a backtick outside a string: a command string, or a method or symbol
+#     named with one (`` :` ``, `` def `(x) ``), which this does not tell
+#     apart, so two of them would pair over the code between them.
+# Then, on the line with its strings blanked (_DSL_INDIRECT), a call this
+# could not follow: a source method (gem, git, github, gitlab, bitbucket,
+# gist, path, source, git_source) called on a receiver other than `self`
+# written directly before it (`itself.gem`, `(self).gem`, `self .gem`,
+# `x.path`), or Ruby's metaprogramming (send, public_send, __send__,
+# instance_eval, instance_exec, class_eval, module_eval, eval,
+# define_method, alias_method, alias, method, itself), through which a
+# Gemfile can call any of them under another name. A Gemfile is Ruby: this
+# reads the calls Gemfiles make and refuses what it cannot follow, but it
+# runs nothing and cannot see what the code computes.
+_DSL_INDIRECT = re.compile(
+    r"(?:(?<!\bself)(?:\.|&\.|::)|\bself[ \t]+&?\.)[ \t]*"
+    r"(?:gem|git|github|gitlab|bitbucket|gist|path|source|git_source)(?![A-Za-z0-9_?!])"
+    r"|(?<![A-Za-z0-9_.:@$])(?:send|public_send|__send__|instance_eval|instance_exec"
+    r"|class_eval|module_eval|eval|define_method|alias_method|alias|method|itself)"
+    r"(?![A-Za-z0-9_?!])"
+)
 _SAFE_AFTER_PREDICATE = frozenset("()[]{},.;&|=!")
 _IDENT_CHAR = re.compile(r"[A-Za-z0-9_]")
 # A global named by a word (`$stdout`, `$LOAD_PATH`, `$_x`), not `$_` alone.
@@ -1136,6 +1156,8 @@ def _refused_code(raw, i):
         return "a special global ($ and a punctuation mark or digit, or $_ alone)"
     if c == "<" and _HEREDOC.match(raw, i):
         return "a heredoc"
+    if c == "`":
+        return "a backtick (a command string, or a method or symbol named `)"
     return None
 
 
@@ -1241,6 +1263,8 @@ def _ruby_lines(text):
             lines[index] = ""
         else:
             lines[index], refused = _ruby_scan(raw)
+            if not refused and _DSL_INDIRECT.search(_blank_strings(lines[index])):
+                refused = "a source method called on a receiver other than self, or Ruby metaprogramming"
             if refused:
                 raise ParseError(
                     "line %d holds %s, which this does not read: it can "

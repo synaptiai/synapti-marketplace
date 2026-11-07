@@ -297,11 +297,25 @@ Each entry below describes the change against 3.14.0.
     a string is not a comment. What it cannot read makes the Gemfile
     `MANIFEST_UNPARSED` instead of being skipped with `STATE=ok` (3.14.0
     skipped `gem("x")` silently): a name, source or block target that is not
-    a string literal or that interpolates (`#{…}`, `#@x`, `#$x`), a `gem`
-    call that does not start its statement or is followed by another
-    statement after a `;`, an argument that is neither a string literal nor
-    an option (a variable, `ENV["V"]`, a `%q()` string, a splat), a call that
-    does not close, an `end` that closes nothing, a `=begin` without `=end`.
+    a string literal or that interpolates (`#{…}`, `#@x`, `#$x`), a `gem`,
+    `git` or `path` call that does not start its statement or is followed by
+    another statement after a `;`, an argument that is neither a string
+    literal nor an option (a variable, `ENV["V"]`, a splat), a call that
+    does not close, an `end` or `}` that closes nothing or the wrong kind of
+    block, a `=begin` without `=end`. The parser pairs quotes and counts
+    braces without lexing Ruby, so it also refuses, wherever they appear
+    outside a string, the tokens that pairing could misread and that could
+    hide a gem call after them: a character literal (`?"`, `?#`), a regex or
+    a division (a plain regex after `=~`, `!~`, `when`, `(` or `,` is read),
+    a %-literal or a modulo (a `%w`/`%i` array of plain words is read), a
+    special global (`$"`, `$~`, `$_`), a heredoc, a `#` inside an
+    interpolation, a string open at the end of its line, and a backtick. A
+    source method called through another receiver (`itself.gem`,
+    `(self).gem`) or Ruby's metaprogramming (`send`, `instance_eval`,
+    `alias`) is refused too. A Gemfile is Ruby and this runs nothing, so a
+    source computed at run time is not seen; the README says so. Every
+    `rails new`, GitLab-style and Discourse-style Gemfile tried reads as
+    before.
     An option keyed by a string (`"git" => url`) is read as an option, and a
     `git_source(:name)` makes `name:` a source.
   - npm: a `package.json` spec npm installs from outside the registry prints

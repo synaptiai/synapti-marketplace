@@ -129,7 +129,18 @@
 #       - a heredoc: `<<` followed by `~`, `-`, a quote, a letter or `_`
 #       - a `#` inside an interpolation's code, which comments out its `}`
 #       - a string, backtick command or interpolation still open at the end
-#         of its line;
+#         of its line
+#       - a backtick outside a string: a command string, or a method or
+#         symbol named with one (`` :` ``)
+#     or a line calls a source method (gem, git, github, gitlab, bitbucket,
+#     gist, path, source, git_source) on a receiver other than `self`
+#     written directly before it (`itself.gem`, `(self).gem`, `self .gem`,
+#     `x.path`), or uses Ruby's metaprogramming (send, public_send,
+#     __send__, instance_eval, instance_exec, class_eval, module_eval,
+#     eval, define_method, alias_method, alias, method, itself). A Gemfile
+#     is Ruby: the parser reads the calls Gemfiles make and refuses what it
+#     cannot follow, but it runs nothing, so a source computed at run time
+#     is not seen;
 #     an `end` closes no block it has seen, or closes a `{`
 #     block; inside a `{` block, the only place a `}` is counted, a `}`
 #     closes no block it has seen or closes a `do` block, or a line holds a

