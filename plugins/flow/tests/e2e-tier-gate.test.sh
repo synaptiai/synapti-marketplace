@@ -165,6 +165,9 @@
 #      the reverse, ENV or BASH_ENV set through quotes (export
 #      "BASH_ENV=/dev/stdin", B""ASH_ENV=..., read "ENV") or inside a string
 #      that a shell or eval runs is missed, and the body is read as data
+#      (also BASH_ENV spelled with $'...' escapes or exported by a sourced
+#      file, and a program word "$@/journal-append.sh" or "$1/...", whose
+#      expansion can make a shell the program)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -2162,7 +2165,7 @@ fi
 # the name, and a string a shell, eval or trap runs is code.
 if _want tg-env-named; then
   _tg_setup tg-env-named feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: a flow script's quoted body stays data after echo \"check ENV first\" or NODE_ENV=test; it asks for the command held in a variable in it after export \"BASH_ENV=...\", B\"\"ASH_ENV=..., read \"BASH_ENV\", eval or trap of a string naming BASH_ENV, or ENV named outside a string (T40)"
+    "every Tier 2 action autonomous: a flow script's quoted body stays data after echo \"check ENV first\" or NODE_ENV=test; it asks for the command held in a variable in it after export \"BASH_ENV=...\", B\"\"ASH_ENV=..., read \"BASH_ENV\", eval or trap of a string naming BASH_ENV, or ENV named outside a string, BASH_ENV spelled with $'...' escapes or set by a sourced file, or a program word that expands "$@" or "$1" (T40)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
     _tg_run "$C"
@@ -2182,6 +2185,12 @@ unread|C=$(printf 'gh pr %s 1' merge)\nread -r "BASH_ENV" < f; export "BASH_ENV"
 unread|C=$(printf 'gh pr %s 1' merge)\neval "export BASH_ENV=/dev/stdin"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
 unread|C=$(printf 'gh pr %s 1' merge)\ntrap "read BASH_ENV < f; export BASH_ENV" DEBUG\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
 unread|C=$(printf 'gh pr %s 1' merge)\necho ENV first\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nexport $'BASH_\\x45NV'=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n. ./env.sh\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nif true; then source env.sh; fi\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nset -- /bin/bash -s ""\n"$@/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$1/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|cp notes.md .\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `x` |\nEOF
 EOF
   e2e_expect_clean_edges
 fi

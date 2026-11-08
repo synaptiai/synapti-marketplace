@@ -25,7 +25,9 @@ Each entry below describes the change against 3.15.0.
   hands its input to an agent session as its prompt, and `flow-eval-run.sh`,
   `flow-eval-s1-replay.sh` and `flow-s1-eval.sh` run eval code with the
   caller's input still open. No script in `bin/` runs what it reads as code.
-  The word must also be one double-quoted word, with no assignment before it
+  The word must also be one double-quoted word that expands only plain
+  names (not `"$@"`, `"$*"` or `"$1"`, which can add words and make a shell
+  the program), with no assignment before it
   (`LC_ALL=C`, `BASH_ENV=/dev/stdin`), no substitution or group on the line,
   and no argument holding an expansion other than a double-quoted plain
   variable (`"$JOURNAL"`), a redirection, or a path under `/dev/` or
@@ -40,8 +42,10 @@ Each entry below describes the change against 3.15.0.
   (`BASH_ENV=/dev/stdin ./x.sh <<'EOF'`): an assignment, an export or a read
   of the name, also when quotes build it (`export "BASH_ENV=..."`,
   `B""ASH_ENV=...`), or any mention on a line that holds a `$`, a backquote,
-  a shell, `eval` or `trap`. The name inside a sentence (`echo "check ENV
-  first"`) no longer counts. The change is in
+  a shell, `eval` or `trap`; and after a line that may set it out of sight:
+  one that holds ANSI-C quoting (`export $'BASH_\x45NV'=...`) or sources a
+  file (`. ./env.sh`, `source env.sh`). The name inside a sentence (`echo
+  "check ENV first"`) no longer counts. The change is in
   `hooks/scripts/lib/command-parse.sh`, behind `BD_QUOTED_BODIES=1` and
   `BD_DATA_PROGRAMS`, which only the tier gate's second reading sets. Three
   fixes in the same parser reach every hook that uses it. An unquoted body

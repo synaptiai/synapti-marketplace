@@ -647,15 +647,22 @@ _bd_strip_noncode() {
     #     other than a double-quoted word whose expansions are plain
     #     variables ("$JOURNAL", "$DIR/issue-$N.md"), and none names a path
     #     under /dev/ or /proc/.
-    # Not after an assignment before the command word (asg in reader_ok:
-    # LC_ALL=C or BASH_ENV=/dev/stdin before it), or once the command sets
-    # BASH_ENV or ENV (envset), as a shell script started with either set
+    # Not when the word expands anything but plain names ("$@", "$1"), not
+    # after an assignment before the command word (asg in reader_ok:
+    # LC_ALL=C or BASH_ENV=/dev/stdin before it), and not once the command
+    # sets BASH_ENV or ENV (envset), may set it out of sight ($'...'
+    # escapes, a sourced file), as a shell script started with either set
     # reads its input as a startup file.
     function var_reader_ok(w, j, m,   r, b, k, t) {
       if (envset) return 0
       r = w[j]
       if (r !~ /^"[$][^"`\\]*"$/) return 0
       r = substr(r, 2, length(r) - 2)
+      # Only plain names expand in it: "$@", "$*", "$1" or "$-" expand to
+      # any number of words, or ones the command does not show, so
+      # "$@/journal-append.sh" can run /bin/bash -s with the body as its
+      # script.
+      if (r ~ /[$]([^A-Za-z_{]|[{][^A-Za-z_]|$)/) return 0
       if (r !~ /\//) return 0
       b = r
       sub(/^.*\//, "", b)
@@ -1027,6 +1034,11 @@ _bd_strip_noncode() {
       # A command that sets BASH_ENV or ENV may make a shell read its input
       # as a startup file (reader_ok, var_reader_ok, env_named).
       if (!envset && env_named(out, q0)) envset = 1
+      # BASH_ENV can be set out of sight: spelled with ANSI-C escapes
+      # ($'BASH_\x45NV'), or by a file the command sources (. ./env.sh,
+      # source env.sh). Either counts as setting it.
+      if (!envset && (index(out, "$" SQ) ||
+          out ~ /(^|[;&|(){}]|then|do|else)[ \t]*(source|\.)[ \t]/)) envset = 1
       probe = out
       hits = gsub(/<</, "<<", probe)
       if (q0 != "") hits = 0
