@@ -16,49 +16,66 @@ Each entry below describes the change against 3.15.0.
   could not identify, and the gate asked for merge and release approval. That
   stopped unattended `/flow:start` runs until a person answered. Now a quoted
   body (`<<'EOF'`, `<<"EOF"`, `<<\EOF`, with or without `-`) counts as data
-  when its program cannot run it. That holds for a program that names a file
-  written out (`"$FLOW_ROOT/bin/journal-append.sh"`), and for a program named
-  only by a variable whose first argument that is not an option looks like a
-  script file: a name ending in `.sh`, `.bash`, `.md`, `.txt`, `.json`,
-  `.yaml`, `.yml`, `.toml`, `.csv`, `.py`, `.rb` or `.js`, with no `@` or
-  `:` (`"$P" --file n.md -`). Whenever flow cannot be sure, the body counts
-  as commands and still asks. bash expands it (`<<EOF` with
-  `$(gh pr merge 1)`). The program may be a shell reading its script from
-  it (`"$SHELL" <<'EOF'`, `"$P" -s`, `"$P" -`, `"$P" -c ...`, `$P`
-  unquoted, `"$D/bin/bash"`), or a program that reads commands from its
-  input after a host, a time or a user (`"$P" myhost` for ssh, `"$P" now`
-  for at, `"$P" root` for su, `"$P" host.example.com`). An argument is an
-  expansion, names a path under `/dev/` or `/proc/` (`"$P" /dev/stdin`,
-  `/dev/fd/0`, `/proc/self/fd/0`, `--file /dev/stdin`, `-q /dev/null`), or
-  is the value of an option (`"$P" -W ignore`, `-I lib`). An assignment
-  comes before the program (`BASH_ENV=/dev/stdin "$P" x.sh`), or the
-  command names `BASH_ENV` or `ENV` anywhere before the heredoc, for a
-  literal program too (`BASH_ENV=/dev/stdin ./x.sh <<'EOF'`). The change is
-  in `hooks/scripts/lib/command-parse.sh`, behind `BD_QUOTED_BODIES=1`,
-  which only the tier gate's second reading sets. Two fixes in the same
-  parser reach every hook that uses it. An unquoted body (`<<EOF`,
-  `<<-EOF`) that holds a `$(...)`, a backquote, a `$((`, a `$[` or a
-  `${...}` other than a plain `${NAME}` or `${NAME:-word}` now has its
+  when its program is one of flow's own scripts named through a variable:
+  the name after the word's last `/` is a script in the plugin's `bin/`
+  (`"$FLOW_ROOT/bin/journal-append.sh"`,
+  `"${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh"`). The gate reads that list
+  from its own plugin's `bin/*.sh` when it runs, so a script added there is
+  covered without editing a list. Four scripts are left out: `flow-judge.sh`
+  hands its input to an agent session as its prompt, and `flow-eval-run.sh`,
+  `flow-eval-s1-replay.sh` and `flow-s1-eval.sh` run eval code with the
+  caller's input still open. No script in `bin/` runs what it reads as code.
+  The word must also be one double-quoted word, with no assignment before it
+  (`LC_ALL=C`, `BASH_ENV=/dev/stdin`), no substitution or group on the line,
+  and no argument holding an expansion other than a double-quoted plain
+  variable (`"$JOURNAL"`), a redirection, or a path under `/dev/` or
+  `/proc/`. Every other program named by a variable keeps its body as
+  commands, as in 3.15.0: the gate cannot tell a bare `"$P"` from a shell,
+  so the issue's own example, `"$P" --file n.md - <<'EOF'` with
+  `P=/x/journal-append.sh`, still asks when its body holds a backtick or a
+  `$(...)`, and so do `"$D/bin/sqlite3" notes.md`, `"$D/bin/ed" notes.md`,
+  `"$D/bin/script" x.txt` and `"$D/bin/ssh" host.sh`, which read commands
+  from their input after a file name or a host. A body also stays commands
+  after a command that sets `BASH_ENV` or `ENV`, for a literal program too
+  (`BASH_ENV=/dev/stdin ./x.sh <<'EOF'`): an assignment, an export or a read
+  of the name, also when quotes build it (`export "BASH_ENV=..."`,
+  `B""ASH_ENV=...`), or any mention on a line that holds a `$`, a backquote,
+  a shell, `eval` or `trap`. The name inside a sentence (`echo "check ENV
+  first"`) no longer counts. The change is in
+  `hooks/scripts/lib/command-parse.sh`, behind `BD_QUOTED_BODIES=1` and
+  `BD_DATA_PROGRAMS`, which only the tier gate's second reading sets. Three
+  fixes in the same parser reach every hook that uses it. An unquoted body
+  (`<<EOF`, `<<-EOF`) that holds a `$(...)`, a backquote, a `$((`, a `$[` or
+  a `${...}` other than a plain `${NAME}` or `${NAME:-word}` now has its
   substitutions read as commands whoever receives it, `cat`, `tee`, `echo`,
   `printf` and `gh` included, since bash runs them before the program reads
   anything; its other text stays data, and a quote in that text (an
-  apostrophe in prose) pairs with nothing. When the parser cannot follow
-  such a body (a `#`, a `<<` or a `case` inside a substitution, a `$((`), it
-  reads the body as written and again without its quotes: `cat
-  <<EOF` with `$(gh pr merge 1)` asks for the merge, with a backquoted
+  apostrophe in prose) pairs with nothing. The body is read with each
+  backslash-newline removed, as bash joins those lines before it expands
+  them, so `$\` at the end of one line and `(gh pr merge 1)`, `{x@P}` or
+  `[y]` on the next are one substitution. A `${` inside a substitution ends
+  at its own `}`, so the `)` of `$(echo ${x:-)}; gh pr merge 1)` closes
+  nothing and the merge after it is read. When the parser cannot follow such
+  a body (a `#`, a `<<` or a `case` inside a substitution, a `$((`, a `${`
+  inside one whose word holds a group, a quote or a `$`), it reads the body
+  as written and again without its quotes: `cat <<EOF` with
+  `$(gh pr merge 1)` asks for the merge, with a backquoted
   `gh release create v1` asks for the release, and `block-destructive`
   refuses one holding `$(rm -rf ~)`, as `block-unchecked-merge` does an
   unchecked merge; in 3.15.0 all three were dropped as text.
   `block-force-push`, which has its own scanner, now judges such a body line
-  as a script too. And a backslash before `<<` (`\<<'EOF'`, `\<<\EOF`) no
-  longer starts a heredoc: bash reads a literal `<` and a redirection from
-  the file `EOF`, so the lines after it are commands, and in 3.15.0 they
-  were dropped as a body for `cat`, a script or a program named by a
-  variable. A quoted body to `cat`, an escaped `\$(` or `` \` `` and two
+  as a script too, joined at each backslash-newline the same way. And a
+  backslash before `<<` (`\<<'EOF'`, `\<<\EOF`) no longer starts a heredoc:
+  bash reads a literal `<` and a redirection from the file `EOF`, so the
+  lines after it are commands, and in 3.15.0 they were dropped as a body for
+  `cat`, a script or a program named by a variable. A quoted body to `cat`,
+  an escaped `\$(` or `` \` ``, an escaped backslash before a newline and two
   backslashes before `<<` stay text. Covered by
   `tests/e2e-tier-gate.test.sh` (`tg-quoted-body-data`,
-  `tg-quoted-body-script`, `tg-quoted-body-stdin`, `tg-escaped-heredoc`,
-  `tg-unquoted-body-subst`) and `tests/e2e-heredoc-expansion.test.sh`.
+  `tg-quoted-body-script`, `tg-quoted-body-stdin`,
+  `tg-quoted-body-allowlist`, `tg-escaped-heredoc`, `tg-unquoted-body-subst`,
+  `tg-body-line-join`, `tg-subst-brace`, `tg-env-named`) and
+  `tests/e2e-heredoc-expansion.test.sh`.
 - A goal's verification commands run with the user's `PYTHONPATH` and
   `PYTHONSAFEPATH` (#345). In 3.15.0 they inherited the `PYTHONSAFEPATH=1`
   and cleaned `PYTHONPATH` that `hooks/scripts/flow-run-deterministic-checks.sh`

@@ -31,6 +31,14 @@
 #      it's ... isn't) pairs with another and hides the substitution between
 #      them, or a substitution the parser cannot follow to its end (inside
 #      ${x:-...}, holding a case pattern's ) or a quoted ")") is dropped
+#   H7 a backslash-newline in an unquoted body, which bash removes before it
+#      expands the body, splits a $ from the ( after it ($\ then (rm -rf ~)
+#      on the next line) or a command inside a substitution in two, so the
+#      rm, merge or force push is read as text; or the reverse, an escaped
+#      backslash before a newline ($\\) is joined and refused
+#   H8 a ) inside a ${...} within a substitution ($(echo ${x:-)}; rm -rf ~))
+#      is read as the end of the substitution, so the commands after it are
+#      read as text
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -108,4 +116,36 @@ refused|cat <<EOF\nnotes `git push --force origin main`\nEOF
 refused|tee notes.md <<EOF\n$(git push --force origin main)\nEOF
 allowed|cat <<'EOF'\n$(git push --force origin main)\nEOF
 allowed|cat <<EOF\ngit push --force origin main is what we avoid\nEOF
+EOF
+
+_scenario hx-rm-line-join "$DELETE_HOOK" \
+  "an rm -rf ~ in a substitution split by a backslash-newline of an unquoted body (\$\\ then (rm -rf ~), or rm \\ then -rf ~ inside one) is refused (H7, H5); \$\\\\ before a newline and a quoted body stay text" <<'EOF'
+refused|cat <<EOF\n$\\\n(rm -rf ~)\nEOF
+refused|cat <<EOF\nnotes $\\\n(rm -rf ~) today\nEOF
+refused|cat <<EOF\n$(rm \\\n-rf ~)\nEOF
+allowed|cat <<EOF\n$\\\\\n(rm -rf ~)\nEOF
+allowed|cat <<'EOF'\n$\\\n(rm -rf ~)\nEOF
+EOF
+
+_scenario hx-rm-subst-brace "$DELETE_HOOK" \
+  "an rm -rf ~ after a \${x:-)} inside a substitution of an unquoted body is refused, also in a group of it (H8, H5); a plain \${BRANCH:-main} in prose stays text" <<'EOF'
+refused|cat <<EOF\n$(echo ${x:-)}; rm -rf ~)\nEOF
+refused|cat <<EOF\n$( (echo ${x:-)}); rm -rf ~)\nEOF
+allowed|cat <<EOF\nbuilt $(date +%F) from ${BRANCH:-main}; rm -rf ~ is not run\nEOF
+EOF
+
+_scenario hx-merge-line-join "$MERGE_HOOK" \
+  "an unchecked gh pr merge in a substitution split by a backslash-newline (H7) or after a \${x:-)} inside one (H8) of an unquoted body is refused (H5)" <<'EOF'
+refused|cat <<EOF\n$\\\n(gh pr merge 5)\nEOF
+refused|cat <<EOF\n$(gh pr \\\nmerge 5)\nEOF
+refused|cat <<EOF\n$(echo ${x:-)}; gh pr merge 5)\nEOF
+allowed|cat <<EOF\n$\\\\\n(gh pr merge 5)\nEOF
+EOF
+
+_scenario hx-push-line-join "$PUSH_HOOK" \
+  "a force push in a substitution split by a backslash-newline (H7) or after a \${x:-)} inside one (H8) of an unquoted body is refused (H5)" <<'EOF'
+refused|cat <<EOF\n$\\\n(git push --force origin main)\nEOF
+refused|cat <<EOF\n$(git push \\\n--force origin main)\nEOF
+refused|cat <<EOF\n$(echo ${x:-)}; git push --force origin main)\nEOF
+allowed|cat <<'EOF'\n$\\\n(git push --force origin main)\nEOF
 EOF

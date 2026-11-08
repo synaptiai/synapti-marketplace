@@ -495,9 +495,11 @@ _bd_shell_reads_stdin() {
 #     `$(rm -rf ~)` line keeps its body in every reading, printed as what
 #     bash runs of it (body_code): each substitution as written, each run of
 #     other text as one `_` after a `:` that runs nothing, so a quote in the
-#     text pairs with nothing. A body the scan cannot follow is printed as
-#     written and again without its quotes. A quoted delimiter's body is
-#     never expanded;
+#     text pairs with nothing. Both read the body as bash expands it, with
+#     each backslash-newline removed first (bs_join): `$\` at the end of one
+#     line and `(rm -rf ~)` on the next are one substitution. A body the scan
+#     cannot follow is printed as written (joined) and again without its
+#     quotes. A quoted delimiter's body is never joined or expanded;
 #   - and the terminator is actually found. A heredoc that never terminates
 #     keeps every line it consumed, because "I lost track" must never mean "so
 #     nothing here counts".
@@ -513,29 +515,33 @@ _bd_shell_reads_stdin() {
 # body line from a command. BD_BLANK_BODIES=1 also drops a body whose owner is
 # not a sink when nothing on the line runs it (reader_ok: no shell, no
 # interpreter, no command word that is a variable or a substitution).
-# Neither drops a body when the command names BASH_ENV or ENV on that line or
-# an earlier one: a shell started with BASH_ENV=/dev/stdin reads the body as
-# its startup file. BD_QUOTED_BODIES=1 (tier-gate.sh only, with
+# Neither drops a body when the command sets BASH_ENV or ENV on that line or
+# an earlier one (env_named): a shell started with BASH_ENV=/dev/stdin reads
+# the body as its startup file. BD_QUOTED_BODIES=1 (tier-gate.sh only, with
 # BD_BLANK_BODIES=1) adds two cases for a quoted delimiter, whose body bash
 # expands nothing in: a backslash-quoted `<<\EOF` is recognised, and a
-# command word that is a variable may own a body that is data, when it is one
-# double-quoted word with no assignment before it and either names a file
-# written out that is not a shell or an interpreter
-# ("$FLOW_ROOT/bin/journal-append.sh") or, were it a shell, would run a
-# script file named in its arguments rather than read its input ("$P" --file
-# notes.md -; var_reader_ok). That script file is the first word that is not
-# an option or the value of a short option, and it must look like one: a name
-# ending in .sh, .bash, .md, .txt, .json, .yaml, .yml, .toml, .csv, .py, .rb
-# or .js, with no @ or :, and no word of the command under /dev/ or /proc/.
-# "$P" /dev/stdin, "$P" myhost (ssh), "$P" now (at), "$P" root (su), "$P"
-# -I lib and BASH_ENV=/dev/stdin "$P" x.sh keep their bodies. Neither setting
-# changes the first reading, which block-destructive.sh,
+# command word that is a variable may own a body that is data, but only when
+# it names one of the programs listed in BD_DATA_PROGRAMS (var_reader_ok): a
+# space-separated list of names, which tier-gate.sh builds when it runs from
+# the scripts in the plugin's own bin/ that run nothing they read. The name
+# after the word's last / must be on that list
+# ("$FLOW_ROOT/bin/journal-append.sh",
+# "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh"), the word must be one
+# double-quoted word, no assignment may come before it, no argument may hold
+# an expansion other than a double-quoted plain variable ("$JOURNAL"), a
+# redirection, or a path under /dev/ or /proc/, and the line before the
+# introducer may hold no substitution or group. Every other program named by
+# a variable keeps its body as commands: the gate cannot tell a bare "$P"
+# from a shell, so "$P" --file notes.md - <<'EOF' keeps its body, as do
+# "$D/bin/sqlite3" notes.md, "$D/bin/ed" notes.md and "$D/bin/ssh" host.sh,
+# which read commands from their input after a file name or a host. Neither
+# setting changes the first reading, which block-destructive.sh,
 # block-unchecked-merge.sh and block-force-push.sh judge.
 #
 # Carriage returns are stripped first, so a CRLF command is read the same way a
 # LF one is. Both tokeniser paths then agree about where words end.
 _bd_strip_noncode() {
-  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v qdata="${BD_QUOTED_BODIES:-0}" -v shells="$_BD_SHELLS" '
+  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v qdata="${BD_QUOTED_BODIES:-0}" -v dataprogs="${BD_DATA_PROGRAMS:-}" -v shells="$_BD_SHELLS" '
     function owner_word(str,   n, parts, seg) {
       # The heredoc belongs to the innermost command, which is the first word
       # after the last separator. Reading the word immediately before the `<<`
@@ -575,15 +581,19 @@ _bd_strip_noncode() {
     # whatever its owner, be read as data? Not when a word of the line before
     # the introducer is a shell (_BD_SHELLS) or a program that runs its input
     # or its arguments, and not when a command word is a variable or a
-    # substitution, which may be either. Nor when the command names BASH_ENV
-    # or ENV on this line or an earlier one (envset): a shell started with
-    # BASH_ENV=/dev/stdin reads its input as its startup file, whatever it
-    # was asked to run. vq says the delimiter is quoted (bash expands nothing
-    # in the body); with qdata=1 (BD_QUOTED_BODIES) a command word that is a
-    # variable may then be read as one that runs nothing of the body
-    # (var_reader_ok), unless an assignment comes before it (asg).
-    function reader_ok(str, vq,   n, cmds, i, m, w, j, c, x, asg) {
+    # substitution, which may be either. Nor when the command sets BASH_ENV
+    # or ENV on this line or an earlier one (envset, env_named): a shell
+    # started with BASH_ENV=/dev/stdin reads its input as its startup file,
+    # whatever it was asked to run. vq says the delimiter is quoted (bash
+    # expands nothing in the body); with qdata=1 (BD_QUOTED_BODIES) a command
+    # word that is a variable may then be read as one that runs nothing of
+    # the body when it names a program of BD_DATA_PROGRAMS (var_reader_ok),
+    # unless an assignment comes before it (asg) or the text holds a
+    # substitution or a group (hlp): a word split there is not one this
+    # function can check.
+    function reader_ok(str, vq,   n, cmds, i, m, w, j, c, x, asg, hlp) {
       if (envset) return 0
+      hlp = 0
       # A plain ${NAME} is read as $NAME there, so its braces do not split
       # the word as a group would. Any other ${...} still splits it.
       if (vq && qdata == 1)
@@ -603,6 +613,7 @@ _bd_strip_noncode() {
             if (x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) { asg = 1; continue }
             if (x == "" || x ~ /^[$]/) {
               if (!(vq && qdata == 1 && !asg && var_reader_ok(w, j, m))) return 0
+              hlp = 1
               c = 0
               continue
             }
@@ -614,83 +625,119 @@ _bd_strip_noncode() {
           if (x ~ runre) return 0
         }
       }
+      if (hlp && str ~ /[(){}`]/) return 0
       return 1
     }
     # qdata=1 only (BD_QUOTED_BODIES): does the program named by the variable
     # w[j], the command word of the words w[j..m], run nothing of a quoted
-    # heredoc body it is handed? Only when w[j] is one double-quoted word, so
-    # word splitting cannot add arguments to it, and either
-    #   - the name after its last / is written out and is neither a shell nor
-    #     a program that runs its input or its arguments (runre):
-    #     "$FLOW_ROOT/bin/journal-append.sh", "${ROOT}/bin/x.sh"; or
-    #   - the variable may name any program ("$P", "$D/$N"), and a shell given
-    #     the words after it would run a script file named among them rather
-    #     than read its script from its input: "$P" --file notes.md - runs the
-    #     file notes.md, while "$P", "$P" -s, "$P" - and "$P" -- read their
-    #     input. Read as _bd_shell_reads_stdin reads a shell, and narrower.
-    #     The first word that is not an option must look like a script file
-    #     (script_file): a name ending in .sh, .bash, .md, .txt, .json,
-    #     .yaml, .yml, .toml, .csv, .py, .rb or .js, extensions that name
-    #     files and not hosts, holding no @ or :. So "$P" myhost (ssh),
-    #     "$P" now (at), "$P" root (su), "$P" host.example.com and "$P" run
-    #     keep the body. The word after a short option may be its value
-    #     ("$P" -W ignore, -X dev, -I lib, -q /dev/null), never the script
-    #     file. Any word naming a path under /dev/ or /proc/ ("$P"
-    #     /dev/stdin, /dev/fd/0, /proc/self/fd/0, --file /dev/stdin), a short
-    #     option holding a letter with which a shell or an interpreter runs
-    #     text or reads its input (c, s, i; perl, ruby, node and python -e,
-    #     -E, -m, -n, -p, -r, -x), a long option that does (--eval, --print,
-    #     --require, --import, --loader, --experimental-loader, --command,
-    #     --exec, --interactive, --input-type), and a word holding an
-    #     expansion, a quote of a variable or a redirection (it may expand to
-    #     any of these) all keep the body.
-    # Neither holds after an assignment before the command word (asg in
-    # reader_ok: BASH_ENV=/dev/stdin "$P" x.sh), or once the command names
-    # BASH_ENV or ENV (envset).
+    # heredoc body it is handed? Only when it is one of the programs the
+    # caller lists in BD_DATA_PROGRAMS (isdata), which tier-gate.sh builds
+    # from the scripts in the bin/ of this plugin that run nothing they read.
+    # A variable may name any program, a shell or sqlite3 or ssh among them,
+    # and the arguments of such a program do not show whether it reads its
+    # commands from its input ("$P" x.sh, "$D/bin/ed" notes.md, "$D/bin/ssh"
+    # host.sh all may), so a name the gate can see and check is the only
+    # thing that makes a body data. All of these must hold:
+    #   - w[j] is one double-quoted word, so word splitting cannot add
+    #     arguments to it, holding a / ("$FLOW_ROOT/bin/journal-append.sh";
+    #     reader_ok has read a plain ${NAME} as $NAME, so
+    #     "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh" is one too);
+    #   - the name after its last / is written out and is on the list;
+    #   - no argument holds a backquote or a redirection, or an expansion
+    #     other than a double-quoted word whose expansions are plain
+    #     variables ("$JOURNAL", "$DIR/issue-$N.md"), and none names a path
+    #     under /dev/ or /proc/.
+    # Not after an assignment before the command word (asg in reader_ok:
+    # LC_ALL=C or BASH_ENV=/dev/stdin before it), or once the command sets
+    # BASH_ENV or ENV (envset), as a shell script started with either set
+    # reads its input as a startup file.
     function var_reader_ok(w, j, m,   r, b, k, t) {
       if (envset) return 0
       r = w[j]
       if (r !~ /^"[$][^"`\\]*"$/) return 0
       r = substr(r, 2, length(r) - 2)
-      if (r ~ /\//) {
-        b = r
-        sub(/^.*\//, "", b)
-        if (b ~ /^[A-Za-z0-9_.+-]+$/) {
-          b = tolower(b)
-          return !(b ~ shre || b ~ runre)
-        }
-      }
+      if (r !~ /\//) return 0
+      b = r
+      sub(/^.*\//, "", b)
+      if (b !~ /^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/ || !(b in isdata)) return 0
       for (k = j + 1; k <= m; k++) {
         t = w[k]
         if (t == "") continue
-        if (t ~ /[$`<>]/) return 0
+        if (t ~ /[`<>]/) return 0
+        if (index(t, "$") && t !~ /^"[^"$`\\]*([$][A-Za-z_][A-Za-z0-9_]*[^"$`\\]*)*"$/) return 0
         gsub("[\"" SQ "\\\\]", "", t)
         if (t ~ /(^|[\/=])(dev|proc)\//) return 0
-        if (t == "" || t == "-" || t == "--") return 0
-        if (t == "--rcfile" || t == "--init-file") { k++; continue }
-        if (t ~ /^--(eval|print|require|import|loader|experimental-loader|command|exec|interactive|input-type)/) return 0
-        if (t ~ /^--/) continue
-        if (t ~ /^[-+]/) {
-          if (t ~ /[cseEimnprx]/) return 0
-          # The next word may be the value of this option. A value under
-          # /dev/ or /proc/ is checked on the way past.
-          if (k < m) {
-            t = w[k + 1]
-            gsub("[\"" SQ "\\\\]", "", t)
-            if (t ~ /(^|[\/=])(dev|proc)\//) return 0
+      }
+      return 1
+    }
+    # Does the line s (a line of the command without its comment; q0 is the
+    # quote state it starts in) set ENV or BASH_ENV, or may it? A name built
+    # with quotes or backslashes is the name (B""ASH_ENV=, export
+    # "BASH_ENV=..."), so a word that holds the name once its quotes are
+    # removed counts, and so does a string with a space in it that holds an
+    # assignment to it (export "BASH_ENV=/tmp/my file"). The name inside a
+    # sentence does not (echo "check ENV first"): a string with a space in it
+    # is no name bash can set. Every mention counts when the scan may misread
+    # the line, or a string on it may be run as code: when the line starts
+    # inside a quote, leaves one open, holds a $ or a backquote, or has a
+    # word that is a shell, a program that runs its arguments (runre), trap,
+    # alias or bind.
+    function env_named(s, q0,   x, any, n, i, c, nx, q, w, sp, inw, hit, fc, b) {
+      x = s
+      gsub("[\"" SQ "\\\\]", "", x)
+      if (x !~ /ENV/) return 0
+      any = (s ~ /(^|[^A-Za-z0-9_])(BASH_ENV|ENV)([^A-Za-z0-9_]|$)/ ||
+             x ~ /(^|[^A-Za-z0-9_])(BASH_ENV|ENV)([^A-Za-z0-9_]|$)/)
+      if (!any) return 0
+      if (q0 != "" || s ~ /[$`]/) return 1
+      n = length(s); q = ""; w = ""; sp = 0; inw = 0; hit = 0; fc = 0
+      for (i = 1; i <= n + 1; i++) {
+        c = (i <= n) ? substr(s, i, 1) : " "
+        nx = substr(s, i + 1, 1)
+        if (q == "") {
+          if (c == "\\") { w = w nx; i++; inw = 1; continue }
+          if (c == "\"" || c == SQ) { q = c; inw = 1; continue }
+          if (c ~ /[ \t;&|()<>]/) {
+            if (inw) {
+              if (!sp && w ~ /(^|[^A-Za-z0-9_])(BASH_ENV|ENV)([^A-Za-z0-9_]|$)/) hit = 1
+              if (sp && w ~ /(^|[^A-Za-z0-9_])(BASH_ENV|ENV)(\[[^]]*\])?[+]?=/) hit = 1
+              b = w
+              sub(/^.*\//, "", b)
+              b = tolower(b)
+              if (!sp && (b ~ shre || b ~ runre || b ~ /^(trap|alias|bind)$/)) fc = 1
+            }
+            w = ""; sp = 0; inw = 0
+            continue
           }
-          k++
+          w = w c; inw = 1
           continue
         }
-        return script_file(t)
+        if (c == q) { q = ""; continue }
+        if (q == "\"" && c == "\\" && (nx == "\"" || nx == "\\")) { w = w nx; i++; continue }
+        if (c == " " || c == "\t") sp = 1
+        w = w c
       }
-      return 0
+      if (q != "" || fc) return 1
+      return hit
     }
-    # Does the word t (quotes removed) look like the name of a script file,
-    # and not like a host, a user, a time or a device? See var_reader_ok.
-    function script_file(t) {
-      if (t ~ /[@:]/ || t ~ /(^|\/)(dev|proc)\//) return 0
-      return (t ~ /[^\/.][.](sh|bash|md|txt|json|yaml|yml|toml|csv|py|rb|js)$/)
+    # The body s of a heredoc whose delimiter is not quoted, as bash reads it
+    # before it expands anything: each backslash-newline removed, so the two
+    # lines are one. An escaped backslash (\\) before a newline is a
+    # backslash, and the newline stays.
+    function bs_join(s,   n, i, c, out) {
+      if (index(s, "\\\n") == 0) return s
+      out = ""
+      n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (c == "\\") {
+          if (substr(s, i + 1, 1) != "\n") out = out c substr(s, i + 1, 1)
+          i++
+          continue
+        }
+        out = out c
+      }
+      return out
     }
     # May the << that starts at p in s introduce a heredoc? Not when it is the
     # second and third < of a here-string (<<<), and not when an odd number of
@@ -712,7 +759,9 @@ _bd_strip_noncode() {
     # a plain ${NAME}, ${#NAME} or ${NAME:-word} whose word holds no group,
     # backquote or backslash (${x@P} runs the substitutions in x). Such a body
     # is kept wherever it goes, cat, tee, echo, printf and gh included, as
-    # bash runs those before the program reads anything.
+    # bash runs those before the program reads anything. The caller has
+    # removed each backslash-newline first (bs_join), so a $ at the end of a
+    # line and the ( { or [ on the next are read together.
     function body_runs(s,   i, n, c, nx) {
       if (index(s, "$") == 0 && index(s, BT) == 0) return 0
       n = length(s)
@@ -737,7 +786,10 @@ _bd_strip_noncode() {
     # Returns UNSURE when the scan cannot follow the body: a substitution
     # still open at its end, a # or a << or the word case inside one (a
     # comment, a heredoc or a case pattern may hold a ) that closes nothing),
-    # or a $((, $[ or a ${ other than a plain one outside one.
+    # a ${ inside one other than a plain one with no quote or $ in its word
+    # (${x:-)} holds a ) that closes nothing), or a $((, $[ or a ${ other
+    # than a plain one outside one. The caller has removed each
+    # backslash-newline first (bs_join).
     function body_code(s,   n, i, c, nx, st, top, out, bol, pz) {
       st = "B"; out = ""; bol = 1; pz = 0
       n = length(s)
@@ -775,6 +827,16 @@ _bd_strip_noncode() {
         if (top == "Q") { if (c == SQ) st = substr(st, 1, length(st) - 1); continue }
         if (c == "\\") { out = out nx; i++; continue }
         if (top == "T") { if (c == BT) st = substr(st, 1, length(st) - 1); continue }
+        # A ${ inside a substitution ends at its own }: a ) or a quote in its
+        # word closes nothing ($(echo ${x:-)}; gh pr merge 1) runs the
+        # merge). A plain one is copied whole; any other is one this scan
+        # cannot follow.
+        if (c == "$" && nx == "{") {
+          if (!match(substr(s, i, 512), PLAINS)) return UNSURE
+          out = out substr(s, i + 1, RLENGTH - 1)
+          i += RLENGTH - 1
+          continue
+        }
         if (top == "D") {
           if (c == "\"") st = substr(st, 1, length(st) - 1)
           else if (c == "$" && nx == "(") { st = st "S"; out = out nx; i++ }
@@ -796,6 +858,12 @@ _bd_strip_noncode() {
     BEGIN { SQ = sprintf("%c", 39); BT = sprintf("%c", 96); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = ""; nos = 0
             hdq = 0; envset = 0; UNSURE = sprintf("%c", 1)
             PLAINV = "^[$][{]#?([A-Za-z_][A-Za-z0-9_]*|[0-9]+)(:?[-=+?][^" BT "{}()\\\\[\n]*)?[}]"
+            # The same inside a substitution, where a quote or a $ in the
+            # word would pair with text the scan reads past (body_code).
+            PLAINS = "^[$][{]#?([A-Za-z_][A-Za-z0-9_]*|[0-9]+)(:?[-=+?][^" BT "{}()\\\\[\n\"" SQ "$]*)?[}]"
+            # The programs whose quoted body is data (var_reader_ok).
+            ndp = split(dataprogs, dpl, /[ \t\n]+/)
+            for (dpk = 1; dpk <= ndp; dpk++) if (dpl[dpk] ~ /^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/) isdata[dpl[dpk]] = 1
             am = 0; pd = 0; bk = 0; am0 = 0; pd0 = 0; bk0 = 0
             shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$"
             runre = "^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$" }
@@ -813,12 +881,16 @@ _bd_strip_noncode() {
           # reads it: what bash runs of it is printed (body_code). When the
           # scan cannot follow it, the body is printed as written and again
           # without its quotes, so no quote in its text can pair with another
-          # and hide a substitution between them.
-          if (!hdq && body_runs(buf)) {
-            bc = body_code(buf)
+          # and hide a substitution between them. Both read it with each
+          # backslash-newline removed, as bash does before it expands the
+          # body (bs_join): $\ and (gh pr merge 1) on the next line are one
+          # substitution.
+          jb = hdq ? buf : bs_join(buf)
+          if (!hdq && body_runs(jb)) {
+            bc = body_code(jb)
             if (bc == UNSURE) {
-              printf "%s", buf
-              bc = buf
+              printf "%s", jb
+              bc = jb
               gsub("[\"" SQ "]", "", bc)
               printf "%s", bc
               print line
@@ -952,9 +1024,9 @@ _bd_strip_noncode() {
       # Only on a line that starts outside quotes by both readings: a `<<EOF`
       # inside a string that runs across lines is text, and treating it as an
       # introducer would drop the lines after it as a body.
-      # A command that names BASH_ENV or ENV may make a shell read its input
-      # as a startup file (reader_ok, var_reader_ok).
-      if (out ~ /(^|[^A-Za-z0-9_])(BASH_ENV|ENV)([^A-Za-z0-9_]|$)/) envset = 1
+      # A command that sets BASH_ENV or ENV may make a shell read its input
+      # as a startup file (reader_ok, var_reader_ok, env_named).
+      if (!envset && env_named(out, q0)) envset = 1
       probe = out
       hits = gsub(/<</, "<<", probe)
       if (q0 != "") hits = 0

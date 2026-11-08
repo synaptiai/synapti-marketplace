@@ -124,7 +124,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
   BEGIN {
     SQ = sprintf("%c", 39)
     BT = sprintf("%c", 96)          # backtick
-    verdict = 0; unmodelled = 0; any_token = 0; hd = ""; hd_safe = 1; hd_unq = 0
+    verdict = 0; unmodelled = 0; any_token = 0; hd = ""; hd_safe = 1; hd_unq = 0; hb = ""
     pushforce = 0; risky = 0; q_owner = ""; push_word = 0; unverified = 0
     nosub = 0
     push_via_other = 0
@@ -345,6 +345,17 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
     # Inside a heredoc body every line belongs to the opening command.
     if (hd != "") {
       t = $0
+      # Bash removes each backslash-newline of a body whose delimiter is not
+      # quoted before it expands the body, so a line ending in an odd number
+      # of backslashes is read with the next one: $\ and then
+      # (git push --force) on the next line are one substitution.
+      if (hd_unq) {
+        t = hb t
+        hb = ""
+        nb = 0; k = length(t)
+        while (k - nb >= 1 && substr(t, k - nb, 1) == "\\") nb++
+        if (nb % 2 == 1) { hb = substr(t, 1, k - 1); next }
+      }
       sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
       if (t == hd) { hd = ""; next }
       # A body line of a heredoc whose delimiter is not quoted is expanded
