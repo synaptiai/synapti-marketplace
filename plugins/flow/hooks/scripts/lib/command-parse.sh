@@ -14,7 +14,8 @@
 #
 # Contract for callers:
 #   _bd_strip_noncode <command>   -> sets BD_CODE, and BD_KEPT_BODY=1 when a heredoc
-#                                    body was kept as text
+#                                    body was kept as text; BD_BLANK_BODIES=1 and
+#                                    BD_QUOTED_BODIES=1 drop more bodies (below)
 #   _rm_tokenise <simple-command> -> fills TOK (quotes removed, backslashes and
 #                                    redirections kept); s1-guard's word check
 #   _bd_words <text>              -> fills TOK with the words bash hands the program
@@ -489,10 +490,26 @@ _bd_shell_reads_stdin() {
 # `(( a << b ))` and `let x=1<<3` do not match either — a shift operand is not
 # a sink and the line does not end with the introducer.
 #
+# Two settings change this for a second reading, the command without the data
+# its readers take in, which tier-gate.sh and block-secrets.sh make to tell a
+# body line from a command. BD_BLANK_BODIES=1 also drops a body whose owner is
+# not a sink when nothing on the line runs it (reader_ok: no shell, no
+# interpreter, no command word that is a variable or a substitution).
+# BD_QUOTED_BODIES=1 (tier-gate.sh only, with BD_BLANK_BODIES=1) adds two
+# cases for a quoted delimiter, whose body bash expands nothing in: a
+# backslash-quoted `<<\EOF` is recognised, and a command word that is a
+# variable may own a body that is data, when it is one double-quoted word and
+# either names a file written out that is not a shell or an interpreter
+# ("$FLOW_ROOT/bin/journal-append.sh") or, were it a shell, would run a
+# script file named in its arguments rather than read its input ("$P" --file
+# notes.md -; var_reader_ok). Neither setting changes the first reading,
+# which block-destructive.sh, block-unchecked-merge.sh and block-force-push.sh
+# judge.
+#
 # Carriage returns are stripped first, so a CRLF command is read the same way a
 # LF one is. Both tokeniser paths then agree about where words end.
 _bd_strip_noncode() {
-  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v shells="$_BD_SHELLS" '
+  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v qdata="${BD_QUOTED_BODIES:-0}" -v shells="$_BD_SHELLS" '
     function owner_word(str,   n, parts, seg) {
       # The heredoc belongs to the innermost command, which is the first word
       # after the last separator. Reading the word immediately before the `<<`
@@ -532,8 +549,16 @@ _bd_strip_noncode() {
     # whatever its owner, be read as data? Not when a word of the line before
     # the introducer is a shell (_BD_SHELLS) or a program that runs its input
     # or its arguments, and not when a command word is a variable or a
-    # substitution, which may be either.
-    function reader_ok(str,   n, cmds, i, m, w, j, c, x) {
+    # substitution, which may be either. vq says the delimiter is quoted
+    # (bash expands nothing in the body); with qdata=1 (BD_QUOTED_BODIES) a
+    # command word that is a variable may then be read as one that runs
+    # nothing of the body (var_reader_ok).
+    function reader_ok(str, vq,   n, cmds, i, m, w, j, c, x) {
+      # A plain ${NAME} is read as $NAME there, so its braces do not split
+      # the word as a group would. Any other ${...} still splits it.
+      if (vq && qdata == 1)
+        while (match(str, /[$][{][A-Za-z_][A-Za-z0-9_]*[}]/))
+          str = substr(str, 1, RSTART) substr(str, RSTART + 2, RLENGTH - 3) substr(str, RSTART + RLENGTH)
       n = split(str, cmds, /[;&|(){}`]|[$][(]/)
       for (i = 1; i <= n; i++) {
         m = split(cmds[i], w, /[ \t]+/)
@@ -544,20 +569,74 @@ _bd_strip_noncode() {
           gsub("[\"" SQ "\\\\]", "", x)
           if (c) {
             if (x ~ /^(if|then|elif|else|while|until|do|!|time)$/ || x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) continue
-            if (x == "" || x ~ /^[$]/) return 0
+            if (x == "" || x ~ /^[$]/) {
+              if (!(vq && qdata == 1 && var_reader_ok(w, j, m))) return 0
+              c = 0
+              continue
+            }
             c = 0
           }
           sub(/^.*\//, "", x)
           x = tolower(x)
           if (x ~ shre) return 0
-          if (x ~ /^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$/) return 0
+          if (x ~ runre) return 0
         }
       }
       return 1
     }
+    # qdata=1 only (BD_QUOTED_BODIES): does the program named by the variable
+    # w[j], the command word of the words w[j..m], run nothing of a quoted
+    # heredoc body it is handed? Only when w[j] is one double-quoted word, so
+    # word splitting cannot add arguments to it, and either
+    #   - the name after its last / is written out and is neither a shell nor
+    #     a program that runs its input or its arguments (runre):
+    #     "$FLOW_ROOT/bin/journal-append.sh", "${ROOT}/bin/x.sh"; or
+    #   - the variable may name any program ("$P", "$D/$N"), and a shell given
+    #     the words after it would run a script file named among them rather
+    #     than read its script from its input: "$P" --file notes.md - runs the
+    #     file notes.md, while "$P", "$P" -s, "$P" - and "$P" -- read their
+    #     input. Read as _bd_shell_reads_stdin reads a shell, and narrower:
+    #     a short option holding a letter with which a shell or an
+    #     interpreter runs text or reads its input (c, s, i; perl, ruby,
+    #     node and python -e, -E, -m, -n, -p, -r, -x), a long option that does
+    #     (--eval, --print, --require, --command, --exec, --interactive,
+    #     --input-type), and a word holding an expansion, a quote of a
+    #     variable or a redirection (it may expand to any of these) all keep
+    #     the body.
+    function var_reader_ok(w, j, m,   r, b, k, t) {
+      r = w[j]
+      if (r !~ /^"[$][^"`\\]*"$/) return 0
+      r = substr(r, 2, length(r) - 2)
+      if (r ~ /\//) {
+        b = r
+        sub(/^.*\//, "", b)
+        if (b ~ /^[A-Za-z0-9_.+-]+$/) {
+          b = tolower(b)
+          return !(b ~ shre || b ~ runre)
+        }
+      }
+      for (k = j + 1; k <= m; k++) {
+        t = w[k]
+        if (t == "") continue
+        if (t ~ /[$`<>]/) return 0
+        gsub("[\"" SQ "\\\\]", "", t)
+        if (t == "" || t == "-" || t == "--") return 0
+        if (t == "--rcfile" || t == "--init-file") { k++; continue }
+        if (t ~ /^--(eval|print|require|command|exec|interactive|input-type)/) return 0
+        if (t ~ /^--/) continue
+        if (t ~ /^[-+]/) {
+          if (t ~ /[cseEimnprx]/) return 0
+          if (t ~ /[oO]/) k++
+          continue
+        }
+        return 1
+      }
+      return 0
+    }
     BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = ""; nos = 0
             am = 0; pd = 0; bk = 0; am0 = 0; pd0 = 0; bk0 = 0
-            shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$" }
+            shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$"
+            runre = "^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$" }
     {
       line = $0
       sub(/\r$/, "", line)
@@ -702,7 +781,8 @@ _bd_strip_noncode() {
           (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
-        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
+        vq = (intro ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"/)
+        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1), vq))) {
           d = intro
           sub(/^<</, "", d)
           tabs = 0
@@ -719,12 +799,30 @@ _bd_strip_noncode() {
           (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
-        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
+        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1), 1))) {
           d = intro
           sub(/^<</, "", d)
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
           gsub(SQ, "", d)
+          gsub(/[ \t]+$/, "", d)
+          if (d != "") { inhd = 1; delim = d; buf = "" }
+        }
+      }
+      # The same shape with a backslash-quoted delimiter (`<<\EOF`), which
+      # bash reads as a quoted one: in the body-free reading with qdata=1
+      # (BD_QUOTED_BODIES) only, when reader_ok says nothing on the line runs
+      # the body. Every other reading keeps such a body.
+      if (!inhd && blank == 1 && qdata == 1 && q == "" && hits == 1 &&
+          match(out, /<<-?\\[A-Za-z_][A-Za-z0-9_]*[ \t]*$/) &&
+          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+        # Taken before reader_ok, whose own match() moves RSTART.
+        d = substr(out, RSTART)
+        if (reader_ok(substr(out, 1, RSTART - 1), 1)) {
+          sub(/^<</, "", d)
+          tabs = 0
+          if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
+          sub(/^\\/, "", d)
           gsub(/[ \t]+$/, "", d)
           if (d != "") { inhd = 1; delim = d; buf = "" }
         }
@@ -761,18 +859,21 @@ _bd_strip_noncode() {
       # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies.
       if (!inhd && blank == 1 && hits == 1 && q == "" &&
           (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|])/) ||
-           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])")) &&
+           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])") ||
+           (qdata == 1 && match(out, /<<-?\\[A-Za-z_][A-Za-z0-9_]*[ \t]*([0-9]*>|&>|[|])/))) &&
           (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
         pre = substr(out, 1, RSTART - 1)
         rest = substr(out, RSTART)
-        match(rest, "^<<-?[\"" SQ "]?[A-Za-z_][A-Za-z0-9_]*[\"" SQ "]?")
+        match(rest, "^<<-?([\"" SQ "]?|\\\\)[A-Za-z_][A-Za-z0-9_]*[\"" SQ "]?")
         d = substr(rest, 1, RLENGTH)
         post = substr(rest, RLENGTH + 1)
-        if (reader_ok(pre " " post)) {
+        vq = (d ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"$/ || d ~ ("^<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "$") ||
+              d ~ /^<<-?\\[A-Za-z_][A-Za-z0-9_]*$/)
+        if (reader_ok(pre " " post, vq)) {
           sub(/^<</, "", d)
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
-          gsub("[\"" SQ "]", "", d)
+          gsub("[\"" SQ "\\\\]", "", d)
           if (d != "") { inhd = 1; delim = d; buf = "" }
         }
       }

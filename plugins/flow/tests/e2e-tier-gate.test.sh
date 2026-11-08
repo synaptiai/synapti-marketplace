@@ -110,6 +110,17 @@
 #      .gitconfig; a shell that reads its script from a pipe. Or the reverse:
 #      a command that changes none of these (exec 2>/dev/null, an EXIT trap,
 #      cat .git/config, gh pr view "$N", git checkout -- file) asks
+#   T34 a quoted heredoc (<<'EOF', <<"EOF", <<\EOF, <<-'EOF') handed to a
+#      program named by a variable ("$P" --file n.md -,
+#      "$FLOW_ROOT/bin/journal-append.sh") is read as commands, so the
+#      backticks and $(...) of its markdown are programs flow cannot read and
+#      ask (#344), the /flow:start specification-capture journal write among
+#      them; or the reverse: a body that program may run as a script (a
+#      variable alone, with -s, -, --, -c, or arguments that are themselves
+#      expansions, a variable that may split, a variable naming a shell or
+#      an interpreter such as "$D/bin/bash"), or an unquoted body whose
+#      $(...) or backticks bash runs, is read as data, and a merge, a release
+#      or a command held in a variable in it runs unasked
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -1753,6 +1764,112 @@ for TG_HR_MODE in journal autonomous; do
     e2e_expect_clean_edges
   fi
 done
+
+# A quoted heredoc's body is data for a program named by a variable that
+# cannot be reading a script from it (#344): its backticks and $(...) are
+# markdown, not programs flow cannot read. Each body holds "right" or
+# "release", so the gate reads the text at all.
+if _want tg-quoted-body-data; then
+  _tg_setup tg-quoted-body-data feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: a quoted heredoc (<<'EOF', <<\"EOF\", <<\\EOF, <<-'EOF') whose body holds backticks or \$(...) is allowed silently when its program is a variable that names a file written out (\"\$ROOT/bin/x.sh\") or that, were it a shell, would read a script file named among its arguments (\"\$P\" --file n.md -), and the /flow:start specification-capture journal write is allowed (T34)"
+  TAB=$(printf '\t')
+  for C in \
+    "$(printf '"$P" --file n.md - <<'"'"'EOF'"'"'\n| right | `subtract(5, 3)` → `2` |\nEOF')" \
+    "$(printf '"$P" --file n.md - <<'"'"'EOF'"'"'\n| right | $(date) | `uname` |\nEOF')" \
+    "$(printf '"$P" --file n.md - <<"EOF"\n| right | `subtract(5, 3)` → `2`; wrong: $(x) |\nEOF')" \
+    "$(printf '"$P" --file n.md - <<\\EOF\n| right | `subtract(5, 3)` → `2` |\nEOF')" \
+    "$(printf '"$P" --file n.md - <<-'"'"'EOF'"'"'\n%s| right | `x` |\n%sEOF' "$TAB" "$TAB")" \
+    "$(printf '"$ROOT/bin/x.sh" <<'"'"'EOF'"'"'\n| right | $(y) |\nEOF')" \
+    "$(printf '"${ROOT}/bin/x.sh" -s <<'"'"'EOF'"'"'\n| right | `x` |\nEOF')" \
+    "$(printf '/x/journal-append.sh --file n.md - <<\\EOF\n| right | `x` |\nEOF')" \
+    "$(printf '"$P" --file n.md - <<'"'"'EOF'"'"' >/dev/null\n| right | `x` |\nEOF')"; do
+    _tg_run "$C"
+    _expect_silent_allow
+    e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
+  done
+  # The specification-capture journal write as /flow:start makes it
+  # (skills/specification-capture/SKILL.md Step 4, the script named through
+  # $FLOW_ROOT per references/plugin-root-resolution.md), with a risk map in
+  # the shape of references/specification-journal-format.md.
+  _tg_run "$(cat <<'SPEC'
+JOURNAL=$("$FLOW_ROOT/bin/journal-dir.sh")/issue-42.md
+"$FLOW_ROOT/bin/journal-append.sh" --file "$JOURNAL" --replace-heading '## Specification' - <<'EOF'
+## Specification
+
+_Captured by specification-capture skill on 2026-11-08. Source: mixed._
+
+### Non-goals
+
+- does not change `add()` or the CLI's argument parsing
+- does not release or merge anything; the tier gate's own tests aren't touched
+
+### Failure modes
+
+- **Timeouts** — none — no network call
+- **Partial failures** — none — one pure function
+- **Invalid input** — a non-number raises `TypeError` (see `$(python3 -c 'help(int)')`)
+- **Missing context** — none — no configuration read
+
+### Interface contracts
+
+- `subtract(a: int, b: int) -> int`, exported from `calc/__init__.py`
+
+### Risk map
+
+| Area | Plausible wrong version | Discriminating check |
+|---|---|---|
+| operand order | computes `b - a` | `subtract(5, 3)` → right: `2`; wrong: `-2` |
+| sign of zero | returns `-0` for a float input | `subtract(0, 0)` → right: `0`; wrong: `-0` |
+EOF
+SPEC
+)"
+  _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr for the specification write"
+  e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
+# The same bodies are commands where something runs them: bash expands the
+# $(...) and backticks of an unquoted body, and a program named by a variable
+# may be a shell reading its script from the body (#344).
+if _want tg-quoted-body-script; then
+  _tg_setup tg-quoted-body-script feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: an unquoted heredoc body's \$(gh pr merge 1) or backticks ask, and a quoted body that a program named by a variable may run as a script (alone, -s, -, --, -c, an argument that is an expansion, a variable that may split, a variable naming a shell or an interpreter) asks for a merge in it or a command held in a variable (T34)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      merge) _expect_ask "tiers.merge" ;;
+      release) _expect_ask "tiers.release" ;;
+      unread) _expect_ask "flow cannot read from the command text" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+merge|"$P" --file n.md - <<EOF\n| right | $(gh pr merge 1) |\nEOF
+release|"$P" --file n.md - <<EOF\n| right | `gh release create v1` |\nEOF
+merge|"$P" --file n.md - <<-EOF\n\t| right | $(gh pr merge 1) |\n\tEOF
+merge|"$SHELL" <<'EOF'\ngh pr merge 1\nEOF
+merge|"$SHELL" -s <<'EOF'\ngh pr merge 1\nEOF
+merge|bash -s <<'EOF'\ngh pr merge 1\nEOF
+release|sh -s x <<\\EOF\ngh release create v1\nEOF
+unread|CMD='gh pr merge 1'\n"$SHELL" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$SHELL" <<\\EOF\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$SHELL" -s <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$SHELL" -xs <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -- <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -c "$X" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" "$ARG" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --file "$J" - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n$P --file n.md - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$D/bin/bash" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$D/bin/python3" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" <<'EOF' >/dev/null\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --file n.md - <<EOF\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\nsudo "$P" --file n.md - <<'EOF'\n$CMD\nEOF
+EOF
+  e2e_expect_clean_edges
+fi
 
 # A shell asks as one that reads its script from its input only when a pipe
 # feeds it; named as an argument (`which bash`) it runs nothing.

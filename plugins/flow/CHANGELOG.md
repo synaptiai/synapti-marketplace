@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+Each entry below describes the change against 3.15.0.
+
+### Fixed
+
+- The tier gate (`hooks/scripts/tier-gate.sh`) no longer asks a Tier 3
+  question about flow's own journal writes when the journal text holds code
+  spans (#344). In 3.15.0, a quoted heredoc handed to a program named
+  through a variable, such as the specification-capture write
+  `"$FLOW_ROOT/bin/journal-append.sh" --file "$JOURNAL" --replace-heading
+  '## Specification' - <<'EOF'`, had its body read as commands. Each
+  backticked span or `$(...)` in the markdown was then read as a program flow
+  could not identify, and the gate asked for merge and release approval. That
+  stopped unattended `/flow:start` runs until a person answered. Now a quoted
+  body (`<<'EOF'`, `<<"EOF"`, `<<\EOF`, with or without `-`) counts as data
+  when its program cannot run it. That holds for a program that names a file
+  written out (`"$FLOW_ROOT/bin/journal-append.sh"`), or one that, were it a
+  shell, would run a script file named in its arguments (`"$P" --file n.md
+  -`). The body still counts as commands, and still asks, in three cases.
+  bash expands it (`<<EOF` with `$(gh pr merge 1)`). The program may be a
+  shell reading its script from it (`"$SHELL" <<'EOF'`, `"$P" -s`, `"$P" -`,
+  `"$P" -c ...`, `$P` unquoted, `"$D/bin/bash"`). Or an argument is itself an
+  expansion. The change is in `hooks/scripts/lib/command-parse.sh`, behind
+  `BD_QUOTED_BODIES=1`, which only the tier gate's second reading sets.
+  `block-destructive`, `block-unchecked-merge`, `block-force-push` and
+  `block-secrets` read commands as before. Covered by
+  `tests/e2e-tier-gate.test.sh` (`tg-quoted-body-data`,
+  `tg-quoted-body-script`).
+
 ## 3.15.0 (2026-11-07)
 
 Each entry below describes the change against 3.14.0.

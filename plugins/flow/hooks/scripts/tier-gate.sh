@@ -654,11 +654,18 @@ _tg_names_file() {   # $1 = the word
 # (TG_KEPT): the command is read again with those bodies left out
 # (_bd_strip_noncode with BD_BLANK_BODIES=1), once, and a simple command
 # that reading still has is a command. A reading that fails counts it as one.
+# BD_QUOTED_BODIES=1 leaves out a quoted body (<<'EOF', <<"EOF", <<\EOF)
+# handed to a program named by a variable too, when that program cannot be
+# reading a script from it: "$FLOW_ROOT/bin/journal-append.sh" ... <<'EOF',
+# "$P" --file notes.md - <<'EOF' (#344). The backticks and $(...) of such a
+# body are markdown, which bash does not expand there. "$SHELL" <<'EOF',
+# "$P" -s <<'EOF' and an unquoted <<EOF keep theirs (lib/command-parse.sh,
+# var_reader_ok).
 _tg_body_line() {
   local s l
   [ "${TG_KEPT:-0}" = 1 ] && [ "${TG_DEPTH:-0}" = 0 ] || return 1
   if [ "${TG_BODYFREE_DONE:-0}" = 0 ]; then
-    TG_BODYFREE=$(BD_BLANK_BODIES=1; _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE") \
+    TG_BODYFREE=$(BD_BLANK_BODIES=1; BD_QUOTED_BODIES=1; _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE") \
       || TG_BODYFREE=__BD_SEG_FAIL__
     TG_BODYFREE_DONE=1
   fi
