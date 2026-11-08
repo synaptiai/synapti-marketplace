@@ -471,7 +471,8 @@ _bd_shell_reads_stdin() {
 #   - the line ends with the introducer, so the body starts on the next line;
 #   - exactly one `<<` introducer is on that line;
 #   - the delimiter is a plain word, optionally quoted with ' or ". A
-#     backslash-quoted `<<\EOF` is not recognised, so its body is kept;
+#     backslash-quoted `<<\EOF` is not recognised (outside the second reading
+#     with BD_QUOTED_BODIES=1, below), so its body is kept;
 #   - the word immediately before `<<` is a text sink — cat, tee, echo, printf
 #     or gh. This is the owner of the heredoc, not the first word of the line,
 #     which is what makes `gh pr create --body "$(cat <<EOF" ` a sink while
@@ -480,6 +481,23 @@ _bd_shell_reads_stdin() {
 #     `make -f - <<EOF` and `$SHELL <<EOF` are not;
 #   - the line carries no `|` and no `>`, so the body is not piped into an
 #     interpreter and not written to a file that something later runs;
+#   - no odd number of backslashes comes before the `<<`: bash reads
+#     `cat \<<'EOF'` as cat given a literal `<` and its input redirected
+#     from the file EOF, so the lines after it are commands (`\\<<EOF` is a
+#     literal backslash and a heredoc);
+#   - when the delimiter is not quoted, the body holds nothing bash runs as
+#     it expands it (body_runs): no `$(` or backquote that no backslash
+#     escapes, no `$((` or `$[` (an array subscript in arithmetic runs a
+#     substitution), and no `${` but a plain `${NAME}`, `${#NAME}` or
+#     `${NAME:-word}` with no group, backquote or backslash in the word
+#     (`${x@P}` runs the substitutions in x). Bash runs these before cat,
+#     tee, echo, printf or gh read anything, so `cat <<EOF` with a
+#     `$(rm -rf ~)` line keeps its body in every reading, printed as what
+#     bash runs of it (body_code): each substitution as written, each run of
+#     other text as one `_` after a `:` that runs nothing, so a quote in the
+#     text pairs with nothing. A body the scan cannot follow is printed as
+#     written and again without its quotes. A quoted delimiter's body is
+#     never expanded;
 #   - and the terminator is actually found. A heredoc that never terminates
 #     keeps every line it consumed, because "I lost track" must never mean "so
 #     nothing here counts".
@@ -495,16 +513,24 @@ _bd_shell_reads_stdin() {
 # body line from a command. BD_BLANK_BODIES=1 also drops a body whose owner is
 # not a sink when nothing on the line runs it (reader_ok: no shell, no
 # interpreter, no command word that is a variable or a substitution).
-# BD_QUOTED_BODIES=1 (tier-gate.sh only, with BD_BLANK_BODIES=1) adds two
-# cases for a quoted delimiter, whose body bash expands nothing in: a
-# backslash-quoted `<<\EOF` is recognised, and a command word that is a
-# variable may own a body that is data, when it is one double-quoted word and
-# either names a file written out that is not a shell or an interpreter
+# Neither drops a body when the command names BASH_ENV or ENV on that line or
+# an earlier one: a shell started with BASH_ENV=/dev/stdin reads the body as
+# its startup file. BD_QUOTED_BODIES=1 (tier-gate.sh only, with
+# BD_BLANK_BODIES=1) adds two cases for a quoted delimiter, whose body bash
+# expands nothing in: a backslash-quoted `<<\EOF` is recognised, and a
+# command word that is a variable may own a body that is data, when it is one
+# double-quoted word with no assignment before it and either names a file
+# written out that is not a shell or an interpreter
 # ("$FLOW_ROOT/bin/journal-append.sh") or, were it a shell, would run a
 # script file named in its arguments rather than read its input ("$P" --file
-# notes.md -; var_reader_ok). Neither setting changes the first reading,
-# which block-destructive.sh, block-unchecked-merge.sh and block-force-push.sh
-# judge.
+# notes.md -; var_reader_ok). That script file is the first word that is not
+# an option or the value of a short option, and it must look like one: a name
+# ending in .sh, .bash, .md, .txt, .json, .yaml, .yml, .toml, .csv, .py, .rb
+# or .js, with no @ or :, and no word of the command under /dev/ or /proc/.
+# "$P" /dev/stdin, "$P" myhost (ssh), "$P" now (at), "$P" root (su), "$P"
+# -I lib and BASH_ENV=/dev/stdin "$P" x.sh keep their bodies. Neither setting
+# changes the first reading, which block-destructive.sh,
+# block-unchecked-merge.sh and block-force-push.sh judge.
 #
 # Carriage returns are stripped first, so a CRLF command is read the same way a
 # LF one is. Both tokeniser paths then agree about where words end.
@@ -549,11 +575,15 @@ _bd_strip_noncode() {
     # whatever its owner, be read as data? Not when a word of the line before
     # the introducer is a shell (_BD_SHELLS) or a program that runs its input
     # or its arguments, and not when a command word is a variable or a
-    # substitution, which may be either. vq says the delimiter is quoted
-    # (bash expands nothing in the body); with qdata=1 (BD_QUOTED_BODIES) a
-    # command word that is a variable may then be read as one that runs
-    # nothing of the body (var_reader_ok).
-    function reader_ok(str, vq,   n, cmds, i, m, w, j, c, x) {
+    # substitution, which may be either. Nor when the command names BASH_ENV
+    # or ENV on this line or an earlier one (envset): a shell started with
+    # BASH_ENV=/dev/stdin reads its input as its startup file, whatever it
+    # was asked to run. vq says the delimiter is quoted (bash expands nothing
+    # in the body); with qdata=1 (BD_QUOTED_BODIES) a command word that is a
+    # variable may then be read as one that runs nothing of the body
+    # (var_reader_ok), unless an assignment comes before it (asg).
+    function reader_ok(str, vq,   n, cmds, i, m, w, j, c, x, asg) {
+      if (envset) return 0
       # A plain ${NAME} is read as $NAME there, so its braces do not split
       # the word as a group would. Any other ${...} still splits it.
       if (vq && qdata == 1)
@@ -563,14 +593,16 @@ _bd_strip_noncode() {
       for (i = 1; i <= n; i++) {
         m = split(cmds[i], w, /[ \t]+/)
         c = 1
+        asg = 0
         for (j = 1; j <= m; j++) {
           if (w[j] == "") continue
           x = w[j]
           gsub("[\"" SQ "\\\\]", "", x)
           if (c) {
-            if (x ~ /^(if|then|elif|else|while|until|do|!|time)$/ || x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) continue
+            if (x ~ /^(if|then|elif|else|while|until|do|!|time)$/) continue
+            if (x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) { asg = 1; continue }
             if (x == "" || x ~ /^[$]/) {
-              if (!(vq && qdata == 1 && var_reader_ok(w, j, m))) return 0
+              if (!(vq && qdata == 1 && !asg && var_reader_ok(w, j, m))) return 0
               c = 0
               continue
             }
@@ -595,15 +627,28 @@ _bd_strip_noncode() {
     #     the words after it would run a script file named among them rather
     #     than read its script from its input: "$P" --file notes.md - runs the
     #     file notes.md, while "$P", "$P" -s, "$P" - and "$P" -- read their
-    #     input. Read as _bd_shell_reads_stdin reads a shell, and narrower:
-    #     a short option holding a letter with which a shell or an
-    #     interpreter runs text or reads its input (c, s, i; perl, ruby,
-    #     node and python -e, -E, -m, -n, -p, -r, -x), a long option that does
-    #     (--eval, --print, --require, --command, --exec, --interactive,
-    #     --input-type), and a word holding an expansion, a quote of a
-    #     variable or a redirection (it may expand to any of these) all keep
-    #     the body.
+    #     input. Read as _bd_shell_reads_stdin reads a shell, and narrower.
+    #     The first word that is not an option must look like a script file
+    #     (script_file): a name ending in .sh, .bash, .md, .txt, .json,
+    #     .yaml, .yml, .toml, .csv, .py, .rb or .js, extensions that name
+    #     files and not hosts, holding no @ or :. So "$P" myhost (ssh),
+    #     "$P" now (at), "$P" root (su), "$P" host.example.com and "$P" run
+    #     keep the body. The word after a short option may be its value
+    #     ("$P" -W ignore, -X dev, -I lib, -q /dev/null), never the script
+    #     file. Any word naming a path under /dev/ or /proc/ ("$P"
+    #     /dev/stdin, /dev/fd/0, /proc/self/fd/0, --file /dev/stdin), a short
+    #     option holding a letter with which a shell or an interpreter runs
+    #     text or reads its input (c, s, i; perl, ruby, node and python -e,
+    #     -E, -m, -n, -p, -r, -x), a long option that does (--eval, --print,
+    #     --require, --import, --loader, --experimental-loader, --command,
+    #     --exec, --interactive, --input-type), and a word holding an
+    #     expansion, a quote of a variable or a redirection (it may expand to
+    #     any of these) all keep the body.
+    # Neither holds after an assignment before the command word (asg in
+    # reader_ok: BASH_ENV=/dev/stdin "$P" x.sh), or once the command names
+    # BASH_ENV or ENV (envset).
     function var_reader_ok(w, j, m,   r, b, k, t) {
+      if (envset) return 0
       r = w[j]
       if (r !~ /^"[$][^"`\\]*"$/) return 0
       r = substr(r, 2, length(r) - 2)
@@ -620,20 +665,137 @@ _bd_strip_noncode() {
         if (t == "") continue
         if (t ~ /[$`<>]/) return 0
         gsub("[\"" SQ "\\\\]", "", t)
+        if (t ~ /(^|[\/=])(dev|proc)\//) return 0
         if (t == "" || t == "-" || t == "--") return 0
         if (t == "--rcfile" || t == "--init-file") { k++; continue }
-        if (t ~ /^--(eval|print|require|command|exec|interactive|input-type)/) return 0
+        if (t ~ /^--(eval|print|require|import|loader|experimental-loader|command|exec|interactive|input-type)/) return 0
         if (t ~ /^--/) continue
         if (t ~ /^[-+]/) {
           if (t ~ /[cseEimnprx]/) return 0
-          if (t ~ /[oO]/) k++
+          # The next word may be the value of this option. A value under
+          # /dev/ or /proc/ is checked on the way past.
+          if (k < m) {
+            t = w[k + 1]
+            gsub("[\"" SQ "\\\\]", "", t)
+            if (t ~ /(^|[\/=])(dev|proc)\//) return 0
+          }
+          k++
           continue
         }
-        return 1
+        return script_file(t)
       }
       return 0
     }
-    BEGIN { SQ = sprintf("%c", 39); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = ""; nos = 0
+    # Does the word t (quotes removed) look like the name of a script file,
+    # and not like a host, a user, a time or a device? See var_reader_ok.
+    function script_file(t) {
+      if (t ~ /[@:]/ || t ~ /(^|\/)(dev|proc)\//) return 0
+      return (t ~ /[^\/.][.](sh|bash|md|txt|json|yaml|yml|toml|csv|py|rb|js)$/)
+    }
+    # May the << that starts at p in s introduce a heredoc? Not when it is the
+    # second and third < of a here-string (<<<), and not when an odd number of
+    # backslashes comes before it: bash reads \<<EOF as a literal < followed
+    # by a < redirection from the file EOF, and the lines after it are
+    # commands. An even number (\\<<EOF) is a literal backslash and then a
+    # heredoc.
+    function intro_at(s, p,   b, k) {
+      if (p == 1) return 1
+      if (substr(s, p - 1, 1) == "<") return 0
+      b = 0
+      for (k = p - 1; k >= 1 && substr(s, k, 1) == "\\"; k--) b++
+      return (b % 2) == 0
+    }
+    # Does the body s of a heredoc whose delimiter is not quoted run anything
+    # when bash expands it? It does when it holds a command substitution, $(
+    # or a backquote not escaped by a backslash; an arithmetic expansion, $((
+    # or $[, which may run one through an array subscript; or a ${ that is not
+    # a plain ${NAME}, ${#NAME} or ${NAME:-word} whose word holds no group,
+    # backquote or backslash (${x@P} runs the substitutions in x). Such a body
+    # is kept wherever it goes, cat, tee, echo, printf and gh included, as
+    # bash runs those before the program reads anything.
+    function body_runs(s,   i, n, c, nx) {
+      if (index(s, "$") == 0 && index(s, BT) == 0) return 0
+      n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (c == "\\") { i++; continue }
+        if (c == BT) return 1
+        if (c != "$") continue
+        nx = substr(s, i + 1, 1)
+        if (nx == "(" || nx == "[") return 1
+        if (nx == "{" && !match(substr(s, i, 512), PLAINV)) return 1
+      }
+      return 0
+    }
+    # What bash runs of such a body s, for the hooks to judge. Text outside
+    # a substitution is data: each run of it becomes one _, and a line that
+    # starts outside a substitution starts with ":", the command that runs
+    # nothing, so that text is only its argument and its quotes (an
+    # apostrophe in prose) pair with nothing. A substitution is kept as
+    # written, over as many lines as it spans, so its commands are read as
+    # commands: "merged $(gh pr merge 1) today" becomes ": _$(gh pr merge 1)_".
+    # Returns UNSURE when the scan cannot follow the body: a substitution
+    # still open at its end, a # or a << or the word case inside one (a
+    # comment, a heredoc or a case pattern may hold a ) that closes nothing),
+    # or a $((, $[ or a ${ other than a plain one outside one.
+    function body_code(s,   n, i, c, nx, st, top, out, bol, pz) {
+      st = "B"; out = ""; bol = 1; pz = 0
+      n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        nx = substr(s, i + 1, 1)
+        top = substr(st, length(st), 1)
+        if (top == "B") {
+          if (c == "\n") { out = out "\n"; bol = 1; pz = 0; continue }
+          if (bol) { out = out ": "; bol = 0 }
+          if (c == "\\") {
+            # A backslash and a newline join two lines; any other escaped
+            # character is text.
+            i++
+            if (nx != "\n" && !pz) { out = out "_"; pz = 1 }
+            continue
+          }
+          if (c == "$" && nx == "(") {
+            if (substr(s, i + 2, 1) == "(") return UNSURE
+            st = st "S"; out = out "$("; i++; pz = 0
+            continue
+          }
+          if (c == BT) { st = st "T"; out = out BT; pz = 0; continue }
+          if (c == "$" && nx == "[") return UNSURE
+          if (c == "$" && nx == "{") {
+            if (!match(substr(s, i, 512), PLAINV)) return UNSURE
+            i += RLENGTH - 1
+          }
+          if (!pz) { out = out "_"; pz = 1 }
+          continue
+        }
+        out = out c
+        # Q: inside single quotes in a substitution; D: double quotes; T: a
+        # backquote; S: a substitution; P: a group inside one.
+        if (top == "Q") { if (c == SQ) st = substr(st, 1, length(st) - 1); continue }
+        if (c == "\\") { out = out nx; i++; continue }
+        if (top == "T") { if (c == BT) st = substr(st, 1, length(st) - 1); continue }
+        if (top == "D") {
+          if (c == "\"") st = substr(st, 1, length(st) - 1)
+          else if (c == "$" && nx == "(") { st = st "S"; out = out nx; i++ }
+          else if (c == BT) st = st "T"
+          continue
+        }
+        if (c == SQ) st = st "Q"
+        else if (c == "\"") st = st "D"
+        else if (c == BT) st = st "T"
+        else if (c == "(") st = st "P"
+        else if (c == ")") st = substr(st, 1, length(st) - 1)
+        else if (c == "#" || (c == "<" && nx == "<")) return UNSURE
+        else if (c == "c" && substr(s, i, 4) == "case" && substr(s, i - 1, 1) !~ /[A-Za-z0-9_]/ &&
+                 substr(s, i + 4, 1) !~ /[A-Za-z0-9_]/) return UNSURE
+      }
+      if (st != "B") return UNSURE
+      return out
+    }
+    BEGIN { SQ = sprintf("%c", 39); BT = sprintf("%c", 96); DQ = "$" SQ; inhd = 0; buf = ""; delim = ""; tabs = 0; pend = ""; q = ""; q0 = ""; nos = 0
+            hdq = 0; envset = 0; UNSURE = sprintf("%c", 1)
+            PLAINV = "^[$][{]#?([A-Za-z_][A-Za-z0-9_]*|[0-9]+)(:?[-=+?][^" BT "{}()\\\\[\n]*)?[}]"
             am = 0; pd = 0; bk = 0; am0 = 0; pd0 = 0; bk0 = 0
             shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$"
             runre = "^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$" }
@@ -644,7 +806,28 @@ _bd_strip_noncode() {
       if (inhd) {
         cand = line
         if (tabs) sub(/^\t+/, "", cand)
-        if (cand == delim) { inhd = 0; buf = ""; next }
+        if (cand == delim) {
+          inhd = 0
+          # A body whose delimiter is not quoted (hdq 0) and in which bash
+          # runs something as it expands it (body_runs) is code, whoever
+          # reads it: what bash runs of it is printed (body_code). When the
+          # scan cannot follow it, the body is printed as written and again
+          # without its quotes, so no quote in its text can pair with another
+          # and hide a substitution between them.
+          if (!hdq && body_runs(buf)) {
+            bc = body_code(buf)
+            if (bc == UNSURE) {
+              printf "%s", buf
+              bc = buf
+              gsub("[\"" SQ "]", "", bc)
+              printf "%s", bc
+              print line
+            } else printf "%s", bc
+            kept = 1
+          }
+          buf = ""
+          next
+        }
         buf = buf line "\n"
         next
       }
@@ -769,6 +952,9 @@ _bd_strip_noncode() {
       # Only on a line that starts outside quotes by both readings: a `<<EOF`
       # inside a string that runs across lines is text, and treating it as an
       # introducer would drop the lines after it as a body.
+      # A command that names BASH_ENV or ENV may make a shell read its input
+      # as a startup file (reader_ok, var_reader_ok).
+      if (out ~ /(^|[^A-Za-z0-9_])(BASH_ENV|ENV)([^A-Za-z0-9_]|$)/) envset = 1
       probe = out
       hits = gsub(/<</, "<<", probe)
       if (q0 != "") hits = 0
@@ -778,7 +964,7 @@ _bd_strip_noncode() {
       # data its loops and readers take in.
       if (hits == 1 && (out !~ /[|>]/ || blank == 1) &&
           match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/) &&
-          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+          intro_at(out, RSTART)) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
         vq = (intro ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"/)
@@ -789,14 +975,14 @@ _bd_strip_noncode() {
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
           gsub(/^["]|["][ \t]*$/, "", d)
           gsub(/[ \t]+$/, "", d)
-          if (d != "") { inhd = 1; delim = d; buf = "" }
+          if (d != "") { inhd = 1; delim = d; buf = ""; hdq = vq }
         }
       }
       # The same shape with a single-quoted delimiter. Written separately
       # because embedding an apostrophe in this program would end it.
       if (!inhd && hits == 1 && (out !~ /[|>]/ || blank == 1) &&
           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$") &&
-          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+          intro_at(out, RSTART)) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
         if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1), 1))) {
@@ -806,7 +992,7 @@ _bd_strip_noncode() {
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
           gsub(SQ, "", d)
           gsub(/[ \t]+$/, "", d)
-          if (d != "") { inhd = 1; delim = d; buf = "" }
+          if (d != "") { inhd = 1; delim = d; buf = ""; hdq = 1 }
         }
       }
       # The same shape with a backslash-quoted delimiter (`<<\EOF`), which
@@ -815,7 +1001,7 @@ _bd_strip_noncode() {
       # the body. Every other reading keeps such a body.
       if (!inhd && blank == 1 && qdata == 1 && q == "" && hits == 1 &&
           match(out, /<<-?\\[A-Za-z_][A-Za-z0-9_]*[ \t]*$/) &&
-          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+          intro_at(out, RSTART)) {
         # Taken before reader_ok, whose own match() moves RSTART.
         d = substr(out, RSTART)
         if (reader_ok(substr(out, 1, RSTART - 1), 1)) {
@@ -824,7 +1010,7 @@ _bd_strip_noncode() {
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
           sub(/^\\/, "", d)
           gsub(/[ \t]+$/, "", d)
-          if (d != "") { inhd = 1; delim = d; buf = "" }
+          if (d != "") { inhd = 1; delim = d; buf = ""; hdq = 1 }
         }
       }
       # A heredoc fed to a text tool whose output goes only to gh (`cat
@@ -837,7 +1023,7 @@ _bd_strip_noncode() {
       if (!inhd && hits == 1 && q == "" &&
           (match(out, /<<-?"[A-Za-z_][A-Za-z0-9_]*"/) ||
            match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ)) &&
-          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+          intro_at(out, RSTART)) {
         pre = substr(out, 1, RSTART - 1)
         d = substr(out, RSTART, RLENGTH)
         post = substr(out, RSTART + RLENGTH)
@@ -848,7 +1034,7 @@ _bd_strip_noncode() {
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
           gsub("[\"" SQ "]", "", d)
-          if (d != "") { inhd = 1; delim = d; buf = "" }
+          if (d != "") { inhd = 1; delim = d; buf = ""; hdq = 1 }
         }
       }
       # With blank=1 only: an introducer followed by redirections or a pipe
@@ -861,7 +1047,7 @@ _bd_strip_noncode() {
           (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|])/) ||
            match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])") ||
            (qdata == 1 && match(out, /<<-?\\[A-Za-z_][A-Za-z0-9_]*[ \t]*([0-9]*>|&>|[|])/))) &&
-          (RSTART == 1 || substr(out, RSTART - 1, 1) != "<")) {
+          intro_at(out, RSTART)) {
         pre = substr(out, 1, RSTART - 1)
         rest = substr(out, RSTART)
         match(rest, "^<<-?([\"" SQ "]?|\\\\)[A-Za-z_][A-Za-z0-9_]*[\"" SQ "]?")
@@ -874,7 +1060,7 @@ _bd_strip_noncode() {
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
           gsub("[\"" SQ "\\\\]", "", d)
-          if (d != "") { inhd = 1; delim = d; buf = "" }
+          if (d != "") { inhd = 1; delim = d; buf = ""; hdq = vq }
         }
       }
       # A heredoc this pass did not drop keeps its body in the output, and that

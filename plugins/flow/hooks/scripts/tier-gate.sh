@@ -308,8 +308,11 @@
 # Reading the command. The command is parsed, not matched: the same parser
 # block-unchecked-merge.sh and block-destructive.sh use
 # (lib/command-parse.sh). `#` comments and heredoc bodies fed to cat, tee,
-# echo, printf or gh are removed; the text is split into simple commands at
-# `;`, `|` (not the one of `>|`), `&` (not the `&` of `2>&1`, `<&3` or `&>`),
+# echo, printf or gh are removed, but not an unquoted body (`<<EOF`) holding
+# a `$(...)` or backquote, which bash runs before the program reads anything
+# (`cat <<EOF` with `$(gh pr merge 1)` asks), and not the lines after a
+# `\<<'EOF'`, which bash reads as a literal `<` and a redirection; the text
+# is split into simple commands at `;`, `|` (not the one of `>|`), `&` (not the `&` of `2>&1`, `<&3` or `&>`),
 # `(`, `)`, newlines and
 # command substitutions (`$(...)` and backquotes, inside double quotes too),
 # outside quotes. A substitution's output can be empty, so a simple command
@@ -657,10 +660,15 @@ _tg_names_file() {   # $1 = the word
 # BD_QUOTED_BODIES=1 leaves out a quoted body (<<'EOF', <<"EOF", <<\EOF)
 # handed to a program named by a variable too, when that program cannot be
 # reading a script from it: "$FLOW_ROOT/bin/journal-append.sh" ... <<'EOF',
-# "$P" --file notes.md - <<'EOF' (#344). The backticks and $(...) of such a
-# body are markdown, which bash does not expand there. "$SHELL" <<'EOF',
-# "$P" -s <<'EOF' and an unquoted <<EOF keep theirs (lib/command-parse.sh,
-# var_reader_ok).
+# or "$P" whose first argument that is not an option looks like a script
+# file, "$P" --file notes.md - <<'EOF' (#344). The backticks and $(...) of
+# such a body are markdown, which bash does not expand there. When unsure
+# the body is commands: "$SHELL" <<'EOF', "$P" -s, "$P" /dev/stdin or any
+# argument under /dev/ or /proc/, "$P" myhost (ssh), "$P" now (at), "$P"
+# root (su), an option value ("$P" -I lib), an assignment before the program
+# (BASH_ENV=/dev/stdin "$P" x.sh), a command naming BASH_ENV or ENV, and an
+# unquoted <<EOF whose body holds a $(...) or backquote keep theirs
+# (lib/command-parse.sh, var_reader_ok, body_runs).
 _tg_body_line() {
   local s l
   [ "${TG_KEPT:-0}" = 1 ] && [ "${TG_DEPTH:-0}" = 0 ] || return 1

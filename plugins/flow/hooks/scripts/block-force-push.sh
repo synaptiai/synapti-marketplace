@@ -124,7 +124,7 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
   BEGIN {
     SQ = sprintf("%c", 39)
     BT = sprintf("%c", 96)          # backtick
-    verdict = 0; unmodelled = 0; any_token = 0; hd = ""; hd_safe = 1
+    verdict = 0; unmodelled = 0; any_token = 0; hd = ""; hd_safe = 1; hd_unq = 0
     pushforce = 0; risky = 0; q_owner = ""; push_word = 0; unverified = 0
     nosub = 0
     push_via_other = 0
@@ -347,7 +347,11 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
       t = $0
       sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
       if (t == hd) { hd = ""; next }
-      if (!hd_safe) {
+      # A body line of a heredoc whose delimiter is not quoted is expanded
+      # by bash before the command that opened it reads anything, so a
+      # substitution in it runs whoever reads the body (cat <<EOF with a
+      # $(git push --force) line): such a line is judged as a script too.
+      if (!hd_safe || (hd_unq && (t ~ /[$][({[]/ || index(t, BT)))) {
         # The body is a script. Judge it as one.
         judge(t)
       } else if (t ~ /(-f|--force)([^A-Za-z0-9_-]|$)/) {
@@ -484,6 +488,8 @@ VERDICT=$(printf '%s\n' "$COMMAND" | awk -v main_fires="$MAIN_FIRES" '
         # The delimiter word ends at the first shell metacharacter, and quote
         # removal leaves the bare word the terminator line must match.
         sub(/[ \t;&|()<>].*$/, "", d)
+        # Any quote or backslash in it makes bash expand nothing in the body.
+        hd_unq = (d !~ /[\\"]/ && index(d, SQ) == 0) ? 1 : 0
         gsub(/\\/, "", d)
         while (d != "" && (substr(d, 1, 1) == SQ || substr(d, 1, 1) == "\"")) d = substr(d, 2)
         while (d != "" && (substr(d, length(d), 1) == SQ || substr(d, length(d), 1) == "\"")) d = substr(d, 1, length(d) - 1)
