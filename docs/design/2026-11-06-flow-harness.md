@@ -1,11 +1,13 @@
 # Design record: a separate harness that orchestrates Claude Code with flow built in
 
 **Date**: 2026-11-06
-**Status**: Proposed (decisions taken by the maintainer on 2026-11-06; nothing built). Option H1-b, running on T3 Code with a thin layer of our own on top, was added on 2026-11-07 after the hands-on tests below and is open for decision.
-**Alternative to**: `2026-11-06-flow-router-and-worker-mode.md` (the plugin-only router). Both records are kept so they can be compared; its Phase 1 (flow fixes) applies to both.
+**Status**: Decided on 2026-11-08 by the maintainer: **H1-b**, T3 Code as the runtime with a thin deterministic layer of our own, plus a review step by a model from a different vendor. The decision was made on the condition that check C6 passed, and it did (see "C6 results"). The own-harness design below is kept as the fallback, and its decisions (H2–H5, the carried-over decisions) still apply to the thin layer where they fit. Nothing is built.
+**Alternative to**: `2026-11-06-flow-router-and-worker-mode.md` (the plugin-only router). Both records are kept so they can be compared; its Phase 1 (flow fixes) applies to both, and most of it shipped in flow 3.15.0.
 **Layout**: the decision-record layout of `plugins/flow/references/architecture-decision-record.md`
 
 ## Summary
+
+**Chosen (H1-b):** T3 Code runs the Claude Code sessions, with flow installed. Our thin deterministic layer runs beside it and signs in to T3 once with OAuth. It decides what work starts, launches one worktree thread per ticket through T3's MCP, and answers questions it is allowed to answer. It routes everything else to the owner, owns the path to GitHub, and adds a review by a different vendor's model before work is offered for review. See "The thin layer on T3 Code" below. The rest of this summary describes the own-harness fallback.
 
 A separate program in its own repository, run by each person on their own machine, orchestrates Claude Code sessions with the flow plugin bundled at a pinned version. Its router is deterministic code, not a model session. Each ticket runs as one Claude Agent SDK session in its own clone with flow loaded. Every question flow asks (`AskUserQuestion`) and every approval flow's tier gate asks for reaches the harness as a callback, without changing flow. The harness stores them, shows them in a local web panel and a CLI, and resumes the worker with the answer. The harness holds the GitHub credentials and does all sending; workers have none.
 
@@ -58,14 +60,64 @@ What the tests did not settle:
 - A full `/flow:start` run inside T3, worktree-per-thread, and webhook-triggered tasks (`schedule_task`) were not tested.
 - T3 has no gated path to GitHub: with GitHub denied in the sandbox, something other than the worker has to push. It has no intake from GitHub issues and no mirroring of questions to GitHub.
 
+### C6 results (2026-11-08, T3 Code 0.1.7, flow 3.15.0)
+
+**C6a: a separate program drives T3. Passed.** A plain Node program (no model) did all of the following:
+
+- registered itself at T3's OAuth endpoint (`/oauth/mcp/register`, PKCE, scopes `orchestration:read orchestration:operate`)
+- was approved once by a person on T3's approval page, which offers access levels from read-only to full access. With full access it received `orchestration:read orchestration:operate settings:write source-control:write`.
+- exchanged the code for a bearer token that lasts 30 days, with no refresh token, so the owner approves again each month. The token survived a T3 restart.
+- over MCP:
+  - launched a thread with `t3_thread_launch`
+  - listed and read its pending question with `t3_pending_request` (question id, header and labelled options)
+  - answered it
+  - waited with `t3_thread_wait`; the thread completed with the answer, confirmed with `t3 thread show`
+
+Limits found:
+
+- `create_threads` refuses a client signed in from outside a thread ("thread_credential_required"); `t3_thread_launch` works.
+- Approvals are not listed or answerable over MCP; the thread's `pendingRequestCount` shows one is waiting.
+
+**C6b: `/flow:start` in a T3 worktree thread with the sandbox on. Passed, after four setup steps that belong to the thin layer.**
+
+The setup:
+
+- A fixture project: a small Python module, a local bare `origin`, and `autonomous: true` in its flow settings.
+- A stub `gh` on T3's PATH that answered `/flow:start`'s GitHub calls from a fixture issue with three acceptance criteria and logged every call. No real GitHub issue was touched.
+- The program launched `/flow:start 1` with `workspaceStrategy: worktree`, on Sonnet 5.5, in full-access mode. Claude Code's sandbox was on, with `api.github.com` and `github.com` denied.
+- A supervisor loop (a stand-in for the thin layer) answered each question with its recommended option and logged approvals.
+
+Outcome, checked on disk and not taken from the agent's summary:
+
+- the branch `feature/issue-1-add-subtract-function`, with `subtract` and its tests staged
+- 4 tests pass and every acceptance-criteria command passes
+- the goal is `achieved` with evaluation `pass`
+- flow's independent verdict judge returned PASS for 3 of 3 criteria
+- 2 question rounds, both answered by the layer: the specification's failure modes, interface contract and risk map; then an environment question
+- 1 approval, answered by a person in T3's web UI. It was a false positive (flow defect 1 below).
+
+What it took:
+
+1. **Sandbox placeholders.** On Linux, the sandbox shows placeholder files for the paths it protects (`.bashrc`, `.gitconfig`, `.claude/settings.json`, `.mcp.json`, `.vscode` and others, 23 in this run) inside the worktree. They are visible only inside the sandbox, so `git status` there is never clean and flow's preflight stops with "Uncommitted changes". The layer adds them to the project's `.git/info/exclude`.
+2. **Flow's per-user directories.** Flow writes `~/.claude/flow-state` (goal trust ledger) and `~/.claude/flow-goal-judge` (the verdict judge), both outside the worktree. The sandbox made them read-only, so the trust-ledger write failed and the judge could not start. The layer adds both to `sandbox.filesystem.allowWrite`. The run then finished.
+3. **Commit signing.** The git config used for the run signs every commit (SSH signing). Inside the sandbox the signing agent was unreachable, so the worker left the change staged and did not commit. The layer must either allow the signing agent's socket, or commit and sign outside the sandbox as part of its send path.
+4. **Upstream tracking.** In a linked worktree, `.git/config` is outside the sandbox's write area, so `git checkout -b` could not record upstream tracking. This is harmless when the layer pushes.
+
+Also observed: a turn can end while flow's planner subagent still runs in the background. T3 marks the run completed, and starts a new run when the subagent finishes. The layer has to wait with `untilDelegatedWorkSettled: true`, not on the first `completed`.
+
+Flow defects found by the run (flow 3.15.0, reproduced outside T3):
+
+1. **False-positive Tier 3 ask.** `hooks/scripts/tier-gate.sh` asks for Tier 3 approval when a command's program is a variable (`"$FLOW_ROOT/bin/journal-append.sh"`) and its quoted heredoc (`<<'EOF'`) contains markdown code spans with backticks. The gate reads them as substitutions of an unknown program that "may merge a pull request or create a release". Flow's own instructions write journal sections this way, so this interrupts a person in attended use as well. The same text through `cat` is allowed, and so is a heredoc without backticks.
+2. **Local imports fail in goal checks.** `hooks/scripts/flow-run-deterministic-checks.sh` exports `PYTHONSAFEPATH=1` (line 51) and runs goal verification commands with it. A criterion such as `python3 -c "import calc; …"` then fails with `ModuleNotFoundError` in a directory where it passes. The worker worked around it by prefixing its goal commands with `PYTHONSAFEPATH=`.
+
 ## Decisions, options and trade-offs
 
 ### H1. How flow gets orchestration
 
 | Option | For | Against |
 |---|---|---|
-| **Own harness on the Agent SDK (chosen)** | the router is deterministic code; every flow question and approval arrives as a callback with no flow change; no research-preview dependency; one process owns state, credentials and sends | a new product to build and maintain; SDK is 0.x and releases often |
-| H1-b: T3 Code as the runtime, with a thin deterministic layer of ours on top for intake, policy, the send path and the GitHub mirror (open for decision) | T3 already provides sessions, questions that can be answered later, approvals in desktop and mobile apps, and delegation. Claude Code's sandbox applies to its workers (T1–T7 above). Much less to build | an approval needs a person in a T3 client; driving T3 from our own process is untested; pre-release and not taking contributions, so we follow its roadmap; its orchestrator is an agent session, so our layer, not T3, must hold the deterministic routing |
+| Own harness on the Agent SDK (fallback) | the router is deterministic code; every flow question and approval arrives as a callback with no flow change; no research-preview dependency; one process owns state, credentials and sends | a new product to build and maintain; SDK is 0.x and releases often |
+| **H1-b: T3 Code as the runtime, with a thin deterministic layer of ours on top for intake, policy, the send path, the GitHub mirror and a different-vendor review (chosen)** | T3 already provides sessions, questions that can be answered later, approvals in desktop and mobile apps, and delegation. Claude Code's sandbox applies to its workers (T1–T7). A separate program drives it over OAuth and MCP, and a full `/flow:start` completed inside it (C6). Much less to build | an approval needs a person in a T3 client; pre-release and not taking contributions, so we follow its roadmap; its orchestrator is an agent session, so our layer, not T3, holds the deterministic routing |
 | Plugin-only router (the other record) | no new repository | relies on background sessions and agent view; flow must store questions itself |
 | Extend Agent Orchestrator | desktop and mobile apps exist | no sandbox, no plugin API, asynchronous `AskUserQuestion` not shown; not our roadmap |
 | Own harness driving `claude -p` processes | any language | reimplements what the SDK wraps; the permission-prompt tool's contract is not documented |
@@ -110,6 +162,85 @@ Personal and cross-repository; state in a private git control folder written by 
 
 ## The design
 
+### The thin layer on T3 Code (chosen)
+
+```
+ owner's CLI ─────────┐                                    ┌─> T3 worktree thread t42: Claude Code + flow,
+ labelled GitHub issues ┼─> THIN LAYER (deterministic) ── MCP ──┤     sandbox on, no GitHub write access
+ ticket PR activity ───┘    control folder (git)            └─> T3 review thread t42-r: other vendor's model,
+          ▲                         │                             read-only, diff at the pinned head only
+          │                         └── send path: commit/sign, push branch, draft PR (only path to GitHub)
+          └── questions (answered or routed to the owner) · approvals (owner, in T3's apps)
+```
+
+**What T3 provides:**
+
+- sessions and worktrees
+- questions that can be answered later
+- approvals in its desktop, web and mobile apps, with push notifications
+- delegation and restarts
+- several model vendors behind one MCP surface
+
+**What the layer does**, in the order a ticket meets it:
+
+1. **Setup, once per machine and per repository.**
+   - Sign in to T3 by OAuth: the owner approves once and picks an access level, and approves again every 30 days.
+   - Register each repository as a T3 project.
+   - Write the sandbox-placeholder names into the project's `.git/info/exclude` (C6b step 1).
+   - Write the Claude settings T3 loads:
+     - the sandbox on
+     - GitHub hosts handled as C7 decides
+     - `allowWrite` for flow's per-user directories (C6b step 2)
+     - a pinned flow version
+   - Set `autonomous: true` in flow's settings for workers.
+2. **Intake.** Only the owner starts work: a request typed in the layer's CLI, or an issue the owner labels in a registered repository. Each becomes a ticket in the control folder (git, one writer, one commit per change).
+3. **Launch.** One `t3_thread_launch` per ticket, with `workspaceStrategy: worktree`, the message `/flow:start <n>`, and the ticket id as `clientRequestId`, so a retry never starts a second thread.
+4. **Supervise.**
+   - Wait with `t3_thread_wait` and `untilDelegatedWorkSettled: true`.
+   - Read questions with `t3_pending_request`. A question flow marks as a decision or permission goes to the owner's inbox and, on a labelled issue, to its GitHub thread. The layer answers it only under a rule the owner wrote. Only `Blocking: yes` interrupts, within the daily budget.
+   - The layer cannot answer approvals. Its inbox shows that one waits and links to the thread in T3's apps.
+5. **Different-vendor review.** When the worker reports ready (goal `achieved`), the layer launches a second T3 thread on another vendor's model with:
+   - fresh context: the issue, its acceptance criteria and the diff at the pinned head commit, with no pull request body and no history
+   - read-only access
+   - a fixed verdict format: pass or fail, each finding with `file:line` and a command that shows it
+
+   Flow does not load in non-Claude models, so the review prompt is the layer's own, built from flow's review facets. The work is offered for review only when flow's review and the different-vendor review both pass on the same head. Otherwise the findings go back to the worker thread (`t3_thread_send`). After three failed rounds, the owner gets a question.
+6. **Send path.** The only route to GitHub:
+   - take the worker's commits out of the worktree without running anything the worker could have planted (C4)
+   - sign them outside the sandbox (C6b step 3)
+   - push the ticket branch
+   - open or update a draft pull request
+
+   Other kinds of send wait for the owner. Merge and release are never sent.
+7. **Watchdog and digest.** Threads that stop producing events, tokens nearing their expiry, a daily digest of at most 10 lines starting with "Needs you:".
+
+**What flow needs for this choice:**
+
+- report states and a result block (the one Phase 1 item left)
+- fixes for defects 1 and 2 above
+- per-user directories that can be redirected or kept inside the repository, so a sandboxed worker needs no `allowWrite` outside it
+
+**Phases for H1-b:**
+
+| Phase | Delivers | Gated by |
+|---|---|---|
+| 0 | C4, C5, C7, C8 below | — |
+| 1 | the flow items above | — |
+| 2 | layer MVP: OAuth setup, control folder, CLI intake, launch and supervise, inbox in the CLI, send path, different-vendor review; one repository | 0, 1 |
+| 3 | GitHub intake and mirror, notifications beyond T3's own, several repositories | 2 |
+| 4 | allowlisted requesters, proactive rules in observe mode | 3 |
+
+**New checks for H1-b:**
+
+| # | Question |
+|---|---|
+| C7 | How does a sandboxed worker read GitHub (`/flow:start` reads the issue and assigns it) while writing nothing? Options: allow GitHub hosts and give workers a read-only token, with writes going through the layer; or put a layer-provided `gh` on the worker's PATH that answers reads and turns writes into send requests (the C6b stub, made real). |
+| C8 | Which other-vendor provider is available in T3 on the owner's machine, does a read-only review thread on it return the fixed verdict format, and does it catch a seeded defect that flow's own review was told to miss? |
+
+C4 (safe intake of commits) and C5 (the auth policy for unattended use on a personal login) still apply. T3 signs in to Claude with the owner's own login, so C5's question now concerns T3.
+
+### The own-harness design (fallback)
+
 ```
  your CLI / web panel ─┐                                  ┌─> worker t42: SDK session, clone of acme/web,
  labelled GitHub issues ┼─> ENGINE (deterministic) ─> EXECUTOR ┤     flow pinned, sandbox, no GitHub creds
@@ -119,7 +250,7 @@ Personal and cross-repository; state in a private git control folder written by 
           └── OUTBOX (push, draft PR, comment) ── the only path to GitHub, run by the harness
 ```
 
-### Components
+#### Components
 
 1. **Engine.** The only writer of tickets, questions, approvals and the send ledger, through a lock and one git commit per change in the control folder. Tickets go `queued → running → waiting (person) → ready → done`, or `failed` or `dropped`. A ticket's stage is computed from stored facts, first match wins: waiting on an answer, an approval or a send; ready for review; failed; working; idle.
 2. **Sources.** Requests the owner types in the CLI or the panel; issues the owner labels in registered repositories; and activity on a ticket's pull request. A per-thread cursor (last comment id and timestamp) means a restart never replays events.
@@ -140,31 +271,31 @@ Personal and cross-repository; state in a private git control folder written by 
    - Merge and release are never sent by the harness. Flow's Tier 3 approvals arrive in the inbox for the owner to decide.
 7. **Watchdog.** Finds workers that have stopped producing events, the remaining budget per ticket, and stale clones. It never restarts a ticket the owner parked.
 
-### What flow needs
+#### What flow needs
 
-Flow runs unchanged inside the harness: questions and approvals are intercepted. Phase 1 of the router record still improves the result:
+Flow runs unchanged inside the harness: questions and approvals are intercepted. Flow 3.15.0 (#342) already has most of what the router record's Phase 1 asked for:
 
-- Report states and a result block let the harness check a worker's claim against git.
-- The four defects matter in any mode.
-- A mechanical ask policy (`FLOW_ROLE=worker` or `autonomous` takes the recommendation for questions that are only defaults) cuts the number of questions the inbox receives.
+- the ask policy, enforced by a hook. Workers run with `autonomous: true`, so a question that only asks for a default is not asked, and fewer questions reach the inbox.
+- stored questions (`bin/flow-question.sh`)
+- the goal-gate, Stop-hook, goal-evaluation and repository-top fixes
 
-Flow's own question store is not needed by the harness, but still serves attended use.
+One item is left: **report states and a result block**, so the harness can check a worker's claim against git (head commit, evidence, what was not verified).
 
-### Bundling flow
+#### Bundling flow
 
 The harness pins a marketplace release tag, for example the one that ships flow 3.14.0. At install, it fetches `plugins/flow` from that tag into its data directory. It records the tag and a hash of the plugin's files in each ticket, so a run can be traced to the exact flow it used. Upgrading flow is a harness release that moves the pin after the harness's tests pass on the new version.
 
-### Phases
+#### Phases
 
 | Phase | Delivers | Gated by |
 |---|---|---|
 | 0 | the checks below | — |
-| 1 | flow fixes from the router record's Phase 1 (report states, result block, four defects, ask policy) | — |
+| 1 | report states and a result block in flow (the rest of the router record's Phase 1 shipped in flow 3.15.0) | — |
 | 2 | harness MVP: daemon, control folder, executor, inbox and outbox in the CLI, one repository, owner's typed requests | C1–C5 |
 | 3 | GitHub sources and mirror, web panel, notifications, watchdog, several repositories | 2 |
 | 4 | allowlisted requesters, proactive rules in observe mode, remote or cloud runners | 3 |
 
-### Phase 0 checks
+### Phase 0 checks (both designs)
 
 | # | Question |
 |---|---|
@@ -173,13 +304,23 @@ The harness pins a marketplace release tag, for example the one that ships flow 
 | C3 | With `env` built by the harness (no `GH_TOKEN`), does flow's pipeline run to a ready result, with every GitHub action turned into a send request? |
 | C4 | Can commits leave a worker clone without running anything the worker could have planted in its `.git` (hooks, `core.fsmonitor`, filters, `commondir`, alternates)? Each vector is tested against a naive command first, so the test can fail. |
 | C5 | Personal mode: does a session started by the SDK on the person's own login behave as with an API key, and is the policy question settled? If not, personal mode stays off. |
-| C6 | For H1-b only: can a separate program create threads, read pending questions and answer them through T3's OAuth or WebSocket API? Does a full `/flow:start` run complete in a T3 worktree thread with the sandbox on? |
+| C6 | For H1-b only: can a separate program create threads, read pending questions and answer them through T3's OAuth or WebSocket API? Does a full `/flow:start` run complete in a T3 worktree thread with the sandbox on? **Done, passed: see "C6 results".** |
 
 ## Testing
 
 Per `AGENTS.md`, end-to-end tests come first, each producing a repeatable artifact. The harness's tests run real SDK sessions against a scratch repository and a scripted GitHub fixture. They cover a question parked and answered, a Tier 3 approval denied, a send refused, a restart while a question waits, and a worker that dies. Each test is run once with its safeguard removed, to show it can fail. Flow changes keep using `plugins/flow/tests/lib/e2e.sh`.
 
 ## Consequences
+
+With H1-b chosen:
+
+- Flow's orchestration depends on T3 Code, a pre-release project that is not taking contributions. The layer talks to it only through its OAuth and MCP surface, and pins the T3 version it was tested on, so the own-harness design stays a fallback.
+- Approvals need a person in T3's apps; the layer can see that one waits but not answer it. Defect 1 must be fixed, or flow's own journal writes keep producing approvals.
+- The owner approves the layer's access to T3 once per 30 days.
+- Sandbox setup (placeholders, flow's per-user directories, commit signing) is the layer's job until flow itself needs none of it.
+- Model costs and auth follow T3's Claude sign-in; C5 decides whether unattended use on a personal login is acceptable.
+
+Either way:
 
 - A second product with its own releases, issues and documentation; flow stays usable without it.
 - The trust boundary is the harness process. Workers' output (commits, result blocks, requested sends) is untrusted input that the harness checks with code. GitHub credentials never enter a worker.

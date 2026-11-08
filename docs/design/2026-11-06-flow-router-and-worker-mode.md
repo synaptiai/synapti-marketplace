@@ -13,8 +13,9 @@ things it lacks: a **router** that takes requests and hands each to its own work
 mode** in which flow's pipelines run without a person at the terminal and reach that person only at
 the right moments.
 
-The decision, in one paragraph: first make flow's own pipelines safe to run unattended (a mechanical
-ask policy, stored questions, fixed report states and four defects fixed); then add a personal,
+The decision, in one paragraph: first make flow's own pipelines safe to run unattended (the ask policy,
+stored questions and four defect fixes shipped in flow 3.15.0; report states and a worker role are
+left); then add a personal,
 cross-repository router whose state lives in a private git control folder, whose agent cannot edit
 code, and which starts one sandboxed background worker per ticket. Workers reach GitHub only through
 the router's send helper; they may push their own branch and open a draft pull request, and every
@@ -182,30 +183,24 @@ inbox. `Blocking: no` is recorded only.
 
 ### Phase 1: worker mode in flow (useful without a router)
 
-1. **Ask policy made mechanical.** The pipelines' preflight prints the resolved ask policy:
-   `attended`, `autonomous` (from the existing setting) or `worker` (set by the router at launch). A
-   new PreToolUse hook on `AskUserQuestion` enforces it. Under `autonomous`, a question must carry its
-   class (product or scope decision, or permission) or it is denied with "take your recommendation
-   and record it". Under `worker`, every `AskUserQuestion` is denied with "store the question". Each of
-   the 47 call sites gets its class; the sites that are defaults are rewritten to take the
-   recommendation and journal the decision.
-2. **Stored questions.** `bin/flow-escalate.sh` becomes `bin/flow-question.sh`
-   (`add | answer | withdraw | list | get`). A question keeps the six escalation fields, an id, a
-   status (`open`, `answered`, `withdrawn`), its blocking level, the issue and pull request, and where
-   it was asked. Attended, the pipeline still asks with `AskUserQuestion` and records the answer. In a
-   worker, the pipeline stores the question and reports it. A `Blocking: yes` question parks the
-   worker, and a `soft` one lets it continue on the recommendation. The journal gets
-   `escalation-asked` beside the existing `escalation-resolved`.
-3. **Report states and a result block.** A run ends as `ready`, `blocked`, `failed`, `dropped` (nothing
+**Done in flow 3.15.0** (#342, closing #335–#340): the ask policy is printed by every pipeline's preflight (`bin/flow-ask-policy.sh`, `attended` or `autonomous`) and enforced by a PreToolUse hook on `AskUserQuestion`, with every ask place tagged `[ask: decision|permission|default]`; escalations are stored with id, status and class (`bin/flow-question.sh`); the merge goal gate judges the pull request's own goal and blocks every status but `achieved`; the Stop hook judges the current branch's goal; `/flow:start` evaluates its goal at the end of VERIFY; settings, goals and the journal are read at the repository top. The "What flow has today" table above records the state before these fixes.
+
+**Left:**
+
+1. **Report states and a result block.** A run ends as `ready`, `blocked`, `failed`, `dropped` (nothing
    to do) or `waiting`, with a structured result: head commit, evidence (files, commands with exit
    codes), and what was not verified. The router checks it with a script: the head exists, descends
    from the base, and the evidence paths exist in that commit.
-4. **Four defects fixed.**
-   - A goal in `waiting_for_user` or `blocked` keeps the merge goal gate closed.
-   - The Stop hook picks the current branch's goal.
-   - `/flow:start` evaluates its goal at the end of VERIFY, so `/flow:pr` asks only when the goal truly
-     is not met.
-   - In worker mode, a Tier 2 `confirm` becomes a stored question instead of a refusal.
+2. **A worker role where `AskUserQuestion` does not exist.** In `claude -p` (this design's workers)
+   the tool is absent, so a question must be stored with `flow-question.sh add` and the run must
+   stop (`Blocking: yes`) or continue on its recommendation (`soft`) instead of waiting. The ask
+   policy has `attended` and `autonomous`; it gains a third value set by the router at launch.
+3. **Tier 2 `confirm` in a worker.** In `claude -p` a tier "ask" is a refusal
+   (`hooks/scripts/tier-gate.sh`); in a worker it becomes a stored question instead.
+
+Items 2 and 3 exist only because this design runs workers with `claude -p`. Under a host that answers
+permission prompts (the Agent SDK, or T3 Code; see the harness record), questions and tier asks reach
+the host, so only item 1 is left.
 
 ### Phase 2: the router
 
