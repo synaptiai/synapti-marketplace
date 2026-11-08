@@ -1838,7 +1838,10 @@ if _want tg-quoted-body-data; then
   # (skills/specification-capture/SKILL.md Step 4, the script named through
   # $FLOW_ROOT per references/plugin-root-resolution.md), with a risk map in
   # the shape of references/specification-journal-format.md.
-  _tg_run "$(cat <<'SPEC'
+  # Read with read -d '', not "$(cat <<'SPEC' ...)": bash 3.2 (macOS) pairs
+  # the quotes of a heredoc inside a command substitution, and the
+  # apostrophes in this text end the file in an open string.
+  IFS= read -r -d '' SPEC_CMD <<'SPEC' || true
 JOURNAL=$("$FLOW_ROOT/bin/journal-dir.sh")/issue-42.md
 "$FLOW_ROOT/bin/journal-append.sh" --file "$JOURNAL" --replace-heading '## Specification' - <<'EOF'
 ## Specification
@@ -1869,7 +1872,7 @@ _Captured by specification-capture skill on 2026-11-08. Source: mixed._
 | sign of zero | returns `-0` for a float input | `subtract(0, 0)` → right: `0`; wrong: `-0` |
 EOF
 SPEC
-)"
+  _tg_run "${SPEC_CMD%$'\n'}"
   _expect_silent_allow
   e2e_expect_equal "" "$E2E_ERR" "stderr for the specification write"
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
