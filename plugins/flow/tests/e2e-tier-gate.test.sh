@@ -110,6 +110,64 @@
 #      .gitconfig; a shell that reads its script from a pipe. Or the reverse:
 #      a command that changes none of these (exec 2>/dev/null, an EXIT trap,
 #      cat .git/config, gh pr view "$N", git checkout -- file) asks
+#   T34 a quoted heredoc (<<'EOF', <<"EOF", <<\EOF, <<-'EOF') handed to one
+#      of flow's own bin/ scripts named through a variable
+#      ("$FLOW_ROOT/bin/journal-append.sh",
+#      "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh") is read as commands, so
+#      the backticks and $(...) of its markdown are programs flow cannot read
+#      and ask (#344), the /flow:start specification-capture journal write
+#      among them; or the reverse: a body that program may run as a script (a
+#      variable alone, with -s, -, --, -c, or arguments that are themselves
+#      expansions, a variable that may split, a variable naming a shell or
+#      an interpreter such as "$D/bin/bash"), or an unquoted body whose
+#      $(...) or backticks bash runs, is read as data, and a merge, a release
+#      or a command held in a variable in it runs unasked
+#   T35 a quoted body is read as data for a program named by a variable that
+#      is not one of the scripts in the plugin's bin/, though it may read its
+#      script from the body: a bare "$P" whatever its arguments ("$P" --file
+#      n.md -, "$P" x.sh, "$P" log.txt, "$P" /dev/stdin, "$P" myhost, "$P"
+#      now, "$P" root, "$P" -I lib; the gate cannot tell a bare $P from a
+#      shell), a name that is not a flow script ("$D/bin/sqlite3" notes.md,
+#      "$D/bin/ed" notes.md, "$D/bin/script" x.txt, "$D/bin/ssh" host.sh,
+#      "$ROOT/bin/x.sh"), a flow script that hands its input to an agent or
+#      to eval code (flow-judge.sh, flow-eval-run.sh), or a flow script whose
+#      word is not one double-quoted word, that comes after an assignment or
+#      a command that sets BASH_ENV or ENV (as a prefix, an export earlier in
+#      the command), or that has an argument holding an expansion other than
+#      one double-quoted variable, a redirection, or a path under /dev/ or
+#      /proc/; or the reverse: a script the plugin ships, one added to its
+#      bin/ since among them, keeps its body, and the /flow:start journal
+#      write asks again
+#   T36 a backslash before << (\<<'EOF', \<<\EOF), which bash reads as a
+#      literal < and a < redirection, is read as a heredoc, so the commands
+#      on the lines after it are dropped as a body, for cat, a script or a
+#      program named by a variable; or \\<<'EOF', a literal backslash and a
+#      heredoc, stops being one
+#   T37 an unquoted body (<<EOF, <<-EOF) handed to a text sink (cat, tee,
+#      echo, printf, gh, a commit message through "$(cat <<EOF)") is dropped
+#      as text although bash runs its $(...) or backquotes before the sink
+#      reads it, so the merge or release in them runs unasked, also when two
+#      apostrophes of its prose would pair around them, and a command held
+#      in a variable ($($CMD)) runs unasked; or the reverse, a quoted body,
+#      an escaped \$( or \`, or a body line that is only a substitution
+#      feeding a loop (done <<LIST with $(ls)) asks
+#   T38 a backslash-newline in an unquoted body, which bash removes before
+#      it expands the body, splits a $ from the (, { or [ after it ($\ then
+#      (gh pr merge 1) on the next line) or a command inside a substitution
+#      in two, so the merge, the release, or the ${x@P} or $[y] that runs a
+#      command held in a variable, is read as text; or the reverse, an
+#      escaped backslash before a newline ($\\) joins the lines and asks
+#   T39 a ) inside a ${...} within a substitution of an unquoted body
+#      ($(echo ${x:-)}; gh pr merge 1)) is read as the end of the
+#      substitution, so the commands after it are read as text
+#   T40 ENV or BASH_ENV named only inside a string (echo "check ENV first")
+#      keeps the body of a later flow script, so the #344 ask comes back; or
+#      the reverse, ENV or BASH_ENV set through quotes (export
+#      "BASH_ENV=/dev/stdin", B""ASH_ENV=..., read "ENV") or inside a string
+#      that a shell or eval runs is missed, and the body is read as data
+#      (also BASH_ENV spelled with $'...' escapes or exported by a sourced
+#      file, and a program word "$@/journal-append.sh" or "$1/...", whose
+#      expansion can make a shell the program)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -1753,6 +1811,392 @@ for TG_HR_MODE in journal autonomous; do
     e2e_expect_clean_edges
   fi
 done
+
+# A quoted heredoc's body is data for one of flow's own bin/ scripts named
+# through a variable, none of which runs what it reads (#344): its backticks
+# and $(...) are markdown, not programs flow cannot read. Each body holds
+# "right" or "release", so the gate reads the text at all.
+if _want tg-quoted-body-data; then
+  _tg_setup tg-quoted-body-data feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: a quoted heredoc (<<'EOF', <<\"EOF\", <<\\EOF, <<-'EOF') whose body holds backticks or \$(...) is allowed silently when its program is one double-quoted word naming a script of the plugin's bin/ through a variable (\"\$FLOW_ROOT/bin/journal-append.sh\", \"\${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh\") with arguments that are words or double-quoted variables, and the /flow:start specification-capture journal write is allowed (T34)"
+  TAB=$(printf '\t')
+  for C in \
+    "$(printf '"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'"'"'EOF'"'"'\n| right | `subtract(5, 3)` → `2` |\nEOF')" \
+    "$(printf '"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'"'"'EOF'"'"'\n| right | $(date) | `uname` |\nEOF')" \
+    "$(printf '"$FLOW_ROOT/bin/journal-append.sh" --file "$J" - <<"EOF"\n| right | `subtract(5, 3)` → `2`; wrong: $(x) |\nEOF')" \
+    "$(printf '"$FLOW_ROOT/bin/journal-append.sh" --file "$DIR/issue-$N.md" - <<'"'"'EOF'"'"'\n| right | `x` |\nEOF')" \
+    "$(printf '"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<\\EOF\n| right | `subtract(5, 3)` → `2` |\nEOF')" \
+    "$(printf '"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<-'"'"'EOF'"'"'\n%s| right | `x` |\n%sEOF' "$TAB" "$TAB")" \
+    "$(printf '"${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh" add --file n.md <<'"'"'EOF'"'"'\n| right | $(y) |\nEOF')" \
+    "$(printf '"$D/journal-record.sh" -s <<'"'"'EOF'"'"'\n| right | `x` |\nEOF')" \
+    "$(printf '/x/journal-append.sh --file n.md - <<\\EOF\n| right | `x` |\nEOF')"; do
+    _tg_run "$C"
+    _expect_silent_allow
+    e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
+  done
+  # The specification-capture journal write as /flow:start makes it
+  # (skills/specification-capture/SKILL.md Step 4, the script named through
+  # $FLOW_ROOT per references/plugin-root-resolution.md), with a risk map in
+  # the shape of references/specification-journal-format.md.
+  # Read with read -d '', not "$(cat <<'SPEC' ...)": bash 3.2 (macOS) pairs
+  # the quotes of a heredoc inside a command substitution, and the
+  # apostrophes in this text end the file in an open string.
+  IFS= read -r -d '' SPEC_CMD <<'SPEC' || true
+JOURNAL=$("$FLOW_ROOT/bin/journal-dir.sh")/issue-42.md
+"$FLOW_ROOT/bin/journal-append.sh" --file "$JOURNAL" --replace-heading '## Specification' - <<'EOF'
+## Specification
+
+_Captured by specification-capture skill on 2026-11-08. Source: mixed._
+
+### Non-goals
+
+- does not change `add()` or the CLI's argument parsing
+- does not release or merge anything; the tier gate's own tests aren't touched
+
+### Failure modes
+
+- **Timeouts** — none — no network call
+- **Partial failures** — none — one pure function
+- **Invalid input** — a non-number raises `TypeError` (see `$(python3 -c 'help(int)')`)
+- **Missing context** — none — no configuration read
+
+### Interface contracts
+
+- `subtract(a: int, b: int) -> int`, exported from `calc/__init__.py`
+
+### Risk map
+
+| Area | Plausible wrong version | Discriminating check |
+|---|---|---|
+| operand order | computes `b - a` | `subtract(5, 3)` → right: `2`; wrong: `-2` |
+| sign of zero | returns `-0` for a float input | `subtract(0, 0)` → right: `0`; wrong: `-0` |
+EOF
+SPEC
+  _tg_run "${SPEC_CMD%$'\n'}"
+  _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr for the specification write"
+  e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
+# The same bodies are commands where something runs them: bash expands the
+# $(...) and backticks of an unquoted body, and a program named by a variable
+# may be a shell reading its script from the body (#344).
+if _want tg-quoted-body-script; then
+  _tg_setup tg-quoted-body-script feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: an unquoted heredoc body's \$(gh pr merge 1) or backticks ask, and a quoted body that a program named by a variable may run as a script (alone, -s, -, --, -c, an argument that is an expansion, a variable that may split, a variable naming a shell or an interpreter) asks for a merge in it or a command held in a variable (T34)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      merge) _expect_ask "tiers.merge" ;;
+      release) _expect_ask "tiers.release" ;;
+      unread) _expect_ask "flow cannot read from the command text" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+merge|"$P" --file n.md - <<EOF\n| right | $(gh pr merge 1) |\nEOF
+release|"$P" --file n.md - <<EOF\n| right | `gh release create v1` |\nEOF
+merge|"$P" --file n.md - <<-EOF\n\t| right | $(gh pr merge 1) |\n\tEOF
+merge|"$SHELL" <<'EOF'\ngh pr merge 1\nEOF
+merge|"$SHELL" -s <<'EOF'\ngh pr merge 1\nEOF
+merge|bash -s <<'EOF'\ngh pr merge 1\nEOF
+release|sh -s x <<\\EOF\ngh release create v1\nEOF
+unread|CMD='gh pr merge 1'\n"$SHELL" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$SHELL" <<\\EOF\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$SHELL" -s <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$SHELL" -xs <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -- <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -c "$X" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" "$ARG" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --file "$J" - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n$P --file n.md - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$D/bin/bash" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$D/bin/python3" <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" <<'EOF' >/dev/null\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --file n.md - <<EOF\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\nsudo "$P" --file n.md - <<'EOF'\n$CMD\nEOF
+EOF
+  e2e_expect_clean_edges
+fi
+
+# A program named by a bare variable may run a quoted body as a script
+# whatever its arguments: a shell given a device path it reads its input
+# through, ssh, at or su given a host, a time or a user before they read
+# commands from their input, an interpreter given an option value, or a shell
+# told to read its input first through BASH_ENV or ENV (#344). Even with a
+# script file as its first argument ("$P" x.sh, "$P" --file n.md -) the gate
+# cannot tell "$P" from such a program, so its body stays commands. Each body
+# holds a command kept in a variable, which asks.
+if _want tg-quoted-body-stdin; then
+  _tg_setup tg-quoted-body-stdin feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: a quoted body handed to a program named by a bare variable asks for the command held in a variable in it, whatever the arguments (under /dev/ or /proc/, a host, a time, a user, an option value, a script file such as n.md or x.sh), and when BASH_ENV or ENV is set (T35)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      unread) _expect_ask "flow cannot read from the command text" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+unread|CMD='gh pr merge 1'\n"$P" /dev/stdin <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" /dev/fd/0 <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" /proc/self/fd/0 <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --file /dev/stdin - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --file=/dev/stdin x.sh <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\nBASH_ENV=/dev/stdin "$P" x.sh <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\nENV=/dev/stdin "$P" x.sh <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\nLC_ALL=C "$P" --file n.md - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\nexport BASH_ENV=/dev/stdin\n"$P" x.sh <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\nBASH_ENV=/dev/stdin ./x.sh <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" myhost <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" now <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -q /dev/null <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" root <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" host.example.com <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" deploy@host.sh <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -W ignore <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -X dev - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -I lib <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" -I lib.rb <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --import x.js - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --file n.md - <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" x.sh <<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --quiet notes/plan.md <<'EOF'\n$CMD\nEOF
+EOF
+  e2e_expect_clean_edges
+fi
+
+# A quoted body is data only for a program named by a variable that is one of
+# the scripts in the plugin's own bin/ (#344): a name the gate can see and
+# check against that directory, read when the hook runs, so a script added to
+# bin/ later is covered too. Every other program keeps the body as commands,
+# so each body below, a command kept in a variable or markdown with
+# backticks, asks.
+# - The issue's own repro, "$P" --file n.md - with P=/x/journal-append.sh,
+#   asks by design: the gate cannot tell a bare $P from a shell.
+# - A visible name that is not a flow script asks, whatever its arguments
+#   look like: sqlite3, ed, script and ssh read commands from their input
+#   after a file name or a host.
+# - flow-judge.sh hands its input to an agent session, and flow-eval-run.sh
+#   runs eval code that inherits it, so they are left out of the list.
+# - A flow script keeps its body when an assignment or BASH_ENV comes before
+#   it, when its word is not one double-quoted word, and when an argument
+#   holds an expansion other than one double-quoted variable, a redirection
+#   or a path under /dev/ or /proc/.
+if _want tg-quoted-body-allowlist; then
+  _tg_setup tg-quoted-body-allowlist feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: a quoted body asks for the command held in a variable in it, or the backticks of its markdown, when its program is a bare variable, a name that is not one of the scripts in the plugin's bin/ (sqlite3, ed, script, ssh, x.sh), flow-judge.sh or flow-eval-run.sh, or a flow script after an assignment or BASH_ENV, not written as one double-quoted word, or with an argument holding an expansion, a redirection or a /dev/ path; a script added to bin/ in a copy of the plugin is data at once (T35)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      unread) _expect_ask "flow cannot read from the command text" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+unread|"$P" --file n.md - <<'EOF'\n| right | `subtract(5, 3)` → `2` |\nEOF
+unread|P=/x/journal-append.sh\n"$P" --file n.md - <<'EOF'\n| right | `subtract(5, 3)` → `2` |\nEOF
+unread|CMD='gh pr merge 1'\n"$P" log.txt <<'EOF'\n$CMD\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/sqlite3" notes.md <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/script" x.txt <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/ssh" host.sh <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/ed" notes.md <<'EOF'\n$C\nEOF
+unread|"$ROOT/bin/x.sh" <<'EOF'\n| right | $(y) |\nEOF
+unread|"${ROOT}/bin/x.sh" -s <<'EOF'\n| right | `x` |\nEOF
+unread|"$FLOW_ROOT/bin/journal-append" --file n.md - <<'EOF'\n| right | `x` |\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/flow-judge.sh" --judge goal <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/flow-eval-run.sh" <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nLC_ALL=C "$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nBASH_ENV=/dev/stdin "$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nexport BASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n$FLOW_ROOT/bin/journal-append.sh --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT"/bin/journal-append.sh --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file /dev/stdin - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file $J - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file "$(pwd)/n.md" - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file `pwd`/n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF' >/dev/null\n$C\nEOF
+unread|"$FLOW_ROOT/bin/flow-new-helper.sh" <<'EOF'\n| right | `x` |\nEOF
+EOF
+  # The same name once the plugin ships it: the list is read from bin/ when
+  # the hook runs.
+  e2e_plugin_copy bin/flow-new-helper.sh "$(printf '#!/bin/sh\ncat > /dev/null')"
+  _tg_run "$(printf '"$FLOW_ROOT/bin/flow-new-helper.sh" <<'"'"'EOF'"'"'\n| right | `x` |\nEOF')"
+  _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr for the script added to bin/"
+  e2e_expect_clean_edges
+fi
+
+# A backslash before << makes no heredoc: bash reads \<<'EOF' as a literal <
+# and a < redirection from the file EOF, so the lines after it are commands,
+# whichever program the line names (#344). Two backslashes are one literal
+# backslash, and the << after them starts a heredoc.
+if _want tg-escaped-heredoc; then
+  _tg_setup tg-escaped-heredoc feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: the lines after \\<<'EOF' or \\<<\\EOF are commands, for cat, a script and a program named by a variable alike, and a merge, a release or a command held in a variable on them asks; after \\\\<<'EOF' they are a body cat reads (T36)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      merge) _expect_ask "tiers.merge" ;;
+      release) _expect_ask "tiers.release" ;;
+      unread) _expect_ask "flow cannot read from the command text" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+merge|cat \\<<'EOF'\ngh pr merge 1\nEOF
+merge|cat \\<<EOF\ngh pr merge 1\nEOF
+release|cat \\<<\\EOF\ngh release create v1\nEOF
+merge|./x.sh \\<<'EOF'\ngh pr merge 1\nEOF
+merge|"$P" x.sh \\<<'EOF'\ngh pr merge 1\nEOF
+unread|CMD='gh pr merge 1'\n"$P" x.sh \\<<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" x.sh \\<<\\EOF\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n./x.sh \\<<'EOF'\n$CMD\nEOF
+unread|CMD='gh pr merge 1'\n"$P" --file n.md - \\<<'EOF' >/dev/null\n$CMD\nEOF
+silent|cat \\\\<<'EOF'\ngh pr merge 1\nEOF
+EOF
+  e2e_expect_clean_edges
+fi
+
+# Bash expands an unquoted heredoc body before the program reads it, so a
+# $(...) or backquote in it runs whoever the program is, cat, tee, echo,
+# printf and gh included (#344). A quoted body, and an escaped \$( or \`, stay
+# text.
+if _want tg-unquoted-body-subst; then
+  _tg_setup tg-unquoted-body-subst feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: \$(gh pr merge 1) or a backquoted gh release create v1 in an unquoted heredoc body asks for the merge or the release whichever program reads the body (cat, tee, gh, a commit message through \$(cat <<EOF)); a quoted body or escaped \\\$( and \\\` stay text (T4, T37)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      merge) _expect_ask "tiers.merge" ;;
+      release) _expect_ask "tiers.release" ;;
+      unread) _expect_ask "flow cannot read from the command text" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+merge|cat <<EOF\n$(gh pr merge 1)\nEOF
+merge|cat <<EOF\nit's $(gh pr merge 1) isn't\nEOF
+unread|CMD='gh pr merge 1'\ncat <<EOF\n$($CMD)\nEOF
+unread|CMD='gh pr merge 1'\nwhile read -r x; do echo "$x"; done <<EOF\n$($CMD)\nEOF
+silent|while IFS= read -r f; do echo "$f"; done <<LIST\n$(ls)\nLIST\ngh pr view 1
+release|cat <<EOF\n`gh release create v1`\nEOF
+merge|cat <<-EOF\n\tnotes: $(gh pr merge 1)\n\tEOF
+merge|tee n.md <<EOF\nnotes\n$(gh pr merge 1)\nEOF
+merge|echo <<EOF\n$(gh pr merge 1)\nEOF
+release|printf '%s' <<EOF\n`gh release create v1`\nEOF
+merge|gh issue comment 5 --body-file - <<EOF\n$(gh pr merge 1)\nEOF
+merge|cat <<EOF > n.md\n$(gh pr merge 1)\nEOF
+merge|git commit -m "$(cat <<EOF\nfix: x\n\nmerged in $(gh pr merge 1)\nEOF\n)"
+release|gh pr create --title x --body "$(cat <<EOF\nsee `gh release create v1`\nEOF\n)"
+silent|cat <<'EOF'\n$(gh pr merge 1)\nEOF
+silent|cat <<"EOF"\n`gh release create v1`\nEOF
+silent|cat <<EOF\n\\$(gh pr merge 1) and \\`gh release create v1\\`\nEOF
+silent|cat <<EOF\ngh pr merge 1 on ${BRANCH} in $HOME\nEOF
+silent|git commit -m "$(cat <<'EOF'\nfix: x\n\nmerged in $(gh pr merge 1)\nEOF\n)"
+EOF
+  e2e_expect_clean_edges
+fi
+
+# Bash joins the lines of an unquoted heredoc body at each backslash-newline
+# before it expands the body, so a $ at the end of one line and a ( { or [
+# at the start of the next are one substitution, and a command inside a
+# substitution may be split over two lines (#344). ${x@P} runs the
+# substitutions held in x, and $[y] the one in an array subscript held in y.
+# An escaped backslash before a newline joins nothing, and a quoted body is
+# never joined or expanded.
+if _want tg-body-line-join; then
+  _tg_setup tg-body-line-join feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: a substitution split by a backslash-newline in an unquoted body (\$\\ then (gh pr merge 1), {x@P} or [y] on the next line, or gh pr \\ then merge 1 inside one) asks; \$\\\\ before a newline, a joined line of prose and a quoted body stay text (T38)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      merge) _expect_ask "tiers.merge" ;;
+      release) _expect_ask "tiers.release" ;;
+      unread) _expect_ask "flow cannot read from the command text" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+merge|cat <<EOF\n$\\\n(gh pr merge 1)\nEOF
+release|cat <<EOF\nnotes $\\\n(gh release create v1) today\nEOF
+merge|gh issue comment 5 --body-file - <<EOF\n$\\\n(gh pr merge 1)\nEOF
+merge|cat <<EOF\n$(gh pr \\\nmerge 1)\nEOF
+unread|x='$(gh pr merge 1)'\ncat <<EOF\n$\\\n{x@P}\nEOF
+unread|y='a[$(gh pr merge 1)]'\ncat <<EOF\n$\\\n[y]\nEOF
+silent|cat <<EOF\n$\\\\\n(gh pr merge 1)\nEOF
+silent|cat <<EOF\nline one \\\nline two in $HOME\nEOF
+silent|cat <<'EOF'\n$\\\n(gh pr merge 1)\nEOF
+EOF
+  e2e_expect_clean_edges
+fi
+
+# A ) inside a ${...} within a substitution closes nothing: bash reads
+# ${x:-)} as one expansion and runs the command after it (#344).
+if _want tg-subst-brace; then
+  _tg_setup tg-subst-brace feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: a merge or release after a \${x:-)} inside a substitution of an unquoted body asks, also inside a group of that substitution; a plain \${BRANCH:-main} and \$(date) in prose stay text (T39)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      merge) _expect_ask "tiers.merge" ;;
+      release) _expect_ask "tiers.release" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+merge|cat <<EOF\n$(echo ${x:-)}; gh pr merge 1)\nEOF
+release|cat <<EOF\nnotes $(echo ${x:-)}; gh release create v1) today\nEOF
+merge|cat <<EOF\n$( (echo ${x:-)}); gh pr merge 1)\nEOF
+merge|cat <<EOF\n$(echo "${x:-)}" ${y#)}; gh pr merge 1)\nEOF
+silent|cat <<EOF\nbuilt $(date +%F) from ${BRANCH:-main}; gh pr merge 1 is next\nEOF
+EOF
+  e2e_expect_clean_edges
+fi
+
+# A command sets ENV or BASH_ENV, which makes a shell read its input as a
+# startup file, only as an assignment, an export or a read of that name, not
+# by naming it inside a sentence (#344). A name built with quotes is still
+# the name, and a string a shell, eval or trap runs is code.
+if _want tg-env-named; then
+  _tg_setup tg-env-named feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+    "every Tier 2 action autonomous: a flow script's quoted body stays data after echo \"check ENV first\" or NODE_ENV=test; it asks for the command held in a variable in it after export \"BASH_ENV=...\", B\"\"ASH_ENV=..., read \"BASH_ENV\", eval or trap of a string naming BASH_ENV, or ENV named outside a string, BASH_ENV spelled with $'...' escapes or set by a sourced file, or a program word that expands "$@" or "$1" (T40)"
+  while IFS='|' read -r WANT C; do
+    C=$(printf '%b' "$C")
+    _tg_run "$C"
+    case "$WANT" in
+      unread) _expect_ask "flow cannot read from the command text" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
+    e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
+  done <<'EOF'
+silent|echo "check ENV first"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `subtract(5, 3)` → `2` |\nEOF
+silent|printf '%s\\n' 'set BASH_ENV in the profile'\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `x` |\nEOF
+silent|NODE_ENV=test npm run build\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `x` |\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nexport "BASH_ENV=/dev/stdin"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nexport B""ASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nexport 'B'ASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nread -r "BASH_ENV" < f; export "BASH_ENV"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\neval "export BASH_ENV=/dev/stdin"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\ntrap "read BASH_ENV < f; export BASH_ENV" DEBUG\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\necho ENV first\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nexport $'BASH_\\x45NV'=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n. ./env.sh\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nif true; then source env.sh; fi\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\nset -- /bin/bash -s ""\n"$@/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+unread|C=$(printf 'gh pr %s 1' merge)\n"$1/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|cp notes.md .\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `x` |\nEOF
+EOF
+  e2e_expect_clean_edges
+fi
 
 # A shell asks as one that reads its script from its input only when a pipe
 # feeds it; named as an argument (`which bash`) it runs nothing.

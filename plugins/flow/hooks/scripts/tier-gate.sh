@@ -308,8 +308,12 @@
 # Reading the command. The command is parsed, not matched: the same parser
 # block-unchecked-merge.sh and block-destructive.sh use
 # (lib/command-parse.sh). `#` comments and heredoc bodies fed to cat, tee,
-# echo, printf or gh are removed; the text is split into simple commands at
-# `;`, `|` (not the one of `>|`), `&` (not the `&` of `2>&1`, `<&3` or `&>`),
+# echo, printf or gh are removed, but not an unquoted body (`<<EOF`) holding
+# a `$(...)` or backquote, which bash runs before the program reads anything
+# (`cat <<EOF` with `$(gh pr merge 1)` asks, also split over two lines by a
+# backslash-newline, `$\` and then `(gh pr merge 1)`), and not the lines after a
+# `\<<'EOF'`, which bash reads as a literal `<` and a redirection; the text
+# is split into simple commands at `;`, `|` (not the one of `>|`), `&` (not the `&` of `2>&1`, `<&3` or `&>`),
 # `(`, `)`, newlines and
 # command substitutions (`$(...)` and backquotes, inside double quotes too),
 # outside quotes. A substitution's output can be empty, so a simple command
@@ -648,17 +652,57 @@ _tg_names_file() {   # $1 = the word
   return 1
 }
 
+# The names of the scripts in this plugin's own bin/ that read what they are
+# handed on standard input as data and run none of it, space-separated, for
+# BD_DATA_PROGRAMS: every bin/*.sh, read when the hook runs, so a script
+# added to bin/ is covered without a list to edit. The directory is the one
+# this hook ships in, not CLAUDE_PLUGIN_ROOT, which the environment can
+# point elsewhere. Left out (_TG_NOT_DATA): flow-judge.sh, which hands its
+# input to an agent session (claude --print) as its prompt, and
+# flow-eval-run.sh, flow-eval-s1-replay.sh and flow-s1-eval.sh, which run
+# eval code (an agent's module and its tests, other flow scripts) with the
+# caller's standard input still open. A script added to bin/ that runs what
+# it reads, or hands it to something that may, belongs on that list.
+_TG_NOT_DATA=" flow-judge.sh flow-eval-run.sh flow-eval-s1-replay.sh flow-s1-eval.sh "
+_tg_data_programs() {
+  local f n out=""
+  for f in "$SCRIPT_DIR/../../bin/"*.sh; do
+    [ -f "$f" ] || continue
+    n="${f##*/}"
+    case "$n" in [!A-Za-z0-9_]*|*[!A-Za-z0-9_.+-]*) continue ;; esac
+    case "$_TG_NOT_DATA" in *" $n "*) continue ;; esac
+    out="$out $n"
+  done
+  printf '%s' "${out# }"
+}
+
 # Is the simple command being read (TG_SEGTXT) a line of a heredoc body that
 # a program other than a shell reads, and not also a command outside such a
 # body? Only for the command as typed (depth 0) whose heredoc body was kept
 # (TG_KEPT): the command is read again with those bodies left out
 # (_bd_strip_noncode with BD_BLANK_BODIES=1), once, and a simple command
 # that reading still has is a command. A reading that fails counts it as one.
+# BD_QUOTED_BODIES=1 leaves out a quoted body (<<'EOF', <<"EOF", <<\EOF)
+# handed to a program named by a variable too, but only when that program is
+# one of flow's own scripts that run nothing they read (BD_DATA_PROGRAMS,
+# _tg_data_programs): "$FLOW_ROOT/bin/journal-append.sh" ... <<'EOF',
+# "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh" ... <<'EOF' (#344). The
+# backticks and $(...) of such a body are markdown, which bash does not
+# expand there. Its word must be one double-quoted word, with no assignment
+# before it and no argument holding an expansion other than a double-quoted
+# plain variable ("$JOURNAL"), a redirection, or a path under /dev/ or
+# /proc/. Every other program named by a variable keeps its body as
+# commands, as the gate cannot tell it from a shell: a bare "$P" whatever
+# its arguments ("$P" --file notes.md -, "$P" x.sh), "$D/bin/sqlite3"
+# notes.md, "$D/bin/ssh" host.sh, "$SHELL" <<'EOF'. So do a command that
+# sets BASH_ENV or ENV, and an unquoted <<EOF whose body holds a $(...) or
+# backquote (lib/command-parse.sh, var_reader_ok, env_named, body_runs).
 _tg_body_line() {
   local s l
   [ "${TG_KEPT:-0}" = 1 ] && [ "${TG_DEPTH:-0}" = 0 ] || return 1
   if [ "${TG_BODYFREE_DONE:-0}" = 0 ]; then
-    TG_BODYFREE=$(BD_BLANK_BODIES=1; _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE") \
+    TG_BODYFREE=$(BD_BLANK_BODIES=1; BD_QUOTED_BODIES=1; BD_DATA_PROGRAMS=$(_tg_data_programs)
+                  _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE") \
       || TG_BODYFREE=__BD_SEG_FAIL__
     TG_BODYFREE_DONE=1
   fi

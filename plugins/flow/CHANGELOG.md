@@ -1,5 +1,105 @@
 # Changelog
 
+## Unreleased
+
+Each entry below describes the change against 3.15.0.
+
+### Fixed
+
+- The tier gate (`hooks/scripts/tier-gate.sh`) no longer asks a Tier 3
+  question about flow's own journal writes when the journal text holds code
+  spans (#344). In 3.15.0, a quoted heredoc handed to a program named
+  through a variable, such as the specification-capture write
+  `"$FLOW_ROOT/bin/journal-append.sh" --file "$JOURNAL" --replace-heading
+  '## Specification' - <<'EOF'`, had its body read as commands. Each
+  backticked span or `$(...)` in the markdown was then read as a program flow
+  could not identify, and the gate asked for merge and release approval. That
+  stopped unattended `/flow:start` runs until a person answered. Now a quoted
+  body (`<<'EOF'`, `<<"EOF"`, `<<\EOF`, with or without `-`) counts as data
+  when its program is one of flow's own scripts named through a variable:
+  the name after the word's last `/` is a script in the plugin's `bin/`
+  (`"$FLOW_ROOT/bin/journal-append.sh"`,
+  `"${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh"`). The gate reads that list
+  from its own plugin's `bin/*.sh` when it runs, so a script added there is
+  covered without editing a list. Four scripts are left out: `flow-judge.sh`
+  hands its input to an agent session as its prompt, and `flow-eval-run.sh`,
+  `flow-eval-s1-replay.sh` and `flow-s1-eval.sh` run eval code with the
+  caller's input still open. No script in `bin/` runs what it reads as code.
+  The word must also be one double-quoted word that expands only plain
+  names (not `"$@"`, `"$*"` or `"$1"`, which can add words and make a shell
+  the program), with no assignment before it
+  (`LC_ALL=C`, `BASH_ENV=/dev/stdin`), no substitution or group on the line,
+  and no argument holding an expansion other than a double-quoted plain
+  variable (`"$JOURNAL"`), a redirection, or a path under `/dev/` or
+  `/proc/`. Every other program named by a variable keeps its body as
+  commands, as in 3.15.0: the gate cannot tell a bare `"$P"` from a shell,
+  so the issue's own example, `"$P" --file n.md - <<'EOF'` with
+  `P=/x/journal-append.sh`, still asks when its body holds a backtick or a
+  `$(...)`, and so do `"$D/bin/sqlite3" notes.md`, `"$D/bin/ed" notes.md`,
+  `"$D/bin/script" x.txt` and `"$D/bin/ssh" host.sh`, which read commands
+  from their input after a file name or a host. A body also stays commands
+  after a command that sets `BASH_ENV` or `ENV`, for a literal program too
+  (`BASH_ENV=/dev/stdin ./x.sh <<'EOF'`): an assignment, an export or a read
+  of the name, also when quotes build it (`export "BASH_ENV=..."`,
+  `B""ASH_ENV=...`), or any mention on a line that holds a `$`, a backquote,
+  a shell, `eval` or `trap`; and after a line that may set it out of sight:
+  one that holds ANSI-C quoting (`export $'BASH_\x45NV'=...`) or sources a
+  file (`. ./env.sh`, `source env.sh`). The name inside a sentence (`echo
+  "check ENV first"`) no longer counts. The change is in
+  `hooks/scripts/lib/command-parse.sh`, behind `BD_QUOTED_BODIES=1` and
+  `BD_DATA_PROGRAMS`, which only the tier gate's second reading sets. Three
+  fixes in the same parser reach every hook that uses it. An unquoted body
+  (`<<EOF`, `<<-EOF`) that holds a `$(...)`, a backquote, a `$((`, a `$[` or
+  a `${...}` other than a plain `${NAME}` or `${NAME:-word}` now has its
+  substitutions read as commands whoever receives it, `cat`, `tee`, `echo`,
+  `printf` and `gh` included, since bash runs them before the program reads
+  anything; its other text stays data, and a quote in that text (an
+  apostrophe in prose) pairs with nothing. The body is read with each
+  backslash-newline removed, as bash joins those lines before it expands
+  them, so `$\` at the end of one line and `(gh pr merge 1)`, `{x@P}` or
+  `[y]` on the next are one substitution. A `${` inside a substitution ends
+  at its own `}`, so the `)` of `$(echo ${x:-)}; gh pr merge 1)` closes
+  nothing and the merge after it is read. When the parser cannot follow such
+  a body (a `#`, a `<<` or a `case` inside a substitution, a `$((`, a `${`
+  inside one whose word holds a group, a quote or a `$`), it reads the body
+  as written and again without its quotes: `cat <<EOF` with
+  `$(gh pr merge 1)` asks for the merge, with a backquoted
+  `gh release create v1` asks for the release, and `block-destructive`
+  refuses one holding `$(rm -rf ~)`, as `block-unchecked-merge` does an
+  unchecked merge; in 3.15.0 all three were dropped as text.
+  `block-force-push`, which has its own scanner, now judges such a body line
+  as a script too, joined at each backslash-newline the same way. And a
+  backslash before `<<` (`\<<'EOF'`, `\<<\EOF`) no longer starts a heredoc:
+  bash reads a literal `<` and a redirection from the file `EOF`, so the
+  lines after it are commands, and in 3.15.0 they were dropped as a body for
+  `cat`, a script or a program named by a variable. A quoted body to `cat`,
+  an escaped `\$(` or `` \` ``, an escaped backslash before a newline and two
+  backslashes before `<<` stay text. Covered by
+  `tests/e2e-tier-gate.test.sh` (`tg-quoted-body-data`,
+  `tg-quoted-body-script`, `tg-quoted-body-stdin`,
+  `tg-quoted-body-allowlist`, `tg-escaped-heredoc`, `tg-unquoted-body-subst`,
+  `tg-body-line-join`, `tg-subst-brace`, `tg-env-named`) and
+  `tests/e2e-heredoc-expansion.test.sh`.
+- A goal's verification commands run with the user's `PYTHONPATH` and
+  `PYTHONSAFEPATH` (#345). In 3.15.0 they inherited the `PYTHONSAFEPATH=1`
+  and cleaned `PYTHONPATH` that `hooks/scripts/flow-run-deterministic-checks.sh`
+  sets for Flow's own Python, so `python3 -c "import calc; ..."` could not
+  find `calc.py` in the project directory and the Stop hook, the
+  evaluator loop, `/flow:start`'s end-of-VERIFY evaluation and
+  `bin/flow-goal-judge-run.sh` reported a met criterion as failing; a
+  `PYTHONPATH` the user had set to the empty string also reached the command
+  unset. The PYTHONPATH sanitizer's first line now also records whether
+  `PYTHONPATH` was set (`FLOW_USER_PYTHONPATH_SET`) and the user's
+  `PYTHONSAFEPATH` (`FLOW_USER_PYTHONSAFEPATH` and
+  `FLOW_USER_PYTHONSAFEPATH_SET`), in the first Flow script of a chain, and
+  the checks give each command both variables as the user had them, each
+  unset when it was unset, without the `FLOW_USER_*` variables. Flow's own
+  python3 keeps the cleaned `PYTHONPATH` and `PYTHONSAFEPATH=1`.
+  `bin/promote-proposal.sh` hands the same values back before its `git
+  commit` and `git push`, whose pre-commit and pre-push hooks had run with
+  Flow's values. `tests/e2e-verify-user-env.test.sh` covers the checks, both
+  Stop hook modes and the judge runner.
+
 ## 3.15.0 (2026-11-07)
 
 Each entry below describes the change against 3.14.0.

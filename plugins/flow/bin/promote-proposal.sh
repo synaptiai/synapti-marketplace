@@ -57,7 +57,7 @@ unset CDPATH
 # directory, comparing directories by identity, not by how the path is spelled;
 # tests/syspath-guard.test.sh has the reasons. FLOW_USER_PYTHONPATH keeps the
 # original for commands run for the user.
-[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}" FLOW_USER_PYTHONPATH_SET="${PYTHONPATH+1}" FLOW_USER_PYTHONSAFEPATH="${PYTHONSAFEPATH-}" FLOW_USER_PYTHONSAFEPATH_SET="${PYTHONSAFEPATH+1}"
 _flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 
@@ -871,6 +871,18 @@ EVIDENCE_FILE=$(mktemp -t flow-promote-evidence.XXXXXX) || {
 python3 "$FLOW_BIN_LIB/promote_transform.py" "$TARGET" "$EVIDENCE_FILE"
 
 echo "OK: promoted '$PROPOSAL_NAME' → $TARGET"
+
+# No python3 of this script's runs past this point. What does run is git, and
+# git runs the repository's hooks (pre-commit, pre-push), which are the user's
+# commands: hand them the PYTHONPATH and PYTHONSAFEPATH the user had, recorded
+# by the sanitizer above, not the cleaned PYTHONPATH and PYTHONSAFEPATH=1 set
+# for Flow's own Python (#345). Each is unset when it was unset; an empty
+# value stays empty (recorded without the _SET twin, by a caller that predates
+# it, an empty value is taken as unset). A Flow script started from here
+# records them afresh.
+if [ "${FLOW_USER_PYTHONPATH_SET-}" = 1 ] || { [ -z "${FLOW_USER_PYTHONPATH_SET+x}" ] && [ -n "${FLOW_USER_PYTHONPATH-}" ]; }; then export PYTHONPATH="${FLOW_USER_PYTHONPATH-}"; else unset PYTHONPATH; fi
+if [ "${FLOW_USER_PYTHONSAFEPATH_SET-}" = 1 ]; then export PYTHONSAFEPATH="${FLOW_USER_PYTHONSAFEPATH-}"; else unset PYTHONSAFEPATH; fi
+unset FLOW_USER_PYTHONPATH FLOW_USER_PYTHONPATH_SET FLOW_USER_PYTHONSAFEPATH FLOW_USER_PYTHONSAFEPATH_SET
 
 cd "$REPO_ROOT"
 DEFAULT=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo "main")
