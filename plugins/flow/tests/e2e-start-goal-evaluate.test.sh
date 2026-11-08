@@ -31,6 +31,12 @@
 #   V10 a criterion whose verification command could not be started (the
 #      runner lists it in incomplete_acs only, not in failing, not_executed
 #      or no_command) counts as passed, so the goal moves to achieved
+#   V11 a criterion that imports a module from the project directory
+#      (python3 -c "import calc; ...") fails, because the command inherits the
+#      PYTHONSAFEPATH=1 the checks script sets for its own python3 (#345)
+#   V12 the block cleans PYTHONPATH before it starts the checks script, so a
+#      PYTHONPATH the user set to the empty string reaches the command unset,
+#      and a PYTHONSAFEPATH the user left unset reaches it set
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -231,4 +237,23 @@ _trusted_goal true
 _eval_block "$START_MD" GOAL_EVALUATE_BLOCK
 e2e_expect_line "STATE=blocked"
 e2e_expect_equal active "$(_goal_field lifecycle.status)" "the goal file's lifecycle.status"
+e2e_expect_clean_edges
+
+_start_repo start-goal-user-env "a criterion that imports calc.py from the project passes, and the command sees the user's PYTHONPATH (set, empty) and PYTHONSAFEPATH (unset) (V11, V12)"
+# Unset here, not inherited from the person running the tests: the scenario
+# says what the user had.
+unset PYTHONSAFEPATH FLOW_USER_PYTHONPATH FLOW_USER_PYTHONPATH_SET FLOW_USER_PYTHONSAFEPATH FLOW_USER_PYTHONSAFEPATH_SET
+printf 'def subtract(a, b):\n    return a - b\n' > "$E2E_REPO/calc.py"
+cat > "$E2E_REPO/probe.sh" <<'PROBE'
+{
+  if [ -n "${PYTHONPATH+x}" ]; then printf 'PYTHONPATH=set:%s\n' "$PYTHONPATH"; else printf 'PYTHONPATH=unset\n'; fi
+  if [ -n "${PYTHONSAFEPATH+x}" ]; then printf 'PYTHONSAFEPATH=set:%s\n' "$PYTHONSAFEPATH"; else printf 'PYTHONSAFEPATH=unset\n'; fi
+} > env-probe.txt
+PROBE
+_trusted_goal 'bash probe.sh && python3 -c "import calc; assert calc.subtract(5, 3) == 2"'
+_eval_block GOAL_EVAL_VERDICT=PASS PYTHONPATH= "$START_MD" GOAL_EVALUATE_BLOCK
+e2e_expect_line "STATE=ok"
+e2e_expect_line "GOAL_EVAL_RESULT=pass"
+e2e_expect_line "GOAL_LIFECYCLE=achieved"
+e2e_expect_equal "PYTHONPATH=set: PYTHONSAFEPATH=unset" "$(tr '\n' ' ' < "$E2E_REPO/env-probe.txt" 2>/dev/null | sed 's/ $//')" "what the command saw"
 e2e_expect_clean_edges

@@ -27,6 +27,11 @@
 #   1 — input error (missing file, malformed YAML)
 #   2 — infrastructure error (python3/PyYAML missing)
 #
+# Environment: Flow's own python3 here runs with the cleaned PYTHONPATH and
+# PYTHONSAFEPATH=1 set below. The verification commands are the user's, and
+# run with the PYTHONPATH and PYTHONSAFEPATH the user had, each unset when it
+# was unset (user_env() in the Python below; #345).
+#
 # Why this is a separate script: the report shape is reused by warn-mode
 # (which formats it into a stderr warning) and by evaluator-loop mode
 # (which feeds it to the judge subprocess). Keeping the deterministic
@@ -45,7 +50,7 @@ unset CDPATH
 # directory, comparing directories by identity, not by how the path is spelled;
 # tests/syspath-guard.test.sh has the reasons. FLOW_USER_PYTHONPATH keeps the
 # original for commands run for the user.
-[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}" FLOW_USER_PYTHONPATH_SET="${PYTHONPATH+1}" FLOW_USER_PYTHONSAFEPATH="${PYTHONSAFEPATH-}" FLOW_USER_PYTHONSAFEPATH_SET="${PYTHONSAFEPATH+1}"
 _flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
 if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
 export PYTHONSAFEPATH=1
@@ -142,6 +147,36 @@ acs = (goal.get("objective") or {}).get("acceptance_criteria", []) or []
 exec_verify = os.environ.get("FLOW_EXEC_VERIFY", "false").lower() == "true"
 trusted = os.environ.get("FLOW_GOAL_TRUSTED", "false").lower() == "true"
 
+# The verification commands are the user's own, so they run with the
+# PYTHONPATH and PYTHONSAFEPATH the user had (#345), not the cleaned
+# PYTHONPATH and PYTHONSAFEPATH=1 this script set for Flow's own Python: with
+# PYTHONSAFEPATH=1, `python3 -c "import calc"` does not find calc.py in the
+# project directory. The first Flow script in the chain recorded them with the
+# PYTHONPATH sanitizer (FLOW_USER_*; the _SET twins say whether each was set
+# at all, so an empty value and an unset one stay apart). This process and
+# Flow's own python3 keep the hardened values; the bookkeeping variables do
+# not reach the command.
+def user_env():
+    env = dict(os.environ)
+    pp = env.pop("FLOW_USER_PYTHONPATH", None)
+    pp_set = env.pop("FLOW_USER_PYTHONPATH_SET", None)
+    sp = env.pop("FLOW_USER_PYTHONSAFEPATH", None)
+    sp_set = env.pop("FLOW_USER_PYTHONSAFEPATH_SET", None)
+    # Recorded without the _SET twin (by a caller that predates it): an
+    # empty value is taken as unset, as before.
+    if pp_set == "1" or (pp_set is None and pp):
+        env["PYTHONPATH"] = pp or ""
+    else:
+        env.pop("PYTHONPATH", None)
+    if sp_set == "1":
+        env["PYTHONSAFEPATH"] = sp or ""
+    else:
+        # Not recorded, or unset for the user: the 1 here is this script's.
+        env.pop("PYTHONSAFEPATH", None)
+    return env
+
+command_env = user_env()
+
 report = {
     "goal_id": goal_id,
     "trusted": trusted,
@@ -191,21 +226,12 @@ for ac in acs:
     # longer-running checks should run them via /flow:goal evaluate
     # (which has no Stop-hook timeout pressure).
     try:
-        # The command is the user's own: it gets the PYTHONPATH the user set,
-        # not the one this script cleaned for Flow's own Python.
-        env = dict(os.environ)
-        user_pythonpath = env.pop("FLOW_USER_PYTHONPATH", None)
-        if user_pythonpath is not None:
-            if user_pythonpath:
-                env["PYTHONPATH"] = user_pythonpath
-            else:
-                env.pop("PYTHONPATH", None)
         result = subprocess.run(
             ["bash", "-c", cmd],
             capture_output=True,
             text=True,
             timeout=30,
-            env=env,
+            env=command_env,
         )
         exit_code = result.returncode
     except subprocess.TimeoutExpired:

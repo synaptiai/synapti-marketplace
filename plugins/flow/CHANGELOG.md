@@ -29,6 +29,25 @@ Each entry below describes the change against 3.15.0.
   `block-secrets` read commands as before. Covered by
   `tests/e2e-tier-gate.test.sh` (`tg-quoted-body-data`,
   `tg-quoted-body-script`).
+- A goal's verification commands run with the user's `PYTHONPATH` and
+  `PYTHONSAFEPATH` (#345). In 3.15.0 they inherited the `PYTHONSAFEPATH=1`
+  and cleaned `PYTHONPATH` that `hooks/scripts/flow-run-deterministic-checks.sh`
+  sets for Flow's own Python, so `python3 -c "import calc; ..."` could not
+  find `calc.py` in the project directory and the Stop hook, the
+  evaluator loop, `/flow:start`'s end-of-VERIFY evaluation and
+  `bin/flow-goal-judge-run.sh` reported a met criterion as failing; a
+  `PYTHONPATH` the user had set to the empty string also reached the command
+  unset. The PYTHONPATH sanitizer's first line now also records whether
+  `PYTHONPATH` was set (`FLOW_USER_PYTHONPATH_SET`) and the user's
+  `PYTHONSAFEPATH` (`FLOW_USER_PYTHONSAFEPATH` and
+  `FLOW_USER_PYTHONSAFEPATH_SET`), in the first Flow script of a chain, and
+  the checks give each command both variables as the user had them, each
+  unset when it was unset, without the `FLOW_USER_*` variables. Flow's own
+  python3 keeps the cleaned `PYTHONPATH` and `PYTHONSAFEPATH=1`.
+  `bin/promote-proposal.sh` hands the same values back before its `git
+  commit` and `git push`, whose pre-commit and pre-push hooks had run with
+  Flow's values. `tests/e2e-verify-user-env.test.sh` covers the checks, both
+  Stop hook modes and the judge runner.
 
 ## 3.15.0 (2026-11-07)
 

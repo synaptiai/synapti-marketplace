@@ -36,6 +36,10 @@
 #      check (exit 3: python3 missing, or the check did not run) is reported
 #      as a symlink attack, hiding the real reason; or one it refused (exit 2)
 #      is no longer reported as a symlink
+#   P10 the repository's git hooks (pre-commit, pre-push), which are the
+#      user's commands, run with the PYTHONSAFEPATH=1 and cleaned PYTHONPATH
+#      the script sets for its own python3, so a hook that imports from the
+#      checkout fails (#345)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -252,6 +256,35 @@ e2e_expect_out "OK: draft PR created"
 e2e_expect_equal yes "$(_origin_has_branch)" "whether origin has the promotion branch"
 e2e_expect_equal 0 "$(_printed_commands | grep -c .)" "the number of printed commands"
 e2e_expect_equal 1 "$(grep -c -- 'pr create --draft' "$E2E_DIR/pr-create.log" 2>/dev/null || printf 0)" "gh pr create calls"
+e2e_expect_clean_edges
+
+_flow_test_begin "the checkout's pre-commit and pre-push hooks run with the user's PYTHONPATH and PYTHONSAFEPATH (P10)"
+e2e_new promote-user-env
+e2e_describe "no tier settings; PYTHONPATH=<checkout>/src (inside the checkout, which Flow drops for its own python3), PYTHONSAFEPATH unset; each hook writes what it saw"
+_flow_checkout ''
+_proposal
+_recording_gh
+mkdir -p "$E2E_REPO/src"
+for hook in pre-commit pre-push; do
+  cat > "$E2E_REPO/.git/hooks/$hook" <<'HOOK'
+#!/usr/bin/env bash
+{
+  if [ -n "${PYTHONPATH+x}" ]; then printf 'PYTHONPATH=set:%s\n' "$PYTHONPATH"; else printf 'PYTHONPATH=unset\n'; fi
+  if [ -n "${PYTHONSAFEPATH+x}" ]; then printf 'PYTHONSAFEPATH=set:%s\n' "$PYTHONSAFEPATH"; else printf 'PYTHONSAFEPATH=unset\n'; fi
+} > "${E2E_DIR:?}/$(basename "$0").env"
+HOOK
+  chmod +x "$E2E_REPO/.git/hooks/$hook"
+done
+# Unset here, not inherited from the person running the tests: the scenario
+# says what the user had.
+unset PYTHONSAFEPATH FLOW_USER_PYTHONPATH FLOW_USER_PYTHONPATH_SET FLOW_USER_PYTHONSAFEPATH FLOW_USER_PYTHONSAFEPATH_SET
+e2e_run_bin PYTHONPATH="$E2E_REPO/src" FLOW_REPO_ROOT="$E2E_REPO" "$PROMOTE" --proposal "$PROPOSAL_FILE"
+e2e_expect_equal 0 "$E2E_RC" "the exit status"
+e2e_expect_out "OK: draft PR created"
+for hook in pre-commit pre-push; do
+  e2e_expect_equal "PYTHONPATH=set:$E2E_REPO/src PYTHONSAFEPATH=unset" \
+    "$(tr '\n' ' ' < "$E2E_DIR/$hook.env" 2>/dev/null | sed 's/ $//')" "what the $hook hook saw"
+done
 e2e_expect_clean_edges
 
 _flow_test_begin "--dry-run names the stop a confirm tier makes (P8)"

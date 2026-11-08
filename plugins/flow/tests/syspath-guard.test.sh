@@ -53,7 +53,13 @@
 # would not be recognised as the repository; a Linux bind mount keeps the
 # device and inode numbers and is recognised.
 # The original is kept in FLOW_USER_PYTHONPATH for commands Flow runs on the
-# user's behalf.
+# user's behalf, and the sanitizer's first line also records PYTHONSAFEPATH
+# (which a script exports as 1 after it) in FLOW_USER_PYTHONSAFEPATH, each
+# with a _SET twin that is 1 when the variable was set at all, so an empty
+# value and an unset one stay apart. Only the first Flow script in a chain
+# records them: the ones it starts see its hardened values. A goal's
+# verification commands and the git hooks bin/promote-proposal.sh triggers
+# get those values back (#345; tests/e2e-verify-user-env.test.sh).
 #
 # The in-process guard is deliberately narrower: it drops only relative
 # entries and the working directory. sys.path also holds site-packages, and a
@@ -87,7 +93,7 @@ GUARD = [
 ONE_LINER = ("import os, sys; sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and "
              "not (os.path.isdir(p) and os.access(os.curdir, os.X_OK) and os.path.samefile(p, os.curdir))]; ")
 SANITIZER = [
-    '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}"',
+    '[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}" FLOW_USER_PYTHONPATH_SET="${PYTHONPATH+1}" FLOW_USER_PYTHONSAFEPATH="${PYTHONSAFEPATH-}" FLOW_USER_PYTHONSAFEPATH_SET="${PYTHONSAFEPATH+1}"',
     '_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c \'exec("import os, sys\\ndef ids(p):\\n    out = set()\\n    while True:\\n        try:\\n            st = os.stat(p)\\n        except OSError:\\n            return out\\n        out.add((st.st_dev, st.st_ino))\\n        q = os.path.dirname(p)\\n        if q == p:\\n            return out\\n        p = q\\ntry:\\n    cwd = os.getcwd()\\nexcept OSError:\\n    sys.exit(0)\\ntop = d = cwd\\nwhile True:\\n    if os.path.lexists(os.path.join(d, \\".git\\")):\\n        top = d\\n        break\\n    q = os.path.dirname(d)\\n    if q == d:\\n        break\\n    d = q\\nst = os.stat(top)\\ntop_id = (st.st_dev, st.st_ino)\\nup = ids(cwd)\\nkeep = []\\nfor e in os.environ.get(\\"PYTHONPATH\\", \\"\\").split(\\":\\"):\\n    if not e.startswith(\\"/\\"):\\n        continue\\n    r = os.path.realpath(e)\\n    if \\":\\" in r or chr(10) in r or not os.path.isdir(r):\\n        continue\\n    try:\\n        st = os.stat(r)\\n    except OSError:\\n        continue\\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\\n        continue\\n    keep.append(r)\\nsys.stdout.buffer.write(os.fsencode(\\":\\".join(keep)))")\' 2>/dev/null) || _flow_pp=""; fi',
     'if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi',
 ]
