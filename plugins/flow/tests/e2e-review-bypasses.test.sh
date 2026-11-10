@@ -195,7 +195,10 @@ EOF
   _e2e_exec env "$RB_ENV" TR_ENV="$E2E_DIR/env.sh" TR_FAKE="$E2E_DIR/fakegh" \
     perl -e 'alarm shift; exec @ARGV' 60 bash -c "PATH=\"\$TR_FAKE:\$PATH\"; . \"\$TR_ENV\"; eval '${RB_TEXT//$RB_SQ/$RB_ESC}'"
   printf -- '--- expectations\n' | _e2e_art
-  e2e_expect_err "needs your confirmation"
+  # What protects the repository: no merge or release reached gh and no tag
+  # reached the remote. A row whose command, run here, never calls gh for
+  # one (an unset variable, a sudo that cannot run) has no refusal to print,
+  # so the wrapper's message is not required.
   if grep -qE '(^| )(merge|release)( |$)|graphql|/merge|/releases' "$E2E_DIR/gh-calls.log"; then
     _e2e_result fail "gh ran no merge or release: $(tr '\n' ';' < "$E2E_DIR/gh-calls.log")"
   else

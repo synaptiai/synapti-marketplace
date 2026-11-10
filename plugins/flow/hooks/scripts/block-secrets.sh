@@ -482,7 +482,7 @@ _inline_scripts() {
 # or interpreter on its line reads (`cat <<EOF > notes.md`, `git commit -F -
 # <<EOF`), and not also a command outside such a body? Only when
 # _bd_strip_noncode kept a body (BD_KEPT_BODY=1): the command is read again
-# with those bodies left out (BD_BLANK_BODIES=1), once, as tier-gate.sh does,
+# with those bodies left out (BD_BLANK_BODIES=1), once,
 # and a simple command that reading still has is a command. A reading that
 # fails counts it as one.
 BODYFREE=""

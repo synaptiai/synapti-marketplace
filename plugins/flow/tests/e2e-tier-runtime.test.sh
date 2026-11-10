@@ -218,11 +218,20 @@ e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_equal "pr merge 7 --squash" "$(cat "$E2E_DIR/gh-calls.log")" "gh's arguments"
 
-_tr_setup tr-approved-unread "a merge in a command the gate cannot read (a variable program): it asks, and once approved it runs"
-_tr_call 'G=gh; $G pr merge 7'
-e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
-e2e_expect_equal 0 "$E2E_RC" "exit status"
-e2e_expect_equal "pr merge 7" "$(cat "$E2E_DIR/gh-calls.log")" "gh's arguments"
+_tr_setup tr-unreadable-refused-at-run "a merge or a release the gate cannot read (a variable program, eval of a variable, a merge a Python script runs, a release in a node script): the gate does not ask, and the gh wrapper refuses each when it runs, naming the plain command to run instead; gh never receives it"
+for TR_CMD in 'G=gh; $G pr merge 7' 'X="gh pr merge 7"; eval "$X"' \
+    "python3 -c 'import subprocess, sys; sys.exit(subprocess.run([\"gh\", \"pr\", \"merge\", \"7\"]).returncode)'" \
+    "node -e 'process.exitCode = require(\"child_process\").spawnSync(\"gh\", [\"release\", \"create\", \"v9\"], {stdio: \"inherit\"}).status'"; do
+  _tr_call "$TR_CMD"
+  e2e_expect_equal 0 "$TR_ASKED" "the gate did not ask for: $TR_CMD"
+  e2e_expect_equal 1 "$E2E_RC" "exit status of: $TR_CMD"
+  e2e_expect_err "needs your confirmation"
+  e2e_expect_err "Run the"
+done
+e2e_expect_equal "" "$(cat "$E2E_DIR/gh-calls.log")" "gh's calls"
+_tr_call 'gh pr merge 7 --squash'
+e2e_expect_equal 1 "$TR_ASKED" "the plain merge: the gate asked"
+e2e_expect_equal "pr merge 7 --squash" "$(cat "$E2E_DIR/gh-calls.log")" "the plain merge, approved, reached gh"
 
 _tr_setup tr-branch-push "a branch push with the default journal tier, hidden from the gate in a script file: it runs, and the wrapper writes the breadcrumb"
 _tr_call "printf 'git push origin HEAD:refs/heads/main\n' > s.sh; bash s.sh"
@@ -475,11 +484,16 @@ _tr_gh_case "W16: a REST merge with a #fragment, in a script" "printf 'gh api -X
 _tr_gh_case "W16: a release with a #fragment, in a script" "printf 'gh api -X POST \"repos/o/r/releases#x\" -f tag_name=v2\n' > m.sh; bash m.sh" "releases"
 _tr_gh_case "W17: a query read from a FIFO, in a script" "printf 'mkfifo q; (printf \"query{viewer{login}}\" > q; printf \"mutation{mergePullRequest(input:{pullRequestId:1}){clientMutationId}}\" > q) & w=\$!; gh api graphql -F query=@q; kill \$w 2>/dev/null\n' > m.sh; bash m.sh" "graphql"
 
-_tr_setup tr-stdin-kept "W17: a GraphQL query on stdin (-F query=@/dev/stdin): the gate asks, and once approved gh reads the whole query; the wrapper reads none of it"
+_tr_setup tr-stdin-kept "W17: a GraphQL query on stdin (-F query=@/dev/stdin): the gate cannot read it and does not ask; the wrapper reads none of it, so it refuses the call and gh does not run; the same query written inline runs"
 _tr_call "printf 'query{viewer{login}}' | gh api graphql -F query=@/dev/stdin"
-e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
-e2e_expect_equal 0 "$E2E_RC" "exit status"
-e2e_expect_equal 1 "$(grep -c 'stdin: query{viewer{login}}' "$E2E_DIR/gh-calls.log")" "gh read the query"
+e2e_expect_equal 0 "$TR_ASKED" "the gate did not ask"
+e2e_expect_equal 1 "$E2E_RC" "exit status"
+e2e_expect_err "needs your confirmation"
+e2e_expect_equal 0 "$(grep -c 'graphql' "$E2E_DIR/gh-calls.log")" "gh did not run"
+_tr_call "gh api graphql -f query='query{viewer{login}}'"
+e2e_expect_equal 0 "$TR_ASKED" "inline: the gate did not ask"
+e2e_expect_equal 0 "$E2E_RC" "inline: exit status"
+e2e_expect_equal 1 "$(grep -c 'graphql' "$E2E_DIR/gh-calls.log")" "inline: gh ran the query"
 
 _tr_setup tr-two-wrapper-dirs "W18: a second flow's wrapper directory on PATH (a nested session, another version): git and gh still run, within 20 seconds"
 mkdir -p "$E2E_DIR/flowcopy"
@@ -520,11 +534,12 @@ e2e_expect_equal 2 "$E2E_RC" "the merge guard refuses a merge endpoint with a #f
 #       stops the approved call from finding its record
 #   W25 a command that extends another's text takes the other's record
 
-_tr_setup tr-refused-then-rerun "W20: the gate asks (a query file it cannot read), the person refuses; the same command run again, now with a readable query, does not use the refused approval for the merge in its script"
-TR_CMD="gh api graphql -F query=@q.graphql; printf 'gh pr merge 88\n' > s.sh; bash s.sh"
+_tr_setup tr-refused-then-rerun "W20: the gate asks (rel1 is a tag, so the push sends a tag), the person refuses; the same command run again, once rel1 is a branch and the push asks nothing, does not use the refused approval for the merge in its script"
+( _e2e_git_env; cd "$E2E_REPO" && git tag rel1 ) || _flow_assert_fail "tr-refused-then-rerun: could not create tag rel1"
+TR_CMD="git push origin rel1; printf 'gh pr merge 88\n' > s.sh; bash s.sh"
 _tr_call "$TR_CMD" deny
 e2e_expect_equal 1 "$TR_ASKED" "the first gate asked"
-printf 'query{viewer{login}}' > "$E2E_REPO/q.graphql"
+( _e2e_git_env; cd "$E2E_REPO" && git tag -d rel1 >/dev/null && git branch rel1 ) || _flow_assert_fail "tr-refused-then-rerun: could not turn rel1 into a branch"
 _tr_call "$TR_CMD"
 e2e_expect_equal 0 "$TR_ASKED" "the second gate did not ask"
 e2e_expect_equal 0 "$(grep -c 'pr merge 88' "$E2E_DIR/gh-calls.log")" "the merge did not run"

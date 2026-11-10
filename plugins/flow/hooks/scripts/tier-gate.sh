@@ -247,38 +247,16 @@
 #     whose setting cannot be read (cascade fails)
 #   gh api PATCH/PUT on .../issues/{n} whose body is  -> allowed, one stderr line (it may change
 #     a file (--input)                                   assignees; not a confirm-floor action)
-#   a gh api write whose whole endpoint is a variable -> "ask": it may be a merge or a release
-#     or a substitution (or left to xargs), a GraphQL
-#     query that cannot be read (a variable, stdin, a
-#     missing file, a double-quoted query in which
-#     bash expands something), a method that is a variable or
-#     not a verb on a merge or release endpoint, a
-#     quoted command nested more than four deep, or
-#     more quoted commands after one program than
-#     flow reads
-#   a gh pr or gh release whose subcommand is a       -> "ask": it may merge or release
-#     variable (`gh pr $A 7`, `gh $SUB merge 7`), an
-#     eval of a variable or a substitution (not
-#     `eval "v=\${$name}"` or `eval "v=\${$name:-}"`
-#     as written, which read a variable by name), a
-#     source or . of stdin or of a process
-#     substitution (`. <(...)`), or a command word
-#     that is a variable with nothing after it
-#     (`$CMD`, `""$CMD`, `${CMD%/}`, `"$@"`,
-#     `"${A[@]}"`; not a word that is one quoted
-#     string, `"$CMD"`, one program name; not one
-#     with a / outside ${...},
-#     `"$ROOT/bin/x.sh"`, a file; not a line of a
-#     heredoc body read by a program other than a
-#     shell that is not also a command outside it)
-#   a shell that reads its script from its input,     -> "ask": it may merge or release
-#     in a command with a pipe or a process
-#     substitution anywhere (`echo '...' | bash`,
-#     `| sh -s`, `| sudo bash`, `| xargs bash`,
-#     `| { :; bash; }`, `> >(bash)`): no -c, no
-#     script file, and no here-string, heredoc or <
-#     on it; in a command with neither (`which bash`,
-#     `x || bash`) it is not read as fed
+#   text this hook cannot read: a program, gh         -> no action is named for it: exit 0, no
+#     subcommand, gh api endpoint, method or GraphQL     output. The gh and git wrappers see the
+#     query that is a variable or a substitution         program and its words when it runs, and
+#     (`$CMD`, `gh pr $A 7`), eval of one, source of     refuse a merge or a release this hook did
+#     stdin, a shell reading its script from a pipe,     not ask about (lib/tier-runtime.sh)
+#     a quoted command nested more than four deep or
+#     past the sixteenth after one program, and the
+#     script of a language interpreter (python, perl,
+#     ruby, node, deno, bun: -c, -e, a heredoc or a
+#     here-string), whose strings are data
 #   a push whose refspec, remote or option is a       -> "ask": it may push or delete a tag
 #     variable or a substitution (or left to xargs),
 #     whose source is not a local branch, a forced
@@ -335,7 +313,11 @@
 # a line that names such a program (`bash <<<'...'`, `cat <<<'...' | bash`),
 # since that program reads it as its script, and so is a quoted argument of
 # the simple command before a shell that reads its script from its input
-# (`echo 'gh pr merge 1' | bash`). A parameter expansion is one piece of
+# (`echo 'gh pr merge 1' | bash`). The script of a language interpreter
+# (python, perl, ruby, node, deno, bun) is not: its `-c` or `-e` argument,
+# its here-string and its heredoc body are data, as a cat body is, except
+# what bash itself runs in them (`python3 -c "$(gh pr merge 1)"`, or a
+# `$(...)` in an unquoted body). A parameter expansion is one piece of
 # its word up to its closing brace (`${CMD//_/ }` is one word).
 #
 # Every action counts when its program is the command word: first in its
@@ -356,8 +338,8 @@
 # those, because a program this hook does not know may run the rest of its
 # line (caffeinate, stdbuf, setsid, watch, `find -exec`, parallel, `script -q
 # /dev/null`): the words after it are read for gh and git, and a merge, a
-# release, a tag push or a possible one, or an unreadable gh api call there
-# asks. Each word after it with a space in it (a quoted argument) that names
+# release, a tag push or a possible one there asks. Each word after it with
+# a space in it (a quoted argument) that names
 # push, merge, release or api is read as a whole command for the same
 # actions, since such a program may hand it to a shell: `watch 'gh release
 # create v9'`, `script -c '...'`, `flock f -c '...'`, `tmux new '...'`, `trap
@@ -368,14 +350,10 @@
 # words from the program on are also read joined with spaces as one command:
 # `ssh host gh\ pr merge 1`, `watch "gh pr" merge 1`, `watch 'x;gh' release
 # create v9`; not after a shell or a language's interpreter (`bash -c '...'
-# a b` runs only its script, which is read already). At most 16 such readings are made per simple command, and one
-# more asks as an unreadable gh call. A shell among the words that reads its
-# script from its input asks when the command has a pipe or a process
-# substitution anywhere. A command word that is a variable or a
-# substitution (`$GH pr merge 7`) is read as possibly gh or git for the same
-# Tier 3 actions, and with nothing after it (`$CMD`, `"${A[@]}"`) asks unless
-# it is one quoted string that expands to one word, when the command gets past the cheap reject below (its text
-# names gh, push, merge or release somewhere). A
+# a b` runs only its script, which is read already). At most 16 such
+# readings are made per simple command. A command word that is a variable
+# or a substitution (`$GH pr merge 7`) names no program this hook can read:
+# only the words after it are read, for the same Tier 3 actions. A
 # substitution is one word with the text around it (`D=$(gh repo view)` is an
 # assignment, and the gh in it is read as a command of its own). Programs that
 # only print, search or compare their arguments are exempt: echo, printf,
@@ -388,11 +366,9 @@
 # word that is a variable: `caffeinate git push` is neither asked about nor
 # journaled, since a prompt for every script that
 # mentions git would cost more than the setting saves. And what text cannot
-# show: a whole command held in a variable with arguments after it (`$CMD
-# --repo o/r`, read only as possibly gh or git), a command held in a variable
-# in a command whose text names none of gh, push, merge or release
-# (`CMD=$(cat f); $CMD`, which the cheap reject lets through like `bash f`),
-# a gh or git alias, a gh
+# show: a command held in a variable (`$CMD`, `$CMD --repo o/r`), eval or
+# source of text this hook cannot read, a shell reading its script from a
+# pipe, the script of a language interpreter, a gh or git alias, a gh
 # extension, a script file (`bash release.sh`; one run with `source` or `.`
 # makes the pushes in the command ask, but its own actions are not read) or
 # a make target, another program that talks to GitHub (curl, git
@@ -401,11 +377,8 @@
 # Bash call, a CDPATH set in the shell but not exported to this hook (`cd
 # name` is then read as a directory under the current one), a GraphQL
 # mutation whose field names hold none of Merge, Release or Ref
-# (createCommitOnBranch), gh api DELETE or PATCH requests other than those
-# above (deleting a branch ref), an `eval "v=\${$name}"` whose name
-# variable holds shell text rather than a name, and a heredoc body line
-# (`$CMD`) read by a while loop whose body, on another line, runs a shell
-# that reads the rest of the heredoc. The run-time check (the git and gh
+# (createCommitOnBranch), and gh api DELETE or PATCH requests other than
+# those above (deleting a branch ref). The run-time check (the git and gh
 # wrappers, lib/tier-runtime.sh) sees the arguments of each of these when
 # git or gh starts by name, and refuses a merge, release, tag push or
 # confirm action this hook did not ask about; references/three-tier-safety.md
@@ -616,6 +589,11 @@ done
 # substitution removed, marked __BD_ALT__ (_bd_segments, _tg_read_text).
 BD_SEG_ALT=1
 BD_SEG_MARK=1
+# A Python, Perl, Ruby or JavaScript script is data here, not shell: its
+# strings hold markdown and prose, and what the script runs is checked by the
+# gh and git wrappers when it runs (lib/tier-runtime.sh). A shell's script is
+# still read as commands.
+BD_LANG_DATA=1
 
 # --- reading one simple command ---------------------------------------------
 
@@ -650,93 +628,6 @@ _tg_names_file() {   # $1 = the word
   esac
   case "$w" in */*) return 0 ;; esac
   return 1
-}
-
-# The names of the scripts in this plugin's own bin/ that read what they are
-# handed on standard input as data and run none of it, space-separated, for
-# BD_DATA_PROGRAMS: every bin/*.sh, read when the hook runs, so a script
-# added to bin/ is covered without a list to edit. The directory is the one
-# this hook ships in, not CLAUDE_PLUGIN_ROOT, which the environment can
-# point elsewhere. Left out (_TG_NOT_DATA): flow-judge.sh, which hands its
-# input to an agent session (claude --print) as its prompt, and
-# flow-eval-run.sh, flow-eval-s1-replay.sh and flow-s1-eval.sh, which run
-# eval code (an agent's module and its tests, other flow scripts) with the
-# caller's standard input still open. A script added to bin/ that runs what
-# it reads, or hands it to something that may, belongs on that list.
-_TG_NOT_DATA=" flow-judge.sh flow-eval-run.sh flow-eval-s1-replay.sh flow-s1-eval.sh "
-_tg_data_programs() {
-  local f n out=""
-  for f in "$SCRIPT_DIR/../../bin/"*.sh; do
-    [ -f "$f" ] || continue
-    n="${f##*/}"
-    case "$n" in [!A-Za-z0-9_]*|*[!A-Za-z0-9_.+-]*) continue ;; esac
-    case "$_TG_NOT_DATA" in *" $n "*) continue ;; esac
-    out="$out $n"
-  done
-  printf '%s' "${out# }"
-}
-
-# Is the simple command being read (TG_SEGTXT) a line of a heredoc body that
-# a program other than a shell reads, and not also a command outside such a
-# body? Only for the command as typed (depth 0) whose heredoc body was kept
-# (TG_KEPT): the command is read again with those bodies left out
-# (_bd_strip_noncode with BD_BLANK_BODIES=1), once, and a simple command
-# that reading still has is a command. A reading that fails counts it as one.
-# BD_QUOTED_BODIES=1 leaves out a quoted body (<<'EOF', <<"EOF", <<\EOF)
-# handed to a program named by a variable too, but only when that program is
-# one of flow's own scripts that run nothing they read (BD_DATA_PROGRAMS,
-# _tg_data_programs): "$FLOW_ROOT/bin/journal-append.sh" ... <<'EOF',
-# "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh" ... <<'EOF' (#344). The
-# backticks and $(...) of such a body are markdown, which bash does not
-# expand there. Its word must be one double-quoted word, with no assignment
-# before it and no argument holding an expansion other than a double-quoted
-# plain variable ("$JOURNAL"), a redirection, or a path under /dev/ or
-# /proc/. Every other program named by a variable keeps its body as
-# commands, as the gate cannot tell it from a shell: a bare "$P" whatever
-# its arguments ("$P" --file notes.md -, "$P" x.sh), "$D/bin/sqlite3"
-# notes.md, "$D/bin/ssh" host.sh, "$SHELL" <<'EOF'. So do a command that
-# sets BASH_ENV or ENV, and an unquoted <<EOF whose body holds a $(...) or
-# backquote (lib/command-parse.sh, var_reader_ok, env_named, body_runs).
-_tg_body_line() {
-  local s l
-  [ "${TG_KEPT:-0}" = 1 ] && [ "${TG_DEPTH:-0}" = 0 ] || return 1
-  if [ "${TG_BODYFREE_DONE:-0}" = 0 ]; then
-    TG_BODYFREE=$(BD_BLANK_BODIES=1; BD_QUOTED_BODIES=1; BD_DATA_PROGRAMS=$(_tg_data_programs)
-                  _bd_strip_noncode "$COMMAND" && _bd_expand_interpreter_args && _bd_segments "$BD_CODE") \
-      || TG_BODYFREE=__BD_SEG_FAIL__
-    TG_BODYFREE_DONE=1
-  fi
-  case "$TG_BODYFREE" in *__BD_SEG_FAIL__*) return 1 ;; esac
-  s="${TG_SEGTXT#"${TG_SEGTXT%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"
-  while IFS= read -r l; do
-    l="${l#__BD_ALT__}"; l="${l#__BD_PIPE__}"
-    l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"
-    [ "$l" = "$s" ] && return 1
-  done <<TG_BODY_EOF
-$TG_BODYFREE
-TG_BODY_EOF
-  return 0
-}
-
-# Is the simple command, as written, `eval "NAME=\${$NAME}"` or `eval
-# "NAME=\${$NAME:-DEFAULT}"`, with DEFAULT made only of letters, digits and
-# _ . , / @ % + - (nothing the shell reads specially)? eval then assigns the
-# value of the variable NAME names and runs nothing (unless that variable
-# holds shell text rather than a name: not covered). Redirections after it
-# to a target written out (`>/dev/null`, `2>&1`) are allowed; any other text
-# after eval may be commands.
-_tg_eval_read_by_name() {   # $1 = the simple command's text
-  local t="$1" re
-  # A substitution, which the parser has replaced by its marker, inserts
-  # text this hook cannot read.
-  case "$t" in *__BD_SUBST__*) return 1 ;; esac
-  local rd='^(.*[^[:space:]])[[:space:]]+[0-9]*(>>?|&>>?|<)[[:space:]]*([A-Za-z0-9_./@%+-]+|&[0-9]+|&-)$'
-  re='^eval[[:space:]]+"[A-Za-z_][A-Za-z0-9_]*=\\\$\{\$[A-Za-z_][A-Za-z0-9_]*(:-[A-Za-z0-9_.,/@%+-]*)?\}"$'
-  t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
-  # Redirections after it to a target written out (`>/dev/null`, `2>&1`)
-  # change where its output goes, not what it runs.
-  while [[ $t =~ $rd ]]; do t="${BASH_REMATCH[1]}"; done
-  [[ $t =~ $re ]]
 }
 
 # The program a word names: its last path component, a leading backslash
@@ -1454,10 +1345,12 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
   fi
 
   # GraphQL: the mutation names decide, read from -f/-F query=..., a
-  # query=@file, or the --input body (JSON, read as written).
+  # query=@file, or the --input body (JSON, read as written). A query this
+  # hook cannot read names nothing; the gh wrapper reads the query gh is
+  # given when it runs.
   case "$ep" in
     graphql|/graphql|*/graphql)
-      local text="" unread=0 found=0 qs
+      local text="" found=0 qs
       for ((qi = 0; qi < ${#fields[@]}; qi++)); do
         fv="${fields[qi]#?:}"
         case "$fv" in
@@ -1470,17 +1363,17 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
             # something (`"... $FIELD(...)"`) cannot be read; one written
             # `\$id` or '$id' holds a GraphQL variable, and can.
             if [ "${fexp[qi]:-1}" = 1 ] && case "$v" in @*) false ;; *) true ;; esac; then
-              unread=1
+              :
             elif t=$(_tg_query_text "$v"); then
               case "$v" in @*) qs=1 ;; *) qs=0 ;; esac
               t=$(_tg_gql_strip "$t" "$qs") || true
               text="$text $t"
-            else unread=1; fi ;;
+            fi ;;
         esac
       done
       if [ -n "$input" ]; then
         found=1
-        if t=$(_tg_query_text "@$input"); then text="$text $t"; else unread=1; fi
+        if t=$(_tg_query_text "@$input"); then text="$text $t"; fi
       fi
       [ "$found" = 1 ] || return 0
       for m in $(printf '%s' "$text" | grep -owE 'mergePullRequest|enablePullRequestAutoMerge|createRelease|updateRelease|createPullRequest|createIssue|addAssigneesToAssignable' | LC_ALL=C sort -u); do
@@ -1511,7 +1404,6 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
           [ "$fm" = 1 ] && _tg_emit merge "$1"
           [ "$fr" = 1 ] && _tg_emit release "$1" ;;
       esac
-      [ "$unread" = 1 ] && _tg_emit unknown "$1"
       return 0 ;;
   esac
 
@@ -1526,12 +1418,13 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
     method=$(printf '%s' "$method" | LC_ALL=C tr 'a-z' 'A-Z')
     case "$method" in GET|HEAD) return 0 ;; POST|PUT|PATCH|DELETE) ;; *) any=1 ;; esac
   fi
-  # A whole endpoint this hook cannot read may be a merge or a release. A
-  # partly unreadable one is read by its literal parts: `/merge` would have
-  # to be written.
+  # A whole endpoint this hook cannot read names nothing it can act on: the
+  # gh wrapper reads the endpoint gh is given when it runs. A partly
+  # unreadable one is read by its literal parts: `/merge` would have to be
+  # written.
   case "$ep" in
     */*) ;;
-    *) if _tg_unreadable "$ep"; then _tg_emit unknown "$1"; return 0; fi ;;
+    *) if _tg_unreadable "$ep"; then return 0; fi ;;
   esac
   # Matched by the end of the path, so a leading `/`, a full URL and
   # `{owner}/{repo}` all read the same; a query string and trailing slashes
@@ -1544,12 +1437,13 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
   if [ "$any" = 0 ]; then
     keys=$(_tg_api_keys "$method")
   else
-    # Any write: a Tier 3 result under any of them asks as unreadable. A
-    # variable method (any=2) may be POST, so its Tier 2 results count too;
-    # a verb that is not one (OPTIONS) writes nothing those would.
+    # Any write. One that may be a merge or a release is left to the gh
+    # wrapper, which reads the method gh is given when it runs. A variable
+    # method (any=2) may be POST, so its Tier 2 results count; a verb that
+    # is not one (OPTIONS) writes nothing those would.
     keys=$(for m in POST PUT PATCH DELETE; do _tg_api_keys "$m"; done | LC_ALL=C sort -u)
     case "$keys" in
-      *merge*|*release*|*tagUnread*) _tg_emit unknown "$1"; return 0 ;;
+      *merge*|*release*|*tagUnread*) return 0 ;;
     esac
     [ "$any" = 2 ] || return 0
   fi
@@ -1641,15 +1535,12 @@ _tg_gh() {   # $1 = index of gh
     j=$((j + 1))
   done
   # A subcommand word this hook cannot read (`gh $SUB merge 7`, `gh pr $A 7`,
-  # `gh pr $'m\x65rge' 7`) may be merge or a release subcommand. Not when the
-  # program itself is a variable read as possibly gh (`$EDITOR "$f"`): that is
-  # a whole command this hook cannot read, which it does not guess at.
-  if ! _tg_unreadable "${TOK[$1]}"; then
-    if _tg_unreadable "$w1"; then _tg_emit cmdUnread "$1"; return 0; fi
-    case "$w1" in
-      pr|release) _tg_unreadable "$w2" && { _tg_emit cmdUnread "$1"; return 0; } ;;
-    esac
-  fi
+  # `gh pr $'m\x65rge' 7`) names no action: the gh wrapper reads the words gh
+  # is given when it runs, and refuses a merge or a release nobody approved.
+  if _tg_unreadable "$w1"; then return 0; fi
+  case "$w1" in
+    pr|release) _tg_unreadable "$w2" && return 0 ;;
+  esac
   case "$w1 $w2" in
     "pr create"|"pr new") _tg_emit prCreate "$1" ;;
     "pr merge") _tg_emit merge "$1" ;;
@@ -1673,50 +1564,34 @@ _tg_gh() {   # $1 = index of gh
 # command: caffeinate, stdbuf, setsid, watch, `find -exec`, parallel,
 # `script -q /dev/null`, and any other. So the words after it are read for gh
 # or git, and what each would do is kept when it is a Tier 3 action (a merge,
-# a release, a tag push or a possible one, a gh api call that cannot be read)
-# and dropped otherwise: `npm run git push` names no action, and a Tier 2
-# action there would cost a prompt for every script that merely mentions
-# git. A command word that is a variable or a substitution (`$GH pr merge 7`)
-# may be gh or git itself; one with nothing after it (`$CMD`) is a whole
-# command this hook cannot read, and asks. A word with a space in it (a quoted
+# a release, a tag push or a possible one) and dropped otherwise: `npm run
+# git push` names no action, and a Tier 2 action there would cost a prompt
+# for every script that merely mentions git. A command word that is a
+# variable or a substitution (`$GH pr merge 7`) names no program this hook
+# can read, so only the words after it are read; what it runs is left to the
+# gh and git wrappers, which see the program when it runs and refuse a merge
+# or a release nobody approved (lib/tier-runtime.sh). A word with a space in it (a quoted
 # argument, as in `watch 'gh release create v9'`, `script -c '...'`, `trap
 # '...' EXIT`, `awk 'BEGIN { system("...") }'`) may be a whole command, and is
 # read as one, for the same Tier 3 actions, unless the parser already read it
 # as a command of its own (it does for every such word after bash, env, ssh
-# and the other words lib/command-parse.sh treats as running a script) or it
-# could not hold one (_tg_may_run). A git config, a branch change or a write
+# and the other words lib/command-parse.sh treats as running a script), it
+# is the script of a language interpreter (python, perl, ruby, node, deno,
+# bun: data, BD_LANG_DATA), or it could not hold one (_tg_may_run). A git config, a branch change or a write
 # to .git in such a word changes the repository for every later push, as it
 # does on its own (_tg_config_prescan). Some programs join their arguments
 # into one shell command (`ssh host gh\ pr merge 1`, `watch "gh pr" merge 1`,
 # `sudo -s`), so when a word after the program holds a space or a character
 # the shell reads specially, the words from the program on are also read
-# joined with spaces, as one command. A shell among the words that reads its
-# script from its input asks (_bd_shell_reads_stdin). The --verify-tag
-# exemption does not apply here. At most TG_SCAN_MAX (16) quoted words,
-# here-strings and joined readings are read per simple command; one more that
-# could hold a Tier 3 action is read as an unreadable gh call, which asks.
+# joined with spaces, as one command. The --verify-tag exemption does not
+# apply here. At most TG_SCAN_MAX (16) quoted words, here-strings and joined
+# readings are read per simple command; the rest are not read.
 TG_SCAN_MAX=16
 _tg_scan() {   # $1 = index of the command word
-  local k t p out line start=$(($1 + 1)) interp=0 reads=0 over=0 joined="" join=0 texts=()
-  if _tg_unreadable "${TOK[$1]}"; then
-    start=$1
-    # Alone, it may be a whole command held in a variable (`$CMD`), which
-    # word splitting turns into a program and its arguments. Not when the
-    # word is one quoted string (`"$CMD"` is one program name, and a quoted
-    # case pattern such as `"git@github.com:$R")` is left as a segment of its
-    # own; `""$CMD` and `"$A"$B` are split, and `"$@"` and `"${A[@]}"` expand
-    # to one word per element: TOKQ, _bd_words), and not when it has a / of its
-    # own outside ${...}: it names a file to run (`"$ROOT/bin/x.sh"`; not
-    # `${CMD%/}`). Nor when it is a line of a heredoc body that a program
-    # other than a shell reads, such as `$PATHS` in `while read -r p; do ...;
-    # done <<EOF`: data the loop reads (_tg_body_line).
-    if [ "$(($1 + 1))" -ge "$n" ] && [ "${TOKQ[$1]:-0}" != 1 ] && ! _tg_names_file "${TOK[$1]}" \
-       && ! _tg_body_line; then
-      _tg_emit cmdUnread "$1"; return 0
-    fi
-  fi
+  local k t p out line start=$(($1 + 1)) interp=0 reads=0 joined="" join=0 texts=()
   # interp=1 once a word the parser treats as running a script has been
-  # passed: every quoted word after it is already a command of its own.
+  # passed: every quoted word after it is already a command of its own, or,
+  # after a language interpreter, its script, which is data.
   for ((k = 0; k <= $1; k++)); do
     p="${TOK[k]}"
     [ "${#p}" -le 4096 ] && _bd_is_interpreter "$p" && interp=1
@@ -1736,7 +1611,7 @@ _tg_scan() {   # $1 = index of the command word
         [ "$interp" = 0 ] || continue
         [ "${#texts[@]}" -lt "$TG_SCAN_MAX" ] && _tg_persist_hint "$t" && texts+=("$t")
         if _tg_may_run "$t"; then
-          if [ "$reads" -ge "$TG_SCAN_MAX" ]; then over=1; continue; fi
+          [ "$reads" -lt "$TG_SCAN_MAX" ] || continue
           reads=$((reads + 1))
           out=$(_tg_read_text "$t" $((TG_DEPTH + 1)))
         fi ;;
@@ -1746,16 +1621,6 @@ _tg_scan() {   # $1 = index of the command word
         case "${t##*/}" in
           [Gg][Hh]) out=$(_tg_gh "$k") ;;
           [Gg][Ii][Tt]) out=$(_tg_git "$k") ;;
-          *)
-            # A shell among a program's arguments reads that program's input
-            # only when a pipe feeds this simple command itself
-            # (`echo '...' | xargs bash`); `which bash` in a command with a
-            # pipe elsewhere names a shell and runs none.
-            if [ "$k" -gt "$1" ] && [ "${TG_SEGPIPE:-0}" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$k"; then
-              _tg_emit shell "$k"; continue
-            fi
-            [ "$k" = "$1" ] || continue
-            out=$(_tg_gh "$k"; _tg_git "$k") ;;
         esac ;;
     esac
     [ -n "$out" ] || continue
@@ -1770,13 +1635,10 @@ _tg_scan() {   # $1 = index of the command word
   fi
   if [ "$join" = 1 ]; then
     for ((k = $1; k < n; k++)); do joined="$joined${joined:+ }${TOK[k]}"; done
-    if _tg_may_run "$joined"; then
-      if [ "$reads" -ge "$TG_SCAN_MAX" ]; then over=1
-      else
-        reads=$((reads + 1))
-        out=$(_tg_read_text "$joined" $((TG_DEPTH + 1)))
-        [ -n "$out" ] && _tg_tier3 "$out"
-      fi
+    if _tg_may_run "$joined" && [ "$reads" -lt "$TG_SCAN_MAX" ]; then
+      reads=$((reads + 1))
+      out=$(_tg_read_text "$joined" $((TG_DEPTH + 1)))
+      [ -n "$out" ] && _tg_tier3 "$out"
     fi
   fi
   # A here-string is the program's input, which a program this hook does not
@@ -1786,13 +1648,12 @@ _tg_scan() {   # $1 = index of the command word
     for t in ${TG_HSTR[@]+"${TG_HSTR[@]}"}; do
       [ "${#texts[@]}" -lt "$TG_SCAN_MAX" ] && _tg_persist_hint "$t" && texts+=("$t")
       _tg_may_run "$t" || continue
-      if [ "$reads" -ge "$TG_SCAN_MAX" ]; then over=1; continue; fi
+      [ "$reads" -lt "$TG_SCAN_MAX" ] || continue
       reads=$((reads + 1))
       out=$(_tg_read_text "$t" $((TG_DEPTH + 1)))
       [ -n "$out" ] && _tg_tier3 "$out"
     done
   fi
-  [ "$over" = 1 ] && _tg_emit unknown "$1"
   # What the quoted words and here-strings change for good: the repository's
   # configuration, its branch, its .git (`watch 'git config ...'`, `watch
   # 'git checkout main'`), whether or not they name a Tier 3 action. At most
@@ -1803,13 +1664,13 @@ _tg_scan() {   # $1 = index of the command word
   return 0
 }
 
-# The Tier 3 lines of what a text read as a command names: merge, release,
-# tagUnread, unknown and shell; a verified release is a plain one here.
+# The Tier 3 lines of what a text read as a command names: merge, release
+# and tagUnread; a verified release is a plain one here.
 _tg_tier3() {   # $1 = the lines
   local line
   while IFS= read -r line; do
     case "${line%%$'\t'*}" in
-      merge|release|tagUnread|unknown|cmdUnread|shell) printf '%s\n' "$line" ;;
+      merge|release|tagUnread) printf '%s\n' "$line" ;;
       releaseVerified:*) printf 'release\t%s\n' "${line#*$'\t'}" ;;
     esac
   done <<TG_T3_EOF
@@ -2289,12 +2150,7 @@ TG_PRESCAN_EOF
 # changes for the simple commands after it (pend, gpend, bpend, its caller's).
 _tg_read_seg() {   # $1 = the segment
   local seg="$1"
-  # TG_PIPED=1: the command has a pipe or a process substitution anywhere
-  # (TG_ANYPIPE, _tg_read_text), so a shell in this simple command that reads
-  # its input may be reading text this hook cannot see.
-  TG_PIPED="${TG_ANYPIPE:-0}"
-  TG_SEGPIPE=0
-  case "$seg" in __BD_PIPE__*) TG_PIPED=1; TG_SEGPIPE=1; seg="${seg:11}" ;; esac
+  case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
   [ -z "$seg" ] && return 0
   case "$seg" in __BD_UNBALANCED__) return 0 ;; esac
   # Every comparison below is on the words as bash passes them to the
@@ -2345,35 +2201,11 @@ _tg_read_seg() {   # $1 = the segment
       [ "$TG_PB" = 1 ] && bpend=1
       [ "$TG_UPW" = 1 ] && upend=1 ;;
   esac
-  # A shell that reads its script from its input, in a command with a pipe
-  # or a process substitution anywhere (`echo '...' | bash`, `echo '...' |
-  # { :; bash; }`, `> >(bash)`), may run text this hook cannot read; with the
-  # input redirected it reads a here-string or a heredoc, which is read as
-  # commands, or a file. In a command with neither (`which bash`, `x ||
-  # bash`) it reads nothing this command wrote.
-  if [ "$TG_PIPED" = 1 ] && [ "$TG_RIN" = 0 ] && _bd_shell_reads_stdin "$TG_I"; then _tg_emit shell "$TG_I"; return 0; fi
-  # eval of text this hook cannot read (`eval "$CMD"`, `eval "$(...)"`), and
-  # source or . of no file, of stdin with no here-string, or of a file named
-  # by a variable (`. <(...)`, `cmd | source /dev/stdin`), run commands it
-  # cannot see.
-  case "${TOK[TG_I]}" in
-    eval)
-      # One assignment that reads a variable by name (`eval "v=\${$name}"`
-      # or `eval "v=\${$name:-}"`, the bash 3.2 way to do it), written as
-      # exactly that, runs no command (_tg_eval_read_by_name).
-      if ! _tg_eval_read_by_name "$TG_SEGTXT"; then
-        for ((k = TG_I + 1; k < n; k++)); do
-          _tg_unreadable "${TOK[k]}" && { _tg_emit cmdUnread "$TG_I"; break; }
-        done
-      fi ;;
-    source|.)
-      t="${TOK[TG_I + 1]:-}"
-      if { [ -z "$t" ] && case "$seg" in *'<'*) true ;; *) false ;; esac; } || _tg_unreadable "$t" \
-         || { case "$t" in /dev/stdin|/dev/fd/*|-) true ;; *) false ;; esac \
-              && [ "${#TG_HSTR[@]}" -eq 0 ] && [ "$TG_RIN" = 0 ]; }; then
-        _tg_emit cmdUnread "$TG_I"
-      fi ;;
-  esac
+  # A shell reading its script from a pipe, eval of text this hook cannot
+  # read (`eval "$CMD"`), and source of stdin or of a file named by a
+  # variable run commands this hook cannot see. It names no action for them:
+  # the gh and git wrappers see each program when it runs and refuse a merge
+  # or a release nobody approved (lib/tier-runtime.sh).
   case "${TOK[TG_I]}" in cd|pushd|popd) pend=1; _tg_cd "$TG_I" ;; esac
   case "$sc" in
     git) _tg_git "$TG_I" ;;
@@ -2387,8 +2219,7 @@ _tg_read_seg() {   # $1 = the segment
 
 # Every action a command text names, one `key<TAB>summary<TAB>dir` line each.
 # $2 is how deep this text sits inside quoted arguments read as commands
-# (_tg_scan): past four levels, a text that mentions gh, push, merge or
-# release is read as an unreadable gh call. Run in a subshell: the parser
+# (_tg_scan): past four levels, it is not read. Run in a subshell: the parser
 # exits 2 when awk fails, and that must reach the caller as "cannot decide",
 # not end this hook with a refusal.
 _tg_read_text() {   # $1 = the text, $2 = depth
@@ -2399,12 +2230,8 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     *[Gg][Hh]*|*[Pp][Uu][Ss][Hh]*|*[Mm][Ee][Rr][Gg][Ee]*|*[Rr][Ee][Ll][Ee][Aa][Ss][Ee]*) ;;
     *) return 0 ;;
   esac
-  if [ "$2" -gt 4 ]; then
-    printf 'unknown\t%s\t\n' "$(printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-160)"
-    return 0
-  fi
+  [ "$2" -le 4 ] || return 0
   _bd_strip_noncode "$1"
-  TG_KEPT="$BD_KEPT_BODY"
   code0="$BD_CODE"
   _bd_expand_interpreter_args
   # The arguments and here-strings handed to a shell are appended to the end
@@ -2418,16 +2245,11 @@ _tg_read_text() {   # $1 = the text, $2 = depth
   case "$segs" in
     *__BD_SEG_FAIL__*)
       [ "$2" = 0 ] && exit 3
-      printf 'unknown\t%s\t\n' "$(printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' ' | cut -c1-160)"
       return 0 ;;
   esac
   # eval, source, exec and the rest anywhere in the text: from its start,
   # the directory, the environment and git's configuration are unreadable.
   _tg_state_prescan "$segs"
-  # A pipe or a process substitution anywhere in the text (a simple command
-  # marked __BD_PIPE__ by _bd_segments): a shell in it that reads its script
-  # from its input may be reading what that pipe carries (TG_PIPED).
-  case "$segs" in *__BD_PIPE__*) TG_ANYPIPE=1 ;; esac
   while IFS= read -r seg; do
     # pend: an earlier simple command changed directory or set GH_REPO or
     # GH_HOST, so a later gh may act on another repository (TG_GHMOVED).
@@ -2456,7 +2278,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
 
 # Every action the command names.
 _tg_actions() {
-  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_UPSTREAM=0; TG_ANYPIPE=0; TG_CDBASE="$CWD"; TG_CURW=""
+  TG_GHMOVED=0; TG_GITENV=0; TG_CDOTHER=0; TG_CDWT=0; TG_UPSTREAM=0; TG_CDBASE="$CWD"; TG_CURW=""
   _tg_read_text "$COMMAND" 0
 }
 
@@ -2568,18 +2390,6 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
     tagUnread)
       TG_ASKED="$TG_ASKED release:*"
       REASONS+=("A push whose refs, repository or configuration cannot be read or resolved from the command (or that the command changes first) may push or delete a tag, which is a Tier 3 action (tiers.release): flow asks before every one. Command: $SUMMARY")
-      continue ;;
-    unknown)
-      TG_ASKED="$TG_ASKED merge:* release:*"
-      REASONS+=("A gh api call whose method, endpoint or GraphQL query cannot be read from the command (a variable, a substitution, stdin, a missing file, a query in which the shell expands something, a method that is not GET, HEAD, POST, PUT, PATCH or DELETE, a quoted command nested too deep, or more quoted commands after one program than flow reads) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
-      continue ;;
-    cmdUnread)
-      TG_ASKED="$TG_ASKED merge:* release:*"
-      REASONS+=("A command whose program, subcommand or script flow cannot read from the command text (a variable or a substitution, eval of one, or source of stdin or of no file) may merge a pull request or create a release, which flow always asks about (tiers.merge, tiers.release; Tier 3). Command: $SUMMARY")
-      continue ;;
-    shell)
-      TG_ASKED="$TG_ASKED merge:* release:*"
-      REASONS+=("A shell that reads its script from its input (a pipe, or words xargs appends) runs commands flow cannot read, which may merge a pull request or create a release (tiers.merge, tiers.release; Tier 3): flow asks. Command: $SUMMARY")
       continue ;;
     assignUnread)
       _tg_note "could not read whether $SUMMARY changes an issue's assignees (its body is a file); allowing it without a tier check"

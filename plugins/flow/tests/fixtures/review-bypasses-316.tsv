@@ -108,7 +108,7 @@
 4	tier-gate	P3	gh pr $A 7
 4	tier-gate	P3	git push $OPTS
 4	block-unchecked-merge	P3	gh pr $"merge" 7
-4	block-unchecked-merge	P3	gh pr $A 7
+4	tier-gate	P3	gh pr $A 7
 5	tier-gate	P1	gh api -X PUT repos/o/r/pulls/1/merge$(true)
 5	tier-gate	P1	gh api -X PUT repos/o/r/pulls/1/merge`true`
 5	tier-gate	P1	gh api -X POST repos/o/r/merges$(true) -f base=main -f head=x
@@ -137,19 +137,19 @@
 5	tier-gate	P2	"${E}"$CMD
 5	tier-gate	P2	"$@"$CMD
 5	tier-gate	P2	CMD='gh pr merge 1'; ""$CMD
-5	block-unchecked-merge	P2	CMD='gh pr merge 1'; ""$CMD
+5	tier-gate	P2	CMD='gh pr merge 1'; ""$CMD
 5	tier-gate	P2	CMD='git push --tags'; ""$CMD
 5	tier-gate	P2	CMD='gh release create v9'; ${CMD%/}
 5	tier-gate	P2	CMD=gh_release_create_v9; ${CMD//_/ }
 5	tier-gate	P2	CMD='gh pr merge 1'; ${CMD%/}
-5	block-unchecked-merge	P2	CMD='gh pr merge 1'; ${CMD%/}
+5	tier-gate	P2	CMD='gh pr merge 1'; ${CMD%/}
 5	tier-gate	P2	CD=cdx; ${CD/x/} ../other && git push origin master
 5	tier-gate	P2	E=eval; ${E%/} 'cd ../other' && git push origin master
 5	tier-gate	P2	CMD="gh release create v9"⏎cat >/dev/null <<EOF⏎x⏎EOF⏎$CMD
 5	tier-gate	P2	bash <<'EOF'⏎CMD='gh release create v9'; $CMD⏎EOF
 5	tier-gate	P2	CMD=';gh release create v9'; eval "X=$CMD"
 5	tier-gate	P2	eval X=$CMD
-5	block-unchecked-merge	P2	eval X=$CMD
+5	tier-gate	P2	eval X=$CMD
 5	tier-gate	P3	gh api graphql -f query$(true)='mutation{mergePullRequest(...)}'
 5	tier-gate	P3	gh api --method$(true) POST repos/o/r/releases
 5	tier-gate	P3	gh api -X$(true) POST repos/o/r/releases -f tag_name=v9
@@ -214,6 +214,6 @@
 7	block-destructive	P3	git ${X:-reset --hard}
 7	block-destructive	P3	git ${X:-branch -D} feat
 7	block-destructive	P3	rm ${X:-"-rf"} src
-7	block-unchecked-merge	P3	eval "v=\${$n}" >x\⏎gh pr merge 7
+7	tier-gate	P3	eval "v=\${$n}" >x\⏎gh pr merge 7
 7	tier-gate	P1	cat <<'EOF' > x.sh⏎CMD="gh pr merge 7"⏎$CMD⏎EOF⏎bash x.sh
 7	block-destructive	P3	echo 'git reset --hard' | stdbuf -i0 bash

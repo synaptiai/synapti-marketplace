@@ -28,15 +28,15 @@
 # The expected asks are listed by file and the fence's ordinal in that file
 # among fences of its kind (#1 for its first ```bash fence, !1 for its first
 # ```! fence), each with text the fence must hold (F4). Each is a merge, a
-# release, a push that may send a tag, or a call the hook cannot read:
-#   commands/merge.md#1       gh pr merge
+# release, or a push that may send a tag:
+#   commands/merge.md#2       gh pr merge
 #   commands/release.md#4     pushes the release tag (git push origin "$TAG")
 #   commands/release.md#5     gh release create, for a tag already on origin
-#   commands/merge.md!3       a GraphQL query of review threads written in
-#                             double quotes with $OWNER, $NAME and $PR_NUM in
-#                             it: what bash expands there could make it a
-#                             mutation, so the hook cannot read it and asks
-# Every other fence must be silent: no decision, exit 0. The scratch
+# Every other fence must be silent: no decision, exit 0. That includes
+# commands/merge.md!3, whose GraphQL query of review threads is written in
+# double quotes with $OWNER, $NAME and $PR_NUM in it: the hook cannot read it
+# and names no action for it, and the gh wrapper reads the query bash hands
+# gh when it runs. The scratch
 # repository has no tier settings, so Tier 2 actions take their default
 # (journal) and, with no journal directory, write nothing.
 
@@ -58,7 +58,6 @@ TGF_EXPECT_ASK="
 commands/merge.md#2|gh pr merge
 commands/release.md#4|git push origin \"\$TAG\"
 commands/release.md#5|gh release create
-commands/merge.md!3|gh api graphql -f query=\"query {
 "
 
 _flow_test_begin "tier-gate-fences"

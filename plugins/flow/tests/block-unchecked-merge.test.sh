@@ -218,8 +218,7 @@ for CASE in \
   'pull request|$(...)|gh pr merge `cat pr.txt` --repo acme/widgets' \
   'pull request|7 $EXTRA|gh pr merge 7 $EXTRA --repo acme/widgets' \
   'pull request|7 $(...)|gh pr merge 7 $(echo --repo other/x)' \
-  'repository|acme/$R|gh --repo "acme/$R" pr merge 7' \
-  'gh command|$GH|GH=gh; $GH pr merge 7 --repo acme/widgets'; do
+  'repository|acme/$R|gh --repo "acme/$R" pr merge 7'; do
   WHAT="${CASE%%|*}"; REST="${CASE#*|}"; SHOWN="${REST%%|*}"; CMD="${REST#*|}"
   if ! S=$(_bum_probe_stub); then
     _flow_assert_fail "could not build the gh stub for: $CMD"; continue
@@ -485,16 +484,61 @@ _bum_run "$G" 'gh pr merge 7 --repo acme/widgets --squash --subject "Release $(d
 assert_exit 0 "$?" "a merge with a substitution inside its --subject, on a green pull request, is allowed"
 
 # bash splits an unquoted ${...} that holds whitespace into words, so a merge
-# inside its default is a gh whose name is a parameter expansion: refused on
-# a green pull request too.
+# written out inside its default is read: refused on a green pull request too.
 _flow_test_begin "a merge inside an unquoted \${...} default is read"
 G=$(_bum_stub "$GREEN" "" "")
 for CMD in \
   '${X:-gh pr merge 7}' \
-  '${X:-gh pr merge 7 --repo acme/widgets --squash}' \
-  '${X:-gh} pr merge 7 --repo acme/widgets --squash'; do
+  '${X:-gh pr merge 7 --repo acme/widgets --squash}'; do
   _bum_run "$G" "$CMD"
   assert_exit 2 "$?" "refused on a green pull request: $CMD"
+done
+
+# Text this hook cannot read is not read as a merge: a gh word that is a
+# variable or a parameter expansion, eval of a variable, a gh api endpoint
+# or GraphQL query in a variable or a file, and the script of a Python,
+# node, ruby or perl interpreter, whose strings hold prose and markdown. The
+# tier gate does not ask about any of them, and the gh wrapper refuses a
+# merge nobody approved when it runs (e2e-tier-runtime.test.sh). gh is not
+# called for any of them.
+_flow_test_begin "text this hook cannot read is not read as a merge"
+BT='`'
+for CMD in \
+  'GH=gh; $GH pr merge 7 --repo acme/widgets' \
+  '${X:-gh} pr merge 7 --repo acme/widgets --squash' \
+  'X="gh pr merge 7"; eval "$X"' \
+  'gh api graphql -F query=@merge.graphql' \
+  'gh api graphql --input q.json' \
+  'echo merge next && gh api -X PUT "$EP"' \
+  'EP=repos/acme/widgets/pulls/7/merge; gh api -X PUT "$EP"' \
+  "$(printf "python3 - <<'PY'\nf(a,'x %sy%s is fine')\nPY" "$BT" "$BT")" \
+  "$(printf "python3 - <<'PY'\nf(a,'x %sy%s is right')\nPY" "$BT" "$BT")" \
+  "$(printf "python3 - <<'PY'\nf(a,'x %sy%s at release')\nPY" "$BT" "$BT")" \
+  "$(printf "python3 - <<'PY'\nf(a,'x %sy%s we merge')\nPY" "$BT" "$BT")" \
+  "$(printf "cat > n.md <<'PY'\nf(a,'x %sy%s merge')\nPY" "$BT" "$BT")" \
+  "python3 -c 's = \"(${BT}gh pr merge 7${BT}) is unbalanced \\\" merge\"; print(s)'" \
+  "node -e 'console.log(\"we merge (${BT}x${BT}) \$(gh pr merge 7)\")'" \
+  "ruby -e 'puts \"the ${BT}merge${BT} step\"' && perl -e 'print \"merge ${BT}x${BT}\"'"; do
+  if ! S=$(_bum_probe_stub); then
+    _flow_assert_fail "could not build the gh stub for: $CMD"; continue
+  fi
+  ERR=$(_bum_stderr "$S" "$CMD"); RC=$?
+  if [ "$RC" -ne 0 ]; then
+    _flow_assert_fail "exit $RC, expected 0, for: $CMD — got: $ERR"
+  elif [ -e "$S/called" ]; then
+    _flow_assert_fail "gh was called for: $CMD"
+  else
+    _flow_assert_pass "not read as a merge: $CMD"
+  fi
+done
+# A merge that bash itself runs inside an interpreter's argument or an
+# unquoted heredoc body is written out, and is read.
+for CMD in \
+  'python3 -c "$(gh pr merge 7)"' \
+  "$(printf 'python3 - <<PY\nprint("$(gh pr merge 7)")\nPY')" \
+  "$(printf "python3 - <<'PY'\nprint(1)\nPY\ngh pr merge 7")"; do
+  _bum_run "$G" "$CMD"
+  assert_exit 2 "$?" "a merge bash runs is read and refused for its shape: $CMD"
 done
 
 # Text printed into a pipe or a process substitution that a shell reads is a
@@ -541,11 +585,7 @@ for CMD in \
   'gh api graphql -f query="mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
   'gh api graphql -f query="mutation { enqueuePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }"' \
   'gh api graphql -f query="mutation { mergeBranch(input: {repositoryId: \"x\", base: \"main\", head: \"feature\"}) { clientMutationId } }"' \
-  'gh api graphql -F query=@merge.graphql' \
-  'gh api graphql --input q.json' \
-  'echo merge next && gh api -X PUT "$EP"' \
   'gh api -X POST repos/acme/widgets/merges -f base=main -f head=feature' \
-  'EP=repos/acme/widgets/pulls/7/merge; gh api -X PUT "$EP"' \
   "gh alias set m 'pr merge'"; do
   if ! S=$(_bum_probe_stub); then
     _flow_assert_fail "could not build the gh stub for: $CMD"; continue
@@ -808,8 +848,6 @@ _bum_expect_next "host/owner/name" "$S_GREEN" 'gh pr merge 7 --repo github.com/a
 _bum_expect_next "two strategies" "$S_GREEN" 'gh pr merge 7 --repo acme/widgets --squash --merge'
 _bum_expect_next "a word before gh" "$S_GREEN" 'sudo gh pr merge 7 --repo acme/widgets --squash'
 _bum_expect_next "gh api merge endpoint" "$S_GREEN" 'gh api -X PUT repos/acme/widgets/pulls/7/merge'
-_bum_expect_next "gh api variable endpoint" "$S_GREEN" 'gh api $EP -X PUT # merge'
-_bum_expect_next "gh api graphql from a file" "$S_GREEN" 'gh api graphql --input q.json'
 _bum_expect_next "gh alias" "$S_GREEN" "gh alias set m 'pr merge'"
 _bum_expect_next "unbalanced quotes" "$S_GREEN" 'gh pr merge 7 --repo acme/widgets --squash --body "open'
 _bum_expect_next "rollup unreadable" "$S_EMPTY" 'gh pr merge 7 --repo acme/widgets --squash'
