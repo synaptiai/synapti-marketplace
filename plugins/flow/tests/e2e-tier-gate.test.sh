@@ -2538,7 +2538,17 @@ python3 - <<PY
 s = "the (`x`) note we merge at release"
 PY
 EOF
-  for F in "$C"/[0-9].txt; do
+  # The output of the script redirected or piped: the body is still its
+  # script, and a docstring line naming a merge is text.
+  for R in '2>&1' '> out.md' '| tail -3'; do
+    printf "python3 - <<'PY' %s\ndoc = \"\"\"\ngh pr merge 7\ngh release create v1 (\`x\`)\n\"\"\"\nprint(doc)\nPY\n" "$R" > "$C/8-$(printf '%s' "$R" | tr -dc 'a-z0-9').txt"
+  done
+  cat > "$C/9.txt" <<'EOF'
+node - <<'JS' 2>&1 | tail -3
+console.log(`we merge at release: ${"gh pr merge 7"}`)
+JS
+EOF
+  for F in "$C"/[0-9]*.txt; do
     _tg_case "$F"
     _expect_silent_allow
     e2e_expect_equal "" "$E2E_ERR" "stderr for case $(basename "$F")"
@@ -2560,11 +2570,16 @@ ls; gh pr merge 7
 git status | gh pr merge 7
 bash -c 'gh pr merge 7'
 python3 -c "$(gh pr merge 7)"
+bash <<<'gh pr merge 7'; echo node
+bash <<<'gh pr merge 7' && python3 -c 1
+cat <<<'gh pr merge 7' | bash && python3 -c 1
 EOF
   cat > "$C/release.txt" <<'EOF'
 gh release create v1
 echo "$(gh release create v1)"
 ls && gh release create v1
+sh <<<'gh release create v1' && which python3
+bash <<<'gh release create v1' & python3 -c 1
 EOF
   mkdir -p "$E2E_REPO/sub"
   while IFS= read -r L; do

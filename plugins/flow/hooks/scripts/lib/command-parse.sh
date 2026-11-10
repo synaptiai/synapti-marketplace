@@ -356,24 +356,25 @@ _bd_words() {
 # "examine" is.
 _bd_is_interpreter() {
   _bd_is_shell "$1" && return 0
+  _bd_is_language "$1" && return 0
   case "${1##*/}" in
-    python|python2|python3|perl|ruby|node|deno|bun)
-      return 0 ;;
     eval|source|.|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at)
       return 0 ;;
   esac
   return 1
 }
 
-# Does this word name a language interpreter, one that runs its script as
-# Python, Perl, Ruby or JavaScript rather than as shell? A hook that sets
-# BD_LANG_DATA=1 reads such a script as data: its strings are not shell, and
-# markdown backquotes in them are not substitutions. What it runs is not read;
-# the hooks that set it leave that to a check made when the program runs.
+# The language interpreters, the one list _bd_is_language and the heredoc
+# reading of _bd_strip_noncode (langre) use: programs that run their script
+# as Python, Perl, Ruby or JavaScript rather than as shell.
+_BD_LANGS="python python2 python3 perl ruby node deno bun"
+
+# Does this word name a language interpreter? A hook that sets BD_LANG_DATA=1
+# reads such a script as data: its strings are not shell, and markdown
+# backquotes in them are not substitutions. What it runs is not read; the
+# hooks that set it leave that to a check made when the program runs.
 _bd_is_language() {
-  case "${1##*/}" in
-    python|python2|python3|perl|ruby|node|deno|bun) return 0 ;;
-  esac
+  case " $_BD_LANGS " in *" ${1##*/} "*) [ -n "${1##*/}" ] && return 0 ;; esac
   return 1
 }
 
@@ -539,14 +540,15 @@ _bd_shell_reads_stdin() {
 # BD_LANG_DATA=1 (tier-gate.sh and block-unchecked-merge.sh) counts a
 # language interpreter (_bd_is_language: python, perl, ruby, node, deno, bun)
 # as a text sink: its heredoc body is its script, read as data as a cat body
-# is, under the same rules. A quoted body is dropped whole; an unquoted body
+# is, also when the line redirects or pipes the program's output (`python3 -
+# <<'PY' 2>&1`, `| tail`). A quoted body is dropped whole; an unquoted body
 # keeps what bash runs as it expands the body (body_code). A shell is never a
 # sink, so `bash <<'EOF'` keeps its body.
 #
 # Carriage returns are stripped first, so a CRLF command is read the same way a
 # LF one is. Both tokeniser paths then agree about where words end.
 _bd_strip_noncode() {
-  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v langdata="${BD_LANG_DATA:-0}" -v shells="$_BD_SHELLS" '
+  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v langdata="${BD_LANG_DATA:-0}" -v langs="$_BD_LANGS" -v shells="$_BD_SHELLS" '
     function owner_word(str,   n, parts, seg) {
       # The heredoc belongs to the innermost command, which is the first word
       # after the last separator. Reading the word immediately before the `<<`
@@ -561,7 +563,7 @@ _bd_strip_noncode() {
       n = split(seg, parts, /[ \t]+/)
       return (n > 0) ? parts[1] : ""
     }
-    function is_sink(w,   SQ2) {
+    function owner_name(w,   SQ2) {
       SQ2 = sprintf("%c", 39)
       # The owner of a heredoc is commonly reached through a substitution:
       # `gh pr create --body "$(cat <<EOF` has `"$(cat` as the word before the
@@ -572,7 +574,16 @@ _bd_strip_noncode() {
       gsub("^" SQ2 "+", "", w)
       gsub(/^[($`]+/, "", w)
       sub(/^.*\//, "", w)
-      if (langdata == 1 && w ~ langre) return 1
+      return w
+    }
+    # langdata=1 only (BD_LANG_DATA): is the owner a language interpreter,
+    # whose heredoc body is its script? Such a body is data whatever the line
+    # does with the output of the program (`2>&1`, `> out.md`, `| tail`).
+    function is_lang(w) {
+      return (langdata == 1 && owner_name(w) ~ langre)
+    }
+    function is_sink(w) {
+      w = owner_name(w)
       return (w == "cat" || w == "tee" || w == "echo" || w == "printf" || w == "gh")
     }
     # Does the quote at i open a dollar-quoted string? Only when the character
@@ -809,8 +820,9 @@ _bd_strip_noncode() {
             am = 0; pd = 0; bk = 0; am0 = 0; pd0 = 0; bk0 = 0
             shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$"
             runre = "^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$"
-            # The language interpreters (_bd_is_language), sinks with langdata=1.
-            langre = "^(python[23]?|perl|ruby|node|deno|bun)$" }
+            # The language interpreters (_BD_LANGS), whose heredoc body is
+            # data with langdata=1 (is_lang).
+            langre = langs; gsub(/ +/, "|", langre); langre = "^(" langre ")$" }
     {
       line = $0
       sub(/\r$/, "", line)
@@ -983,13 +995,13 @@ _bd_strip_noncode() {
       # dropped too, when the line ends outside quotes and reader_ok says
       # nothing on it runs the body: the reading of a command without the
       # data its loops and readers take in.
-      if (hits == 1 && (out !~ /[|>]/ || blank == 1) &&
+      if (hits == 1 && (out !~ /[|>]/ || blank == 1 || langdata == 1) &&
           match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/) &&
           intro_at(out, RSTART)) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
         vq = (intro ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"/)
-        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
+        if ((out !~ /[|>]/ && is_sink(owner)) || is_lang(owner) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
           d = intro
           sub(/^<</, "", d)
           tabs = 0
@@ -1001,12 +1013,12 @@ _bd_strip_noncode() {
       }
       # The same shape with a single-quoted delimiter. Written separately
       # because embedding an apostrophe in this program would end it.
-      if (!inhd && hits == 1 && (out !~ /[|>]/ || blank == 1) &&
+      if (!inhd && hits == 1 && (out !~ /[|>]/ || blank == 1 || langdata == 1) &&
           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$") &&
           intro_at(out, RSTART)) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
-        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
+        if ((out !~ /[|>]/ && is_sink(owner)) || is_lang(owner) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
           d = intro
           sub(/^<</, "", d)
           tabs = 0
@@ -1045,8 +1057,11 @@ _bd_strip_noncode() {
       # >/dev/null`, `cat <<EOF | gh pr create --body-file -`) is dropped too
       # when reader_ok finds no shell, interpreter or variable command word
       # anywhere on the line, the text after the introducer included: `cat
-      # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies.
-      if (!inhd && blank == 1 && hits == 1 && q == "" &&
+      # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies. With
+      # langdata=1 (in every reading) the body of a language interpreter is
+      # dropped here too (`python3 - <<PY 2>&1`, `node - <<JS | tail`): it
+      # is the script of the program, whatever is done with its output.
+      if (!inhd && (blank == 1 || langdata == 1) && hits == 1 && q == "" &&
           (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|])/) ||
            match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])")) &&
           intro_at(out, RSTART)) {
@@ -1056,7 +1071,7 @@ _bd_strip_noncode() {
         d = substr(rest, 1, RLENGTH)
         post = substr(rest, RLENGTH + 1)
         vq = (d ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"$/ || d ~ ("^<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "$"))
-        if (reader_ok(pre " " post)) {
+        if (is_lang(owner_word(pre)) || (blank == 1 && reader_ok(pre " " post))) {
           sub(/^<</, "", d)
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
@@ -1338,7 +1353,7 @@ _BD_SEG_AWK='
 # Shared because every hook that reads commands has the same blind spot: the
 # merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
 _bd_expand_interpreter_args() {
-  local seg tok base i n found h prev
+  local seg tok base i n found runs h prev
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=()
   local BD_RIN=0 BD_CMDI=0
   local extra=""
@@ -1353,19 +1368,22 @@ _bd_expand_interpreter_args() {
     _bd_words "$seg"
     n=${#TOK[@]}
     found=0
+    runs=0
     for ((i = 0; i < n; i++)); do
       tok="${TOK[i]}"
       # Only the last path component of a word can name an interpreter, and
       # a name longer than sixteen characters is none. With BD_LANG_DATA=1
       # the words after a language interpreter are its script and its
-      # arguments, read as data (found=2), until another interpreter word
-      # (`python3 -c '...' && bash -c '...'` is one segment each, but `sudo
-      # python3 -c '...'` passes sudo first).
+      # arguments, read as data (found=2), until the next interpreter word
+      # (`sudo python3 -c '...'` passes sudo first; `python3 -c '...' &&
+      # bash -c '...'` reads bash's). runs=1: the line names an interpreter
+      # that is not a language one, which may read a here-string anywhere on
+      # the line (`bash <<<'...'; echo node`).
       if [ "${#tok}" -le 4096 ]; then
         base="${tok##*/}"
         if [ "${#base}" -le 16 ] && _bd_is_interpreter "$base"; then
           found=1
-          [ "${BD_LANG_DATA:-0}" = 1 ] && _bd_is_language "$base" && found=2
+          if [ "${BD_LANG_DATA:-0}" = 1 ] && _bd_is_language "$base"; then found=2; else runs=1; fi
           continue
         fi
       fi
@@ -1379,8 +1397,10 @@ $tok" ;;
     # A here-string is the input of the command it is written on, and an
     # interpreter reads its input as a script: `bash <<<'...'`, `<<<'...'
     # bash`, and, as with a heredoc body, a line that names an interpreter
-    # anywhere (`cat <<<'...' | bash`). Each one is read as a command.
-    if [ "$found" = "1" ] && [ "${#BD_HSTR[@]}" -gt 0 ]; then
+    # anywhere (`cat <<<'...' | bash`). Each one is read as a command. With
+    # BD_LANG_DATA=1 a line whose only interpreters are language ones
+    # (`python3 <<<'...'`) keeps its here-strings as data.
+    if [ "$runs" = "1" ] && [ "${#BD_HSTR[@]}" -gt 0 ]; then
       for h in "${BD_HSTR[@]}"; do
         extra="$extra
 $h"

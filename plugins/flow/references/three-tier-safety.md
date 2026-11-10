@@ -104,7 +104,7 @@ The hook acts only on the gh and git commands it can read. Text it cannot read n
 - `Bash(gh release create *)`, `Bash(gh release edit *)`, `Bash(gh release delete *)`, `Bash(gh release upload *)`, `Bash(gh release delete-asset *)`
 - `Bash(git push *--tags*)`, `Bash(git push *--follow-tags*)`, `Bash(git push *refs/tags/*)`
 
-Claude Code checks each part of a command against them, also after `&&`, `;` or `|` and inside `$(...)`, and asks before the command runs (in `claude -p` it refuses it), whether or not flow is installed or its hooks run. A rule matches the command as written: it does not see a tag pushed by its name alone (`git push origin v1`), a command held in a variable, or one run by a script. The hook and the wrappers cover those. Claude Code's documentation says a Bash rule is not a security boundary; the rulesets below are.
+Claude Code checks each part of a command against them, also after `&&`, `;` or `|` and inside `$(...)`, and asks before the command runs (in `claude -p` it refuses it), whether or not flow is installed or its hooks run. A rule matches the command as written: it does not see a tag pushed by its name alone (`git push origin v1`), a command held in a variable, or one run by a script. The hook and the wrappers cover those. With the rules in place Claude Code also asks before `gh release create <tag> --verify-tag`, which the hook alone journals when the tag is already on origin; once approved, the wrapper runs it as before. Claude Code's documentation says a Bash rule is not a security boundary; the rulesets below are.
 
 What none of these checks covers:
 

@@ -44,17 +44,35 @@ if [ -L "$file" ] || [ -L "$top/.claude" ]; then
   printf '%s\n' "PERMISSIONS=refused" "REASON=$file or its directory is a symlink; nothing was written through it" "FILE=$file"
   exit 0
 fi
-if [ -e "$file" ] && ! jq -e 'type == "object"' "$file" >/dev/null 2>&1; then
-  printf '%s\n' "PERMISSIONS=refused" "REASON=$file is not a JSON object; it was left as it is" "FILE=$file"
-  exit 0
+if [ -e "$file" ]; then
+  # One JSON object, whose permissions (when present) is an object and whose
+  # permissions.ask (when present) is an array: the only shape the rules can
+  # be added to without changing what the file means.
+  shape=$(jq -rs 'if length != 1 or (.[0] | type) != "object" then "the file is not one JSON object"
+    elif (.[0].permissions // {} | type) != "object" then "permissions is not an object"
+    elif (.[0].permissions.ask // [] | type) != "array" then "permissions.ask is not a list"
+    else "ok" end' "$file" 2>/dev/null) || shape="the file is not valid JSON"
+  if [ "$shape" != ok ]; then
+    printf '%s\n' "PERMISSIONS=refused" "REASON=$file: $shape; it was left as it is" "FILE=$file"
+    exit 0
+  fi
+  old=$(cat "$file")
+else
+  old='{}'
 fi
-
-if [ -e "$file" ]; then old=$(cat "$file"); else old='{}'; fi
 missing='(.permissions.ask // []) as $a | [$r[] | select(. as $x | $a | index($x) | not)]'
-added=$(printf '%s' "$old" | jq --argjson r "$RULES" "$missing | length")
-if [ "$added" = 0 ]; then
-  printf '%s\n' "PERMISSIONS=unchanged" "FILE=$file"
-  exit 0
+added=$(printf '%s' "$old" | jq --argjson r "$RULES" "$missing | length" 2>/dev/null)
+case "$added" in
+  0) printf '%s\n' "PERMISSIONS=unchanged" "FILE=$file"; exit 0 ;;
+  ''|*[!0-9]*) printf '%s\n' "PERMISSIONS=refused" "REASON=$file could not be read as settings; it was left as it is" "FILE=$file"; exit 0 ;;
+esac
+
+# The mode the file keeps: its own, or for a new file what the umask gives
+# a file created by a redirection. mktemp makes the temporary file 0600.
+if [ -e "$file" ]; then
+  mode=$(stat -f %Lp "$file" 2>/dev/null || stat -c %a "$file" 2>/dev/null) || mode=""
+else
+  mode=$(printf '%o' $(( 0666 & ~0$(umask) )))
 fi
 
 # Written beside the file and renamed over it, so a reader never sees half a
@@ -63,6 +81,7 @@ tmp=""
 if mkdir -p "$top/.claude" &&
    tmp=$(mktemp "$top/.claude/.flow-settings.XXXXXX") &&
    printf '%s' "$old" | jq --argjson r "$RULES" "(.permissions.ask // []) as \$a | .permissions.ask = \$a + ($missing)" > "$tmp" &&
+   { [ -z "$mode" ] || chmod "$mode" "$tmp"; } &&
    mv -f "$tmp" "$file"; then
   printf '%s\n' "PERMISSIONS=written" "ADDED=$added" "FILE=$file"
 else

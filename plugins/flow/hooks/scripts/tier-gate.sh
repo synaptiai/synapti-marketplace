@@ -773,11 +773,9 @@ _tg_command_word() {
           if [ "$w" = env ] && { [ "$TG_WO" = S ] || [ "$TG_WO" = --split-string ]; } && [ "$splits" -lt 8 ]; then
             splits=$((splits + 1))
             _tg_split_words "$TG_WV"
-            # TOKE, the words' expansion flags, moves with TOK, and so does
-            # TOKQ: a word from STRING is never read as one quoted word.
+            # TOKE, the words' expansion flags, moves with TOK.
             TOK=("${TOK[@]:0:i}" ${TG_SPLITW[@]+"${TG_SPLITW[@]}"} "${TOK[@]:i+TG_WN}")
             TOKE=("${TOKE[@]:0:i}" ${TG_SPLITE[@]+"${TG_SPLITE[@]}"} "${TOKE[@]:i+TG_WN}")
-            TOKQ=("${TOKQ[@]:0:i}" ${TG_SPLITE[@]+"${TG_SPLITE[@]/*/0}"} "${TOKQ[@]:i+TG_WN}")
             n=${#TOK[@]}
             continue
           fi
@@ -1631,7 +1629,7 @@ _tg_scan() {   # $1 = index of the command word
   # its one script, already read as a command, with a and b as arguments.
   if [ "${#TOK[$1]}" -le 4096 ]; then
     _bd_is_shell "${TOK[$1]}" && join=0
-    case "${TOK[$1]##*/}" in python|python[23]|perl|ruby|node|deno|bun) join=0 ;; esac
+    _bd_is_language "${TOK[$1]}" && join=0
   fi
   if [ "$join" = 1 ]; then
     for ((k = $1; k < n; k++)); do joined="$joined${joined:+ }${TOK[k]}"; done
@@ -2119,7 +2117,7 @@ _tg_common_dir() {   # $1 = a directory
 # the text handed to a shell is also read in order as commands, and its own
 # push must not ask because of the upstream it sets.
 _tg_config_prescan() {   # $1 = the text, $2 = 1 to leave out git push -u
-  local segs seg k n TG_I TG_XARGS TG_EXECW TG_PB=0 TG_UPW=0 TG_RIN TG_AN
+  local segs seg k n TG_I TG_XARGS TG_EXECW TG_PB=0 TG_UPW=0 TG_AN
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() TG_RDIR=()
   local BD_RIN=0
   segs=$(_bd_segments "$1")
@@ -2162,7 +2160,6 @@ _tg_read_seg() {   # $1 = the segment
   n=${#TOK[@]}
   TG_HSTR=(${BD_HSTR[@]+"${BD_HSTR[@]}"})
   TG_RDIR=(${BD_RDIR[@]+"${BD_RDIR[@]}"})
-  TG_RIN="$BD_RIN"
   TG_SEGTXT="$seg"
   # The words of the simple command before this one (a substitution comes
   # just before the command that holds it): _tg_cd.
@@ -2265,7 +2262,7 @@ _tg_read_text() {   # $1 = the text, $2 = depth
     # The second reading of the segment before, with its substitutions
     # removed (_bd_segments): read in a subshell, so it changes no state, and
     # only for the Tier 3 actions it names. The first reading kept the
-    # substitution and has already counted it as unreadable where that asks.
+    # substitution and has already read the push it may change.
     case "$seg" in
       __BD_ALT__*)
         t=$(_tg_read_seg "${seg:10}")

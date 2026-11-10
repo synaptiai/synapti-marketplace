@@ -56,14 +56,17 @@ _rb_hook() {
 
 # _rb_context <hook> <command> — what the finding set up. Sets RB_PREFIX
 # (text put before the command, for a hook that reads only the command),
-# RB_ENV (variables the command runs with), and RB_REPO (a repository
-# change: mirror-origin, mirror-mir, remote-tag-v5).
+# RB_ENV (variables the command runs with), RB_REPO (a repository
+# change: mirror-origin, mirror-mir, remote-tag-v5), and RB_REFUSED=1 for a
+# command that, run with that setup, starts gh for a merge the wrapper must
+# refuse.
 _rb_context() {
-  RB_PREFIX=""; RB_ENV="CMD=gh pr merge 7"; RB_REPO=""
+  RB_PREFIX=""; RB_ENV="CMD=gh pr merge 7"; RB_REPO=""; RB_REFUSED=0
   case "$2" in
-    'gh pr $A 7') RB_PREFIX='A=merge; ' ;;
+    'gh pr $A 7') RB_PREFIX='A=merge; '; RB_REFUSED=1 ;;
+    "CMD='gh pr merge 1'; \"\"\$CMD"|"CMD='gh pr merge 1'; \${CMD%/}") RB_REFUSED=1 ;;
     'eval X=$CMD')
-      RB_ENV="CMD=x;gh pr merge 7"
+      RB_ENV="CMD=x;gh pr merge 7"; RB_REFUSED=1
       [ "$1" = block-unchecked-merge ] && RB_PREFIX="CMD='x;gh pr merge 1'; " ;;
     'git push --repo=mir') RB_REPO=mirror-mir ;;
     'git push 2>&1'|'git push >/dev/null'|'git push -q 2>&1 | tail -2') RB_REPO=mirror-origin ;;
@@ -176,6 +179,7 @@ EOF
       RB_SHA=$(git --git-dir="$E2E_DIR/remote.git" rev-parse v5 2>/dev/null)
       RB_TEXT=${RB_TEXT//<sha>/$RB_SHA} ;;
   esac
+  RB_TEXT="$RB_PREFIX$RB_TEXT"
   RB_TAGS_BEFORE=$(_rb_remote_tags)
   _rb_run_hook hooks/scripts/tier-gate.sh "$RB_TEXT"
   case "$E2E_OUT" in
@@ -196,9 +200,10 @@ EOF
     perl -e 'alarm shift; exec @ARGV' 60 bash -c "PATH=\"\$TR_FAKE:\$PATH\"; . \"\$TR_ENV\"; eval '${RB_TEXT//$RB_SQ/$RB_ESC}'"
   printf -- '--- expectations\n' | _e2e_art
   # What protects the repository: no merge or release reached gh and no tag
-  # reached the remote. A row whose command, run here, never calls gh for
-  # one (an unset variable, a sudo that cannot run) has no refusal to print,
-  # so the wrapper's message is not required.
+  # reached the remote. A row that starts gh for a merge (RB_REFUSED) must
+  # show the wrapper's refusal; a row whose command, run here, never starts
+  # gh for one (a sudo that cannot run, a shell reading nothing) has none.
+  [ "$RB_REFUSED" = 1 ] && e2e_expect_err "needs your confirmation"
   if grep -qE '(^| )(merge|release)( |$)|graphql|/merge|/releases' "$E2E_DIR/gh-calls.log"; then
     _e2e_result fail "gh ran no merge or release: $(tr '\n' ';' < "$E2E_DIR/gh-calls.log")"
   else

@@ -244,19 +244,6 @@ _bum_is_gh() {
   return 1
 }
 
-# NAME=value, NAME+=value and NAME[index]=value are assignments.
-_bum_is_assignment() {
-  case "$1" in
-    [A-Za-z_]*=*)
-      local name="${1%%=*}"
-      name="${name%+}"
-      case "$name" in *\[*\]) name="${name%%\[*}" ;; esac
-      case "$name" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac
-      return 0 ;;
-  esac
-  return 1
-}
-
 # gh's own options that take a value, at the root or on a subcommand, for
 # finding the subcommand words past them.
 _bum_takes_value() {

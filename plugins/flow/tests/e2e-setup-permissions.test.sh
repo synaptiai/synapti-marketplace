@@ -114,9 +114,9 @@ printf 'from src/deep: %s\n' "$OUT" | _e2e_art
 e2e_expect_equal yes "$(_sp_has_rules "$E2E_REPO/.claude/settings.json" && echo yes || echo no)" "rules at the repository top"
 e2e_expect_equal no "$([ -e "$E2E_REPO/src/deep/.claude" ] && echo yes || echo no)" "a .claude directory in the subdirectory"
 
-_sp_setup sp-not-json "a settings file that is not valid JSON, or is JSON but not an object, is left byte for byte as it was and reported (P3)"
+_sp_setup sp-not-json "a settings file that is not valid JSON, is JSON but not one object, or holds a permissions that is not an object or an ask that is not a list, is left byte for byte as it was and reported with the reason (P3)"
 mkdir -p "$E2E_REPO/.claude"
-for BODY in '{"permissions": {"ask": [' '["Bash(ls)"]' 'null'; do
+for BODY in '{"permissions": {"ask": [' '["Bash(ls)"]' 'null' '{"a":1} {"b":2}' '{"permissions":"x"}' '{"permissions":{"ask":"Bash(x)"}}'; do
   printf '%s\n' "$BODY" > "$E2E_REPO/.claude/settings.json"
   cp "$E2E_REPO/.claude/settings.json" "$E2E_DIR/before.json"
   _sp_fence PERM_FILE=shared
@@ -124,6 +124,16 @@ for BODY in '{"permissions": {"ask": [' '["Bash(ls)"]' 'null'; do
   e2e_expect_out "PERMISSIONS=refused"
   e2e_expect_equal same "$(cmp -s "$E2E_REPO/.claude/settings.json" "$E2E_DIR/before.json" && echo same || echo changed)" "the file for: $BODY"
 done
+
+_sp_setup sp-mode "the file keeps its mode when rewritten (0644 stays 0644, not the 0600 of a temporary file), and a new file gets the mode the umask gives (P1)"
+mkdir -p "$E2E_REPO/.claude"
+printf '%s\n' '{"permissions":{}}' > "$E2E_REPO/.claude/settings.json"
+chmod 644 "$E2E_REPO/.claude/settings.json"
+_sp_fence PERM_FILE=shared
+e2e_expect_out "PERMISSIONS=written"
+e2e_expect_equal 644 "$(stat -f %Lp "$E2E_REPO/.claude/settings.json" 2>/dev/null || stat -c %a "$E2E_REPO/.claude/settings.json")" "mode of the rewritten file"
+_sp_fence PERM_FILE=local
+e2e_expect_equal "$(printf '%o' $(( 0666 & ~0$(umask) )))" "$(stat -f %Lp "$E2E_REPO/.claude/settings.local.json" 2>/dev/null || stat -c %a "$E2E_REPO/.claude/settings.local.json")" "mode of the new file"
 
 _sp_setup sp-symlink "a settings file that is a symlink is not written through, and its target is left as it was (P3)"
 mkdir -p "$E2E_REPO/.claude"
@@ -172,7 +182,7 @@ else
   chmod +x "$E2E_DIR/stub/gh" "$E2E_DIR/stub/git"
   : > "$E2E_DIR/calls.log"
   : > "$E2E_DIR/denied.txt"
-  for C in 'gh pr view 7' 'git push origin main' 'cd sub && gh pr merge 7' 'echo "$(gh release create v1)"' 'git push origin --tags'; do
+  for C in 'gh pr view 7' 'git push origin main' 'cd sub && gh pr merge 7' 'gh pr merge' 'echo "$(gh release create v1)"' 'git push origin --tags'; do
     (cd "$E2E_REPO" && PATH="$E2E_DIR/stub:$PATH" perl -e 'alarm shift; exec @ARGV' 180 claude -p --setting-sources project,local \
       --allowedTools Bash --model haiku --output-format json \
       "Use the Bash tool exactly once to run this exact command, character for character, and nothing else: $C" \
@@ -184,7 +194,7 @@ else
   e2e_expect_equal 1 "$(grep -c '^gh pr view 7' "$E2E_DIR/calls.log")" "the control gh pr view 7 reached the stub gh"
   e2e_expect_equal 1 "$(grep -c '^git push origin main' "$E2E_DIR/calls.log")" "the control git push origin main reached the stub git"
   e2e_expect_equal 0 "$(grep -c 'merge\|release\|--tags' "$E2E_DIR/calls.log")" "calls that merge, release or push tags"
-  for C in 'cd sub && gh pr merge 7' 'echo "$(gh release create v1)"' 'git push origin --tags'; do
+  for C in 'cd sub && gh pr merge 7' 'gh pr merge' 'echo "$(gh release create v1)"' 'git push origin --tags'; do
     e2e_expect_equal yes "$(grep -qxF -- "$C" "$E2E_DIR/denied.txt" && echo yes || echo no)" "Claude Code's permission check refused: $C"
   done
 fi

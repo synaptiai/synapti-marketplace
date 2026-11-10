@@ -518,7 +518,10 @@ for CMD in \
   "$(printf "cat > n.md <<'PY'\nf(a,'x %sy%s merge')\nPY" "$BT" "$BT")" \
   "python3 -c 's = \"(${BT}gh pr merge 7${BT}) is unbalanced \\\" merge\"; print(s)'" \
   "node -e 'console.log(\"we merge (${BT}x${BT}) \$(gh pr merge 7)\")'" \
-  "ruby -e 'puts \"the ${BT}merge${BT} step\"' && perl -e 'print \"merge ${BT}x${BT}\"'"; do
+  "ruby -e 'puts \"the ${BT}merge${BT} step\"' && perl -e 'print \"merge ${BT}x${BT}\"'" \
+  "$(printf "python3 - <<'PY' 2>&1\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "python3 - <<'PY' > out.md\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "python3 - <<'PY' | tail -3\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")"; do
   if ! S=$(_bum_probe_stub); then
     _flow_assert_fail "could not build the gh stub for: $CMD"; continue
   fi
@@ -536,7 +539,9 @@ done
 for CMD in \
   'python3 -c "$(gh pr merge 7)"' \
   "$(printf 'python3 - <<PY\nprint("$(gh pr merge 7)")\nPY')" \
-  "$(printf "python3 - <<'PY'\nprint(1)\nPY\ngh pr merge 7")"; do
+  "$(printf "python3 - <<'PY'\nprint(1)\nPY\ngh pr merge 7")" \
+  "bash <<<'gh pr merge 7'; echo node" \
+  "bash <<<'gh pr merge 7' && python3 -c 1"; do
   _bum_run "$G" "$CMD"
   assert_exit 2 "$?" "a merge bash runs is read and refused for its shape: $CMD"
 done
