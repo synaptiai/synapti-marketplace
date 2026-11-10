@@ -2574,6 +2574,11 @@ bash <<<'gh pr merge 7'; echo node
 bash <<<'gh pr merge 7' && python3 -c 1
 cat <<<'gh pr merge 7' | bash && python3 -c 1
 EOF
+  # A shell reads what the script prints: the body is kept and read.
+  for R in '| bash' '| sh -s' '> >(bash)'; do
+    printf "python3 - <<'PY' %s\nprint('gh pr merge 7')\nPY\n" "$R" > "$C/pipe.txt"
+    _tg_case "$C/pipe.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done
   cat > "$C/release.txt" <<'EOF'
 gh release create v1
 echo "$(gh release create v1)"

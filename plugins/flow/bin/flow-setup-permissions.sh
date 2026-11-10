@@ -70,7 +70,8 @@ esac
 # The mode the file keeps: its own, or for a new file what the umask gives
 # a file created by a redirection. mktemp makes the temporary file 0600.
 if [ -e "$file" ]; then
-  mode=$(stat -f %Lp "$file" 2>/dev/null || stat -c %a "$file" 2>/dev/null) || mode=""
+  mode=$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file" 2>/dev/null) || mode=""
+  case "$mode" in [0-7][0-7][0-7]|[0-7][0-7][0-7][0-7]) ;; *) mode="" ;; esac
 else
   mode=$(printf '%o' $(( 0666 & ~0$(umask) )))
 fi

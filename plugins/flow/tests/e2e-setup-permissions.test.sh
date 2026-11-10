@@ -131,9 +131,9 @@ printf '%s\n' '{"permissions":{}}' > "$E2E_REPO/.claude/settings.json"
 chmod 644 "$E2E_REPO/.claude/settings.json"
 _sp_fence PERM_FILE=shared
 e2e_expect_out "PERMISSIONS=written"
-e2e_expect_equal 644 "$(stat -f %Lp "$E2E_REPO/.claude/settings.json" 2>/dev/null || stat -c %a "$E2E_REPO/.claude/settings.json")" "mode of the rewritten file"
+e2e_expect_equal 644 "$(stat -c %a "$E2E_REPO/.claude/settings.json" 2>/dev/null || stat -f %Lp "$E2E_REPO/.claude/settings.json")" "mode of the rewritten file"
 _sp_fence PERM_FILE=local
-e2e_expect_equal "$(printf '%o' $(( 0666 & ~0$(umask) )))" "$(stat -f %Lp "$E2E_REPO/.claude/settings.local.json" 2>/dev/null || stat -c %a "$E2E_REPO/.claude/settings.local.json")" "mode of the new file"
+e2e_expect_equal "$(printf '%o' $(( 0666 & ~0$(umask) )))" "$(stat -c %a "$E2E_REPO/.claude/settings.local.json" 2>/dev/null || stat -f %Lp "$E2E_REPO/.claude/settings.local.json")" "mode of the new file"
 
 _sp_setup sp-symlink "a settings file that is a symlink is not written through, and its target is left as it was (P3)"
 mkdir -p "$E2E_REPO/.claude"

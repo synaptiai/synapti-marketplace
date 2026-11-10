@@ -541,7 +541,10 @@ for CMD in \
   "$(printf 'python3 - <<PY\nprint("$(gh pr merge 7)")\nPY')" \
   "$(printf "python3 - <<'PY'\nprint(1)\nPY\ngh pr merge 7")" \
   "bash <<<'gh pr merge 7'; echo node" \
-  "bash <<<'gh pr merge 7' && python3 -c 1"; do
+  "bash <<<'gh pr merge 7' && python3 -c 1" \
+  "$(printf "python3 - <<'PY' | bash\nprint('gh pr merge 7')\nPY")" \
+  "$(printf "python3 - <<'PY' > >(sh)\nprint('gh pr merge 7')\nPY")" \
+  "ssh -F 'perl ruby' host 'gh pr merge 7'"; do
   _bum_run "$G" "$CMD"
   assert_exit 2 "$?" "a merge bash runs is read and refused for its shape: $CMD"
 done

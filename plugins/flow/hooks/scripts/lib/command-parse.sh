@@ -374,7 +374,8 @@ _BD_LANGS="python python2 python3 perl ruby node deno bun"
 # backquotes in them are not substitutions. What it runs is not read; the
 # hooks that set it leave that to a check made when the program runs.
 _bd_is_language() {
-  case " $_BD_LANGS " in *" ${1##*/} "*) [ -n "${1##*/}" ] && return 0 ;; esac
+  case "${1##*/}" in ""|*[[:space:]]*) return 1 ;; esac
+  case " $_BD_LANGS " in *" ${1##*/} "*) return 0 ;; esac
   return 1
 }
 
@@ -1060,7 +1061,10 @@ _bd_strip_noncode() {
       # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies. With
       # langdata=1 (in every reading) the body of a language interpreter is
       # dropped here too (`python3 - <<PY 2>&1`, `node - <<JS | tail`): it
-      # is the script of the program, whatever is done with its output.
+      # is the script of the program, unless the text after the introducer
+      # hands the output to a shell or another program that runs it (`| bash`,
+      # `> >(sh)`), which reader_ok refuses: what the script prints is then
+      # commands, and its body is kept.
       if (!inhd && (blank == 1 || langdata == 1) && hits == 1 && q == "" &&
           (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|])/) ||
            match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])")) &&
@@ -1071,7 +1075,7 @@ _bd_strip_noncode() {
         d = substr(rest, 1, RLENGTH)
         post = substr(rest, RLENGTH + 1)
         vq = (d ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"$/ || d ~ ("^<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "$"))
-        if (is_lang(owner_word(pre)) || (blank == 1 && reader_ok(pre " " post))) {
+        if ((is_lang(owner_word(pre)) && reader_ok(post)) || (blank == 1 && reader_ok(pre " " post))) {
           sub(/^<</, "", d)
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
