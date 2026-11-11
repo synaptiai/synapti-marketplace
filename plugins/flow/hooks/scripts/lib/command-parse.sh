@@ -642,9 +642,11 @@ _bd_strip_noncode() {
     # separator bash reads (last_sep), so `bash -s "x;python3 -" <<EOF` is
     # a bash heredoc. Before the interpreter only these may come: shell
     # keywords, assignments whose value has no quote, backslash,
-    # parenthesis, brace or backquote, and timeout or nice with numbers, or
-    # env with such assignments (`do python3`, `A=1 python3`, `timeout 60
-    # python3`, `env A=1 node`). A word with a quote, a backslash or a $ in
+    # parenthesis, brace or backquote, timeout or nice with numbers, env
+    # with such assignments, or a Python project runner with run right after
+    # it (uv, poetry, pipenv, pdm, hatch, rye), with no option in between
+    # (`do python3`, `A=1 python3`, `timeout 60 python3`, `env A=1 node`,
+    # `uv run python3`). A word with a quote, a backslash or a $ in
     # it is not read as the interpreter.
     function lang_owner(pre,   seg, m, w, j, x, b, wrap, ls) {
       if (langdata != 1 || lsopen || bq % 2 || q0 != "") return 0
@@ -666,6 +668,7 @@ _bd_strip_noncode() {
         sub(/^.*\//, "", b)
         if (b ~ langre) return 1
         if (wrap == "" && b ~ /^(timeout|nice|env)$/) { wrap = b; continue }
+        if (wrap == "" && b ~ /^(uv|poetry|pipenv|pdm|hatch|rye)$/ && w[j + 1] == "run") { wrap = "run"; j++; continue }
         if ((wrap == "timeout" || wrap == "nice") && x ~ /^[0-9.]+[smhd]?$/) continue
         if (wrap == "nice" && x == "-n") continue
         return 0

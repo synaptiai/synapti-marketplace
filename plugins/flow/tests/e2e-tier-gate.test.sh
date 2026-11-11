@@ -2591,6 +2591,9 @@ EOF
 python3 - <<'PY'" \
            "PYTHONPATH=\$PWD python3 - <<'PY'" \
            "echo \$'it\\'s'; python3 - <<'PY'" \
+           "uv run python3 - <<'PY'" \
+           "poetry run python - <<'PY'" \
+           "pipenv run python3 - <<'PY'" \
            "OUT=\"\${TMPDIR}/x\"
 python3 - <<'PY'" \
            "git commit -m \"fix lower case names\"
@@ -2602,6 +2605,14 @@ python3 - <<'PY'"; do
     printf "%s\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n" "$L" > "$C/$N.txt"
     N=$((N + 1))
   done
+  cat > "$C/node-e.txt" <<'EOF'
+node -e 'console.log(`we merge (${"x"}) at release: $(gh pr merge 7)`)'
+EOF
+  cat > "$C/ruby-heredoc.txt" <<'EOF'
+ruby - <<'RB'
+puts "the `merge` step (after release) runs $(gh pr merge 7) and git push"
+RB
+EOF
   cat > "$C/9.txt" <<'EOF'
 node - <<'JS' 2>&1 | tail -3
 console.log(`we merge at release: ${"gh pr merge 7"}`)
@@ -2690,7 +2701,10 @@ PY"; do
            "(printf 'x\\n' && bash -s) <<'EOF'" \
            "(gh auth status; bash) <<'EOF'" \
            "(tee /dev/null; bash) <<'EOF'" \
-           "\$(echo bash) <<'EOF'"; do
+           "\$(echo bash) <<'EOF'" \
+           "uv run bash <<'EOF'" \
+           "uv run --with python3 bash <<'EOF'" \
+           "poetry run sh <<'EOF'"; do
     printf "%s\ngh pr merge 7\nEOF\n" "$L" > "$C/encl.txt"
     _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   done
@@ -2712,6 +2726,12 @@ EOF
   done < "$C/release.txt"
   _tg_run "git push origin v1"
   _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  _tg_run "ls
+gh pr merge 7"
+  _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  _tg_run "ls
+gh release create v1"
+  _expect_ask "tiers.release"
   _tg_run "ls
 git push origin v1"
   _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"

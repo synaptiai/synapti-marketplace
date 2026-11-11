@@ -15,7 +15,10 @@ Each entry below describes the change against 3.15.1.
   and asked "may merge a pull request or create a release"; with the word
   merge in it, the merge guard refused the command outright. The script of
   python, perl, ruby, node, deno and bun is now data wherever its output
-  goes. What it prints is not read, also when a shell runs it
+  goes, also behind `timeout`, `env`, `uv run`, `poetry run` and the like.
+  A heredoc counts as such a script only in these plain forms; anything
+  else on the line before the interpreter makes it read as before. What
+  a script prints is not read, also when a shell runs it
   (`python3 - <<'PY' | bash`, `eval "$(python3 ...)"`): like `curl ... | sh`,
   that is text the hook cannot see, and flow's `gh` and `git` wrappers
   refuse a merge, release or tag push in it when it runs. What bash

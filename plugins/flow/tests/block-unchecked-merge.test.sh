@@ -528,6 +528,9 @@ for CMD in \
   "$(printf "source .venv/bin/activate && python3 - <<'PY' 2>&1\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "timeout 60 python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "out=\$(python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n)")" \
+  "$(printf "uv run python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "poetry run python - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "pipenv run python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "OUT=\"\${TMPDIR}/x\"\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "git commit -m \"fix lower case names\"\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "echo \"\${HOME}\"\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
@@ -562,6 +565,9 @@ for CMD in \
   "ssh -F 'perl ruby' host 'gh pr merge 7'" \
   "$(printf "bash -s \"x;python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "bash -s \"a(python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "uv run bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "uv run --with python3 bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "poetry run sh <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "(echo start; bash) <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "(printf 'x\\\\n' && bash -s) <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "(gh auth status; bash) <<'EOF'\ngh pr merge 7\nEOF")" \
