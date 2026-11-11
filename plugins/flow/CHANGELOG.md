@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.16.0 (2026-11-11)
 
 Each entry below describes the change against 3.15.1.
 
