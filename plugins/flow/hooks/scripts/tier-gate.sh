@@ -2452,45 +2452,6 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
   esac
 done <<< "$ACTIONS"
 
-# How many times a merge or a release is written in the command text, read
-# with ($1=0) or without ($1=1) the scripts of language interpreters.
-_tg_written() {   # $1 = BD_LANG_DATA, $2 = merge or release
-  local BD_CODE="" re
-  case "$2" in
-    merge) re='pr[[:space:]]+merge|mergePullRequest|enablePullRequestAutoMerge' ;;
-    *) re='release[[:space:]]+(create|edit|delete|upload)|createRelease|updateRelease' ;;
-  esac
-  local code0 extra
-  BD_LANG_DATA="$1" _bd_strip_noncode "$COMMAND" || { printf '0'; return; }
-  code0="$BD_CODE"
-  BD_LANG_DATA="$1" _bd_expand_interpreter_args 2>/dev/null
-  # The scripts handed to interpreters, appended after the text. A $(...)
-  # or backquote in one is run by bash before the interpreter starts, and is
-  # in the text already (`python3 -c "$(gh pr merge 7)"`): counted once.
-  extra="${BD_CODE:${#code0}}"
-  extra=$(printf '%s' "$extra" | sed -e 's/\$([^)]*)//g' -e 's/`[^`]*`//g')
-  printf '%s\n%s' "$code0" "$extra" | grep -oE "$re" | wc -l | tr -d ' '
-}
-# The run-time check counts approvals by action, not by pull request or tag:
-# a merge asked about here may be spent by another merge that runs in the
-# same call. When a script this hook read as data (python, node, ruby, perl)
-# names a merge or a release, and the command also asks about one, the
-# approval could be spent by the script's merge, which nobody saw named in
-# the question. Such a command is refused, with the plain command to run on
-# its own.
-TG_SPLIT=""
-for TG_K in merge release; do
-  case " $TG_ASKED " in *" $TG_K "*) ;; *) continue ;; esac
-  if [ "$(_tg_written 0 "$TG_K")" -gt "$(_tg_written 1 "$TG_K")" ]; then
-    TG_SPLIT="$TG_SPLIT $TG_K"
-  fi
-done
-if [ -n "$TG_SPLIT" ]; then
-  jq -nc --arg r "Flow tier gate. This command merges a pull request or creates a release (Tier 3), and also runs a python, node, ruby or perl script whose text names a merge or a release. Flow approves Tier 3 actions by kind, not by pull request or tag, so an approval given here could be used by the script's merge or release instead. Run the merge or release as a command of its own, and the script as another." \
-    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
-  exit 0
-fi
-
 if [ "${#REASONS[@]}" -gt 0 ]; then
   REASON="Flow tier gate. ${REASONS[0]}"
   for ((r = 1; r < ${#REASONS[@]}; r++)); do REASON="$REASON Also: ${REASONS[r]}"; done

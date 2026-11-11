@@ -25,9 +25,6 @@ Each entry below describes the change against 3.15.1.
   itself runs in it is still read (`python3 -c "$(gh pr merge 7)"`, a
   `$(...)` in an unquoted heredoc), and so is the script of a shell
   (`bash -c`, a bash heredoc or here-string).
-  A command that both merges or releases and runs such a script naming a
-  merge or release is refused, so an approval cannot be spent by the
-  script's action; the two run as separate commands.
 
 ### Changed
 

@@ -1467,8 +1467,17 @@ _BD_SEG_AWK='
 # nesting arrives here as its own quoted argument on the next pass anyway.
 # Shared because every hook that reads commands has the same blind spot: the
 # merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
+# Does the program $1 hand the words after it to a shell as text? A shell,
+# and su, ssh, eval and the programs that run a command line they are given.
+_bd_runs_text() {
+  [ -n "$1" ] || return 1
+  _bd_is_shell "$1" && return 0
+  case "$1" in su|ssh|eval|watch|script|tmux|screen|parallel|chroot|runuser|sg|flock|at|batch) return 0 ;; esac
+  return 1
+}
+
 _bd_expand_interpreter_args() {
-  local seg tok base i n found runs h prev pos lpos wrap
+  local seg tok base i n found runs h prev by
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=()
   local BD_RIN=0 BD_CMDI=0
   local extra=""
@@ -1484,45 +1493,19 @@ _bd_expand_interpreter_args() {
     n=${#TOK[@]}
     found=0
     runs=0
-    # pos=1 while every word so far could stand before the program a line
-    # runs: assignments, shell keywords, and sudo, env, timeout, nice,
-    # nohup, time or a Python project runner with run (wrap names it), with
-    # the numbers timeout and nice take. Only a language word read while
-    # pos=1 is the program, and makes its words data: in `su node -c '...'`,
-    # `ssh node '...'` or `eval python3 '...'` the language name is a user,
-    # a host or a word of shell text, and the words after it stay read.
-    pos=1
-    wrap=""
+    # by: the last interpreter word on the line. A language word after one
+    # that hands on shell text (a shell, su, ssh, eval and the like) is a
+    # word of that text, a user or a host (`su node -c '...'`, `ssh node
+    # '...'`, `eval python3 '...'`), and the words after it stay read. After
+    # any other word (sudo, env, timeout, xargs) it is the program.
+    by=""
     for ((i = 0; i < n; i++)); do
       tok="${TOK[i]}"
-      lpos=$pos
-      if [ "$pos" = 1 ]; then
-        case "${tok##*/}" in
-          [A-Za-z_]*=*) [ -z "$wrap" ] || [ "$wrap" = env ] || pos=0 ;;
-          if|then|elif|else|while|until|do|'!'|'{'|time) [ -z "$wrap" ] || pos=0 ;;
-          sudo|env|timeout|nice|nohup) wrap=${tok##*/} ;;
-          uv|poetry|pipenv|pdm|hatch|rye) [ "${TOK[i+1]:-}" = run ] && wrap=run || pos=0 ;;
-          run) [ "$wrap" = run ] || pos=0 ;;
-          -n) [ "$wrap" = nice ] || pos=0 ;;
-          *)
-            case "$wrap:$tok" in
-              timeout:[0-9]*|nice:[0-9]*) ;;
-              *) pos=0 ;;
-            esac ;;
-        esac
-      fi
-      # Only the last path component of a word can name an interpreter, and
-      # a name longer than sixteen characters is none. With BD_LANG_DATA=1
-      # the words after a language interpreter are its script and its
-      # arguments, read as data (found=2), until the next interpreter word
-      # (`sudo python3 -c '...'` passes sudo first; `python3 -c '...' &&
-      # bash -c '...'` reads bash's). runs=1: the line names an interpreter
-      # that is not a language one, which may read a here-string anywhere on
-      # the line (`bash <<<'...'; echo node`).
       if [ "${#tok}" -le 4096 ]; then
         base="${tok##*/}"
         if [ "${#base}" -le 16 ] && _bd_is_interpreter "$base" &&
-           { [ "${BD_LANG_DATA:-0}" != 1 ] || ! _bd_is_language "$base" || [ "$lpos" = 1 ]; }; then
+           { [ "${BD_LANG_DATA:-0}" != 1 ] || ! _bd_is_language "$base" || ! _bd_runs_text "$by"; }; then
+          by=$base
           found=1
           if [ "${BD_LANG_DATA:-0}" = 1 ] && _bd_is_language "$base"; then found=2; else runs=1; fi
           continue

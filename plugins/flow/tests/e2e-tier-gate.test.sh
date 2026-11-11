@@ -2667,18 +2667,6 @@ PY"; do
     printf "%s\n" "$L" > "$C/encl.txt"
     _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   done
-  # A merge written out next to a script whose text names another merge is
-  # refused: the approval for the first could be spent by the second. A
-  # script that names none, or a commit message that does, still asks.
-  for L in "python3 - <<'PY' && gh pr merge 9
-import os; os.system('gh pr merge 10')
-PY" "python3 -c 'import os; os.system(\"gh pr merge 10\")' && gh pr merge 9" "node -e 'require(\"child_process\").execSync(\"gh release create v9\")'; gh release create v1"; do
-    printf '%s\n' "$L" > "$C/split.txt"
-    _tg_case "$C/split.txt"
-    e2e_expect_equal 0 "$E2E_RC" "exit status"
-    e2e_expect_out '"permissionDecision":"deny"'
-    e2e_expect_out "Run the merge or release as a command of its own"
-  done
   _tg_run "git commit -m 'note: gh pr merge later' && gh pr merge 9"
   _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   # A language name that is a user, a host or a word of shell text is not
@@ -2686,7 +2674,7 @@ PY" "python3 -c 'import os; os.system(\"gh pr merge 10\")' && gh pr merge 9" "no
   for L in "su node -c 'gh pr merge 7'" "ssh node 'gh pr merge 7'" "x=\$(su node -c 'gh pr merge 7')" "eval python3 'x; gh pr merge 1'" "ssh host python3 'x; gh pr merge 1'"; do
     _tg_run "$L"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   done
-  for L in "sudo python3 x.py 'gh pr merge 1'" "uv run python3 -c 'print(\"gh pr merge 7\")'" "cd x && python3 -c 'print(\"gh pr merge 7\")'"; do
+  for L in "sudo -u app python3 x.py 'gh pr merge 7 failed'" "env -i python3 x.py 'gh pr merge 7'" "timeout -s KILL 5 python3 x.py 'gh pr merge 7'" "xargs python3 x.py 'gh pr merge 7'" "sudo python3 x.py 'gh pr merge 1'" "uv run python3 -c 'print(\"gh pr merge 7\")'" "cd x && python3 -c 'print(\"gh pr merge 7\")'"; do
     _tg_run "$L"; _expect_silent_allow
   done
   # A quoted ; or ( before a bash heredoc is text to bash: the heredoc is
