@@ -528,9 +528,11 @@ for CMD in \
   "$(printf "source .venv/bin/activate && python3 - <<'PY' 2>&1\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "timeout 60 python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "out=\$(python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n)")" \
+  "$(printf "OUT=\"\${TMPDIR}/x\"\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "git commit -m \"fix lower case names\"\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "echo \"\${HOME}\"\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "x=\$(date)\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "cat > notes.md <<'EOF'\n\`\`\`bash\nls\n\`\`\`\nEOF\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
-  "$(printf "cat > a.py <<'EOF'\nresult = func(\n    arg,\n)\nEOF\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
-  "$(printf "out=\$(python3 - <<'PY'\nprint(1)\nPY\n)\npython3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "PYTHONPATH=\$PWD python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "python3 - <<'PY' | bash\nprint('gh pr merge 7')\nPY")" \
   "$(printf "python3 - <<'PY' > >(sh)\nprint('gh pr merge 7')\nPY")" \
@@ -560,6 +562,14 @@ for CMD in \
   "ssh -F 'perl ruby' host 'gh pr merge 7'" \
   "$(printf "bash -s \"x;python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "bash -s \"a(python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "(echo start; bash) <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "(printf 'x\\\\n' && bash -s) <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "(gh auth status; bash) <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "(tee /dev/null; bash) <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "\$(echo bash) <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "git commit -m \"doc: use cat <<EOF\"\ny=\"\$(echo \"\npython3 - <<'PY'\n\"; gh pr merge 7)\"\nPY")" \
+  "$(printf ": \$((1<<x))\ny=\"\$(echo \"\npython3 - <<'PY'\n\"; gh pr merge 7)\"\nPY")" \
+  "$(printf "cat <<'EOF' > run.sh\ndocker run \\\\\nEOF\ny=\"\$(echo \"\npython3 - <<'PY'\n\"; gh pr merge 7)\"\nPY")" \
   "$(printf "A=\"x python3 y\" bash <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "env A=\"x python3 y\" bash <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "MSG='run python3 now' bash -s <<'EOF'\ngh pr merge 7\nEOF")" \

@@ -92,6 +92,15 @@ allowed|cat <<EOF\nit's $(date), and rm -rf ~ isn't run\nEOF
 allowed|git commit -m "$(cat <<'EOF'\nfix: x\n\n$(rm -rf ~)\nEOF\n)"
 EOF
 
+_scenario hx-rm-shell-owner "$DELETE_HOOK" \
+  "a heredoc read by a shell in a group after a printing command, or by bash with a \$(cat ...) argument, is a script, and its rm -rf ~ is refused; the same text in a gh body written with \${ISSUE} or after echo \"\${HOME}\" is a body, and stays text" <<'EOF'
+refused|(echo start; bash) <<'EOF'\nrm -rf ~\nEOF
+refused|(tee /dev/null; bash) <<'EOF'\nrm -rf ~\nEOF
+refused|bash -s "$(cat args.txt)" <<'EOF'\nrm -rf ~\nEOF
+allowed|gh issue comment ${ISSUE} --body-file - <<'EOF'\nclean with rm -rf ~/build first\nEOF
+allowed|echo "${HOME}" && cat <<'EOF'\nclean with rm -rf ~/build first\nEOF
+EOF
+
 _scenario hx-rm-escaped-introducer "$DELETE_HOOK" \
   "the line after \\<<'EOF' or \\<<EOF is a command and its rm -rf ~ is refused (H3); after \\\\<<'EOF' it is a body cat reads (H4)" <<'EOF'
 refused|cat \\<<'EOF'\nrm -rf ~\nEOF

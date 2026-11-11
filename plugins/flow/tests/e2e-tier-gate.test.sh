@@ -2589,19 +2589,16 @@ ls
 \`\`\`
 EOF
 python3 - <<'PY'" \
-           "cat > a.py <<'EOF'
-result = func(
-    arg,
-)
-EOF
-python3 - <<'PY'" \
-           "out=\$(python3 - <<'PY'
-print(1)
-PY
-)
-python3 - <<'PY'" \
            "PYTHONPATH=\$PWD python3 - <<'PY'" \
-           "echo \$'it\\'s'; python3 - <<'PY'"; do
+           "echo \$'it\\'s'; python3 - <<'PY'" \
+           "OUT=\"\${TMPDIR}/x\"
+python3 - <<'PY'" \
+           "git commit -m \"fix lower case names\"
+python3 - <<'PY'" \
+           "echo \"\${HOME}\"
+python3 - <<'PY'" \
+           "x=\$(date)
+python3 - <<'PY'"; do
     printf "%s\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n" "$L" > "$C/$N.txt"
     N=$((N + 1))
   done
@@ -2636,6 +2633,28 @@ bash <<<'gh pr merge 7'; echo node
 bash <<<'gh pr merge 7' && python3 -c 1
 cat <<<'gh pr merge 7' | bash && python3 -c 1
 EOF
+  # A heredoc line that bash reads inside a string, after an earlier line
+  # whose text could be misread as a heredoc or a continuation.
+  for L in "git commit -m \"doc: use cat <<EOF\"
+y=\"\$(echo \"
+python3 - <<'PY'
+\"; gh pr merge 7)\"
+PY" \
+           ": \$((1<<x))
+y=\"\$(echo \"
+python3 - <<'PY'
+\"; gh pr merge 7)\"
+PY" \
+           "cat <<'EOF' > run.sh
+docker run \\
+EOF
+y=\"\$(echo \"
+python3 - <<'PY'
+\"; gh pr merge 7)\"
+PY"; do
+    printf "%s\n" "$L" > "$C/encl.txt"
+    _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done
   # A quoted ; or ( before a bash heredoc is text to bash: the heredoc is
   # the script of bash, and is read.
   # A bash heredoc whose line names an interpreter only in an assignment,
@@ -2666,7 +2685,12 @@ EOF
            "A=( python3 ) bash <<'EOF'" \
            "PYTHONPATH=\"\$PWD python3\" bash <<'EOF'" \
            "bash -s \"\$(cat args.txt)\" <<'EOF'" \
-           "bash -s -- \$(cat args.txt) <<'EOF'"; do
+           "bash -s -- \$(cat args.txt) <<'EOF'" \
+           "(echo start; bash) <<'EOF'" \
+           "(printf 'x\\n' && bash -s) <<'EOF'" \
+           "(gh auth status; bash) <<'EOF'" \
+           "(tee /dev/null; bash) <<'EOF'" \
+           "\$(echo bash) <<'EOF'"; do
     printf "%s\ngh pr merge 7\nEOF\n" "$L" > "$C/encl.txt"
     _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   done
