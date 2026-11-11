@@ -79,14 +79,14 @@ The full design is the revised design file (see Step 1). In short:
 `/flow:design` was not run during planning. The design came from a workflow: research, gap analysis, three design candidates scored by judges, a synthesis and a critic, then a revision with two fix rounds. The last check (2026-11-11) covered only the 22 items still open before the final fix round. Items closed in earlier rounds were not re-checked against the final text. That check also found about 13 new contradictions in the sections it read. Open items went from 40 to 22 to the list below, with new ones each round, so fixing the transitions table by editing prose is not converging.
 
 1. **Save the design inputs.** They exist only in the session scratchpad, `/private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/e852dfbc-33ef-4ff2-abeb-dc5bc5659433/scratchpad/`, which is cleared on reboot. A durable copy of the design is the `fix-2` result line in `~/.claude/projects/-Users-danielbentes-synapti-marketplace/e852dfbc-33ef-4ff2-abeb-dc5bc5659433/subagents/workflows/wf_9e20cc98-454/journal.jsonl`.
-   - On a branch `docs/issue-<epic>-flow-factory-design`, copy into `docs/plans/flow-factory/`:
-     - `design-final.json` (the design, about 150 KB);
-     - `final-verify.json`;
-     - `gaps-full.md`;
-     - the four `report-*.md` research reports;
+   - On a branch `docs/issue-<epic>-flow-factory-design`, copy into `docs/flow-factory/`:
+     - `design.json` (the design, about 150 KB);
+     - `design-check-2026-11-11.json`;
+     - `gaps.md`;
+     - the four `research-*.md` reports;
      - `design-critic.json`.
    - Open a docs PR. The epic links to these files, because the design is too large for an issue body (GitHub's limit is about 65,000 characters).
-2. **Run `/flow:design`** on the factory, with those files as input. It writes the transitions table as data, together with a script that derives the entry and exit lists and checks that every guard case has an exit. Then it closes the defects below (checked against `design-final.json` on 2026-11-11):
+2. **Run `/flow:design`** on the factory, with those files as input. It writes the transitions table as data, together with a script that derives the entry and exit lists and checks that every guard case has an exit. Then it closes the defects below (checked against `design.json` on 2026-11-11):
    - **GitHub comment channel.** Workers get the person's GitHub token, so a worker could post a trusted `/flow-factory approve-spec` comment through curl or python. `/flow:design` chooses between two fixes:
      - give workers no GitHub credentials, so the engine does every GitHub read and write. This may conflict with the gh calls P1 expects workers to make;
      - give workers a read-only token. You would have to create the token.
