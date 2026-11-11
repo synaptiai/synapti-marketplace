@@ -1,0 +1,151 @@
+[
+ {
+  "items": [
+   {
+    "n": 1,
+    "status": "closed",
+    "evidence": "execution_model 2.4: \"Pre-launch tier check (row 40b). Before it starts any judge, worker or engine directive for a job, it resolves the tier keys of every blocking write left on that job's path to ready: prepare: issueAssign, issueUpdate; open_pr: push, prCreate, issueUpdate; review, rework, sync and resolve: push, issueUpdate; ready: issueUpdate. If any key resolves to confirm, and the executor cannot confirm at write time, the job parks in waiting_operator with reason `tier_confirm` ... before anything is spent.\" Row 40b covers queued through resolve; row 2 requires \"row 40b does not apply\"; runner loop step 1 repeats it; github_writes_and_tiers: \"With headless runner and tiers.push=confirm, a job no longer spends spec and build budget ... only to park at the push.\" E2E executors: \"with tiers.push=confirm under headless, the job parks in waiting_operator (tier_confirm) before intake spends\". I tried to refute it and could not find a blocking key missing from the path list."
+   },
+   {
+    "n": 2,
+    "status": "user_decision",
+    "evidence": "phasing question 2: \"Before phase 1c. Decision 5 detail. Workers run as separate `claude -p` processes ... Options: (a) keep worker processes, recommended ...; (b) run stage work inside the session's own context ... Phase 0 through 1b do not depend on it.\" interactive_executor: \"The session still does not run stage work in its own context ... The orchestrating session puts this to the user with the prepared question in phasing, recommending worker processes.\" The question-hold mechanism (await, P14) answers the 'asks immediately' half. The worker-process half is correctly left to the user, with alternatives and a recommendation.",
+    "remaining": "The user must answer phasing question 2 through AskUserQuestion before phase 1c. The design describes it as 'confirmation of what the design already builds', so option (b) would require rework."
+   },
+   {
+    "n": 3,
+    "status": "closed",
+    "evidence": "phasing: \"1. Phase 0, before any probe that writes to GitHub. Approve a named sandbox repository for the P3 push and PR creation and for P6 ... If declined, phase 0 ends no-go for 1c-1h.\" \"Order: question 1, then P1-P5, P6, P7-P11, P13 and P14.\" \"P6 and the P3 writes gate 1f (markers and ledger) and 1g (ready, undo, sync). They run before any phase 1 code that depends on them.\" P6 now covers the own-PR COMMENT id, the APPROVE/REQUEST_CHANGES refusal, the association, the ready/--undo CI effect and idempotency, under \"Phase 0, with the user's sandbox approval asked at that step\". P3 covers \"a real push and `gh pr create --draft` on the sandbox repository from the engine environment\". 1f and 1g are labelled \"(after P6)\"."
+   },
+   {
+    "n": 4,
+    "status": "partly",
+    "evidence": "execution_model: \"(a) The engine refuses with exit 4 and `PERSON_ONLY_REFUSED=<reason>` when: FLOW_FACTORY_JOB, FLOW_FACTORY_DIRECTIVE or FLOW_FACTORY_IO is set; or, walking `ps -o ppid=`, any ancestor pid equals a launcher pid or a child (claude) pid recorded in any job's live lease. (b) tier-gate.sh, in any session whose hook environment has FLOW_FACTORY_JOB or FLOW_FACTORY_DIRECTIVE set (a worker), denies every Bash command naming flow-factory.sh except `context`, `question get` and `await`.\" Outside workers: \"approve-spec, confirm, feedback, rework, retry, reject, cancel and rebuild always ask.\" Residual: \"A deliberately detached same-user process can escape both layers.\"",
+    "remaining": "(1) The detached-process escape is cheap, not exotic. Layer (b) matches on the command text, so a command that builds the script name from a variable, or runs _flow_factory.py directly, is not caught. Layer (a) can then be evaded by `env -u` plus a backgrounded subshell that is reparented to launchd once the Bash call returns. The design states this as a residual risk; it does not close it. (2) The GitHub comment channel is not addressed. Workers receive GH_TOKEN and GITHUB_TOKEN under the person's identity (OWNER). The disallowed prefixes cover only `gh api` and `gh issue|pr ...`, not curl or python urllib. So a worker can post a trusted `/flow-factory approve-spec` or `answer` comment, and trust_and_untrusted_text item 7 accepts that comment as a person's. Only the optional read-only token (worker.ghTokenEnv) closes this, and it is not the default. (3) P2's go condition tests the worker-session deny only for approve-spec, answer and confirm, not for feedback, rework, retry, reject, cancel or rebuild."
+   },
+   {
+    "n": 5,
+    "status": "closed",
+    "evidence": "stages item 4: \"Step 1, fresh for each job. The skill treats `## Specification`, `## Factory criteria` and `## Design` in the journal as absent unless each carries the line `<!-- flow-factory job=<FLOW_FACTORY_JOB_KEY> -->` ... The skill rewrites each section with `journal-append.sh --replace-heading`, putting the job marker first.\" factory_mode_in_commands: \"From the build stage on, a section without this job's marker is an error, and the stage fails (row 39).\" Row 13 requires \"Specification and Factory criteria present with this job's marker\". start.md item 6: \"At :550, `GOAL_LINK` is printed as `$FLOW_FACTORY_GOAL_ID`, not `issue-$ISSUE_NUM`.\" Checked against the source at aab0d132: start.md:550 prints `GOAL_LINK=issue-$ISSUE_NUM`, and journal-append.sh supports --replace-heading (lines 14-16). An E2E row in e2e-factory-mode covers both."
+   },
+   {
+    "n": 6,
+    "status": "closed",
+    "evidence": "review_routing_and_markers item 5: \"The factory computes that list the way merge does, from these sources, and never from the worktree: the main checkout's local file; the project file at origin/<base>; the user tier; the plugin default ... Markers from authors off the list are ignored, as /flow:merge ignores them. So an outsider's `<!-- FLOW_RESOLUTION_CYCLE:N ` comment on a public repository does not park a ready job.\" Row 38: \"among markers whose author /flow:merge would trust ..., the latest of a kind is not engine-posted ... Markers /flow:merge would ignore are ignored here too.\" Checked merge.md:297-346: it uses the same first-wins order (local, project, user, plugin) on key merge.markerTrust.allowedAssociations. Minor divergences that do not reopen the item: merge reads the project file from the repository's working tree, while the factory reads origin/<base>; and merge falls through on a parse error, while the factory fails closed by counting every foreign marker. The second is conservative, but on an unreadable source an outsider can still park a job."
+   },
+   {
+    "n": 7,
+    "status": "closed",
+    "evidence": "trust_and_untrusted_text item 2: \"The spec-input set is: the title; the body; the comments in `intake_inputs` ...; every comment by a trusted association whose first line is `/flow-factory spec` ... Every other comment is listed by author, date and length only. This covers trusted discussion such as status notes, thanks and links ... ordinary trusted discussion never parks a job.\" E2E text: \"a trusted plain comment ('thanks', a link) does not change the digest and is absent from issue.md; a trusted `/flow-factory spec` comment changes both\". The needs_info case has a definitional gap, listed under new_problems."
+   },
+   {
+    "n": 8,
+    "status": "closed",
+    "evidence": "Row 50: \"queued, intake, prepare, spec, waiting_operator, with build_started false | intake | issue_changed\". Row 18: \"issue_changed and build_started is false (the only row for this case)\". Row 51: \"any non-terminal state except needs_human, with build_started true\". The needs_spec_approval Out list contains 18 and 51 but not 50. The E2E engine test includes \"rows 18 and 50; rows 50 and 51 split by build_started\"."
+   },
+   {
+    "n": 9,
+    "status": "partly",
+    "evidence": "Row 37: \"trusted CHANGES_REQUESTED review after the ready marker at the current head; or a trusted `/flow-factory rework <text>` comment after the ready marker; or `flow-factory.sh feedback` by a person.\" The generic retry trigger is gone. trust item 7: \"The rework comment departs from the directive 'ready\u2192rework only on trusted CHANGES_REQUESTED', on purpose ... recorded as a departure in references/flow-factory.md.\" residual_risks: \"`/flow-factory rework` departs from the 'only on CHANGES_REQUESTED' directive.\" phasing question 3 puts the departure to the user.",
+    "remaining": "Row 37's third trigger, `flow-factory.sh feedback` by a person, is also a non-CHANGES_REQUESTED move from ready to rework. It is not recorded as a departure in trust item 7 or residual_risks, and phasing question 3 does not include it, although finding_closure says both are recorded. The terminal `flow-factory.sh rework` subcommand (runner and the execution_model person list) has no row naming it."
+   },
+   {
+    "n": 10,
+    "status": "closed",
+    "evidence": "stages item 3: \"Append, if absent, to `$(git rev-parse --git-common-dir)/info/exclude`: `<journal dir>/*.lock`; `<runtime dir>/goals/*.lock`; `<journal dir>/auto-log/`; `<runtime dir>/watch/`; `.claude/*.lock`; any further non-config path P1 records.\" Finalize: \"Lock files are ignored by the prepare rules.\" worktrees section: setup.md:130 and flow-runtime-state.md:28-40 add the two lock lines. E2E: \"start.md:101 passes after spec and build in a target repository whose .gitignore has no lock lines, with journal and goal lock files present.\" Checked the source: journal-append.sh:183 and flow-goal-record.sh:389/486 write `<target>.lock`, and flow-migrate-settings.sh writes settings .lock (covered by .claude/*.lock). Run-dir locks sit under runs/ (self-ignored) and question locks sit under .flow/questions (self-ignored). The git common dir's info/exclude applies to every linked worktree."
+   },
+   {
+    "n": 11,
+    "status": "closed",
+    "evidence": "execution_model Interpreter: \"`flow-factory.sh probe` resolves each candidate python3 by running it with `env -u PYENV_VERSION -u PYTHONPATH -u PYTHONHOME`, cwd = a fresh empty temporary directory ... It records the realpath of `sys.executable` only when ... the file is a native executable, not a `#!` script; no path component is `shims` ... On this Mac that is ~/.pyenv/versions/3.12.9/bin/python3 ... A branch that commits `.python-version` cannot choose the engine's interpreter, because the shim is never run.\" P11: \"run the recorded path with cwd = a worktree containing a planted `.python-version` ... and with PYENV_VERSION set to something else.\" runner plist: \"PATH: the recorded interpreter's directory ... with no shims and no pyenv shims\". The gate E2E runs the recorded interpreter from a worktree that has a planted .python-version."
+   }
+  ],
+  "new_problems": [
+   "states_and_transitions, 'Entry and exit check' table: the table says it is computed from the rows, but its In lists leave out the resume rows that return to a stage. The resume_state rows are 15, 41, 41b and 44. intake In lacks 41b and 44, which follow from 40b and 43 out of intake. review and sync In lack 41, 41b and 44, and review also lacks 15 via 20b with resume_state review. build In lacks 41, 41b and 44. needs_spec_approval Out lacks 52 for a resume_state-gate job, even though 52 applies 'from open_pr on'. The table does not match the rows, so the E2E check that compares them would fail as written.",
+   "trust_and_untrusted_text item 2 against row 8 and the e2e-factory-text test: the spec-input set includes only replies that intake has already consumed (intake_inputs). Row 8 and the E2E row both say a pending trusted reply 'moves the digest in needs_info', before intake consumes it. The design also gives no rule for telling a needs-info reply from ordinary trusted discussion posted during needs_info.",
+   "stages item 1 (queued) against row 6 and trust_and_untrusted_text item 2: stages says queued 'Writes job.json, issue.md and the baseline digest', while row 6 and trust item 2 say baseline_digest is recorded at ACCEPT. This also leaves row 50's issue_changed undefined in queued and intake, if no baseline exists before ACCEPT.",
+   "execution_model against github_writes_and_tiers: the subcommand list puts `rebuild` under Engine, while the person-only list and the tier-gate asks treat it as a person subcommand.",
+   "execution_model and github_writes_and_tiers (tier-gate worker exception 'context, question get and await') against the Worker subcommand list ('question, await') and interactive_executor (`flow-factory.sh question <qid> --prompt`): the exception's subcommand form does not match any defined invocation.",
+   "probes P2 against execution_model: P2's go condition tests the worker-session deny only for approve-spec, answer and confirm. execution_model denies, and the E2E engine test refuses, the full person list, which also includes feedback, rework, retry, reject, cancel and rebuild.",
+   "states_and_transitions row 37 against runner and execution_model: the terminal `rework` person subcommand exists, but no row names it. Row 37 names only `feedback`, and finding_closure says the feedback departure is recorded in residual_risks, which it is not."
+  ]
+ },
+ {
+  "items": [
+   {
+    "n": 12,
+    "status": "partly",
+    "evidence": "All three named paths are now closed. (1) Gate with a failing ledger has its own row: \"23c | gate | rework / needs_human | pass at H; valid review at H; ledger fails at H\". Review precedence is stated, \"Within review: 29 > 28 > 26 > 27\", and row 26 now requires \"no unresolved findings\", so rows 26 and 28 cannot both hold. Rows 23 and 27 into sync both require \"ledger passes at H\". (2) Row 20 now reads \"the spec-hash rule gave \\\"continue\\\" (unchanged, or changed with no approval required: new hash recorded, spec_changed_unapproved set)\". (3) Row 44: \"For blocked_stage sync (from resolve): to sync, the merge is redone, and the resolve worker gets in/conflict-answers.md\". factory_mode_in_commands adds: \"Before any ask, look up in/conflict-answers.md by path, base SHA and hunk hash\". Row 44b bounds repeats with reason resolve_repeat.",
+    "remaining": "The same class of gap is still open in sync. Row 31 (sync to ready) also requires \"marker agreement (review_routing_and_markers item 5)\", \"gate at HEAD\" and \"valid review at HEAD\". If marker agreement fails in sync while the base is unchanged (for example, a trusted foreign marker posted while the job is in gate, review or sync), no row leaves sync: row 38 handles this case only from ready, rows 32 and 33 need a base move, and rows 39 and 43 need an error or exhausted attempts. The entry/exit E2E test only checks that each state has some exit row. It does not check that the guards cover every case."
+   },
+   {
+    "n": 13,
+    "status": "partly",
+    "evidence": "interactive_executor \"Auto mode\": \"P9 runs `/flow:factory run` in auto mode and in default mode, with the user's real hooks (rtk included)... If in auto mode the ask is decided by the classifier, the executor's P9 confirm result is `classifier`. Confirm-tier writes are then handled like the headless runner's (row 40b parks before launch, row 41 by terminal confirm)\". The P9 probe: \"Interactive group, run twice: once in defaultMode auto (the user's setting) and once in default mode\". Phasing: interactive group probes are keyed by \"`claude --version` and the permission mode\". Verified at aab0d132: tier-gate.sh:219-221 documents the ask behaviour only for interactive sessions and `claude -p`.",
+    "remaining": "P9 decides from one sample per mode, but the auto-mode classifier is not deterministic. One run in which the ask reached the person does not show that a later `confirm` will not be decided by the classifier. Under a `prompt` result, the only check on a session-run `confirm` is tier-gate's ask; the engine's person-only refusal (a) covers only worker environments and ancestry. So in auto mode a classifier approval could perform a confirm-tier write with no person. The design also does not say whether `next` stops emitting `confirm <intent>` items to an executor whose result is `classifier`. The design states, without a probe, that \"The classifier can only stop a session call from happening; it never changes what a call does\"."
+   },
+   {
+    "n": 14,
+    "status": "user_decision",
+    "evidence": "phasing, question 2: \"Before phase 1c. Decision 5 detail... Options: (a) keep worker processes, recommended...; (b) run stage work inside the session's own context, which gives those up and needs G14 first.\" interactive_executor: \"The orchestrating session puts this to the user with the prepared question in phasing, recommending worker processes. Phase 0 through 1b do not depend on the answer.\"",
+    "remaining": "The user still has to answer. One phrasing leans toward a decided outcome: interactive_executor says \"the decision's wording is met\", and phasing says the question \"asks for confirmation of what the design already builds\". Option (b) is nevertheless offered as a real alternative."
+   },
+   {
+    "n": 15,
+    "status": "closed",
+    "evidence": "execution_model: \"When FLOW_FACTORY_JOB and FLOW_FACTORY_DIRECTIVE are both unset, it prints `FACTORY_MODE=off`, exits 0 and starts no Python. It does not read probes.json\". factory_mode_in_commands: \"`halt` is printed with exit 0, not exit 2, because exit 2 keeps its documented meaning (:19-21)... Every caller's `|| ASK_POLICY=attended` therefore never sees a factory failure.\" It lists these callers: \"start.md:57, pr.md:42, address.md:42, review.md:38, commit.md:37, resolve.md:37, merge.md:37, setup.md:34, goal.md:40, resume.md:36 and resume.md:303\", and adds \"hooks/scripts/ask-policy.sh denies AskUserQuestion on `halt`\". A grep at aab0d132 returns exactly these 11 command call sites plus hooks/scripts/ask-policy.sh:51,53 (`|| exit 0`, so an exit-0 halt reaches the hook's policy check).",
+    "remaining": "Minor: resume.md:303 assigns Q_POLICY, not ASK_POLICY, so its dispatch line must test Q_POLICY."
+   },
+   {
+    "n": 16,
+    "status": "closed",
+    "evidence": "execution_model, Prompts: \"Relaunch with --resume and --fork-session: templates/factory/resume.prompt.md. It is plain text and never a slash command... So no bang-fenced block re-runs on a relaunch, and the start.md:101 clean-tree preflight is not re-run on a tree a parked or killed worker left.\" \"Fresh relaunch (the P5 fallback, without resume): the engine first snapshots and resets the tree (row 39)\". factory_mode_in_commands: \"A bang-fenced block runs when the command expands, whatever the prose later tells the model to skip. The factory-mode skip rules therefore apply only to model-run steps. Every bang-fenced block in a skipped range must be read-only\". The block table classifies pr.md 387-408 and 460-497, review.md 803-824, 848-1061, 1499-1520 and 1565-1602, and address.md 353-374 and 382-403. P5 checks \"that no bang-fenced block re-runs\".",
+    "remaining": "Two new problems follow from this (see new_problems): the sections disagree on whether a relaunch re-expands the command, and row 39 resets the tree before resuming."
+   },
+   {
+    "n": 17,
+    "status": "partly",
+    "evidence": "factory_mode_in_commands, start.md item 5: \"At :490, goal-contract-capture is passed `branch = $FLOW_FACTORY_BRANCH` explicitly, instead of \\\"will be set after Phase 2 branch creation\\\"... So row 20's scope.branch check and `flow-active-goal.sh --branch-strict` (start.md:1199) find the goal.\" e2e_tests: \"the captured goal's scope.branch equals the job branch\".",
+    "remaining": "FLOW_FACTORY_BRANCH and FLOW_FACTORY_GOAL_ID exist only in `in/job.env` (stages item 4). The launcher's environment is \"Built from nothing\", and its \"Added by the launcher\" list in execution_model contains FLOW_FACTORY_JOB, DIRECTIVE and IO but not BRANCH or GOAL_ID. The design never says that the start.md blocks or the model source `$FLOW_FACTORY_IO/in/job.env` before using `$FLOW_FACTORY_BRANCH` or `$FLOW_FACTORY_GOAL_ID`. If they do not, the branch is passed empty, row 20 fails and row 39 retries until it reaches needs_human."
+   },
+   {
+    "n": 18,
+    "status": "closed",
+    "evidence": "worktrees_ports_bootstrap_auth: \"Worker area: `${XDG_STATE_HOME:-$HOME/.local/state}/flow-factory/<owner>_<repo>-<hash>/`, outside the repository and outside ~/.claude... It is not under `<flow state dir>` (default ~/.claude/flow-state, cascade-resolve.sh:555) because Claude Code treats files under .claude specially... The user-only `worktreeRoot` may move the area, but it is refused under `$HOME/.claude` or `$CLAUDE_CONFIG_DIR`. P1 runs with the worktree at this real default location.\" P1: \"The worktree sits at the real default worker area (${XDG_STATE_HOME:-~/.local/state}/flow-factory/...)... Write and Edit into the worktree and into the --add-dir io directory succeed\".",
+    "remaining": ""
+   },
+   {
+    "n": 19,
+    "status": "partly",
+    "evidence": "phasing, the probe group table: \"Platform | P1, P2, P4, P5, P10 | `claude --version` | `flow-factory.sh probe --platform`... costs a few dollars\" and \"Platform group stale (Claude Code updated itself): worker and judge launches pause (`paused_reason=probes_stale`, one status and log line) while engine steps continue. Nothing parks. The user may also set DISABLE_AUTOUPDATER\". execution_model, Probe staleness: \"Engine directives (prepare, gate, sync) and inline steps go on. Jobs keep their state; nothing parks.\"",
+    "remaining": "The claude-version case is closed. Two things remain. (a) execution_model also says \"Launching subcommands (`next`, `run`, `launch`) need a passing probe record for the groups they use\". If the wrapper checks this, `next` itself is refused when the record is stale, which contradicts \"engine steps continue\". (b) For the environment group (P3, P7, P8, P11, P13, keyed on interpreter path, gh and git versions and plist hash), \"that change refuses launches until it re-runs\". The design names no re-run command and no status line for this case, although P13 needs a launchd or cron run. A routine gh or git update by a package manager therefore stops a headless drain with no stated recovery path."
+   },
+   {
+    "n": 20,
+    "status": "closed",
+    "evidence": "review_routing_and_markers, Markers table: FLOW_REVIEW_CYCLE is posted \"through `gh api POST repos/O/R/pulls/N/reviews` with event COMMENT (returns the id)\", and FLOW_RESOLUTION_CYCLE through \"`gh api POST repos/O/R/issues/N/comments` (returns the id)\". \"The idempotency lookup lists the same endpoints and matches the engine's `FLOW_FACTORY ... event=<id>` line.\" P6 checks that \"POST pulls/N/reviews with event COMMENT on one's own PR returns an id\".",
+    "remaining": ""
+   },
+   {
+    "n": 21,
+    "status": "closed",
+    "evidence": "interactive_executor: \"Run `flow-factory.sh question <qid> --prompt`. The engine runs `flow-question.sh get <id> --prompt` with cwd = the job's worktree, where the worker stored the question in `<runtime dir>/questions/` (flow-runtime-state.md:11)... Then run `flow-factory.sh answer <qid> --choice <n>`, which runs `flow-question.sh answer <id> --choice <n> --journal` with cwd = the worktree. The waiting worker, the resumed worker and pr.md (`flow-question.sh list --status answered --issue N`) all read from that place. Once the job is terminal, its questions are copied into the job folder, and `question` reads that copy.\"",
+    "remaining": ""
+   },
+   {
+    "n": 22,
+    "status": "closed",
+    "evidence": "factory_mode_in_commands, specification-capture Step 3: \"`flow-question.sh add --journal --class decision --blocking soft --issue <N> --option \\\"accept draft\\\" ...`\". The pinned-settings table adds the row \"Every `flow-question.sh add` in factory mode | requires `--issue N`\", and interactive_executor says \"a `Blocking: yes` question is stored with `flow-question.sh add ... --issue N`\".",
+    "remaining": ""
+   }
+  ],
+  "new_problems": [
+   "states_and_transitions: sync has no exit when the base is unchanged and row 31's \"marker agreement\" guard fails. Row 38, which handles a marker-agreement failure, starts only from ready. Rows 32 and 33 need a base move, and rows 39 and 43 need an error or exhausted attempts, so the job stays in sync.",
+   "execution_model and factory_mode_in_commands contradict each other. factory_mode_in_commands says \"A relaunch never re-expands a command (execution_model, prompts)\", but execution_model describes a \"Fresh relaunch (the P5 fallback, without resume)\" in which \"the re-expanded command's preflight sees a clean tree\".",
+   "states_and_transitions row 39 conflicts with execution_model. Row 39 says \"A dirty tree is snapshotted to refs/flow-factory/issue-N/snapshot-<k> and reset first\". Every relaunch then uses `--resume <previous session_id> --fork-session` (execution_model, Worker command), so the resumed context remembers edits that the reset removed. The design does not say whether row 39 relaunches fresh or resumes.",
+   "execution_model: \"Launching subcommands (`next`, `run`, `launch`) need a passing probe record\" conflicts with the Probe staleness text, under which `next` keeps running engine directives and inline steps while the platform record is stale. It is unclear whether the wrapper refuses `next`.",
+   "stages, factory_mode_in_commands and execution_model: FLOW_FACTORY_BRANCH and FLOW_FACTORY_GOAL_ID are defined only in in/job.env (stages item 4). factory_mode_in_commands uses `$FLOW_FACTORY_BRANCH` and `$FLOW_FACTORY_GOAL_ID` directly at start.md:490 and :550 and in the goal block. execution_model's 'Added by the launcher' list omits both, and no section says that job.env is sourced.",
+   "states_and_transitions, PR merged by a person: row 54 (to merged) starts only from ready, needs_human and waiting_operator. A person can merge the PR while the job is in gate, review, rework, sync, resolve or needs_spec_approval (reached from 23b). Row 53's 'PR closed by a person' would then send the job to cancelled, not merged, or nothing fires. The entry/exit table for needs_spec_approval also omits row 52, although row 23b enters it after a PR exists, and row 52 covers 'any non-terminal state from open_pr on'."
+  ]
+ }
+]
