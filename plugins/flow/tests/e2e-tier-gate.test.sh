@@ -2698,6 +2698,8 @@ PY"; do
 gh release create v1
 echo "$(gh release create v1)"
 ls && gh release create v1
+ls; gh release create v1
+git status | gh release create v1
 sh <<<'gh release create v1' && which python3
 bash <<<'gh release create v1' & python3 -c 1
 EOF
@@ -2713,6 +2715,10 @@ EOF
   _tg_run "ls
 git push origin v1"
   _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  for L in "ls && git push origin v1" "ls; git push origin v1" "git status | git push origin v1"; do
+    _tg_run "$L"
+    _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  done
   cat > "$C/a.txt" <<'EOF'
 python3 - <<'PY'
 s = "the (`x`) note"

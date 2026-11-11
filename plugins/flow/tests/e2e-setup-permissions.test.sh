@@ -191,7 +191,7 @@ else
   chmod +x "$E2E_DIR/stub/gh" "$E2E_DIR/stub/git"
   : > "$E2E_DIR/calls.log"
   : > "$E2E_DIR/denied.txt"
-  for C in 'gh pr view 7' 'git push origin main' 'cd sub && gh pr merge 7' 'gh pr merge' 'echo "$(gh release create v1)"' 'git push origin --tags'; do
+  for C in 'gh pr view 7' 'git push origin main' 'cd sub && gh pr merge 7' 'gh pr merge' 'echo "$(gh release create v1)"' 'gh release edit v1 --draft=false' 'git push origin --tags'; do
     (cd "$E2E_REPO" && PATH="$E2E_DIR/stub:$PATH" perl -e 'alarm shift; exec @ARGV' 180 claude -p --setting-sources project,local \
       --allowedTools Bash --model haiku --output-format json \
       "Use the Bash tool exactly once to run this exact command, character for character, and nothing else: $C" \
@@ -203,7 +203,7 @@ else
   e2e_expect_equal 1 "$(grep -c '^gh pr view 7' "$E2E_DIR/calls.log")" "the control gh pr view 7 reached the stub gh"
   e2e_expect_equal 1 "$(grep -c '^git push origin main' "$E2E_DIR/calls.log")" "the control git push origin main reached the stub git"
   e2e_expect_equal 0 "$(grep -c 'merge\|release\|--tags' "$E2E_DIR/calls.log")" "calls that merge, release or push tags"
-  for C in 'cd sub && gh pr merge 7' 'gh pr merge' 'echo "$(gh release create v1)"' 'git push origin --tags'; do
+  for C in 'cd sub && gh pr merge 7' 'gh pr merge' 'echo "$(gh release create v1)"' 'gh release edit v1 --draft=false' 'git push origin --tags'; do
     e2e_expect_equal yes "$(grep -qxF -- "$C" "$E2E_DIR/denied.txt" && echo yes || echo no)" "Claude Code's permission check refused: $C"
   done
 fi
