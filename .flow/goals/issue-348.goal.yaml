@@ -1,0 +1,183 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-348
+  created_at: '2026-11-10T10:00:00Z'
+  created_by: /flow:start
+  owner: '@me'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: fix/issue-348-tier-checks-unreadable-text
+  issue: 348
+  journal: .decisions/issue-348.md
+objective:
+  outcome: 'Issue #348 is implemented and verified.'
+  source:
+    issue_title: 'fix(flow): the tier checks ask, or refuse, for scripts they cannot
+      read as shell'
+  acceptance_criteria:
+  - id: AC1
+    text: Each of the four commands in the issue's table is allowed by both checks
+      without a prompt or refusal.
+    verification_command: FLOW_E2E_SCENARIOS=tg-interpreter-text plugins/flow/tests/run.sh
+      plugins/flow/tests/e2e-tier-gate.test.sh && plugins/flow/tests/run.sh plugins/flow/tests/block-unchecked-merge.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC2
+    text: A Python, node or ruby script run with -c or from a heredoc, whose strings
+      hold backticks, $(...), parentheses and the words merge, release, push or gh,
+      is allowed without a prompt.
+    verification_command: FLOW_E2E_SCENARIOS=tg-interpreter-text plugins/flow/tests/run.sh
+      plugins/flow/tests/e2e-tier-gate.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC3
+    text: A plainly written gh pr merge 7, gh release create v1, or git push origin
+      v1 (a tag) still asks, alone and when joined to other commands with &&, ;, |
+      or a newline.
+    verification_command: FLOW_E2E_SCENARIOS=tg-plain-still-asks plugins/flow/tests/run.sh
+      plugins/flow/tests/e2e-tier-gate.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC4
+    text: A command whose program flow cannot read (for example $CMD pr merge 7 or
+      eval "$X") is allowed with no Tier 3 prompt.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-tier-runtime.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC5
+    text: Flow's setup installs Claude Code ask rules for merging a pull request,
+      creating or changing a release, and pushing tags. After setup, Claude Code asks
+      for cd x && gh pr merge 7 and echo "$(gh release create v1)" even with flow's
+      hook turned off.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-setup-permissions.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC6
+    text: Flow's documentation states what the tier checks catch, what they do not,
+      and that GitHub rulesets are what blocks a merge or release that reaches GitHub.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-tier-docs.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+  - id: AC7
+    text: Each of the criteria above is shown by an end-to-end test that runs the
+      shipped hooks or setup in a scratch repository.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-tier-gate.test.sh
+      plugins/flow/tests/e2e-tier-runtime.test.sh plugins/flow/tests/block-unchecked-merge.test.sh
+      plugins/flow/tests/e2e-setup-permissions.test.sh plugins/flow/tests/e2e-tier-docs.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+    last_evaluated_at: null
+    last_result: null
+specification:
+  non_goals:
+  - 'Does NOT change the shared command parser''s defaults: block-destructive, block-force-push
+    and block-secrets keep reading interpreter script text exactly as they do now.'
+  - Does NOT change the gh/git run-time wrappers. A merge or release that tier-gate
+    did not ask about is still refused when it actually runs.
+  - Does NOT change the asks for a plainly written git push whose refs, remote or
+    configuration cannot be resolved.
+  - Does NOT change the asks for an infrastructure failure (jq missing, parser missing
+    or failing, a payload that is not JSON).
+  - Does NOT change block-unchecked-merge's checks on a plainly written merge (required
+    shape, CI checks, named values, gh api merge endpoints).
+  - Does NOT create GitHub rulesets or change the existing ruleset step in setup.
+  - Does NOT try to recognise a tag push written as a bare tag name in the Claude
+    Code ask rules; the hook keeps covering that form.
+  failure_modes:
+  - '**Input** — a command flow cannot read is allowed with no Tier 3 ask; the wrapper
+    refuses an actual merge or release when it runs. Interpreter script text is not
+    read as shell by tier-gate or block-unchecked-merge; a bash/sh/zsh script still
+    is.'
+  - '**State** — setup run twice produces the same settings file; existing permissions
+    entries are kept; a settings file that is not valid JSON is not overwritten and
+    setup says so.'
+  - '**Timing** — none: the hooks run synchronously per Bash call and no new waits
+    or network calls are added.'
+  - '**Dependency** — jq missing at setup time: setup reports that the ask rules were
+    not installed and writes no partial file.'
+  interface_contracts:
+  - tier-gate.sh output is unchanged in shape (ask JSON or no output); the cmdUnread,
+    unknown and shell reasons are no longer produced.
+  - block-unchecked-merge.sh exits 2 with a reason for a refusal and 0 otherwise;
+    it no longer refuses because a command word or eval argument cannot be read.
+  - Setup writes Claude Code ask rules into permissions.ask of the settings file the
+    user picks (.claude/settings.json or .claude/settings.local.json) for gh pr merge,
+    gh release create/edit/delete/upload/delete-asset, and git push with --tags, --follow-tags
+    or a refs/tags/ ref.
+  risk_map:
+  - area: Interpreter text no longer read as shell
+    plausible_wrong_version: Turning it off for every program, so bash -c 'gh pr merge
+      7' or a bash heredoc is also allowed
+    discriminating_check: bash -c 'gh pr merge 7' and a bash heredoc holding gh release
+      create v1 still ask; python3 -c with backticks and merge is allowed
+  - area: Plain merge after the change
+    plausible_wrong_version: The allow path short-circuits the whole command, so a
+      python heredoc followed by gh pr merge 7 is allowed
+    discriminating_check: That two-line command still asks, naming gh pr merge 7
+  - area: Shared parser
+    plausible_wrong_version: Changing lib defaults, so block-destructive stops seeing
+      python3 -c with os.system("rm -rf ~")
+    discriminating_check: block-destructive, block-force-push and block-secrets test
+      files pass unchanged
+  - area: Unreadable program with a wrapper behind it
+    plausible_wrong_version: Hook allows G=gh; $G pr merge 7 and the wrapper also
+      lets it run
+    discriminating_check: Through the hook and the gh wrapper, the hook prints nothing,
+      the wrapper exits 1 with its refusal, and the stub gh is never called
+  - area: Setup merge of settings
+    plausible_wrong_version: Overwriting the file or the permissions object, dropping
+      existing rules, or duplicating rules on a second run
+    discriminating_check: Fixture with allow Bash(ls) and deny Read(.env) keeps both,
+      ask has each flow rule once, and a second run gives a byte-identical file
+  - area: Ask rules match compound forms
+    plausible_wrong_version: A rule written with the wrong syntax that never matches
+    discriminating_check: Live claude -p in a scratch repo with flow's hooks off and
+      a stub gh does not run cd x && gh pr merge 7 (stub log empty)
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
+  current_phase: verify
+  current_activity: goal evaluation after the verdict
+  turns_evaluated: 4
+  last_evaluation:
+    result: fail
+    reason: 'verification commands failed for: AC1, AC4, AC7'
+    at: '2026-11-11T13:06:37Z'
