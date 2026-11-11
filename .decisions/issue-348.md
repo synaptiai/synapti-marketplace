@@ -90,6 +90,28 @@ artifacts:
   goal_id: issue-348
   result: waiting_for_user
   reason: paused-during-full-suite-checks-time-out
+- type: escalation-asked
+  captured_at: '2026-11-11T14:57:19Z'
+  question_id: q-20261111T145718Z-f34c7a
+  blocking: 'yes'
+  class: decision
+  command: /flow:pr 348 fix re-review
+  situation:
+  - The security review found that a python
+  - node
+  - ruby or perl script that merges
+  - in the same command as a merge written out
+  - could use the one approval flow records (approvals are counted by kind
+  - not
+- type: escalation-resolved
+  captured_at: '2026-11-11T15:23:35Z'
+  escalation_field: options
+  outcome:
+  - Remove the refusal; document that a script's merge in the same command can use
+    an approval
+  - and file an issue to tie each approval to its pull request or tag in the run-time
+    wrappers.
+  question_id: q-20261111T145718Z-f34c7a
 ---
 # Issue #348: fix(flow): the tier checks ask, or refuse, for scripts they cannot read as shell
 
