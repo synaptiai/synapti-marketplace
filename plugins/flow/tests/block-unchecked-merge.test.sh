@@ -527,7 +527,12 @@ for CMD in \
   "$(printf "python3 - <<'PY' | python3 -m json.tool\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "source .venv/bin/activate && python3 - <<'PY' 2>&1\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "timeout 60 python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
-  "$(printf "out=\$(python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n)")"; do
+  "$(printf "out=\$(python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n)")" \
+  "$(printf "python3 - <<'PY' | bash\nprint('gh pr merge 7')\nPY")" \
+  "$(printf "python3 - <<'PY' > >(sh)\nprint('gh pr merge 7')\nPY")" \
+  "$(printf "bash <(python3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)")" \
+  "$(printf "bash <(python3 - <<'PY' 2>/dev/null\nprint('gh pr merge 7')\nPY\n)")" \
+  "$(printf "python3 - <<'PY' |\nprint('gh pr merge 7')\nPY\nbash")"; do
   if ! S=$(_bum_probe_stub); then
     _flow_assert_fail "could not build the gh stub for: $CMD"; continue
   fi
@@ -548,12 +553,7 @@ for CMD in \
   "$(printf "python3 - <<'PY'\nprint(1)\nPY\ngh pr merge 7")" \
   "bash <<<'gh pr merge 7'; echo node" \
   "bash <<<'gh pr merge 7' && python3 -c 1" \
-  "$(printf "python3 - <<'PY' | bash\nprint('gh pr merge 7')\nPY")" \
-  "$(printf "python3 - <<'PY' > >(sh)\nprint('gh pr merge 7')\nPY")" \
   "ssh -F 'perl ruby' host 'gh pr merge 7'" \
-  "$(printf "bash <(python3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)")" \
-  "$(printf "bash <(python3 - <<'PY' 2>/dev/null\nprint('gh pr merge 7')\nPY\n)")" \
-  "$(printf "python3 - <<'PY' |\nprint('gh pr merge 7')\nPY\nbash")" \
   "$(printf "bash -s \"x;python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "bash -s \"a(python3 -\" <<'EOF'\ngh pr merge 7\nEOF")"; do
   _bum_run "$G" "$CMD"

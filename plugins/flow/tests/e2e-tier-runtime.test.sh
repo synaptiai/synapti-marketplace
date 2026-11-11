@@ -218,10 +218,12 @@ e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_equal "pr merge 7 --squash" "$(cat "$E2E_DIR/gh-calls.log")" "gh's arguments"
 
-_tr_setup tr-unreadable-refused-at-run "a merge or a release the gate cannot read (a variable program, eval of a variable, a merge a Python script runs, a release in a node script): the gate does not ask, and the gh wrapper refuses each when it runs, naming the plain command to run instead; gh never receives it"
+_tr_setup tr-unreadable-refused-at-run "a merge or a release the gate cannot read (a variable program, eval of a variable, a merge a Python script runs or prints into a shell, a release in a node script): the gate does not ask, and the gh wrapper refuses each when it runs, naming the plain command to run instead; gh never receives it"
 for TR_CMD in 'G=gh; $G pr merge 7' 'X="gh pr merge 7"; eval "$X"' \
     "python3 -c 'import subprocess, sys; sys.exit(subprocess.run([\"gh\", \"pr\", \"merge\", \"7\"]).returncode)'" \
-    "node -e 'process.exitCode = require(\"child_process\").spawnSync(\"gh\", [\"release\", \"create\", \"v9\"], {stdio: \"inherit\"}).status'"; do
+    "node -e 'process.exitCode = require(\"child_process\").spawnSync(\"gh\", [\"release\", \"create\", \"v9\"], {stdio: \"inherit\"}).status'" \
+    "$(printf "for f in a; do python3 - <<'PY'\nprint('gh pr merge 7')\nPY\ndone | bash")" \
+    "$(printf "x=\$(python3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)\neval \"\$x\"")"; do
   _tr_call "$TR_CMD"
   e2e_expect_equal 0 "$TR_ASKED" "the gate did not ask for: $TR_CMD"
   e2e_expect_equal 1 "$E2E_RC" "exit status of: $TR_CMD"

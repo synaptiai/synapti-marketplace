@@ -14,12 +14,11 @@ Each entry below describes the change against 3.15.1.
   string such as ``'x `y` is right'`` read as a command flow could not read,
   and asked "may merge a pull request or create a release"; with the word
   merge in it, the merge guard refused the command outright. The script of
-  python, perl, ruby, node, deno and bun is now data, also when its output
-  is redirected to a file or piped to a filter such as `tail`, `grep` or
-  `jq`. When what it prints may go anywhere else (`| bash`, `| sudo -s`,
-  `| xargs env`, `> >(sh)`, `bash <(python3 ...)`, `eval "$(python3 ...)"`,
-  `gh pr comment --body "$(python3 ...)"`, a command after the script), the
-  script is read as before. What bash
+  python, perl, ruby, node, deno and bun is now data wherever its output
+  goes. What it prints is not read, also when a shell runs it
+  (`python3 - <<'PY' | bash`, `eval "$(python3 ...)"`): like `curl ... | sh`,
+  that is text the hook cannot see, and flow's `gh` and `git` wrappers
+  refuse a merge, release or tag push in it when it runs. What bash
   itself runs in it is still read (`python3 -c "$(gh pr merge 7)"`, a
   `$(...)` in an unquoted heredoc), and so is the script of a shell
   (`bash -c`, a bash heredoc or here-string).

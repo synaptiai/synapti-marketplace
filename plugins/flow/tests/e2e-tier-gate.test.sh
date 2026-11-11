@@ -2567,6 +2567,19 @@ EOF
     case "$L" in for*) printf 'done\n' >> "$C/$N.txt" ;; if*) printf 'then :; fi\n' >> "$C/$N.txt" ;; '{'*) printf '}\n' >> "$C/$N.txt" ;; esac
     N=$((N + 1))
   done
+  # What the script prints is not read, wherever it goes: printed into a
+  # shell it is text the hook cannot see, as curl | sh is, and the gh
+  # wrapper refuses a merge in it when it runs (tr-unreadable-refused-at-run).
+  for R in '| bash' '> >(bash)' '| sudo -s' '| xargs -L1 env' '| "$SHELL"' '|' \
+           "| jq -r '.[] | .name'" "| awk '{print \$1}'" '> "$OUT"'; do
+    printf "python3 - <<'PY' %s\nprint('gh pr merge 7')\nPY\n" "$R" > "$C/$N.txt"
+    N=$((N + 1))
+  done
+  for W in 'bash -c "$(' 'eval "$(' 'bash <(' '$(' 'gh pr comment 5 --body "$('; do
+    printf "%spython3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)" "$W" > "$C/$N.txt"
+    case "$W" in *'"$(') printf '"' >> "$C/$N.txt" ;; esac
+    N=$((N + 1))
+  done
   cat > "$C/9.txt" <<'EOF'
 node - <<'JS' 2>&1 | tail -3
 console.log(`we merge at release: ${"gh pr merge 7"}`)
@@ -2583,7 +2596,7 @@ fi
 
 if _want tg-plain-still-asks; then
   _tg_setup tg-plain-still-asks feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
-    "a merge, a release or a tag push written out still asks, alone and joined to other commands with &&, ;, | or a newline, inside a substitution, after a Python heredoc, in a bash script (bash -c, a bash heredoc), and where bash itself runs it inside an interpreter's argument or an unquoted heredoc body (\$(...) in double quotes)"
+    "a merge, a release or a tag push written out still asks, alone and joined to other commands with &&, ;, | or a newline, inside a substitution, after a Python heredoc, in a bash script (bash -c, a bash heredoc, also after a quoted ; or ( that names python3), and where bash itself runs it inside an interpreter's argument or an unquoted heredoc body (\$(...) in double quotes)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1 -m v1 ) || _flow_assert_fail "tg-plain-still-asks: could not create tag v1"
   C="$E2E_DIR/cases"
   mkdir -p "$C"
@@ -2598,29 +2611,8 @@ bash <<<'gh pr merge 7'; echo node
 bash <<<'gh pr merge 7' && python3 -c 1
 cat <<<'gh pr merge 7' | bash && python3 -c 1
 EOF
-  # A shell reads what the script prints: the body is kept and read.
-  for R in '| bash' '| sh -s' '> >(bash)' '| sudo sh' '| xargs -I{} sh -c {}' '| ssh host' '|& bash' \
-           '| "$SHELL"' '| $(which bash)' '| `which bash`' '| sudo -s' '| sudo -i' '| xargs -L1 env' \
-           '| xargs -L1 sudo' '| xargs -L1 timeout 60' '| timeout 5'; do
-    printf "python3 - <<'PY' %s\nprint('gh pr merge 7')\nPY\n" "$R" > "$C/pipe.txt"
-    _tg_case "$C/pipe.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
-  done
-  # The script inside a substitution or process substitution that a shell
-  # runs, or whose output is decided after the body.
-  for W in 'bash -c "$(' 'eval "$(' 'bash <(' 'source <(' '$(' 'echo "$('; do
-    printf "%spython3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)" "$W" > "$C/encl.txt"
-    case "$W" in *'"$(') printf '"' >> "$C/encl.txt" ;; esac
-    case "$W" in 'echo '*) printf ' | bash' >> "$C/encl.txt" ;; esac
-    _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
-  done
-  printf "python3 - <<'PY' |\nprint('gh pr merge 7')\nPY\nbash\n" > "$C/encl.txt"
-  _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
-  # A quoted ) inside the substitution, and a quoted ; or ( before a bash
-  # heredoc, which bash reads as text.
-  for L in "bash -c \"\$(echo ')' >/dev/null; python3 - <<'PY'" "eval \"\$(: ')'; python3 - <<'PY'"; do
-    printf "%s\nprint('gh pr merge 7')\nPY\n)\"\n" "$L" > "$C/encl.txt"
-    _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
-  done
+  # A quoted ; or ( before a bash heredoc is text to bash: the heredoc is
+  # the script of bash, and is read.
   for L in "bash -s \"x;python3 -\" <<'EOF'" "bash -s \"a(python3 -\" <<'EOF'"; do
     printf "%s\ngh pr merge 7\nEOF\n" "$L" > "$C/encl.txt"
     _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
