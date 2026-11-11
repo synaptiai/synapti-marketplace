@@ -521,7 +521,13 @@ for CMD in \
   "ruby -e 'puts \"the ${BT}merge${BT} step\"' && perl -e 'print \"merge ${BT}x${BT}\"'" \
   "$(printf "python3 - <<'PY' 2>&1\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
   "$(printf "python3 - <<'PY' > out.md\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
-  "$(printf "python3 - <<'PY' | tail -3\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")"; do
+  "$(printf "python3 - <<'PY' | tail -3\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "python3 - <<'PY' | jq .\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "python3 - <<'PY' | grep -c env\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "python3 - <<'PY' | python3 -m json.tool\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "source .venv/bin/activate && python3 - <<'PY' 2>&1\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "timeout 60 python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY")" \
+  "$(printf "out=\$(python3 - <<'PY'\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n)")"; do
   if ! S=$(_bum_probe_stub); then
     _flow_assert_fail "could not build the gh stub for: $CMD"; continue
   fi
@@ -544,7 +550,10 @@ for CMD in \
   "bash <<<'gh pr merge 7' && python3 -c 1" \
   "$(printf "python3 - <<'PY' | bash\nprint('gh pr merge 7')\nPY")" \
   "$(printf "python3 - <<'PY' > >(sh)\nprint('gh pr merge 7')\nPY")" \
-  "ssh -F 'perl ruby' host 'gh pr merge 7'"; do
+  "ssh -F 'perl ruby' host 'gh pr merge 7'" \
+  "$(printf "bash <(python3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)")" \
+  "$(printf "bash <(python3 - <<'PY' 2>/dev/null\nprint('gh pr merge 7')\nPY\n)")" \
+  "$(printf "python3 - <<'PY' |\nprint('gh pr merge 7')\nPY\nbash")"; do
   _bum_run "$G" "$CMD"
   assert_exit 2 "$?" "a merge bash runs is read and refused for its shape: $CMD"
 done

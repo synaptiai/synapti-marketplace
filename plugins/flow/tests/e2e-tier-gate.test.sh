@@ -2543,6 +2543,21 @@ EOF
   for R in '2>&1' '> out.md' '| tail -3'; do
     printf "python3 - <<'PY' %s\ndoc = \"\"\"\ngh pr merge 7\ngh release create v1 (\`x\`)\n\"\"\"\nprint(doc)\nPY\n" "$R" > "$C/8-$(printf '%s' "$R" | tr -dc 'a-z0-9').txt"
   done
+  # Filters whose words name a runner only as an argument, a wrapper around
+  # a filter, and a source or ANSI-C string earlier in the command.
+  N=10
+  for P in "| jq ." "| jq '.'" '| grep -c env' '| python3 -m json.tool' '| timeout 5 head' \
+           "PRE:source .venv/bin/activate && " "PRE:. x
+" "PRE:printf \$'a\\\\n'
+" "PRE:timeout 60 " "PRE:out=\$(" "PRE:local out=\"\$("; do
+    case "$P" in
+      PRE:*) A="${P#PRE:}"; B="" ;;
+      *) A=""; B=" $P" ;;
+    esac
+    printf "%spython3 - <<'PY'%s\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nprint(doc)\nPY\n" "$A" "$B" > "$C/$N.txt"
+    case "$A" in *'"$('*) printf ')"\n' >> "$C/$N.txt" ;; *'$('*) printf ')\n' >> "$C/$N.txt" ;; esac
+    N=$((N + 1))
+  done
   cat > "$C/9.txt" <<'EOF'
 node - <<'JS' 2>&1 | tail -3
 console.log(`we merge at release: ${"gh pr merge 7"}`)
@@ -2575,10 +2590,20 @@ bash <<<'gh pr merge 7' && python3 -c 1
 cat <<<'gh pr merge 7' | bash && python3 -c 1
 EOF
   # A shell reads what the script prints: the body is kept and read.
-  for R in '| bash' '| sh -s' '> >(bash)'; do
+  for R in '| bash' '| sh -s' '> >(bash)' '| sudo sh' '| xargs -I{} sh -c {}' '| ssh host' '|& bash'; do
     printf "python3 - <<'PY' %s\nprint('gh pr merge 7')\nPY\n" "$R" > "$C/pipe.txt"
     _tg_case "$C/pipe.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   done
+  # The script inside a substitution or process substitution that a shell
+  # runs, or whose output is decided after the body.
+  for W in 'bash -c "$(' 'eval "$(' 'bash <(' 'source <(' '$(' 'echo "$('; do
+    printf "%spython3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)" "$W" > "$C/encl.txt"
+    case "$W" in *'"$(') printf '"' >> "$C/encl.txt" ;; esac
+    case "$W" in 'echo '*) printf ' | bash' >> "$C/encl.txt" ;; esac
+    _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done
+  printf "python3 - <<'PY' |\nprint('gh pr merge 7')\nPY\nbash\n" > "$C/encl.txt"
+  _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   cat > "$C/release.txt" <<'EOF'
 gh release create v1
 echo "$(gh release create v1)"
