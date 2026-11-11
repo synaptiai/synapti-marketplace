@@ -44,7 +44,10 @@ if [ -L "$file" ] || [ -L "$top/.claude" ]; then
   printf '%s\n' "PERMISSIONS=refused" "REASON=$file or its directory is a symlink; nothing was written through it" "FILE=$file"
   exit 0
 fi
-if [ -e "$file" ]; then
+if [ -e "$file" ] && [ -z "$(LC_ALL=C tr -d ' \t\r\n' < "$file")" ]; then
+  # An empty file holds no settings: the rules are added to an empty object.
+  old='{}'
+elif [ -e "$file" ]; then
   # One JSON object, whose permissions (when present) is an object and whose
   # permissions.ask (when present) is an array: the only shape the rules can
   # be added to without changing what the file means.

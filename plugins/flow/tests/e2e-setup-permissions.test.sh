@@ -135,6 +135,15 @@ e2e_expect_equal 644 "$(stat -c %a "$E2E_REPO/.claude/settings.json" 2>/dev/null
 _sp_fence PERM_FILE=local
 e2e_expect_equal "$(printf '%o' $(( 0666 & ~0$(umask) )))" "$(stat -c %a "$E2E_REPO/.claude/settings.local.json" 2>/dev/null || stat -f %Lp "$E2E_REPO/.claude/settings.local.json")" "mode of the new file"
 
+_sp_setup sp-empty "an empty settings file, or one holding only blank lines, holds no settings: the nine rules are written to it, and a second run changes nothing"
+mkdir -p "$E2E_REPO/.claude"
+printf '\n  \n' > "$E2E_REPO/.claude/settings.local.json"
+_sp_fence PERM_FILE=local
+e2e_expect_out "PERMISSIONS=written"
+e2e_expect_equal 9 "$(jq '.permissions.ask | length' "$E2E_REPO/.claude/settings.local.json")" "rules in the file"
+_sp_fence PERM_FILE=local
+e2e_expect_out "PERMISSIONS=unchanged"
+
 _sp_setup sp-symlink "a settings file that is a symlink is not written through, and its target is left as it was (P3)"
 mkdir -p "$E2E_REPO/.claude"
 printf '%s\n' '{}' > "$E2E_DIR/elsewhere.json"
