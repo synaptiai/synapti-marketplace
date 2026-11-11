@@ -112,6 +112,12 @@ artifacts:
   - and file an issue to tie each approval to its pull request or tag in the run-time
     wrappers.
   question_id: q-20261111T145718Z-f34c7a
+- type: review-cycle
+  captured_at: '2026-11-11T15:35:19Z'
+  cycle: 1
+  path: B
+  findings_count: 10
+  pr: 350
 ---
 # Issue #348: fix(flow): the tier checks ask, or refuse, for scripts they cannot read as shell
 
