@@ -556,8 +556,13 @@ _bd_strip_noncode() {
       # gets `tee notes.txt <<EOF` wrong (the owner is tee, not the filename),
       # and reading the first word of the line gets `echo x && bash <<EOF`
       # wrong in the dangerous direction.
-      n = split(str, parts, /[;&|(`]/)
-      seg = (n > 0) ? parts[n] : str
+      # The separators are the ones bash reads (last_sep), so a ( inside a
+      # word does not start a command: `bash -s "$(cat args)" <<EOF` belongs
+      # to bash, and `gh pr create --body "$(cat <<EOF` to cat. When the
+      # scan cannot follow the text, the heredoc has no owner it can name.
+      n = last_sep(str)
+      if (LS_UNSURE) return ""
+      seg = substr(str, n + 1)
       gsub(/^[ \t]+/, "", seg)
       gsub(/[ \t]+$/, "", seg)
       if (seg == "") return ""
@@ -577,23 +582,39 @@ _bd_strip_noncode() {
       sub(/^.*\//, "", w)
       return w
     }
-    # langdata=1 only (BD_LANG_DATA). Where does the command that ends pre
-    # start? Returns the position of the last ; & | or ( in pre that bash
-    # reads as syntax: not one inside quotes, not the & or | of a
-    # redirection (2>&1, >&2, >|), and not one inside a $( ), <( ), >( ) or
-    # ( ) frame that has closed. A $( starts a new quoting context, also
-    # inside double quotes, and the double-quote state outside it comes back
-    # when it closes. Sets LS_OPEN when pre ends inside a quote or a frame.
-    # Only called on text without backquotes, ANSI-C strings or ${...}
-    # (lang_owner refuses those first).
-    function last_sep(pre,   n, i, c, k, sq, dq, sp, fdq, fls, ls) {
+    # Where does the command that ends pre start? Returns the position of
+    # the last ; & | ( or newline in pre that bash reads as syntax: not one
+    # inside quotes, not the & or | of a redirection (2>&1, >&2, >|), and
+    # not one inside a $( ), <( ), >( ) or ( ) frame that has closed. A $(
+    # starts a new quoting context, also inside double quotes, and the
+    # double-quote state outside it comes back when it closes. Sets LS_OPEN
+    # when pre ends inside a quote or a frame, and LS_UNSURE when pre holds
+    # what this scan does not follow: a backquote, a ${...} expansion, a
+    # case, or a # starting a word outside double
+    # quotes (a comment inside a frame, whose quotes and parentheses bash
+    # does not read). An ANSI-C string is followed: in it a backslash
+    # escapes the quote.
+    function last_sep(pre,   n, i, j, r, b, c, k, sq, dq, sp, fdq, fls, ls) {
+      LS_UNSURE = (index(pre, BT) > 0 || index(pre, "${") > 0 || pre ~ /(^|[^A-Za-z0-9_])case([^A-Za-z0-9_]|$)/)
       n = length(pre); sq = 0; dq = 0; sp = 0; ls = 0
       for (i = 1; i <= n; i++) {
         c = substr(pre, i, 1)
         k = (i > 1) ? substr(pre, i - 1, 1) : ""
-        if (sq) { if (c == SQ) sq = 0; continue }
+        if (sq == 1) { if (c == SQ) sq = 0; continue }
+        if (sq == 2) { if (c == "\\") i++; else if (c == SQ) sq = 0; continue }
         if (c == "\\") { i++; continue }
-        if (c == SQ && !dq) { sq = 1; continue }
+        if (c == SQ && !dq) {
+          # An ANSI-C string starts at a $ that pairs with no $ before it
+          # ($$ is a variable) and that no backslash escapes. r counts the
+          # $ signs before the quote, less one escaped by a backslash.
+          for (j = i - 1; j >= 1 && substr(pre, j, 1) == "$"; j--) ;
+          r = i - 1 - j
+          b = 0
+          for (; j >= 1 && substr(pre, j, 1) == "\\"; j--) b++
+          if (b % 2) r--
+          sq = (r % 2 == 1) ? 2 : 1
+          continue
+        }
         if (c == "\"") { dq = !dq; continue }
         if (c == "(") {
           if (dq && k != "$") continue
@@ -601,36 +622,43 @@ _bd_strip_noncode() {
           continue
         }
         if (dq) continue
+        if (c == "#" && (k == "" || k ~ /[ \t\n(;&|]/)) LS_UNSURE = 1
         if (c == ")" && sp) { dq = fdq[sp]; ls = fls[sp]; sp--; continue }
         if ((c == "&" || c == "|") && (k == ">" || k == "<")) continue
-        if (c == ";" || c == "&" || c == "|") ls = i
+        if (c == ";" || c == "&" || c == "|" || c == "\n") ls = i
       }
       LS_OPEN = (sq || dq || sp > 0)
       return ls
     }
-    # langdata=1 only: is the command that owns a heredoc introduced at the
-    # end of pre a language interpreter, whose heredoc body is its script and
-    # is data wherever its output goes? Only in plain forms; anything else is
-    # not one, and the body is read. Not one when the line starts inside a
-    # quote or follows a line that left a $( ) or backquote open (lsopen),
-    # or when pre holds a backquote, an ANSI-C string, a ${...} expansion or
-    # a case, which last_sep does not follow. The command starts after the
-    # last separator bash reads (last_sep), so `bash -s "x;python3 -" <<EOF`
-    # is a bash heredoc. Before the interpreter only these may come: shell
-    # keywords, assignments, and timeout or nice with numbers, or env with
-    # assignments (`do python3`, `A=1 python3`, `timeout 60 python3`,
-    # `env A=1 node`). A word with a quote, a backslash or a $ in it is not
-    # read as the interpreter.
-    function lang_owner(pre,   seg, m, w, j, x, b, wrap) {
-      if (langdata != 1 || lsopen || q0 != "") return 0
-      if (index(pre, BT) || pre ~ ("[$][{" SQ "]") || pre ~ /(^|[^A-Za-z0-9_])case([^A-Za-z0-9_]|$)/) return 0
-      seg = substr(pre, last_sep(pre) + 1)
+    # langdata=1 only (BD_LANG_DATA): is the command that owns a heredoc
+    # introduced at the end of pre a language interpreter, whose heredoc
+    # body is its script and is data wherever its output goes? Only in
+    # plain forms; anything else is not one, and the body is read. The
+    # command is found by last_sep over every line of the command so far
+    # that bash parses (hist: the bodies of heredocs left out), so a $( ) or
+    # quote opened on an earlier line counts. Not one when that text holds
+    # what last_sep does not follow (LS_UNSURE), or when the bodies of the
+    # command could not be told apart (hdead). Before the interpreter only
+    # these may come: shell keywords, assignments whose value has no quote,
+    # backslash, parenthesis, brace or backquote, and timeout or nice with
+    # numbers, or env with such assignments (`do python3`, `A=1 python3`,
+    # `timeout 60 python3`, `env A=1 node`). A word with a quote, a
+    # backslash or a $ in it is not read as the interpreter.
+    function lang_owner(pre,   full, seg, m, w, j, x, b, wrap, ls) {
+      if (langdata != 1 || hdead) return 0
+      full = (hist == "") ? pre : hist "\n" pre
+      ls = last_sep(full)
+      if (LS_UNSURE) return 0
+      seg = substr(full, ls + 1)
       m = split(seg, w, /[ \t]+/)
       wrap = ""
       for (j = 1; j <= m; j++) {
         x = w[j]
         if (x == "") continue
-        if (x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) { if (wrap == "" || wrap == "env") continue; return 0 }
+        if (x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) {
+          if ((wrap == "" || wrap == "env") && x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=[A-Za-z0-9_.\/:@%+,=$-]*$/) continue
+          return 0
+        }
         if (wrap == "" && x ~ /^(if|then|elif|else|while|until|do|!|[{]|time)$/) continue
         if (x ~ ("[\"" SQ "\\\\$]")) return 0
         b = x
@@ -879,7 +907,7 @@ _bd_strip_noncode() {
             # word would pair with text the scan reads past (body_code).
             PLAINS = "^[$][{]#?([A-Za-z_][A-Za-z0-9_]*|[0-9]+)(:?[-=+?][^" BT "{}()\\\\[\n\"" SQ "$]*)?[}]"
             am = 0; pd = 0; bk = 0; am0 = 0; pd0 = 0; bk0 = 0
-            lsopen = 0; LS_OPEN = 0
+            hist = ""; kb = ""; kbt = 0; hdead = 0; LS_OPEN = 0; LS_UNSURE = 0
             shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$"
             runre = "^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$"
             # The language interpreters (_BD_LANGS), whose heredoc body is
@@ -1154,12 +1182,32 @@ _bd_strip_noncode() {
       # including a shift such as 1<<x; that costs only a second reading.
       if (!inhd && (out ~ /(^|[^<])<<-?[ \t]*[\\"]?[A-Za-z_]/ ||
                     out ~ ("(^|[^<])<<-?[ \t]*" SQ "[A-Za-z_]"))) kept = 1
-      # A line that leaves a $( ) or backquote open: which program owns a
-      # heredoc on a later line is not decided from that line alone
-      # (lang_owner).
-      if (langdata == 1 && !lsopen) {
-        last_sep(out)
-        if (LS_OPEN || gsub(BT, BT, out) % 2) lsopen = 1
+      # The lines of the command that bash parses, for lang_owner: every
+      # line but the body of a heredoc kept in the output (kb is its
+      # delimiter while the body runs). With more than one heredoc on a line
+      # the bodies cannot be told apart (hdead), and no heredoc after it is
+      # read as a script.
+      if (langdata == 1 && !hdead) {
+        if (kb != "") {
+          t = out
+          if (kbt) sub(/^\t+/, "", t)
+          if (t == kb) kb = ""
+        } else {
+          hist = (hist == "") ? out : hist "\n" out
+          if (!inhd) {
+            probe = out
+            nk = gsub(/(^|[^<])<<-?[ \t]*[\\"]?[A-Za-z_]/, "&", probe) + gsub("(^|[^<])<<-?[ \t]*" SQ "[A-Za-z_]", "&", probe)
+            if (nk > 1) hdead = 1
+            else if (nk == 1) {
+              if (match(out, /<<-?[ \t]*[\\"]?[A-Za-z_][A-Za-z0-9_]*/) == 0) match(out, "<<-?[ \t]*" SQ "[A-Za-z_][A-Za-z0-9_]*")
+              d = substr(out, RSTART, RLENGTH)
+              kbt = (d ~ /^<<-/)
+              sub(/^<<-?[ \t]*/, "", d)
+              gsub("[\\\"" SQ "]", "", d)
+              kb = d
+            }
+          }
+        }
       }
       print out
     }

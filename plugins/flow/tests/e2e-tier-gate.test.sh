@@ -2580,6 +2580,31 @@ EOF
     case "$W" in *'"$(') printf '"' >> "$C/$N.txt" ;; esac
     N=$((N + 1))
   done
+  # A heredoc body kept in the output, or a substitution closed on a later
+  # line, says nothing about who owns a later heredoc; an assignment of a
+  # plain value comes before the interpreter.
+  for L in "cat > notes.md <<'EOF'
+\`\`\`bash
+ls
+\`\`\`
+EOF
+python3 - <<'PY'" \
+           "cat > a.py <<'EOF'
+result = func(
+    arg,
+)
+EOF
+python3 - <<'PY'" \
+           "out=\$(python3 - <<'PY'
+print(1)
+PY
+)
+python3 - <<'PY'" \
+           "PYTHONPATH=\$PWD python3 - <<'PY'" \
+           "echo \$'it\\'s'; python3 - <<'PY'"; do
+    printf "%s\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n" "$L" > "$C/$N.txt"
+    N=$((N + 1))
+  done
   cat > "$C/9.txt" <<'EOF'
 node - <<'JS' 2>&1 | tail -3
 console.log(`we merge at release: ${"gh pr merge 7"}`)
@@ -2633,7 +2658,15 @@ EOF
            "bash -s \${x:-\"};python3 -\"} <<'EOF'" \
            "bash -s \"\$(case \$y in a) echo \" ;python3 - \" ;; esac)\" <<'EOF'" \
            "bash -s \`echo a
-\` python3 - <<'EOF'"; do
+\` python3 - <<'EOF'" \
+           "A=\"x python3 y\" bash <<'EOF'" \
+           "env A=\"x python3 y\" bash <<'EOF'" \
+           "MSG='run python3 now' bash -s <<'EOF'" \
+           "A=x\\ python3 bash <<'EOF'" \
+           "A=( python3 ) bash <<'EOF'" \
+           "PYTHONPATH=\"\$PWD python3\" bash <<'EOF'" \
+           "bash -s \"\$(cat args.txt)\" <<'EOF'" \
+           "bash -s -- \$(cat args.txt) <<'EOF'"; do
     printf "%s\ngh pr merge 7\nEOF\n" "$L" > "$C/encl.txt"
     _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   done
