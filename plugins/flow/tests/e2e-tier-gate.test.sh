@@ -2613,7 +2613,27 @@ cat <<<'gh pr merge 7' | bash && python3 -c 1
 EOF
   # A quoted ; or ( before a bash heredoc is text to bash: the heredoc is
   # the script of bash, and is read.
-  for L in "bash -s \"x;python3 -\" <<'EOF'" "bash -s \"a(python3 -\" <<'EOF'"; do
+  # A bash heredoc whose line names an interpreter only in an assignment,
+  # an option argument, a redirection or quoted or expanded text, or after
+  # a backquote that spans lines.
+  for L in "bash -s \"x;python3 -\" <<'EOF'" "bash -s \"a(python3 -\" <<'EOF'" \
+           "PYTHON=/usr/bin/python3 bash <<'EOF'" \
+           "env PYTHON=/usr/bin/python3 bash <<'EOF'" \
+           "PYTHON=/usr/bin/python3 bash <<'EOF' 2>&1" \
+           "env -C /srv/node bash <<'EOF'" \
+           "sudo --chdir=/opt/python3 bash <<'EOF'" \
+           "exec -a python3 bash <<'EOF'" \
+           "sudo -u python3 bash <<'EOF'" \
+           "env -u node bash <<'EOF'" \
+           "bash -s 2>&1 python3 <<'EOF'" \
+           "bash -s >&2 node <<'EOF'" \
+           "bash -s >|python3 <<'EOF'" \
+           "bash -s \\\$'x\\' ';python3 -' <<'EOF'" \
+           "bash -s \\\${ '}' ';python3 -' <<'EOF'" \
+           "bash -s \${x:-\"};python3 -\"} <<'EOF'" \
+           "bash -s \"\$(case \$y in a) echo \" ;python3 - \" ;; esac)\" <<'EOF'" \
+           "bash -s \`echo a
+\` python3 - <<'EOF'"; do
     printf "%s\ngh pr merge 7\nEOF\n" "$L" > "$C/encl.txt"
     _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   done

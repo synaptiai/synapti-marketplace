@@ -555,7 +555,23 @@ for CMD in \
   "bash <<<'gh pr merge 7' && python3 -c 1" \
   "ssh -F 'perl ruby' host 'gh pr merge 7'" \
   "$(printf "bash -s \"x;python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
-  "$(printf "bash -s \"a(python3 -\" <<'EOF'\ngh pr merge 7\nEOF")"; do
+  "$(printf "bash -s \"a(python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "PYTHON=/usr/bin/python3 bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "env PYTHON=/usr/bin/python3 bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "PYTHON=/usr/bin/python3 bash <<'EOF' 2>&1\ngh pr merge 7\nEOF")" \
+  "$(printf "env -C /srv/node bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "sudo --chdir=/opt/python3 bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "exec -a python3 bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "sudo -u python3 bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "env -u node bash <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "bash -s 2>&1 python3 <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "bash -s >&2 node <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "bash -s >|python3 <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "bash -s \\\\\$'x\\\\' ';python3 -' <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "bash -s \\\\\${ '}' ';python3 -' <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "bash -s \${x:-\"};python3 -\"} <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "bash -s \"\$(case \$y in a) echo \" ;python3 - \" ;; esac)\" <<'EOF'\ngh pr merge 7\nEOF")" \
+  "$(printf "bash -s \`echo a\n\` python3 - <<'EOF'\ngh pr merge 7\nEOF")"; do
   _bum_run "$G" "$CMD"
   assert_exit 2 "$?" "a merge bash runs is read and refused for its shape: $CMD"
 done
