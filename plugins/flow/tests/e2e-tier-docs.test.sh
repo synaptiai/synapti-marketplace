@@ -41,9 +41,16 @@ for F in "$TD_README" "$TD_SAFETY" "$TD_GATES" "$TD_P/commands/setup.md"; do
 done
 
 _flow_test_begin "tier docs: the ask rules documented are the ones setup writes (D2)"
-TD_RULES=$(sed -n "s/^RULES='\(.*\)'\$/\1/p" "$TD_SCRIPT" | jq -r '.[]' 2>/dev/null)
+# The rules are the ones the shipped setup script installs in a scratch
+# repository, not the ones its source spells out.
+TD_REPO=$(mktemp -d "${TMPDIR:-/tmp}/flow-tier-docs.XXXXXX")
+git -C "$TD_REPO" init -q
+TD_OUT=$(cd "$TD_REPO" && bash "$TD_SCRIPT" shared 2>&1)
+assert_contains "PERMISSIONS=written" "$TD_OUT" "the setup script wrote the rules in a scratch repository"
+TD_RULES=$(jq -r '.permissions.ask[]' "$TD_REPO/.claude/settings.json" 2>/dev/null)
+rm -rf "$TD_REPO"
 TD_N=$(printf '%s\n' "$TD_RULES" | grep -c 'Bash(')
-assert_equal "9" "$TD_N" "the setup script writes nine rules"
+assert_equal "9" "$TD_N" "the setup script installs nine rules"
 while IFS= read -r R; do
   [ -n "$R" ] || continue
   _td_has "$TD_SAFETY" "\`$R\`" "the safety reference lists $R"
@@ -64,6 +71,7 @@ _td_has "$TD_SAFETY" "### Claude Code's ask rules" "the safety reference has the
 _td_has "$TD_SAFETY" "The hook acts only on the gh and git commands it can read." "the safety reference says what the hook reads"
 _td_has "$TD_SAFETY" "What none of these checks covers:" "the safety reference lists what no check covers"
 _td_has "$TD_GATES" "text it cannot read" "gate configuration says what the hook does not ask about"
+_td_has "$TD_SAFETY" "\`npx\`, \`bundle exec\`" "the safety reference names the launchers whose scripts are still read"
 
 _flow_test_begin "tier docs: rulesets are what stops a merge or release on GitHub (D4)"
 _td_has "$TD_README" "They are what stops a merge or release that reaches GitHub" "README"
