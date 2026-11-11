@@ -85,6 +85,11 @@ artifacts:
   - AC1
   - AC4
   - AC7
+- type: goal-evaluation
+  captured_at: '2026-11-11T13:13:30Z'
+  goal_id: issue-348
+  result: waiting_for_user
+  reason: paused-during-full-suite-checks-time-out
 ---
 # Issue #348: fix(flow): the tier checks ask, or refuse, for scripts they cannot read as shell
 

@@ -173,11 +173,11 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
+  status: waiting_for_user
   current_phase: verify
-  current_activity: goal evaluation after the verdict
-  turns_evaluated: 4
+  current_activity: full suite running at c669e953
+  turns_evaluated: 5
   last_evaluation:
-    result: fail
-    reason: 'verification commands failed for: AC1, AC4, AC7'
-    at: '2026-11-11T13:06:37Z'
+    result: incomplete
+    reason: Paused during the full suite; goal checks time out at 30 s under load.
+    at: '2026-11-11T13:30:00Z'
