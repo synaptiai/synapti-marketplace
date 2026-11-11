@@ -24,8 +24,10 @@
 #   T6 gh api: a POST/PUT to a tiered endpoint is missed (explicit method,
 #      --method=, -XPOST, lower case, implied by -f, a leading /, a full URL,
 #      {owner}/{repo}), or a GET or a write to another endpoint is caught
-#   T7 a gh api write whose whole endpoint is a variable is allowed, when it
-#      may be a merge
+#   T7 a gh api write whose whole endpoint or method is a variable or a
+#      substitution, or whose endpoint xargs supplies, asks, though the hook
+#      cannot read what it writes; or the same write with a merge endpoint
+#      written out is missed
 #   T8 the journal line goes to the wrong file: not issue-<N>.md on an issue
 #      branch, not session-<day>.md on a branch with no issue number, or a
 #      .decisions directory is created in a repository that has none
@@ -49,8 +51,10 @@
 #      git/refs/tags) is read as a branch push, or a known branch is asked about
 #   T15 gh api PATCH on a release or an issue's assignees, or a GraphQL
 #      mutation (inline, query=@file, --input), is missed, a mutation whose
-#      name holds Ref, Release or Merge among them; a read or another
-#      mutation (createIssueType) is caught; an unreadable query is allowed
+#      name holds Ref, Release or Merge among them; a read, another
+#      mutation (createIssueType), or a query the hook cannot read (a
+#      variable, stdin, a missing file, a double-quoted query in which bash
+#      expands something) is caught
 #   T18 a backslash inside the program, a subcommand or an option, which bash
 #      removes, hides the action
 #   T19 a git push option written as an abbreviation git accepts (--tag,
@@ -63,7 +67,10 @@
 #   T22 gh release edit, delete, upload or delete-asset, or the gh api
 #      equivalents, run without the release ask
 #   T23 a Tier 3 action behind a program the hook does not know runs without
-#      an ask, or a Tier 2 action there, echo, or printf asks
+#      an ask, or a Tier 2 action there, echo, or printf asks, or a command
+#      word that is a variable or a substitution ($GH pr merge 7), a gh api
+#      write to a variable endpoint, or the script of perl -e or python3 -c,
+#      which the hook does not read, asks
 #   T24 --verify-tag is journaled when gh would create the release in another
 #      repository than origin's (-R, GH_REPO, GH_HOST, a cd, a default chosen
 #      on another remote)
@@ -93,51 +100,50 @@
 #      inside a substitution, a backquote inside double quotes, or an action
 #      with 2>&1 in the middle of it is missed; text that cat or grep only
 #      reads is read as a command; quoted words after a program the hook
-#      does not know are read without limit, or past the limit unasked
+#      does not know that name push, merge, release or api are read past the
+#      sixteenth, or words that name none of those count toward the sixteen
 #   T32 a cd into another worktree of the same repository, or to
 #      $(git rev-parse --show-toplevel), asks about a branch push; a cd into
 #      another repository, a worktree with its own configuration, or a push
 #      whose remote the branch picks there does not ask
-#   T33 shell state or words the hook cannot read let a push or a Tier 3
-#      action through unasked: eval, source, ., exec, alias, hash -p, a
-#      DEBUG trap, a nameref or a variable as the command word anywhere in the
-#      command (before the push too); NAME+= and NAME[i]= assignments, and
-#      names set by read or printf -v; words a program such as ssh or watch
-#      joins into one shell command; an upstream, tracking or branch change, a
+#   T33 shell state or words the hook cannot read let a push through
+#      unasked: eval, source, ., exec, alias, hash -p, a DEBUG trap, a
+#      nameref or a variable as the command word anywhere in the command
+#      (before the push too); NAME+= and NAME[i]= assignments, and names set
+#      by read or printf -v; an upstream, tracking or branch change, a
 #      renamed config section, git config under xargs, or a git config inside
-#      a quoted argument of an unknown program; a subcommand or push option
-#      written $"..." or as a variable; a write to .git/config or
-#      .gitconfig; a shell that reads its script from a pipe. Or the reverse:
-#      a command that changes none of these (exec 2>/dev/null, an EXIT trap,
-#      cat .git/config, gh pr view "$N", git checkout -- file) asks
-#   T34 a quoted heredoc (<<'EOF', <<"EOF", <<\EOF, <<-'EOF') handed to one
-#      of flow's own bin/ scripts named through a variable
-#      ("$FLOW_ROOT/bin/journal-append.sh",
-#      "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh") is read as commands, so
-#      the backticks and $(...) of its markdown are programs flow cannot read
-#      and ask (#344), the /flow:start specification-capture journal write
-#      among them; or the reverse: a body that program may run as a script (a
+#      a quoted argument of an unknown program; a push option written $"..."
+#      or as a variable; a write to .git/config or .gitconfig. Or a merge, a
+#      release or a tag push written out runs unasked in words a program such
+#      as ssh or watch joins into one shell command, behind a subcommand
+#      written $"...", or in text piped into a shell. Or the reverse: a
+#      command that changes none of these (exec 2>/dev/null, an EXIT trap,
+#      cat .git/config, gh pr view "$N", git checkout -- file) asks, and so
+#      does text the hook cannot read: eval of a variable or an assignment from
+#      one, a command held in a variable ($CMD, "${A[@]}"), a gh subcommand
+#      that is a variable, a shell reading a pipe whose text it cannot read
+#   T34 the backticks and $(...) of the markdown in a quoted heredoc
+#      (<<'EOF', <<"EOF", <<\EOF, <<-'EOF') handed to one of flow's own bin/
+#      scripts named through a variable ("$FLOW_ROOT/bin/journal-append.sh",
+#      "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh") ask, the /flow:start
+#      specification-capture journal write among them; or the reverse: a
+#      body a shell or a program named by a variable may run as a script (a
 #      variable alone, with -s, -, --, -c, or arguments that are themselves
-#      expansions, a variable that may split, a variable naming a shell or
-#      an interpreter such as "$D/bin/bash"), or an unquoted body whose
-#      $(...) or backticks bash runs, is read as data, and a merge, a release
-#      or a command held in a variable in it runs unasked
-#   T35 a quoted body is read as data for a program named by a variable that
-#      is not one of the scripts in the plugin's bin/, though it may read its
-#      script from the body: a bare "$P" whatever its arguments ("$P" --file
-#      n.md -, "$P" x.sh, "$P" log.txt, "$P" /dev/stdin, "$P" myhost, "$P"
-#      now, "$P" root, "$P" -I lib; the gate cannot tell a bare $P from a
-#      shell), a name that is not a flow script ("$D/bin/sqlite3" notes.md,
-#      "$D/bin/ed" notes.md, "$D/bin/script" x.txt, "$D/bin/ssh" host.sh,
-#      "$ROOT/bin/x.sh"), a flow script that hands its input to an agent or
-#      to eval code (flow-judge.sh, flow-eval-run.sh), or a flow script whose
-#      word is not one double-quoted word, that comes after an assignment or
-#      a command that sets BASH_ENV or ENV (as a prefix, an export earlier in
-#      the command), or that has an argument holding an expansion other than
-#      one double-quoted variable, a redirection, or a path under /dev/ or
-#      /proc/; or the reverse: a script the plugin ships, one added to its
-#      bin/ since among them, keeps its body, and the /flow:start journal
-#      write asks again
+#      expansions, a variable that may split, "$D/bin/bash"), or an unquoted
+#      body whose $(...) or backticks bash runs, is read as data, and a merge
+#      or a release written out in it runs unasked; a command held in a
+#      variable in such a body asks
+#   T35 a quoted body is read as data for a program that may read its
+#      script from it, so a merge written out in the body runs unasked: a
+#      bare "$P" whatever its arguments ("$P" --file n.md -, "$P" x.sh, "$P"
+#      log.txt, "$P" /dev/stdin, "$P" myhost, "$P" now, "$P" root, "$P" -I
+#      lib), a name such as "$D/bin/sqlite3" notes.md or "$D/bin/ssh"
+#      host.sh, a flow script that hands its input to an agent or to eval
+#      code (flow-judge.sh, flow-eval-run.sh), or a flow script after a
+#      command that sets BASH_ENV or ENV; or the reverse: a command held in
+#      a variable in such a body, or the backticks of its markdown, ask,
+#      whatever the program and its arguments, a script added to the
+#      plugin's bin/ among them
 #   T36 a backslash before << (\<<'EOF', \<<\EOF), which bash reads as a
 #      literal < and a < redirection, is read as a heredoc, so the commands
 #      on the lines after it are dropped as a body, for cat, a script or a
@@ -147,27 +153,26 @@
 #      echo, printf, gh, a commit message through "$(cat <<EOF)") is dropped
 #      as text although bash runs its $(...) or backquotes before the sink
 #      reads it, so the merge or release in them runs unasked, also when two
-#      apostrophes of its prose would pair around them, and a command held
-#      in a variable ($($CMD)) runs unasked; or the reverse, a quoted body,
-#      an escaped \$( or \`, or a body line that is only a substitution
-#      feeding a loop (done <<LIST with $(ls)) asks
+#      apostrophes of its prose would pair around them; or the reverse, a
+#      quoted body, an escaped \$( or \`, a body line that is only a
+#      substitution feeding a loop (done <<LIST with $(ls)), or a command
+#      held in a variable ($($CMD)) asks
 #   T38 a backslash-newline in an unquoted body, which bash removes before
 #      it expands the body, splits a $ from the (, { or [ after it ($\ then
 #      (gh pr merge 1) on the next line) or a command inside a substitution
-#      in two, so the merge, the release, or the ${x@P} or $[y] that runs a
-#      command held in a variable, is read as text; or the reverse, an
-#      escaped backslash before a newline ($\\) joins the lines and asks
+#      in two, so the merge or the release is read as text; or the reverse,
+#      an escaped backslash before a newline ($\\) joins the lines and asks,
+#      or a ${x@P} or $[y] joined that way, which runs only text held in a
+#      variable, asks
 #   T39 a ) inside a ${...} within a substitution of an unquoted body
 #      ($(echo ${x:-)}; gh pr merge 1)) is read as the end of the
 #      substitution, so the commands after it are read as text
-#   T40 ENV or BASH_ENV named only inside a string (echo "check ENV first")
-#      keeps the body of a later flow script, so the #344 ask comes back; or
-#      the reverse, ENV or BASH_ENV set through quotes (export
-#      "BASH_ENV=/dev/stdin", B""ASH_ENV=..., read "ENV") or inside a string
-#      that a shell or eval runs is missed, and the body is read as data
-#      (also BASH_ENV spelled with $'...' escapes or exported by a sourced
-#      file, and a program word "$@/journal-append.sh" or "$1/...", whose
-#      expansion can make a shell the program)
+#   T40 ENV or BASH_ENV named or set before a flow script (echo "check ENV
+#      first", export "BASH_ENV=/dev/stdin", B""ASH_ENV=..., read "ENV", a
+#      string a shell or eval runs, $'...' escapes, a sourced file), or a
+#      program word "$@/journal-append.sh" or "$1/...", makes the markdown or
+#      a command held in a variable in its quoted body ask; or a merge
+#      written out in that body after export BASH_ENV runs unasked
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -463,12 +468,11 @@ fi
 # --- T23: behind a program the hook does not know ----------------------------------
 if _want tg-unknown-wrapper; then
   _tg_setup tg-unknown-wrapper feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; a Tier 3 action handed to a program the hook does not know (caffeinate, stdbuf, setsid, watch, find -exec, parallel, script, a variable), as words or as one quoted argument, asks; a wrapper's bundled, abbreviated or env -S options do not hide a Tier 2 action; a Tier 2 action behind an unknown program, echo or printf of a Tier 3 action, and a gh or git word that runs nothing stay silent (T23, T26, T27)"
+    "every tier confirm; a Tier 3 action handed to a program the hook does not know (caffeinate, stdbuf, setsid, watch, find -exec, parallel, script), as words or as one quoted argument, asks; a wrapper's bundled, abbreviated or env -S options do not hide a Tier 2 action; a Tier 2 action behind an unknown program, echo or printf of a Tier 3 action, a gh or git word that runs nothing, a command word that is a variable or a substitution (\$GH pr merge 7), a gh api write to a variable endpoint, and the script of perl -e or python3 -c stay silent (T23, T26, T27)"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
       maybe) _expect_ask "may push or delete a tag" ;;
-      unknown) _expect_ask "may merge a pull request or create a release" ;;
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
       push|prCreate) _expect_ask "is a Tier 2 action set to confirm (tiers.$WANT)" ;;
       *) _expect_ask "is a Tier 3 action (tiers.$WANT)" ;;
@@ -482,14 +486,14 @@ merge|tmux new -d 'gh pr merge 1'
 release|trap 'gh release create v9' EXIT
 release|caffeinate sh -c 'watch "gh release create v9"'
 release|awk 'BEGIN { system("gh release create v9") }'
-release|perl -e 'system("gh release create v9")'
-release|python3 -c 'import os; os.system("gh release create v9")'
+silent|perl -e 'system("gh release create v9")'
+silent|python3 -c 'import os; os.system("gh release create v9")'
 release|watch 'g""h release create v9'
 release|watch '/usr/local/bin/gh release create v9'
 release|watch 'cd /tmp;gh release create v9'
 release|watch 'env -Sgh release create v9'
 release|watch 'G\H release create v9'
-merge|watch '$GH pr merge 1'
+silent|watch '$GH pr merge 1'
 release|watch "sh -c 'gh release create v9'"
 release|env -S'gh release create v9'
 release|env -iS'gh release create v9'
@@ -520,12 +524,12 @@ release|caffeinate gh release delete v1
 release|caffeinate git push --tags
 release|setsid git -c push.followTags=true push origin HEAD
 maybe|caffeinate git push origin v9
-unknown|caffeinate gh api -X POST "$EP"
-merge|$GH pr merge 7
-merge|$X pr merge 7
-release|"$X" release create v1
-release|"$G" push origin --tags
-merge|$(command -v gh) pr merge 7
+silent|caffeinate gh api -X POST "$EP"
+silent|$GH pr merge 7
+silent|$X pr merge 7
+silent|"$X" release create v1
+silent|"$G" push origin --tags
+silent|$(command -v gh) pr merge 7
 silent|npm run git push
 silent|npm run git push origin HEAD
 silent|caffeinate gh pr create --fill
@@ -1138,7 +1142,7 @@ fi
 # --- T15: gh api PATCH and GraphQL ---------------------------------------------
 if _want tg-api-patch-graphql; then
   _tg_setup tg-api-patch-graphql feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them, also after a string with an escaped quote in single or double quotes; reads and other mutations do not; a double-quoted query in which the shell expands something asks as unreadable (T15)"
+    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them, also after a string with an escaped quote in single or double quotes; reads, other mutations, and a query the hook cannot read (a variable, a missing file, stdin, a double-quoted query in which the shell expands something) do not (T15)"
   printf '%s\n' 'mutation { enablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }' > "$E2E_REPO/q.graphql"
   printf '%s\n' '{"query":"mutation { createRelease(input:{repositoryId:\"r\", tagName:\"v1\"}) { release { id } } }"}' > "$E2E_REPO/body.json"
   printf '%s\n' '{"query":"query { viewer { login } }"}' > "$E2E_REPO/read.json"
@@ -1147,7 +1151,6 @@ if _want tg-api-patch-graphql; then
     _tg_run "$C"
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
-      unknown) _expect_ask "may merge a pull request or create a release" ;;
       *) _expect_ask "(tiers.$WANT)" ;;
     esac
   done <<'EOF'
@@ -1162,9 +1165,9 @@ release|gh api graphql --input body.json
 prCreate|gh api graphql -f query='mutation { createPullRequest(input:{}) { pullRequest { id } } }'
 issueCreate|gh api graphql -fquery='mutation { createIssue(input:{}) { issue { id } } }'
 issueAssign|gh api graphql -f query='mutation { addAssigneesToAssignable(input:{}) { clientMutationId } }'
-unknown|gh api graphql -f query="$Q"
-unknown|gh api graphql -F query=@missing.graphql
-unknown|gh api graphql --input -
+silent|gh api graphql -f query="$Q"
+silent|gh api graphql -F query=@missing.graphql
+silent|gh api graphql --input -
 silent|gh api graphql -f query='query { repository(owner:"o", name:"r") { pullRequest(number:1) { mergeable } } }'
 silent|gh api graphql -f query='mutation { addComment(input:{}) { clientMutationId } }'
 silent|gh api graphql -f query='mutation { createIssueType(input:{}) { clientMutationId } }'
@@ -1199,8 +1202,8 @@ release|gh api graphql -f query="mutation { updatePullRequest(input:{pullRequest
 silent|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"say \"hi\" then merge(x) and release(y)"}) { clientMutationId } }'
 silent|gh api graphql -f query="mutation { addComment(input:{subjectId:\"x\", body:\"say \\\"hi\\\" then merge(x) and release(y)\"}) { clientMutationId } }"
 silent|gh api graphql -f query="mutation(\$id: ID!) { addComment(input:{subjectId:\$id, body:\"x\"}) { clientMutationId } }"
-unknown|gh api graphql -f query="mutation { $FIELD(input:{}) { clientMutationId } }"
-unknown|gh api graphql -f query="mutation { addComment(input:{subjectId:\"x\", body:\"`cat b`\"}) { clientMutationId } }"
+silent|gh api graphql -f query="mutation { $FIELD(input:{}) { clientMutationId } }"
+silent|gh api graphql -f query="mutation { addComment(input:{subjectId:\"x\", body:\"`cat b`\"}) { clientMutationId } }"
 EOF
   # A comment runs to the end of its line: a quote inside it opens no string,
   # and the mutation on the next line is read.
@@ -1281,12 +1284,11 @@ fi
 # --- T6: every way gh reads an option of gh api --------------------------------
 if _want tg-api-forms; then
   _tg_setup tg-api-forms feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api's method and fields are read as gh reads them (-X=VALUE, -XVALUE, -X VALUE, a bundle such as -iX=POST, -f=key=value); a method that is not a known verb, or a variable, asks for an endpoint that a write would make a merge or a release; a ref read from a file (-F ref=@file) asks; a raw -f value starting with @ is text; an endpoint is read percent-decoded and without a redirection glued to it (T6, T7)"
+    "every tier confirm; gh api's method and fields are read as gh reads them (-X=VALUE, -XVALUE, -X VALUE, a bundle such as -iX=POST, -f=key=value); a method that is not a known verb, or a variable, and an endpoint xargs supplies, are silent even where a write would make a merge or a release; a ref read from a file (-F ref=@file) asks; a raw -f value starting with @ is text; an endpoint is read percent-decoded and without a redirection glued to it (T6, T7)"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
-      unknown) _expect_ask "may merge a pull request or create a release" ;;
       maybe) _expect_ask "may push or delete a tag" ;;
       *) _expect_ask "is a Tier 3 action (tiers.$WANT)" ;;
     esac
@@ -1304,12 +1306,12 @@ release|gh api repos/o/r/releases -f=tag_name=v9
 release|gh api repos/o/r/git/refs -f=ref=refs/tags/v9 -f sha=abc
 release|gh api repos/o/r/git/refs -fref=refs/tags/v9 -f sha=abc
 release|gh api repos/o/r/git/refs --raw-field=ref=refs/tags/v9 -f sha=abc
-unknown|gh api -X "$M" repos/o/r/releases/1
-unknown|gh api -X "$M" repos/o/r/git/refs/tags/v1
-unknown|gh api --method=$M repos/o/r/pulls/1/merge
-unknown|gh api -X OPTIONS repos/o/r/pulls/1/merge
-unknown|gh api -X=POSTX repos/o/r/releases
-unknown|gh api -X= repos/o/r/releases
+silent|gh api -X "$M" repos/o/r/releases/1
+silent|gh api -X "$M" repos/o/r/git/refs/tags/v1
+silent|gh api --method=$M repos/o/r/pulls/1/merge
+silent|gh api -X OPTIONS repos/o/r/pulls/1/merge
+silent|gh api -X=POSTX repos/o/r/releases
+silent|gh api -X= repos/o/r/releases
 maybe|gh api repos/o/r/git/refs -F ref=@ref.txt -f sha=abc
 maybe|gh api repos/o/r/git/refs --field=ref=@- -f sha=abc
 maybe|gh api repos/o/r/git/refs -f "$K=refs/heads/x" -f ref=refs/heads/y -f sha=abc
@@ -1317,8 +1319,8 @@ silent|gh api repos/o/r/git/refs -f ref=@heads.txt -f sha=abc
 silent|gh api -X=GET repos/o/r/releases
 silent|gh api -X "$M" repos/o/r/issues/3/comments
 silent|gh api -X OPTIONS repos/o/r/issues
-unknown|printf '%s\n' repos/o/r/pulls/1/merge | xargs gh api -X PUT
-unknown|xargs -n1 gh api --method=POST < endpoints.txt
+silent|printf '%s\n' repos/o/r/pulls/1/merge | xargs gh api -X PUT
+silent|xargs -n1 gh api --method=POST < endpoints.txt
 merge|gh api -q '1>0' -X PUT repos/o/r/pulls/1/merge
 merge|gh api -X PUT repos/o/r/pulls/1/merge>/dev/null
 release|gh api -X DELETE repos/o/r/git/refs/tags%2Fv1
@@ -1333,20 +1335,24 @@ fi
 
 if _want tg-api-unreadable; then
   _tg_setup tg-api-unreadable feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "a gh api POST whose whole endpoint is a variable or a substitution asks, since it may be a merge, even with every other tier autonomous; a GET of a variable endpoint does not (T7)"
+    "every Tier 2 action autonomous: a gh api write or a GET whose whole endpoint is a variable or a substitution is silent, as the hook cannot read it; the same write to a merge endpoint written out asks (T7)"
   _tg_run 'gh api -X POST "$EP" -f x=1'
-  _expect_ask "may merge a pull request or create a release"
+  _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr for a variable endpoint"
   _tg_run 'gh api -X PUT $(cat endpoint.txt)'
-  _expect_ask "may merge a pull request or create a release"
+  _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr for a substituted endpoint"
   _tg_run 'gh api "$EP"'
   _expect_silent_allow
+  _tg_run 'gh api -X PUT repos/o/r/pulls/1/merge'
+  _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   e2e_expect_clean_edges
 fi
 
 # --- T31: a command on a shell's input, in a substitution, around 2>&1 ---------
 if _want tg-shell-input; then
   _tg_setup tg-shell-input feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous, tag v1.2.0 and branch v1-fix: a here-string a shell reads as its script (any spacing, a file descriptor before <<<, before the command word, through a pipe, escaped spaces) or one given to a program the hook does not know, a shell's -c argument inside a substitution, a backquote inside double quotes, and an action with 2>&1 or >&2 in the middle of it ask; the same text read by cat or grep, an escaped or single-quoted backquote, a branch push with 2>&1, and up to 16 quoted words after one program that name no Tier 3 action do not; a 17th quoted word that names one asks (T31)"
+    "every Tier 2 action autonomous, tag v1.2.0 and branch v1-fix: a here-string a shell reads as its script (any spacing, a file descriptor before <<<, before the command word, through a pipe, escaped spaces) or one given to a program the hook does not know, a shell's -c argument inside a substitution, a backquote inside double quotes, and an action with 2>&1 or >&2 in the middle of it ask; the same text read by cat or grep, an escaped or single-quoted backquote, a branch push with 2>&1, and up to 16 quoted words after one program that name no Tier 3 action do not; quoted words past the sixteenth that names push, merge, release or api are not read, and a merge after sixteen words that name none of those asks (T31)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix ) \
     || _flow_assert_fail "tg-shell-input: could not create the tag and branch"
   while IFS='|' read -r WANT C; do
@@ -1354,7 +1360,6 @@ if _want tg-shell-input; then
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
       maybe) _expect_ask "may push or delete a tag" ;;
-      unknown) _expect_ask "may merge a pull request or create a release" ;;
       *) _expect_ask "is a Tier 3 action (tiers.$WANT)" ;;
     esac
   done <<'EOF'
@@ -1389,7 +1394,7 @@ merge|script -q /dev/null <<<'gh pr merge 1'
 release|mytool 0<<<"git push --tags"
 silent|mytool <<<'gh pr view 1'
 silent|mytool 'gh pr view 1' 'gh pr view 2' 'gh pr view 3' 'gh pr view 4' 'gh pr view 5' 'gh pr view 6' 'gh pr view 7' 'gh pr view 8' 'gh pr view 9' 'gh pr view 10' 'gh pr view 11' 'gh pr view 12' 'gh pr view 13' 'gh pr view 14' 'gh pr view 15' 'gh pr view 16' 'gh pr view 17' 'gh pr view 18' 'gh pr view 19' 'gh pr view 20'
-unknown|mytool 'gh release view v1' 'gh release view v2' 'gh release view v3' 'gh release view v4' 'gh release view v5' 'gh release view v6' 'gh release view v7' 'gh release view v8' 'gh release view v9' 'gh release view v10' 'gh release view v11' 'gh release view v12' 'gh release view v13' 'gh release view v14' 'gh release view v15' 'gh release view v16' 'gh release view v17'
+silent|mytool 'gh release view v1' 'gh release view v2' 'gh release view v3' 'gh release view v4' 'gh release view v5' 'gh release view v6' 'gh release view v7' 'gh release view v8' 'gh release view v9' 'gh release view v10' 'gh release view v11' 'gh release view v12' 'gh release view v13' 'gh release view v14' 'gh release view v15' 'gh release view v16' 'gh release view v17'
 merge|mytool 'gh pr view 1' 'gh pr view 2' 'gh pr view 3' 'gh pr view 4' 'gh pr view 5' 'gh pr view 6' 'gh pr view 7' 'gh pr view 8' 'gh pr view 9' 'gh pr view 10' 'gh pr view 11' 'gh pr view 12' 'gh pr view 13' 'gh pr view 14' 'gh pr view 15' 'gh pr view 16' 'gh pr merge 9'
 EOF
   e2e_expect_clean_edges
@@ -1438,7 +1443,7 @@ fi
 # --- T33: shell state or words the hook cannot read -----------------------------
 if _want tg-default-ask; then
   _tg_setup tg-default-ask feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous, tag v1.2.0, branches v1-fix and main, a second repository ../other: a push after (or before) anything that changes the shell's directory, environment or git configuration in a way the hook does not follow asks as a possible tag push; words a program joins into a shell command, a subcommand the hook cannot read, and a shell reading its script from a pipe ask as Tier 3; the same commands without the change stay silent (T33)"
+    "every Tier 2 action autonomous, tag v1.2.0, branches v1-fix and main, a second repository ../other: a push after (or before) anything that changes the shell's directory, environment or git configuration in a way the hook does not follow asks as a possible tag push; a merge, a release or a tag push written out in words a program joins into a shell command, behind a subcommand written \$\"...\", or in text piped into a shell asks as Tier 3; eval of a variable or a substitution, source of a process substitution, a command held in a variable, a gh subcommand that is a variable, and a shell reading a pipe whose text the hook cannot read stay silent, as do the same commands without the change (T33)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix && git branch -f main HEAD \
       && git init -q "$E2E_DIR/other" ) >/dev/null 2>&1 \
     || _flow_assert_fail "tg-default-ask: could not create the tag, the branches and ../other"
@@ -1448,8 +1453,6 @@ if _want tg-default-ask; then
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
       maybe) _expect_ask "may push or delete a tag" ;;
-      unknown) _expect_ask "may merge a pull request or create a release" ;;
-      shell) _expect_ask "reads its script from its input" ;;
       *) _expect_ask "is a Tier 3 action (tiers.$WANT)" ;;
     esac
   done <<'EOF'
@@ -1473,10 +1476,10 @@ silent|exec 2>/dev/null; git push origin v1-fix
 silent|trap 'rm -f x' EXIT; git push origin v1-fix
 silent|echo eval source; git push origin v1-fix
 silent|hash -r; git push origin v1-fix
-unknown|eval "$CMD"; gh pr view 1
-unknown|eval "$(printf 'gh pr merge 1')"
-unknown|. <(echo gh pr merge 1)
-unknown|CMD='gh pr merge 1'; $CMD
+silent|eval "$CMD"; gh pr view 1
+silent|eval "$(printf 'gh pr merge 1')"
+silent|. <(echo gh pr merge 1)
+silent|CMD='gh pr merge 1'; $CMD
 silent|D=$(gh pr view 1)
 silent|D=$(gh repo view --json x)
 silent|DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || printf '%s\n' "main")
@@ -1490,7 +1493,7 @@ silent|"$(git rev-parse --show-toplevel)/bin/x.sh" 2>/dev/null; gh pr view 1
 silent|CMD='gh pr view 1'; "$CMD"
 silent|case "$u" in "git@github.com:$R"|".") gh pr view 1 ;; esac
 silent|eval "v=\${$name:-}"; gh pr view 1
-unknown|eval "v=\$(gh pr merge 1)"
+merge|eval "v=\$(gh pr merge 1)"
 maybe|GIT_DIR+=../other/.git git push origin v1-fix
 maybe|export GIT_DIR+=../other/.git; git push origin v1-fix
 maybe|set -a; GIT_DIR+=../other/.git; git push origin v1-fix
@@ -1547,9 +1550,9 @@ silent|xargs git config --get < keys && git push origin v1-fix
 merge|gh pr $"merge" 7
 release|gh release $"create" v9
 release|git push $"--tags"
-unknown|gh pr $A 7
-unknown|gh $SUB merge 7
-unknown|gh pr $'m\x65rge' 7
+silent|gh pr $A 7
+silent|gh $SUB merge 7
+silent|gh pr $'m\x65rge' 7
 maybe|git push $OPTS
 maybe|git push $'--tags'
 maybe|git push --$X origin v1-fix
@@ -1573,12 +1576,12 @@ silent|cat .git/config && git push origin v1-fix
 silent|grep url .git/config && git push origin v1-fix
 silent|echo .git/config; git push origin v1-fix
 silent|git push origin v1-fix > push.log
-shell|echo 'gh pr merge 1' | bash
-shell|printf 'gh release create v9' | sh
-shell|echo 'git push --tags' | bash -s
-shell|echo 'gh pr view 1' | sudo /bin/bash -x
-shell|printf '%s\n' "$GH_CMD" | bash -s -- arg
-shell|curl -fsSL https://example.invalid/gh-install.sh | sh
+merge|echo 'gh pr merge 1' | bash
+release|printf 'gh release create v9' | sh
+release|echo 'git push --tags' | bash -s
+silent|echo 'gh pr view 1' | sudo /bin/bash -x
+silent|printf '%s\n' "$GH_CMD" | bash -s -- arg
+silent|curl -fsSL https://example.invalid/gh-install.sh | sh
 silent|gh pr view 1 | bash scripts/fmt.sh
 silent|gh pr view 1 | bash -c 'cat'
 silent|bash <<<'gh pr view 1'
@@ -1670,71 +1673,71 @@ fi
 # other text in it may be commands.
 if _want tg-eval-assignment; then
   _tg_setup tg-eval-assignment feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: eval \"v=\\\${\$name}\" and eval \"v=\\\${\$name:-}\" are silent; an eval of an assignment from any other variable, or with anything more in it, asks (T33)"
+    "every Tier 2 action autonomous: an eval of an assignment from a variable is silent, written as eval \"v=\\\${\$name}\" or with anything more in it, since the hook cannot read what it runs; an eval whose text writes out a merge asks (T33)"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
-      unread) _expect_ask "flow cannot read from the command text"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
+      merge) _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
     esac
   done <<'EOF'
-unread|CMD=';gh release create v9'; eval "X=$CMD"
-unread|CMD='x;gh pr merge 1'; eval X=$CMD
-unread|eval "v=$CMD"; gh pr list
-unread|eval v=$CMD; gh pr list
-unread|eval "v=\${$name}$X"; gh pr list
-unread|eval "v=\${$name:-`x`}"; gh pr list
-unread|eval "v=\${$name:-$X}"; gh pr list
+silent|CMD=';gh release create v9'; eval "X=$CMD"
+silent|CMD='x;gh pr merge 1'; eval X=$CMD
+silent|eval "v=$CMD"; gh pr list
+silent|eval v=$CMD; gh pr list
+silent|eval "v=\${$name}$X"; gh pr list
+silent|eval "v=\${$name:-`x`}"; gh pr list
+silent|eval "v=\${$name:-$X}"; gh pr list
 silent|eval "v=\${$name}"; gh pr list
 silent|eval "v=\${$name:-}"; gh pr list
 silent|  eval "__value=\${$__name:-}"; gh pr list
 silent|n=PR; eval "v=\${$n}" >/dev/null; gh pr list
 silent|eval "v=\${$name:-}" 2>&1; gh pr list
 silent|eval "v=\${$name}" 2>/dev/null >/dev/null; gh pr list
-unread|eval "v=\${$name}" "$X" >/dev/null; gh pr list
-unread|eval "v=\${$name}" >/dev/null "$X"; gh pr list
-unread|eval "v=\${$name}" >$(x); gh pr list
+silent|eval "v=\${$name}" "$X" >/dev/null; gh pr list
+silent|eval "v=\${$name}" >/dev/null "$X"; gh pr list
+silent|eval "v=\${$name}" >$(x); gh pr list
+merge|eval "v=\$(gh pr merge 1)"
 EOF
   e2e_expect_clean_edges
 fi
 
-# The command word alone: a variable that is not one whole quoted word, and
-# one whose / is inside ${...}, may be a whole command; a heredoc body line
-# is data only where the body is a non-shell reader's and the same text is
-# not also a command outside it.
+# A command word that is a variable or a parameter expansion runs a program
+# the hook cannot read, and names no action, wherever it stands: alone, in a
+# heredoc body, or after one. One that may be cd or eval still makes a later
+# push a possible tag push.
 if _want tg-command-word; then
   _tg_setup tg-command-word feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous, branch v1-fix: a command word that is a variable with nothing after it asks unless it is one whole quoted word, or has a / outside \${...} (a file); a parameter expansion as the command word may be cd or eval; a heredoc body line is data only inside the body of a reader that is not a shell (T33)"
+    "every Tier 2 action autonomous, branch v1-fix: a command word that is a variable or a parameter expansion is silent, alone, in a heredoc body or after one, since the hook cannot read what it runs; one that may be cd or eval makes a later push ask as a possible tag push; a merge on a line after a here-string asks (T33)"
   ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix && git init -q "$E2E_DIR/other" ) >/dev/null 2>&1 \
     || _flow_assert_fail "tg-command-word: could not create the branch and ../other"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
-      unread) _expect_ask "flow cannot read from the command text"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
       maybe) _expect_ask "may push or delete a tag"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
     esac
   done <<'EOF'
-unread|CMD='gh release create v9'; ""$CMD
-unread|CMD='gh release create v9'; ''$CMD
-unread|CMD='gh release create v9'; "$E"$CMD
-unread|CMD='gh release create v9'; "${E}"$CMD
-unread|CMD='gh release create v9'; "$@"$CMD
-unread|CMD='gh pr merge 1'; ""$CMD
-unread|CMD='git push --tags'; ""$CMD
-unread|"$A"$B; gh pr list
-unread|CMD='gh release create v9'; ${CMD%/}
-unread|CMD=gh_release_create_v9; ${CMD//_/ }
-unread|CMD='gh pr merge 1'; ${CMD%/}
-unread|CMD='gh pr merge 1'; ${CMD#*/}
-unread|${X:-gh pr merge 7}
-unread|A=(gh pr); A+=(merge 7); "${A[@]}"
-unread|A=(gh pr); A+=(merge 7); command "${A[@]}"
-unread|A=(gh pr); A+=(merge 7); X=1 "${A[@]}"
-unread|A=(gh pr); A+=(merge 7); sudo "${A[@]}"
-unread|A=(gh pr); A+=(merge 7); command "${A[@]:0}"
-unread|set -- gh pr; set -- "$@" merge 7; X=1 "$@"
-unread|set -- gh pr; set -- "$@" merge 7; "$@"
+silent|CMD='gh release create v9'; ""$CMD
+silent|CMD='gh release create v9'; ''$CMD
+silent|CMD='gh release create v9'; "$E"$CMD
+silent|CMD='gh release create v9'; "${E}"$CMD
+silent|CMD='gh release create v9'; "$@"$CMD
+silent|CMD='gh pr merge 1'; ""$CMD
+silent|CMD='git push --tags'; ""$CMD
+silent|"$A"$B; gh pr list
+silent|CMD='gh release create v9'; ${CMD%/}
+silent|CMD=gh_release_create_v9; ${CMD//_/ }
+silent|CMD='gh pr merge 1'; ${CMD%/}
+silent|CMD='gh pr merge 1'; ${CMD#*/}
+silent|${X:-gh pr merge 7}
+silent|A=(gh pr); A+=(merge 7); "${A[@]}"
+silent|A=(gh pr); A+=(merge 7); command "${A[@]}"
+silent|A=(gh pr); A+=(merge 7); X=1 "${A[@]}"
+silent|A=(gh pr); A+=(merge 7); sudo "${A[@]}"
+silent|A=(gh pr); A+=(merge 7); command "${A[@]:0}"
+silent|set -- gh pr; set -- "$@" merge 7; X=1 "$@"
+silent|set -- gh pr; set -- "$@" merge 7; "$@"
 maybe|CD=cdx; ${CD/x/} ../other && git push origin v1-fix
 maybe|E=eval; ${E%/} 'cd ../other' && git push origin v1-fix
 silent|"$CMD"; gh pr list
@@ -1746,8 +1749,8 @@ silent|"$ROOT/bin/x.sh"; gh pr list
 silent|${ROOT}/bin/x.sh; gh pr list
 silent|"${ROOT%/}/bin/x.sh" ../other && git push origin v1-fix
 EOF
-  # A heredoc body line of a reader that is not a shell is data; the same
-  # text after the body, or in a body a shell reads, is a command.
+  # A command held in a variable names nothing in a heredoc body, after one,
+  # or in a body a shell reads.
   for C in \
     "$(printf 'CMD="gh release create v9"\ncat >/dev/null <<EOF\nx\nEOF\n$CMD')" \
     "$(printf 'CMD="gh release create v9"\ncat <<EOF >/dev/null\nx\nEOF\n$CMD')" \
@@ -1758,7 +1761,8 @@ EOF
     "$(printf 'CMD="gh release create v9"\nwhile read -r p; do echo "$p"; done <<EOF\n$CMD\nEOF\n$CMD')" \
     "$(printf 'CMD="gh release create v9"; echo "x <<EOF\n$CMD\nEOF"; $CMD')"; do
     _tg_run "$C"
-    _expect_ask "flow cannot read from the command text"
+    _expect_silent_allow
+    e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
   done
   _tg_run "$(printf 'while IFS= read -r f; do echo "$f"; done <<LIST\n$(ls)\nLIST\ngh pr view 1')"
   _expect_silent_allow
@@ -1774,51 +1778,43 @@ EOF
   e2e_expect_clean_edges
 fi
 
-# A heredoc whose introducer is followed by a redirection or a pipe into a
-# program that is not a shell or an interpreter is data: a body line such as
-# `$SUMMARY` is not a command held in a variable. The same body handed to a
-# shell is commands.
+# A heredoc body line such as `$SUMMARY` names no action wherever the body
+# goes: to a redirection, a pipe into gh or another program, or a shell,
+# which would run it as a command held in a variable. A merge written out in
+# a body a shell reads asks.
 for TG_HR_MODE in journal autonomous; do
   if _want "tg-heredoc-redirect-$TG_HR_MODE"; then
     _tg_setup "tg-heredoc-redirect-$TG_HR_MODE" feature/issue-42-x "{\"tiers\":{\"push\":\"$TG_HR_MODE\",\"prCreate\":\"$TG_HR_MODE\"}}" \
-      "tiers.push and tiers.prCreate $TG_HR_MODE: a heredoc body line \$SUMMARY is silent when the introducer is followed by a redirection or a pipe into gh; it asks when the body goes to a shell (T33)"
+      "tiers.push and tiers.prCreate $TG_HR_MODE: a heredoc body line \$SUMMARY is silent whether the body goes to a redirection, a pipe into gh or another program, or a shell; a merge written out in a body bash reads asks (T33)"
     for C in \
       "$(printf "gh pr comment 5 --body-file - <<'EOF' >/dev/null\n\$SUMMARY\nEOF")" \
       "$(printf 'cat <<EOF | gh pr create --title t --body-file -\n$SUMMARY\nEOF')" \
       "$(printf 'cat <<EOF > body.md\n$SUMMARY\nEOF\ngh pr create --title t --body-file body.md')" \
       "$(printf 'cat <<EOF >&2\n$SUMMARY\nEOF\ngh pr view 1')" \
-      "$(printf "cat <<'EOF' 2>/dev/null | gh pr comment 5 --body-file -\n\$SUMMARY\nEOF")"; do
+      "$(printf "cat <<'EOF' 2>/dev/null | gh pr comment 5 --body-file -\n\$SUMMARY\nEOF")" \
+      "$(printf 'bash <<EOF\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'bash <<EOF >/dev/null\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'cat <<EOF | sudo env X=1 git status\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'cat <<EOF | xargs -0 echo\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'cat <<EOF | bash\n$SUMMARY\nEOF\ngh pr view 1')" \
+      "$(printf 'cat <<EOF > >(bash)\n$SUMMARY\nEOF\ngh pr view 1')"; do
       _tg_run "$C"
       _expect_silent_allow
       e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
     done
-    for C in \
-      "$(printf 'bash <<EOF\n$SUMMARY\nEOF\ngh pr view 1')" \
-      "$(printf 'bash <<EOF >/dev/null\n$SUMMARY\nEOF\ngh pr view 1')" \
-      "$(printf 'cat <<EOF | sudo env X=1 git status\n$SUMMARY\nEOF\ngh pr view 1')" \
-      "$(printf 'cat <<EOF | xargs -0 echo\n$SUMMARY\nEOF\ngh pr view 1')"; do
-      _tg_run "$C"
-      _expect_ask "flow cannot read from the command text"
-      e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
-    done
-    for C in \
-      "$(printf 'cat <<EOF | bash\n$SUMMARY\nEOF\ngh pr view 1')" \
-      "$(printf 'cat <<EOF > >(bash)\n$SUMMARY\nEOF\ngh pr view 1')"; do
-      _tg_run "$C"
-      _expect_ask "Tier 3"
-      e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
-    done
+    _tg_run "$(printf 'bash <<EOF\ngh pr merge 1\nEOF\ngh pr view 1')"
+    _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
     e2e_expect_clean_edges
   fi
 done
 
-# A quoted heredoc's body is data for one of flow's own bin/ scripts named
-# through a variable, none of which runs what it reads (#344): its backticks
-# and $(...) are markdown, not programs flow cannot read. Each body holds
-# "right" or "release", so the gate reads the text at all.
+# A quoted heredoc's body handed to one of flow's own scripts through a
+# variable holds markdown: its backticks and $(...) name no program the gate
+# can read, so it asks nothing. Each body holds "right" or "release", so the
+# gate reads the text at all.
 if _want tg-quoted-body-data; then
   _tg_setup tg-quoted-body-data feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: a quoted heredoc (<<'EOF', <<\"EOF\", <<\\EOF, <<-'EOF') whose body holds backticks or \$(...) is allowed silently when its program is one double-quoted word naming a script of the plugin's bin/ through a variable (\"\$FLOW_ROOT/bin/journal-append.sh\", \"\${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh\") with arguments that are words or double-quoted variables, and the /flow:start specification-capture journal write is allowed (T34)"
+    "every Tier 2 action autonomous: a quoted heredoc (<<'EOF', <<\"EOF\", <<\\EOF, <<-'EOF') whose body holds backticks or \$(...) and no merge, release or tag push written out is allowed silently when its program is flow's script named through a variable (\"\$FLOW_ROOT/bin/journal-append.sh\", \"\${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh\"), and the /flow:start specification-capture journal write is allowed (T34)"
   TAB=$(printf '\t')
   for C in \
     "$(printf '"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'"'"'EOF'"'"'\n| right | `subtract(5, 3)` → `2` |\nEOF')" \
@@ -1881,17 +1877,18 @@ fi
 
 # The same bodies are commands where something runs them: bash expands the
 # $(...) and backticks of an unquoted body, and a program named by a variable
-# may be a shell reading its script from the body (#344).
+# may be a shell reading its script from the body. A merge written out there
+# asks; a command held in a variable names nothing.
 if _want tg-quoted-body-script; then
   _tg_setup tg-quoted-body-script feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: an unquoted heredoc body's \$(gh pr merge 1) or backticks ask, and a quoted body that a program named by a variable may run as a script (alone, -s, -, --, -c, an argument that is an expansion, a variable that may split, a variable naming a shell or an interpreter) asks for a merge in it or a command held in a variable (T34)"
+    "every Tier 2 action autonomous: an unquoted heredoc body's \$(gh pr merge 1) or backticks ask, and a merge written out in a quoted body that a shell or a program named by a variable may run as a script asks; a command held in a variable in such a body is silent, whatever the program (alone, -s, -, --, -c, an argument that is an expansion, a variable that may split, a variable naming a shell or an interpreter) (T34)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
     _tg_run "$C"
     case "$WANT" in
       merge) _expect_ask "tiers.merge" ;;
       release) _expect_ask "tiers.release" ;;
-      unread) _expect_ask "flow cannot read from the command text" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
     esac
     e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
   done <<'EOF'
@@ -1902,21 +1899,21 @@ merge|"$SHELL" <<'EOF'\ngh pr merge 1\nEOF
 merge|"$SHELL" -s <<'EOF'\ngh pr merge 1\nEOF
 merge|bash -s <<'EOF'\ngh pr merge 1\nEOF
 release|sh -s x <<\\EOF\ngh release create v1\nEOF
-unread|CMD='gh pr merge 1'\n"$SHELL" <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$SHELL" <<\\EOF\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$SHELL" -s <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$SHELL" -xs <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" - <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" -- <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" -c "$X" <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" "$ARG" <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" --file "$J" - <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n$P --file n.md - <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$D/bin/bash" <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$D/bin/python3" <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" <<'EOF' >/dev/null\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" --file n.md - <<EOF\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\nsudo "$P" --file n.md - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$SHELL" <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$SHELL" <<\\EOF\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$SHELL" -s <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$SHELL" -xs <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" -- <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" -c "$X" <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" "$ARG" <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" --file "$J" - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n$P --file n.md - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$D/bin/bash" <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$D/bin/python3" <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" <<'EOF' >/dev/null\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" --file n.md - <<EOF\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\nsudo "$P" --file n.md - <<'EOF'\n$CMD\nEOF
 EOF
   e2e_expect_clean_edges
 fi
@@ -1925,105 +1922,99 @@ fi
 # whatever its arguments: a shell given a device path it reads its input
 # through, ssh, at or su given a host, a time or a user before they read
 # commands from their input, an interpreter given an option value, or a shell
-# told to read its input first through BASH_ENV or ENV (#344). Even with a
-# script file as its first argument ("$P" x.sh, "$P" --file n.md -) the gate
-# cannot tell "$P" from such a program, so its body stays commands. Each body
-# holds a command kept in a variable, which asks.
+# told to read its input first through BASH_ENV or ENV. Even with a script
+# file as its first argument ("$P" x.sh, "$P" --file n.md -) the gate cannot
+# tell "$P" from such a program, so its body stays commands: a merge written
+# out in it asks, and a command kept in a variable names nothing.
 if _want tg-quoted-body-stdin; then
   _tg_setup tg-quoted-body-stdin feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: a quoted body handed to a program named by a bare variable asks for the command held in a variable in it, whatever the arguments (under /dev/ or /proc/, a host, a time, a user, an option value, a script file such as n.md or x.sh), and when BASH_ENV or ENV is set (T35)"
+    "every Tier 2 action autonomous: a quoted body handed to a program named by a bare variable is silent for a command held in a variable in it, whatever the arguments (under /dev/ or /proc/, a host, a time, a user, an option value, a script file such as n.md or x.sh) and when BASH_ENV or ENV is set; a merge written out in such a body asks (T35)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
     _tg_run "$C"
     case "$WANT" in
-      unread) _expect_ask "flow cannot read from the command text" ;;
+      merge) _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)" ;;
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
     esac
     e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
   done <<'EOF'
-unread|CMD='gh pr merge 1'\n"$P" /dev/stdin <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" /dev/fd/0 <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" /proc/self/fd/0 <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" --file /dev/stdin - <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" --file=/dev/stdin x.sh <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\nBASH_ENV=/dev/stdin "$P" x.sh <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\nENV=/dev/stdin "$P" x.sh <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\nLC_ALL=C "$P" --file n.md - <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\nexport BASH_ENV=/dev/stdin\n"$P" x.sh <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\nBASH_ENV=/dev/stdin ./x.sh <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" myhost <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" now <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" -q /dev/null <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" root <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" host.example.com <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" deploy@host.sh <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" -W ignore <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" -X dev - <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" -I lib <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" -I lib.rb <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" --import x.js - <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" --file n.md - <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" x.sh <<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" --quiet notes/plan.md <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" /dev/stdin <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" /dev/fd/0 <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" /proc/self/fd/0 <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" --file /dev/stdin - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" --file=/dev/stdin x.sh <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\nBASH_ENV=/dev/stdin "$P" x.sh <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\nENV=/dev/stdin "$P" x.sh <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\nLC_ALL=C "$P" --file n.md - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\nexport BASH_ENV=/dev/stdin\n"$P" x.sh <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\nBASH_ENV=/dev/stdin ./x.sh <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" myhost <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" now <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" -q /dev/null <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" root <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" host.example.com <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" deploy@host.sh <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" -W ignore <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" -X dev - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" -I lib <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" -I lib.rb <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" --import x.js - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" --file n.md - <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" x.sh <<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" --quiet notes/plan.md <<'EOF'\n$CMD\nEOF
+merge|"$P" /dev/stdin <<'EOF'\ngh pr merge 1\nEOF
+merge|"$P" x.sh <<'EOF'\ngh pr merge 1\nEOF
 EOF
   e2e_expect_clean_edges
 fi
 
-# A quoted body is data only for a program named by a variable that is one of
-# the scripts in the plugin's own bin/ (#344): a name the gate can see and
-# check against that directory, read when the hook runs, so a script added to
-# bin/ later is covered too. Every other program keeps the body as commands,
-# so each body below, a command kept in a variable or markdown with
-# backticks, asks.
-# - The issue's own repro, "$P" --file n.md - with P=/x/journal-append.sh,
-#   asks by design: the gate cannot tell a bare $P from a shell.
-# - A visible name that is not a flow script asks, whatever its arguments
-#   look like: sqlite3, ed, script and ssh read commands from their input
-#   after a file name or a host.
-# - flow-judge.sh hands its input to an agent session, and flow-eval-run.sh
-#   runs eval code that inherits it, so they are left out of the list.
-# - A flow script keeps its body when an assignment or BASH_ENV comes before
-#   it, when its word is not one double-quoted word, and when an argument
-#   holds an expansion other than one double-quoted variable, a redirection
-#   or a path under /dev/ or /proc/.
+# A quoted body is read the same way whichever program it is handed to: a
+# bare variable, a visible name that is not a flow script (sqlite3, ed,
+# script and ssh read commands from their input after a file name or a
+# host), flow-judge.sh or flow-eval-run.sh, a flow script after an
+# assignment or BASH_ENV, not written as one double-quoted word, or with an
+# argument holding an expansion, and a script added to the plugin's bin/.
+# The backticks of its markdown and a command kept in a variable name
+# nothing; a merge written out in it asks.
 if _want tg-quoted-body-allowlist; then
   _tg_setup tg-quoted-body-allowlist feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: a quoted body asks for the command held in a variable in it, or the backticks of its markdown, when its program is a bare variable, a name that is not one of the scripts in the plugin's bin/ (sqlite3, ed, script, ssh, x.sh), flow-judge.sh or flow-eval-run.sh, or a flow script after an assignment or BASH_ENV, not written as one double-quoted word, or with an argument holding an expansion, a redirection or a /dev/ path; a script added to bin/ in a copy of the plugin is data at once (T35)"
+    "every Tier 2 action autonomous: a quoted body is silent for the command held in a variable in it, or the backticks of its markdown, when its program is a bare variable, a name that is not one of the scripts in the plugin's bin/ (sqlite3, ed, script, ssh, x.sh), flow-judge.sh or flow-eval-run.sh, or a flow script after an assignment or BASH_ENV, not written as one double-quoted word, or with an argument holding an expansion, a redirection or a /dev/ path, and for a script added to bin/ in a copy of the plugin; a merge written out in such a body asks (T35)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
     _tg_run "$C"
     case "$WANT" in
-      unread) _expect_ask "flow cannot read from the command text" ;;
+      merge) _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)" ;;
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
     esac
     e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
   done <<'EOF'
-unread|"$P" --file n.md - <<'EOF'\n| right | `subtract(5, 3)` → `2` |\nEOF
-unread|P=/x/journal-append.sh\n"$P" --file n.md - <<'EOF'\n| right | `subtract(5, 3)` → `2` |\nEOF
-unread|CMD='gh pr merge 1'\n"$P" log.txt <<'EOF'\n$CMD\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/sqlite3" notes.md <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/script" x.txt <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/ssh" host.sh <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/ed" notes.md <<'EOF'\n$C\nEOF
-unread|"$ROOT/bin/x.sh" <<'EOF'\n| right | $(y) |\nEOF
-unread|"${ROOT}/bin/x.sh" -s <<'EOF'\n| right | `x` |\nEOF
-unread|"$FLOW_ROOT/bin/journal-append" --file n.md - <<'EOF'\n| right | `x` |\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/flow-judge.sh" --judge goal <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/flow-eval-run.sh" <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nLC_ALL=C "$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nBASH_ENV=/dev/stdin "$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nexport BASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n$FLOW_ROOT/bin/journal-append.sh --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT"/bin/journal-append.sh --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file /dev/stdin - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file $J - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file "$(pwd)/n.md" - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file `pwd`/n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF' >/dev/null\n$C\nEOF
-unread|"$FLOW_ROOT/bin/flow-new-helper.sh" <<'EOF'\n| right | `x` |\nEOF
+silent|"$P" --file n.md - <<'EOF'\n| right | `subtract(5, 3)` → `2` |\nEOF
+silent|P=/x/journal-append.sh\n"$P" --file n.md - <<'EOF'\n| right | `subtract(5, 3)` → `2` |\nEOF
+silent|CMD='gh pr merge 1'\n"$P" log.txt <<'EOF'\n$CMD\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/sqlite3" notes.md <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/script" x.txt <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/ssh" host.sh <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$D/bin/ed" notes.md <<'EOF'\n$C\nEOF
+silent|"$ROOT/bin/x.sh" <<'EOF'\n| right | $(y) |\nEOF
+silent|"${ROOT}/bin/x.sh" -s <<'EOF'\n| right | `x` |\nEOF
+silent|"$FLOW_ROOT/bin/journal-append" --file n.md - <<'EOF'\n| right | `x` |\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/flow-judge.sh" --judge goal <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/flow-eval-run.sh" <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nLC_ALL=C "$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nBASH_ENV=/dev/stdin "$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nexport BASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n$FLOW_ROOT/bin/journal-append.sh --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT"/bin/journal-append.sh --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file /dev/stdin - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file $J - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file "$(pwd)/n.md" - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file `pwd`/n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF' >/dev/null\n$C\nEOF
+silent|"$FLOW_ROOT/bin/flow-new-helper.sh" <<'EOF'\n| right | `x` |\nEOF
+merge|"$D/bin/sqlite3" notes.md <<'EOF'\ngh pr merge 1\nEOF
+merge|"$FLOW_ROOT/bin/flow-judge.sh" --judge goal <<'EOF'\ngh pr merge 1\nEOF
 EOF
-  # The same name once the plugin ships it: the list is read from bin/ when
-  # the hook runs.
+  # The same body once the plugin ships a script by that name.
   e2e_plugin_copy bin/flow-new-helper.sh "$(printf '#!/bin/sh\ncat > /dev/null')"
   _tg_run "$(printf '"$FLOW_ROOT/bin/flow-new-helper.sh" <<'"'"'EOF'"'"'\n| right | `x` |\nEOF')"
   _expect_silent_allow
@@ -2033,18 +2024,17 @@ fi
 
 # A backslash before << makes no heredoc: bash reads \<<'EOF' as a literal <
 # and a < redirection from the file EOF, so the lines after it are commands,
-# whichever program the line names (#344). Two backslashes are one literal
+# whichever program the line names. Two backslashes are one literal
 # backslash, and the << after them starts a heredoc.
 if _want tg-escaped-heredoc; then
   _tg_setup tg-escaped-heredoc feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: the lines after \\<<'EOF' or \\<<\\EOF are commands, for cat, a script and a program named by a variable alike, and a merge, a release or a command held in a variable on them asks; after \\\\<<'EOF' they are a body cat reads (T36)"
+    "every Tier 2 action autonomous: the lines after \\<<'EOF' or \\<<\\EOF are commands, for cat, a script and a program named by a variable alike: a merge or a release on them asks, and a command held in a variable on them is silent; after \\\\<<'EOF' they are a body cat reads (T36)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
     _tg_run "$C"
     case "$WANT" in
       merge) _expect_ask "tiers.merge" ;;
       release) _expect_ask "tiers.release" ;;
-      unread) _expect_ask "flow cannot read from the command text" ;;
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
     esac
     e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
@@ -2054,10 +2044,10 @@ merge|cat \\<<EOF\ngh pr merge 1\nEOF
 release|cat \\<<\\EOF\ngh release create v1\nEOF
 merge|./x.sh \\<<'EOF'\ngh pr merge 1\nEOF
 merge|"$P" x.sh \\<<'EOF'\ngh pr merge 1\nEOF
-unread|CMD='gh pr merge 1'\n"$P" x.sh \\<<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" x.sh \\<<\\EOF\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n./x.sh \\<<'EOF'\n$CMD\nEOF
-unread|CMD='gh pr merge 1'\n"$P" --file n.md - \\<<'EOF' >/dev/null\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" x.sh \\<<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" x.sh \\<<\\EOF\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n./x.sh \\<<'EOF'\n$CMD\nEOF
+silent|CMD='gh pr merge 1'\n"$P" --file n.md - \\<<'EOF' >/dev/null\n$CMD\nEOF
 silent|cat \\\\<<'EOF'\ngh pr merge 1\nEOF
 EOF
   e2e_expect_clean_edges
@@ -2065,26 +2055,25 @@ fi
 
 # Bash expands an unquoted heredoc body before the program reads it, so a
 # $(...) or backquote in it runs whoever the program is, cat, tee, echo,
-# printf and gh included (#344). A quoted body, and an escaped \$( or \`, stay
-# text.
+# printf and gh included. A quoted body, an escaped \$( or \`, and a command
+# held in a variable inside the substitution ($($CMD)) name nothing.
 if _want tg-unquoted-body-subst; then
   _tg_setup tg-unquoted-body-subst feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: \$(gh pr merge 1) or a backquoted gh release create v1 in an unquoted heredoc body asks for the merge or the release whichever program reads the body (cat, tee, gh, a commit message through \$(cat <<EOF)); a quoted body or escaped \\\$( and \\\` stay text (T4, T37)"
+    "every Tier 2 action autonomous: \$(gh pr merge 1) or a backquoted gh release create v1 in an unquoted heredoc body asks for the merge or the release whichever program reads the body (cat, tee, gh, a commit message through \$(cat <<EOF)); a quoted body, escaped \\\$( and \\\`, and a command held in a variable inside the substitution (\$(\$CMD)) stay silent (T4, T37)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
     _tg_run "$C"
     case "$WANT" in
       merge) _expect_ask "tiers.merge" ;;
       release) _expect_ask "tiers.release" ;;
-      unread) _expect_ask "flow cannot read from the command text" ;;
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
     esac
     e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
   done <<'EOF'
 merge|cat <<EOF\n$(gh pr merge 1)\nEOF
 merge|cat <<EOF\nit's $(gh pr merge 1) isn't\nEOF
-unread|CMD='gh pr merge 1'\ncat <<EOF\n$($CMD)\nEOF
-unread|CMD='gh pr merge 1'\nwhile read -r x; do echo "$x"; done <<EOF\n$($CMD)\nEOF
+silent|CMD='gh pr merge 1'\ncat <<EOF\n$($CMD)\nEOF
+silent|CMD='gh pr merge 1'\nwhile read -r x; do echo "$x"; done <<EOF\n$($CMD)\nEOF
 silent|while IFS= read -r f; do echo "$f"; done <<LIST\n$(ls)\nLIST\ngh pr view 1
 release|cat <<EOF\n`gh release create v1`\nEOF
 merge|cat <<-EOF\n\tnotes: $(gh pr merge 1)\n\tEOF
@@ -2107,20 +2096,19 @@ fi
 # Bash joins the lines of an unquoted heredoc body at each backslash-newline
 # before it expands the body, so a $ at the end of one line and a ( { or [
 # at the start of the next are one substitution, and a command inside a
-# substitution may be split over two lines (#344). ${x@P} runs the
-# substitutions held in x, and $[y] the one in an array subscript held in y.
-# An escaped backslash before a newline joins nothing, and a quoted body is
-# never joined or expanded.
+# substitution may be split over two lines. ${x@P} runs only the
+# substitutions held in x, and $[y] the one in an array subscript held in y,
+# text the hook does not read. An escaped backslash before a newline joins
+# nothing, and a quoted body is never joined or expanded.
 if _want tg-body-line-join; then
   _tg_setup tg-body-line-join feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: a substitution split by a backslash-newline in an unquoted body (\$\\ then (gh pr merge 1), {x@P} or [y] on the next line, or gh pr \\ then merge 1 inside one) asks; \$\\\\ before a newline, a joined line of prose and a quoted body stay text (T38)"
+    "every Tier 2 action autonomous: a substitution split by a backslash-newline in an unquoted body (\$\\ then (gh pr merge 1) on the next line, or gh pr \\ then merge 1 inside one) asks; {x@P} or [y] joined that way, which run only text held in a variable, \$\\\\ before a newline, a joined line of prose and a quoted body stay silent (T38)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
     _tg_run "$C"
     case "$WANT" in
       merge) _expect_ask "tiers.merge" ;;
       release) _expect_ask "tiers.release" ;;
-      unread) _expect_ask "flow cannot read from the command text" ;;
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
     esac
     e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
@@ -2129,8 +2117,8 @@ merge|cat <<EOF\n$\\\n(gh pr merge 1)\nEOF
 release|cat <<EOF\nnotes $\\\n(gh release create v1) today\nEOF
 merge|gh issue comment 5 --body-file - <<EOF\n$\\\n(gh pr merge 1)\nEOF
 merge|cat <<EOF\n$(gh pr \\\nmerge 1)\nEOF
-unread|x='$(gh pr merge 1)'\ncat <<EOF\n$\\\n{x@P}\nEOF
-unread|y='a[$(gh pr merge 1)]'\ncat <<EOF\n$\\\n[y]\nEOF
+silent|x='$(gh pr merge 1)'\ncat <<EOF\n$\\\n{x@P}\nEOF
+silent|y='a[$(gh pr merge 1)]'\ncat <<EOF\n$\\\n[y]\nEOF
 silent|cat <<EOF\n$\\\\\n(gh pr merge 1)\nEOF
 silent|cat <<EOF\nline one \\\nline two in $HOME\nEOF
 silent|cat <<'EOF'\n$\\\n(gh pr merge 1)\nEOF
@@ -2139,7 +2127,7 @@ EOF
 fi
 
 # A ) inside a ${...} within a substitution closes nothing: bash reads
-# ${x:-)} as one expansion and runs the command after it (#344).
+# ${x:-)} as one expansion and runs the command after it.
 if _want tg-subst-brace; then
   _tg_setup tg-subst-brace feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: a merge or release after a \${x:-)} inside a substitution of an unquoted body asks, also inside a group of that substitution; a plain \${BRANCH:-main} and \$(date) in prose stay text (T39)"
@@ -2163,17 +2151,19 @@ EOF
 fi
 
 # A command sets ENV or BASH_ENV, which makes a shell read its input as a
-# startup file, only as an assignment, an export or a read of that name, not
-# by naming it inside a sentence (#344). A name built with quotes is still
-# the name, and a string a shell, eval or trap runs is code.
+# startup file, as an assignment, an export or a read of that name, or in a
+# string a shell, eval or trap runs; naming it inside a sentence sets
+# nothing. Either way a flow script's quoted body names no action for its
+# markdown or a command held in a variable, and a merge written out in it
+# asks.
 if _want tg-env-named; then
   _tg_setup tg-env-named feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous: a flow script's quoted body stays data after echo \"check ENV first\" or NODE_ENV=test; it asks for the command held in a variable in it after export \"BASH_ENV=...\", B\"\"ASH_ENV=..., read \"BASH_ENV\", eval or trap of a string naming BASH_ENV, or ENV named outside a string, BASH_ENV spelled with $'...' escapes or set by a sourced file, or a program word that expands "$@" or "$1" (T40)"
+    "every Tier 2 action autonomous: a flow script's quoted body is silent for its markdown after echo \"check ENV first\" or NODE_ENV=test, and for the command held in a variable in it after export \"BASH_ENV=...\", B\"\"ASH_ENV=..., read \"BASH_ENV\", eval or trap of a string naming BASH_ENV, ENV named outside a string, BASH_ENV spelled with \$'...' escapes or set by a sourced file, or a program word that expands \"\$@\" or \"\$1\"; a merge written out in it after export BASH_ENV asks (T40)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
     _tg_run "$C"
     case "$WANT" in
-      unread) _expect_ask "flow cannot read from the command text" ;;
+      merge) _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)" ;;
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
     esac
     e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
@@ -2181,34 +2171,35 @@ if _want tg-env-named; then
 silent|echo "check ENV first"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `subtract(5, 3)` → `2` |\nEOF
 silent|printf '%s\\n' 'set BASH_ENV in the profile'\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `x` |\nEOF
 silent|NODE_ENV=test npm run build\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `x` |\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nexport "BASH_ENV=/dev/stdin"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nexport B""ASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nexport 'B'ASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nread -r "BASH_ENV" < f; export "BASH_ENV"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\neval "export BASH_ENV=/dev/stdin"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\ntrap "read BASH_ENV < f; export BASH_ENV" DEBUG\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\necho ENV first\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nexport $'BASH_\\x45NV'=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n. ./env.sh\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nif true; then source env.sh; fi\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\nset -- /bin/bash -s ""\n"$@/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
-unread|C=$(printf 'gh pr %s 1' merge)\n"$1/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nexport "BASH_ENV=/dev/stdin"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nexport B""ASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nexport 'B'ASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nread -r "BASH_ENV" < f; export "BASH_ENV"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\neval "export BASH_ENV=/dev/stdin"\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\ntrap "read BASH_ENV < f; export BASH_ENV" DEBUG\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\necho ENV first\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nexport $'BASH_\\x45NV'=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n. ./env.sh\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nif true; then source env.sh; fi\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\nset -- /bin/bash -s ""\n"$@/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
+silent|C=$(printf 'gh pr %s 1' merge)\n"$1/bin/journal-append.sh" --file n.md - <<'EOF'\n$C\nEOF
 silent|cp notes.md .\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\n| right | `x` |\nEOF
+merge|export BASH_ENV=/dev/stdin\n"$FLOW_ROOT/bin/journal-append.sh" --file n.md - <<'EOF'\ngh pr merge 1\nEOF
 EOF
   e2e_expect_clean_edges
 fi
 
-# A shell asks as one that reads its script from its input only when a pipe
-# feeds it; named as an argument (`which bash`) it runs nothing.
+# A shell named as an argument (`which bash`) runs nothing. A shell a pipe
+# feeds runs the piped text: a Tier 3 action written out in it asks, and
+# text the hook cannot read names nothing.
 if _want tg-shell-argument; then
   _tg_setup tg-shell-argument feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
-    "every Tier 2 action autonomous, branch v1-fix: a shell named as an argument (which, command -v, type, ls, file, docker run, direnv export) or after || is silent; a shell a pipe feeds (|, |&, through sudo or an unknown program) asks (T33)"
+    "every Tier 2 action autonomous, branch v1-fix: a shell named as an argument (which, command -v, type, ls, file, docker run, direnv export) or after || is silent; a shell a pipe feeds (|, |&, through sudo or an unknown program) is silent when the piped text names no Tier 3 action the hook can read, and asks for a merge or a tag deletion written out in the piped text, in a group, a subshell, a compound command or a process substitution (T33)"
   ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix ) || _flow_assert_fail "tg-shell-argument: could not create the branch"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
-      shell) _expect_ask "reads its script from its input"; e2e_expect_equal 0 "$E2E_RC" "exit status for: $C" ;;
     esac
   done <<'EOF'
 silent|which bash && gh pr view 1
@@ -2221,33 +2212,38 @@ silent|direnv export bash && gh pr view 1
 silent|x=$(direnv export bash) && gh pr view 1
 silent|docker compose run app sh && git push origin v1-fix
 silent|gh pr view 1 || bash
-shell|echo x | sudo bash; gh pr list
-shell|cat f | sh -s; gh pr list
-shell|echo x |& bash; gh pr list
-shell|gh pr view 1 | tee log | bash
-shell|echo x | docker run -i img bash; gh pr list
+silent|echo x | sudo bash; gh pr list
+silent|cat f | sh -s; gh pr list
+silent|echo x |& bash; gh pr list
+silent|gh pr view 1 | tee log | bash
+silent|echo x | docker run -i img bash; gh pr list
 silent|false || bash; gh pr list
 EOF
   _tg_run "$(printf 'gh pr view 1 |\nbash')"
-  _expect_ask "reads its script from its input"
-  # In a command with a pipe or a process substitution anywhere, a shell that
-  # reads its input asks wherever it stands: in a group, a subshell, a
-  # compound command, or after another command the pipe feeds.
-  while IFS= read -r C; do
+  _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr for a pipe into bash on the next line"
+  # The text piped into a shell is read as its script wherever the shell
+  # stands: in a group, a subshell, a compound command, or after another
+  # command the pipe feeds. printf's \n escapes are not read as line ends.
+  while IFS='|' read -r WANT C; do
     _tg_run "$C"
-    _expect_ask "reads its script from its input"
+    case "$WANT" in
+      merge) _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)" ;;
+      maybe) _expect_ask "may push or delete a tag" ;;
+      silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+    esac
     e2e_expect_equal 0 "$E2E_RC" "exit status for: $C"
   done <<'EOF'
-echo 'gh pr merge 7' | { :; bash; }
-echo 'gh pr merge 7' | (bash)
-echo 'gh pr merge 7' | ( cd /tmp && bash )
-echo 'gh pr merge 7' | if true; then bash; fi
-echo 'gh pr merge 7' | for i in 1; do bash; done
-echo 'gh pr merge 7' | case x in x) bash ;; esac
-printf 'x\ngh pr merge 7\n' | { read -r _; bash; }
-echo 'gh pr merge 7' > >(bash)
-echo 'gh pr merge 7' | tee >(bash)
-echo 'git push origin --delete v1' | { :; bash; }
+merge|echo 'gh pr merge 7' | { :; bash; }
+merge|echo 'gh pr merge 7' | (bash)
+merge|echo 'gh pr merge 7' | ( cd /tmp && bash )
+merge|echo 'gh pr merge 7' | if true; then bash; fi
+merge|echo 'gh pr merge 7' | for i in 1; do bash; done
+merge|echo 'gh pr merge 7' | case x in x) bash ;; esac
+silent|printf 'x\ngh pr merge 7\n' | { read -r _; bash; }
+merge|echo 'gh pr merge 7' > >(bash)
+merge|echo 'gh pr merge 7' | tee >(bash)
+maybe|echo 'git push origin --delete v1' | { :; bash; }
 EOF
   e2e_expect_clean_edges
 fi
@@ -2484,6 +2480,295 @@ if _want tg-cwd; then
   e2e_expect_equal "" "$(_tg_journals)" "journal files in the starting repository"
   e2e_run_hook "$HOOK" "$(jq -cn --arg cwd "$OTHER" '{cwd:$cwd,tool_input:{command:"gh pr create --fill"}}')"
   _expect_ask "tiers.prCreate"
+  e2e_expect_clean_edges
+fi
+
+# --- script text of a language interpreter --------------------------------------------
+# _tg_case <file> — the command in the file, run through the hook; the file
+# keeps backticks and quotes exactly as an agent types them.
+_tg_case() { _tg_run "$(cat "$1")"; }
+
+if _want tg-interpreter-text; then
+  _tg_setup tg-interpreter-text feature/issue-42-x "" \
+    "a Python, node, ruby or perl script, from a quoted or unquoted heredoc, -c, -e or a here-string, whose strings hold markdown backticks, \$(...), parentheses and the words merge, release, push and gh, merges and releases nothing, so the hook is silent and writes no journal line; a gh command beside it that only reads (gh pr view, gh pr edit --body-file) changes nothing"
+  C="$E2E_DIR/cases"
+  mkdir -p "$C"
+  # A Python heredoc whose string mixes markdown backquotes with plain words,
+  # among them merge and release.
+  for W in "is fine" "is right" "at release" "we merge"; do
+    printf "python3 - <<'PY'\nf(a,'x \`y\` %s')\nPY" "$W" > "$C/table.txt"
+    _tg_case "$C/table.txt"
+    _expect_silent_allow
+    e2e_expect_equal "" "$E2E_ERR" "stderr for the table row '$W'"
+  done
+  cat > "$C/1.txt" <<'EOF'
+python3 - <<'PY'
+p = 'notes.md'; s = open(p).read()
+s = s.replace("(`Guard`)", "(`Guard`, \"Guard\" under \"The Recorded Traditions\")", 1)
+s = s.replace("P, - the reader is right (`Iwi and place` gives two options);\n - next.", "x", 1)
+s = s.replace("we merge $(cat x) at release; push gh", "y")
+open(p, 'w').write(s)
+PY
+EOF
+  cat > "$C/2.txt" <<'EOF'
+python3 -c 'import re; s = "see (`gh pr merge`) and $(git push) before the release"; print(re.sub(r"`([^`]*)`", r"\1", s))'
+EOF
+  cat > "$C/3.txt" <<'EOF'
+node - <<'JS'
+const s = `we merge (${"x"}) at release`; console.log(s.replace(/`/g, ""), "$(gh release create v1)");
+JS
+EOF
+  cat > "$C/4.txt" <<'EOF'
+ruby -e 'puts "the `merge` step (after release) runs gh pr view"' && perl -e 'print "push `x` merge\n"'
+EOF
+  cat > "$C/5.txt" <<'EOF'
+python3 <<<'print("a `merge` (b) release")'
+EOF
+  cat > "$C/6.txt" <<'EOF'
+gh pr view 48 --json body --jq .body > body.md; python3 - <<'PY'
+p = 'body.md'
+s = open(p).read(); a = '**Documented in `2d0f1e2`:**'
+assert s.count(a) == 1, s.count(a)
+open(p, 'w').write(s.replace(a, '**Documented in `a5536f6`:**'))
+PY
+gh pr edit 48 --body-file body.md >/dev/null
+gh pr view 48 --json body --jq .body | grep -oE '`[0-9a-f]{7}`' | tr -d '`' | sort -u | while read h; do printf "%s  %s\n" "$h" "$(git cat-file -t $h 2>/dev/null || echo INVALID)"; done
+EOF
+  cat > "$C/7.txt" <<'EOF'
+python3 - <<PY
+s = "the (`x`) note we merge at release"
+PY
+EOF
+  # The output of the script redirected or piped: the body is still its
+  # script, and a docstring line naming a merge is text.
+  for R in '2>&1' '> out.md' '| tail -3'; do
+    printf "python3 - <<'PY' %s\ndoc = \"\"\"\ngh pr merge 7\ngh release create v1 (\`x\`)\n\"\"\"\nprint(doc)\nPY\n" "$R" > "$C/8-$(printf '%s' "$R" | tr -dc 'a-z0-9').txt"
+  done
+  # Filters whose words name a runner only as an argument, a wrapper around
+  # a filter, and a source or ANSI-C string earlier in the command.
+  N=10
+  for P in "| jq ." "| jq '.'" '| grep -c env' '| python3 -m json.tool' '| timeout 5 head' \
+           "PRE:source .venv/bin/activate && " "PRE:. x
+" "PRE:printf \$'a\\\\n'
+" "PRE:timeout 60 " "PRE:out=\$(" "PRE:local out=\"\$("; do
+    case "$P" in
+      PRE:*) A="${P#PRE:}"; B="" ;;
+      *) A=""; B=" $P" ;;
+    esac
+    printf "%spython3 - <<'PY'%s\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nprint(doc)\nPY\n" "$A" "$B" > "$C/$N.txt"
+    case "$A" in *'"$('*) printf ')"\n' >> "$C/$N.txt" ;; *'$('*) printf ')\n' >> "$C/$N.txt" ;; esac
+    N=$((N + 1))
+  done
+  # The interpreter after a shell keyword, and output stored or followed by
+  # another command.
+  for L in "for f in a b; do python3 - \"\$f\" <<'PY'" "if python3 - <<'PY'" "{ python3 - <<'PY'" \
+           "! python3 - <<'PY'" "python3 - <<'PY' &> log.txt" "python3 - <<'PY' && echo done" \
+           "python3 - <<'PY' 2>&1 | tail -3 > out.txt"; do
+    printf "%s\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n" "$L" > "$C/$N.txt"
+    case "$L" in for*) printf 'done\n' >> "$C/$N.txt" ;; if*) printf 'then :; fi\n' >> "$C/$N.txt" ;; '{'*) printf '}\n' >> "$C/$N.txt" ;; esac
+    N=$((N + 1))
+  done
+  # What the script prints is not read, wherever it goes: printed into a
+  # shell it is text the hook cannot see, as curl | sh is, and the gh
+  # wrapper refuses a merge in it when it runs (tr-unreadable-refused-at-run).
+  for R in '| bash' '> >(bash)' '| sudo -s' '| xargs -L1 env' '| "$SHELL"' '|' \
+           "| jq -r '.[] | .name'" "| awk '{print \$1}'" '> "$OUT"'; do
+    printf "python3 - <<'PY' %s\nprint('gh pr merge 7')\nPY\n" "$R" > "$C/$N.txt"
+    N=$((N + 1))
+  done
+  for W in 'bash -c "$(' 'eval "$(' 'bash <(' '$(' 'gh pr comment 5 --body "$('; do
+    printf "%spython3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)" "$W" > "$C/$N.txt"
+    case "$W" in *'"$(') printf '"' >> "$C/$N.txt" ;; esac
+    N=$((N + 1))
+  done
+  # A heredoc body kept in the output, or a substitution closed on a later
+  # line, says nothing about who owns a later heredoc; an assignment of a
+  # plain value comes before the interpreter.
+  for L in "cat > notes.md <<'EOF'
+\`\`\`bash
+ls
+\`\`\`
+EOF
+python3 - <<'PY'" \
+           "PYTHONPATH=\$PWD python3 - <<'PY'" \
+           "echo \$'it\\'s'; python3 - <<'PY'" \
+           "uv run python3 - <<'PY'" \
+           "poetry run python - <<'PY'" \
+           "pipenv run python3 - <<'PY'" \
+           "OUT=\"\${TMPDIR}/x\"
+python3 - <<'PY'" \
+           "git commit -m \"fix lower case names\"
+python3 - <<'PY'" \
+           "echo \"\${HOME}\"
+python3 - <<'PY'" \
+           "x=\$(date)
+python3 - <<'PY'"; do
+    printf "%s\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n" "$L" > "$C/$N.txt"
+    N=$((N + 1))
+  done
+  cat > "$C/node-e.txt" <<'EOF'
+node -e 'console.log(`we merge (${"x"}) at release: $(gh pr merge 7)`)'
+EOF
+  cat > "$C/ruby-heredoc.txt" <<'EOF'
+ruby - <<'RB'
+puts "the `merge` step (after release) runs $(gh pr merge 7) and git push"
+RB
+EOF
+  cat > "$C/9.txt" <<'EOF'
+node - <<'JS' 2>&1 | tail -3
+console.log(`we merge at release: ${"gh pr merge 7"}`)
+JS
+EOF
+  for F in "$C"/[0-9]*.txt; do
+    _tg_case "$F"
+    _expect_silent_allow
+    e2e_expect_equal "" "$E2E_ERR" "stderr for case $(basename "$F")"
+  done
+  e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-plain-still-asks; then
+  _tg_setup tg-plain-still-asks feature/issue-42-x '{"tiers":{"push":"autonomous"}}' \
+    "a merge, a release or a tag push written out still asks, alone and joined to other commands with &&, ;, | or a newline, inside a substitution, after a Python heredoc, in a bash script (bash -c, a bash heredoc, also after a quoted ; or ( that names python3), and where bash itself runs it inside an interpreter's argument or an unquoted heredoc body (\$(...) in double quotes)"
+  ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1 -m v1 ) || _flow_assert_fail "tg-plain-still-asks: could not create tag v1"
+  C="$E2E_DIR/cases"
+  mkdir -p "$C"
+  cat > "$C/merge.txt" <<'EOF'
+gh pr merge 7
+cd sub && gh pr merge 7
+ls; gh pr merge 7
+git status | gh pr merge 7
+bash -c 'gh pr merge 7'
+python3 -c "$(gh pr merge 7)"
+bash <<<'gh pr merge 7'; echo node
+bash <<<'gh pr merge 7' && python3 -c 1
+cat <<<'gh pr merge 7' | bash && python3 -c 1
+EOF
+  # A heredoc line that bash reads inside a string, after an earlier line
+  # whose text could be misread as a heredoc or a continuation.
+  for L in "git commit -m \"doc: use cat <<EOF\"
+y=\"\$(echo \"
+python3 - <<'PY'
+\"; gh pr merge 7)\"
+PY" \
+           ": \$((1<<x))
+y=\"\$(echo \"
+python3 - <<'PY'
+\"; gh pr merge 7)\"
+PY" \
+           "cat <<'EOF' > run.sh
+docker run \\
+EOF
+y=\"\$(echo \"
+python3 - <<'PY'
+\"; gh pr merge 7)\"
+PY"; do
+    printf "%s\n" "$L" > "$C/encl.txt"
+    _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done
+  _tg_run "git commit -m 'note: gh pr merge later' && gh pr merge 9"
+  _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  # A language name that is a user, a host or a word of shell text is not
+  # the program: the shell script after it is read.
+  for L in "su node -c 'gh pr merge 7'" "ssh node 'gh pr merge 7'" "x=\$(su node -c 'gh pr merge 7')" "eval python3 'x; gh pr merge 1'" "ssh host python3 'x; gh pr merge 1'"; do
+    _tg_run "$L"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done
+  for L in "sudo -u app python3 x.py 'gh pr merge 7 failed'" "env -i python3 x.py 'gh pr merge 7'" "timeout -s KILL 5 python3 x.py 'gh pr merge 7'" "xargs python3 x.py 'gh pr merge 7'" "sudo python3 x.py 'gh pr merge 1'" "uv run python3 -c 'print(\"gh pr merge 7\")'" "cd x && python3 -c 'print(\"gh pr merge 7\")'"; do
+    _tg_run "$L"; _expect_silent_allow
+  done
+  # A quoted ; or ( before a bash heredoc is text to bash: the heredoc is
+  # the script of bash, and is read.
+  # A bash heredoc whose line names an interpreter only in an assignment,
+  # an option argument, a redirection or quoted or expanded text, or after
+  # a backquote that spans lines.
+  for L in "bash -s \"x;python3 -\" <<'EOF'" "bash -s \"a(python3 -\" <<'EOF'" \
+           "PYTHON=/usr/bin/python3 bash <<'EOF'" \
+           "env PYTHON=/usr/bin/python3 bash <<'EOF'" \
+           "PYTHON=/usr/bin/python3 bash <<'EOF' 2>&1" \
+           "env -C /srv/node bash <<'EOF'" \
+           "sudo --chdir=/opt/python3 bash <<'EOF'" \
+           "exec -a python3 bash <<'EOF'" \
+           "sudo -u python3 bash <<'EOF'" \
+           "env -u node bash <<'EOF'" \
+           "bash -s 2>&1 python3 <<'EOF'" \
+           "bash -s >&2 node <<'EOF'" \
+           "bash -s >|python3 <<'EOF'" \
+           "bash -s \\\$'x\\' ';python3 -' <<'EOF'" \
+           "bash -s \\\${ '}' ';python3 -' <<'EOF'" \
+           "bash -s \${x:-\"};python3 -\"} <<'EOF'" \
+           "bash -s \"\$(case \$y in a) echo \" ;python3 - \" ;; esac)\" <<'EOF'" \
+           "bash -s \`echo a
+\` python3 - <<'EOF'" \
+           "A=\"x python3 y\" bash <<'EOF'" \
+           "env A=\"x python3 y\" bash <<'EOF'" \
+           "MSG='run python3 now' bash -s <<'EOF'" \
+           "A=x\\ python3 bash <<'EOF'" \
+           "A=( python3 ) bash <<'EOF'" \
+           "PYTHONPATH=\"\$PWD python3\" bash <<'EOF'" \
+           "bash -s \"\$(cat args.txt)\" <<'EOF'" \
+           "bash -s -- \$(cat args.txt) <<'EOF'" \
+           "(echo start; bash) <<'EOF'" \
+           "(printf 'x\\n' && bash -s) <<'EOF'" \
+           "(gh auth status; bash) <<'EOF'" \
+           "(tee /dev/null; bash) <<'EOF'" \
+           "\$(echo bash) <<'EOF'" \
+           "uv run bash <<'EOF'" \
+           "uv run --with python3 bash <<'EOF'" \
+           "poetry run sh <<'EOF'"; do
+    printf "%s\ngh pr merge 7\nEOF\n" "$L" > "$C/encl.txt"
+    _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done
+  cat > "$C/release.txt" <<'EOF'
+gh release create v1
+echo "$(gh release create v1)"
+ls && gh release create v1
+ls; gh release create v1
+git status | gh release create v1
+sh <<<'gh release create v1' && which python3
+bash <<<'gh release create v1' & python3 -c 1
+EOF
+  mkdir -p "$E2E_REPO/sub"
+  while IFS= read -r L; do
+    _tg_run "$L"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done < "$C/merge.txt"
+  while IFS= read -r L; do
+    _tg_run "$L"; _expect_ask "tiers.release"
+  done < "$C/release.txt"
+  _tg_run "git push origin v1"
+  _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  _tg_run "ls
+gh pr merge 7"
+  _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  _tg_run "ls
+gh release create v1"
+  _expect_ask "tiers.release"
+  _tg_run "ls
+git push origin v1"
+  _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  for L in "ls && git push origin v1" "ls; git push origin v1" "git status | git push origin v1"; do
+    _tg_run "$L"
+    _expect_ask "Creating a release or pushing a tag is a Tier 3 action (tiers.release)"
+  done
+  cat > "$C/a.txt" <<'EOF'
+python3 - <<'PY'
+s = "the (`x`) note"
+PY
+gh pr merge 7
+EOF
+  _tg_case "$C/a.txt"; _expect_ask "Command: gh pr merge 7"
+  cat > "$C/b.txt" <<'EOF'
+bash <<'SH'
+gh release create v1
+SH
+EOF
+  _tg_case "$C/b.txt"; _expect_ask "tiers.release"
+  cat > "$C/c.txt" <<'EOF'
+python3 - <<PY
+print("$(gh release create v1)")
+PY
+EOF
+  _tg_case "$C/c.txt"; _expect_ask "tiers.release"
   e2e_expect_clean_edges
 fi
 

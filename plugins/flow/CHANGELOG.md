@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased
+
+Each entry below describes the change against 3.15.1.
+
+### Fixed
+
+- The tier gate (`hooks/scripts/tier-gate.sh`) no longer asks a Tier 3
+  question, and the merge guard (`hooks/scripts/block-unchecked-merge.sh`)
+  no longer refuses, for a Python, Perl, Ruby or JavaScript script whose
+  strings hold markdown (#348). In 3.15.1 the script of `python3 - <<'PY'`,
+  `python3 -c '...'`, `node -e '...'` and the like was read as shell, so a
+  string such as ``'x `y` is right'`` read as a command flow could not read,
+  and asked "may merge a pull request or create a release"; with the word
+  merge in it, the merge guard refused the command outright. The script of
+  python, perl, ruby, node, deno and bun is now data wherever its output
+  goes, also behind `timeout`, `env`, `uv run`, `poetry run` and the like.
+  A heredoc counts as such a script only in these plain forms; anything
+  else on the line before the interpreter makes it read as before. What
+  a script prints is not read, also when a shell runs it
+  (`python3 - <<'PY' | bash`, `eval "$(python3 ...)"`): like `curl ... | sh`,
+  that is text the hook cannot see, and flow's `gh` and `git` wrappers
+  refuse a merge, release or tag push in it when it runs. What bash
+  itself runs in it is still read (`python3 -c "$(gh pr merge 7)"`, a
+  `$(...)` in an unquoted heredoc), and so is the script of a shell
+  (`bash -c`, a bash heredoc or here-string).
+
+### Changed
+
+- The tier gate asks only about merges, releases and tag pushes it can
+  read in the command, and the merge guard judges only merges it can read.
+  Neither asks about or refuses, any more, a command held in a variable
+  (`$CMD`, `$GH pr merge 7`), a gh subcommand, gh api endpoint, method or
+  GraphQL query held in one (`gh pr $A 7`), `eval` or `source` of such text,
+  or a shell reading its script from a pipe. A merge, release or tag push
+  in such text is refused when it runs by flow's `gh` and `git` wrappers,
+  which see the real arguments; the message names the plain command to run
+  instead. Such a command can no longer be approved at the prompt: write
+  the action out.
+- A GraphQL query read from stdin (`-F query=@/dev/stdin`) is refused by
+  the gh wrapper when it runs, since nothing asked about it; pass the query
+  inline or from a file.
+
+### Added
+
+- `/flow:setup` offers Claude Code ask rules for merges, releases and tag
+  pushes (`gh pr merge`, `gh release create`, `edit`, `delete`, `upload`,
+  `delete-asset`, and `git push` with `--tags`, `--follow-tags` or a
+  `refs/tags/` ref), written by `bin/flow-setup-permissions.sh` to
+  `.claude/settings.json` or `.claude/settings.local.json`. Claude Code
+  then asks before these commands with or without flow, also inside `&&`,
+  `;`, `|` and `$(...)`. With the rules in place, `gh release create
+  --verify-tag` for a tag already on origin is asked about too.
+
 ## 3.15.1 (2026-11-08)
 
 Each entry below describes the change against 3.15.0.

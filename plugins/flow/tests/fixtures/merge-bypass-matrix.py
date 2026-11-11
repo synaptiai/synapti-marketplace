@@ -171,8 +171,6 @@ for label, cmd in [
     ("selector via xargs", "echo 42 | xargs gh pr merge --repo acme/widgets --squash"),
     ("--repo from a command substitution",
      "gh --repo $(gh repo view --json nameWithOwner -q .nameWithOwner) pr merge 42 --squash"),
-    ("merge under a variable command name", "G=gh; $G pr merge 7 --repo acme/widgets --squash"),
-    ("merge under a substituted command name", "$(which gh) pr merge 7 --repo acme/widgets --squash"),
     ("REST merge endpoint", "gh api -X PUT repos/o/r/pulls/9/merge"),
     ("REST merge endpoint, -X=PUT", "gh api -X=PUT repos/o/r/pulls/9/merge"),
     ("REST merge endpoint, full URL", "gh api --method PUT https://api.github.com/repos/o/r/pulls/9/merge"),
@@ -185,14 +183,26 @@ for label, cmd in [
      "gh api /graphql -f query='mutation { mergePullRequest(input: {pullRequestId: \"x\"}) { clientMutationId } }'"),
     ("GraphQL auto-merge mutation",
      "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {pullRequestId: \"x\"}) { clientMutationId } }'"),
-    ("GraphQL query from a file", "gh api graphql -F query=@merge.graphql"),
     ("gh alias for a merge", "gh alias set m 'pr merge' && gh m 9"),
     ("host/owner/name, whose required checks cannot be read", "gh pr merge 7 --repo github.com/o/r --squash"),
-    ("whole endpoint in a variable", 'EP=repos/o/r/pulls/9/merge; gh api -X PUT "$EP"'),
     ("a merge after a heredoc whose apostrophe unbalances the command, beside one in the shape",
      "cat > notes.md <<'X'\nit's done\nX\ngh pr merge 7 --repo o/r --squash\ngh pr merge 8 --repo o/r --squash --body \"Summary"),
 ]:
     CASES.append((label, stub(GREEN), cmd, 2))
+
+# Text this hook cannot read is not read as a merge: the program, or the
+# endpoint or query of gh api, is a variable, a substitution or a file. The
+# tier gate does not ask about it either, and the gh wrapper refuses a merge
+# nobody approved when gh runs (lib/tier-runtime.sh, e2e-tier-runtime's
+# tr-unreadable-refused-at-run), so none of these reaches GitHub. gh is not
+# called here: the stub logs nothing.
+for label, cmd in [
+    ("merge under a variable command name", "G=gh; $G pr merge 7 --repo acme/widgets --squash"),
+    ("merge under a substituted command name", "$(which gh) pr merge 7 --repo acme/widgets --squash"),
+    ("GraphQL query from a file", "gh api graphql -F query=@merge.graphql"),
+    ("whole endpoint in a variable", 'EP=repos/o/r/pulls/9/merge; gh api -X PUT "$EP"'),
+]:
+    CASES.append((label, stub(GREEN), cmd, 0))
 
 # Must stay allowed, and checked against the right pull request.
 CASES.append(("green merges", stub(GREEN), f"gh pr merge 7 {R}", 0, "pr view 7 --repo acme/widgets"))

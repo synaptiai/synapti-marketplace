@@ -83,7 +83,7 @@ else
 fi
 ```
 
-`SETTINGS_FILE` is the project settings file every Flow hook and command reads: `.claude/settings.flow.json` at the repository top (relative when setup runs at the top, absolute when it runs in a subdirectory). Setup writes and upgrades that file and no other. Each `UNREAD_SETTINGS` line names a Flow settings file in the working directory (or in `CLAUDE_PROJECT_DIR`) below the top, which Flow does not read: list it under **Manual Steps Required** in the Phase 7 summary, saying its keys take effect only once moved into `SETTINGS_FILE` (or, for a `.local` file, into `settings.flow.local.json` beside it).
+`SETTINGS_FILE` is the project settings file every Flow hook and command reads: `.claude/settings.flow.json` at the repository top (relative when setup runs at the top, absolute when it runs in a subdirectory). Setup writes and upgrades that file; the only Claude Code settings file it writes is the one the person picks in Phase 5 for the ask rules. Each `UNREAD_SETTINGS` line names a Flow settings file in the working directory (or in `CLAUDE_PROJECT_DIR`) below the top, which Flow does not read: list it under **Manual Steps Required** in the Phase 7 summary, saying its keys take effect only once moved into `SETTINGS_FILE` (or, for a `.local` file, into `settings.flow.local.json` beside it).
 
 On `TIMEOUT_BIN=missing`, add the coreutils install to **Manual Steps Required** in the Phase 7 summary: without it the verdict judge and the goal judge report that they could not start (exit 4).
 
@@ -507,6 +507,32 @@ fi
 
 Report each line in the Phase 7 summary. A `FAILED=` line goes under **Manual Steps Required** with GitHub's message.
 
+### Claude Code ask rules
+
+This step runs whether or not the repository has a GitHub remote. flow's tier checks act on merges, releases and tag pushes written out in a command. Claude Code's own permission rules are a second check that does not depend on flow: an `ask` rule makes Claude Code ask before any command that matches it, also when the command is joined to others with `&&`, `;` or `|`, or sits inside `$(...)`. This step adds nine such rules: `gh pr merge`, `gh release create`, `edit`, `delete`, `upload` and `delete-asset`, and `git push` with `--tags`, `--follow-tags` or a `refs/tags/` ref. A rule matches the command as written, so it does not see a tag pushed by its name alone (`git push origin v1`), a command held in a variable, or one run by a script. flow's checks and the GitHub rulesets above cover those. With the rules in place Claude Code also asks before `gh release create <tag> --verify-tag`, which flow alone journals without asking when the tag is already on origin; once approved it runs.
+
+[ask: permission] Use the AskUserQuestion tool (with `metadata: {"source": "flow:permission"}`) to ask where to write the rules:
+
+- **For everyone on this repository** (recommended): `.claude/settings.json`, committed with the repository, so Claude Code asks for every person who works in it.
+- **For you only**: `.claude/settings.local.json`, which stays on this machine.
+- **Skip**: write nothing.
+
+Only after the user picks one of the first two, run the block below with `PERM_FILE` set to `shared` for the first choice or `local` for the second. It adds the rules that are missing to `permissions.ask` of that file at the repository top, after the rules already there, and keeps everything else in the file. It prints `PERMISSIONS=written` with `ADDED=<n>`, `PERMISSIONS=unchanged` when every rule is already there (the file is not rewritten), `PERMISSIONS=refused` with a `REASON=` when it writes nothing (the file is not a JSON object, it is a symlink, or `PERM_FILE` is neither choice), or `PERMISSIONS=skipped` when jq is missing, and `FILE=<path>`:
+
+```bash
+# SETUP_PERMISSIONS_BEGIN
+# The rules and the write are in bin/flow-setup-permissions.sh.
+FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
+if [ -x "$FLOW_ROOT/bin/flow-setup-permissions.sh" ]; then
+  "$FLOW_ROOT/bin/flow-setup-permissions.sh" "${PERM_FILE:-}"
+else
+  printf '%s\n' "PERMISSIONS=skipped" "REASON=bin/flow-setup-permissions.sh was not found under ${FLOW_ROOT:-the flow plugin root}; the ask rules were not written" "FILE="
+fi
+# SETUP_PERMISSIONS_END
+```
+
+Report the result in the Phase 7 summary. On `refused` or `skipped`, add its `REASON` to **Manual Steps Required**.
+
 ## Phase 6: CLAUDE.md Integration
 
 [ask: default] Use the AskUserQuestion tool with contextual options to ask: "Add flow workflow section to CLAUDE.md?" Under `ASK_POLICY=autonomous`, do not ask: add the section, record it with `--type default-taken` ([`references/ask-policy.md`](../references/ask-policy.md)), and list it in the summary.
@@ -541,6 +567,9 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 
 ### GitHub Rulesets
 {One of: each CREATED= and FAILED= line from Phase 5; "flow's rulesets are already in place"; "skipped by the user"; "no git remote"; or "could not be read or created ({RULESETS value})"}
+
+### Claude Code Ask Rules
+{One of: "added {ADDED} rules to {FILE}"; "already in {FILE}"; "skipped by the user"; or "not written: {REASON}"}
 
 {If Phase 2 upgraded deprecated settings keys or stripped auto-log lines:}
 ### Files to Review Before Committing
@@ -604,3 +633,4 @@ Any key set at a higher layer overrides lower layers. See [`references/gate-conf
 | Install LSP server binaries; `claude plugin marketplace add` and `claude plugin install` | 2 | Changes the user's environment outside the repository; run only after the user picks an install option in Step 3.4. No tier setting applies and no breadcrumb is written |
 | Read the repository's GitHub rulesets | 1 | Autonomous, read-only |
 | Create flow's GitHub rulesets (default branch, tags) | 3 | **Confirm**: this command asks with AskUserQuestion first, naming what each choice does and does not stop; nothing is created on Skip. The `tier-gate.sh` hook does not cover ruleset changes, so this question is the only one |
+| Add Claude Code ask rules to `.claude/settings.json` or `.claude/settings.local.json` (`flow-setup-permissions.sh`) | 1 | Project or local file, run only after AskUserQuestion names the file; adds missing rules only, keeps everything else, writes nothing to a file that is not a JSON object or is a symlink |

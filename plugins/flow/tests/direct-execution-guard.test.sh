@@ -114,9 +114,10 @@ DEG_OUT=$(
   # shellcheck source=lib/e2e.sh
   source "$DEG_TESTS/lib/e2e.sh" || exit 1
   e2e_new guard-empty-repo
-  # No e2e_repo: E2E_REPO is empty, so cd "$E2E_REPO" stays in the directory
-  # the subshell started in, outside the scratch root.
-  ( _e2e_git_env; cd "$E2E_REPO" || exit 1; git commit -q --allow-empty -m stray ) 2>"$DEG_TMP/guard.err"
+  # No e2e_repo: E2E_REPO is empty. cd "" stays in the directory the subshell
+  # started in (bash 5.2 and earlier) or fails (bash 5.3); either way git then
+  # runs outside the scratch root.
+  ( _e2e_git_env; cd "$E2E_REPO" 2>/dev/null; git commit -q --allow-empty -m stray ) 2>"$DEG_TMP/guard.err"
   printf 'empty-repo=%s\n' "$?"
   ( _e2e_git_env; git -C "$DEG_TMP/outside" commit -q --allow-empty -m stray ) 2>>"$DEG_TMP/guard.err"
   printf 'dash-c-outside=%s\n' "$?"

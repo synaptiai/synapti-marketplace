@@ -14,8 +14,10 @@
 #
 # Contract for callers:
 #   _bd_strip_noncode <command>   -> sets BD_CODE, and BD_KEPT_BODY=1 when a heredoc
-#                                    body was kept as text; BD_BLANK_BODIES=1 and
-#                                    BD_QUOTED_BODIES=1 drop more bodies (below)
+#                                    body was kept as text; BD_BLANK_BODIES=1
+#                                    drops more bodies (below);
+#                                    BD_LANG_DATA=1 reads a language interpreter's
+#                                    script as data (below)
 #   _rm_tokenise <simple-command> -> fills TOK (quotes removed, backslashes and
 #                                    redirections kept); s1-guard's word check
 #   _bd_words <text>              -> fills TOK with the words bash hands the program
@@ -36,7 +38,9 @@
 #   _bd_shell_reads_stdin <index> -> 0 when TOK[index] is a shell that reads its
 #                                    script from its input (no -c, no script file)
 #   _bd_expand_interpreter_args   -> appends quoted interpreter arguments, and text
-#                                    piped into a shell, to BD_CODE
+#                                    piped into a shell, to BD_CODE; with
+#                                    BD_LANG_DATA=1 not those of a language
+#                                    interpreter (_bd_is_language)
 #   _bd_segments <text>           -> one simple command per line, plus marker lines
 #                                    (__BD_UNBALANCED__, __BD_SEG_FAIL__)
 #
@@ -352,12 +356,26 @@ _bd_words() {
 # "examine" is.
 _bd_is_interpreter() {
   _bd_is_shell "$1" && return 0
+  _bd_is_language "$1" && return 0
   case "${1##*/}" in
-    python|python2|python3|perl|ruby|node|deno|bun)
-      return 0 ;;
     eval|source|.|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at)
       return 0 ;;
   esac
+  return 1
+}
+
+# The language interpreters, the one list _bd_is_language and the heredoc
+# reading of _bd_strip_noncode (langre) use: programs that run their script
+# as Python, Perl, Ruby or JavaScript rather than as shell.
+_BD_LANGS="python python2 python3 perl ruby node deno bun"
+
+# Does this word name a language interpreter? A hook that sets BD_LANG_DATA=1
+# reads such a script as data: its strings are not shell, and markdown
+# backquotes in them are not substitutions. What it runs is not read; the
+# hooks that set it leave that to a check made when the program runs.
+_bd_is_language() {
+  case "${1##*/}" in ""|*[[:space:]]*) return 1 ;; esac
+  case " $_BD_LANGS " in *" ${1##*/} "*) return 0 ;; esac
   return 1
 }
 
@@ -471,8 +489,7 @@ _bd_shell_reads_stdin() {
 #   - the line ends with the introducer, so the body starts on the next line;
 #   - exactly one `<<` introducer is on that line;
 #   - the delimiter is a plain word, optionally quoted with ' or ". A
-#     backslash-quoted `<<\EOF` is not recognised (outside the second reading
-#     with BD_QUOTED_BODIES=1, below), so its body is kept;
+#     backslash-quoted `<<\EOF` is not recognised, so its body is kept;
 #   - the word immediately before `<<` is a text sink — cat, tee, echo, printf
 #     or gh. This is the owner of the heredoc, not the first word of the line,
 #     which is what makes `gh pr create --body "$(cat <<EOF" ` a sink while
@@ -510,38 +527,29 @@ _bd_shell_reads_stdin() {
 # `(( a << b ))` and `let x=1<<3` do not match either — a shift operand is not
 # a sink and the line does not end with the introducer.
 #
-# Two settings change this for a second reading, the command without the data
-# its readers take in, which tier-gate.sh and block-secrets.sh make to tell a
-# body line from a command. BD_BLANK_BODIES=1 also drops a body whose owner is
-# not a sink when nothing on the line runs it (reader_ok: no shell, no
-# interpreter, no command word that is a variable or a substitution).
-# Neither drops a body when the command sets BASH_ENV or ENV on that line or
-# an earlier one (env_named): a shell started with BASH_ENV=/dev/stdin reads
-# the body as its startup file. BD_QUOTED_BODIES=1 (tier-gate.sh only, with
-# BD_BLANK_BODIES=1) adds two cases for a quoted delimiter, whose body bash
-# expands nothing in: a backslash-quoted `<<\EOF` is recognised, and a
-# command word that is a variable may own a body that is data, but only when
-# it names one of the programs listed in BD_DATA_PROGRAMS (var_reader_ok): a
-# space-separated list of names, which tier-gate.sh builds when it runs from
-# the scripts in the plugin's own bin/ that run nothing they read. The name
-# after the word's last / must be on that list
-# ("$FLOW_ROOT/bin/journal-append.sh",
-# "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh"), the word must be one
-# double-quoted word, no assignment may come before it, no argument may hold
-# an expansion other than a double-quoted plain variable ("$JOURNAL"), a
-# redirection, or a path under /dev/ or /proc/, and the line before the
-# introducer may hold no substitution or group. Every other program named by
-# a variable keeps its body as commands: the gate cannot tell a bare "$P"
-# from a shell, so "$P" --file notes.md - <<'EOF' keeps its body, as do
-# "$D/bin/sqlite3" notes.md, "$D/bin/ed" notes.md and "$D/bin/ssh" host.sh,
-# which read commands from their input after a file name or a host. Neither
-# setting changes the first reading, which block-destructive.sh,
-# block-unchecked-merge.sh and block-force-push.sh judge.
+# BD_BLANK_BODIES=1 changes this for a second reading, the command without
+# the data its readers take in, which block-secrets.sh makes to tell a body
+# line from a command: it also drops a body whose owner is not a sink when
+# nothing on the line runs it (reader_ok: no shell, no interpreter, no
+# command word that is a variable or a substitution). It does not drop a
+# body when the command sets BASH_ENV or ENV on that line or an earlier one
+# (env_named): a shell started with BASH_ENV=/dev/stdin reads the body as
+# its startup file. It does not change the first reading, which
+# block-destructive.sh, block-unchecked-merge.sh and block-force-push.sh
+# judge.
+#
+# BD_LANG_DATA=1 (tier-gate.sh and block-unchecked-merge.sh) counts a
+# language interpreter (_bd_is_language: python, perl, ruby, node, deno, bun)
+# as a text sink: its heredoc body is its script, read as data as a cat body
+# is, also when the line redirects or pipes the program's output (`python3 -
+# <<'PY' 2>&1`, `| tail`). A quoted body is dropped whole; an unquoted body
+# keeps what bash runs as it expands the body (body_code). A shell is never a
+# sink, so `bash <<'EOF'` keeps its body.
 #
 # Carriage returns are stripped first, so a CRLF command is read the same way a
 # LF one is. Both tokeniser paths then agree about where words end.
 _bd_strip_noncode() {
-  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v qdata="${BD_QUOTED_BODIES:-0}" -v dataprogs="${BD_DATA_PROGRAMS:-}" -v shells="$_BD_SHELLS" '
+  BD_CODE=$(printf '%s\n' "$1" | awk -v blank="${BD_BLANK_BODIES:-0}" -v langdata="${BD_LANG_DATA:-0}" -v langs="$_BD_LANGS" -v shells="$_BD_SHELLS" '
     function owner_word(str,   n, parts, seg) {
       # The heredoc belongs to the innermost command, which is the first word
       # after the last separator. Reading the word immediately before the `<<`
@@ -550,13 +558,17 @@ _bd_strip_noncode() {
       # wrong in the dangerous direction.
       n = split(str, parts, /[;&|(`]/)
       seg = (n > 0) ? parts[n] : str
+      # A ) after the word closes a substitution or group the word was in:
+      # `bash -s "$(cat args.txt)" <<EOF` belongs to bash, not cat. The
+      # owner is then not named, so it is no sink.
+      if (index(seg, ")")) return ""
       gsub(/^[ \t]+/, "", seg)
       gsub(/[ \t]+$/, "", seg)
       if (seg == "") return ""
       n = split(seg, parts, /[ \t]+/)
       return (n > 0) ? parts[1] : ""
     }
-    function is_sink(w,   SQ2) {
+    function owner_name(w,   SQ2) {
       SQ2 = sprintf("%c", 39)
       # The owner of a heredoc is commonly reached through a substitution:
       # `gh pr create --body "$(cat <<EOF` has `"$(cat` as the word before the
@@ -567,6 +579,104 @@ _bd_strip_noncode() {
       gsub("^" SQ2 "+", "", w)
       gsub(/^[($`]+/, "", w)
       sub(/^.*\//, "", w)
+      return w
+    }
+    # Where does the command that ends pre start? Returns the position of
+    # the last ; & | ( or newline in pre that bash reads as syntax: not one
+    # inside quotes, not the & or | of a redirection (2>&1, >&2, >|), and
+    # not one inside a $( ), <( ), >( ) or ( ) frame that has closed. A $(
+    # starts a new quoting context, also inside double quotes, and the
+    # double-quote state outside it comes back when it closes. Sets LS_OPEN
+    # when pre ends inside a quote or a frame, and LS_UNSURE when pre holds
+    # what this scan does not follow: a backquote, a ${...} expansion or a
+    # case beside a parenthesis (either can hold a ) that closes nothing),
+    # or a # starting a word outside double
+    # quotes (a comment inside a frame, whose quotes and parentheses bash
+    # does not read). An ANSI-C string is followed: in it a backslash
+    # escapes the quote.
+    function last_sep(pre,   n, i, j, r, b, c, k, sq, dq, sp, fdq, fls, ls) {
+      LS_UNSURE = (index(pre, BT) > 0 || (index(pre, "(") > 0 && (index(pre, "${") > 0 || pre ~ /(^|[^A-Za-z0-9_])case([^A-Za-z0-9_]|$)/)))
+      n = length(pre); sq = 0; dq = 0; sp = 0; ls = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(pre, i, 1)
+        k = (i > 1) ? substr(pre, i - 1, 1) : ""
+        if (sq == 1) { if (c == SQ) sq = 0; continue }
+        if (sq == 2) { if (c == "\\") i++; else if (c == SQ) sq = 0; continue }
+        if (c == "\\") { i++; continue }
+        if (c == SQ && !dq) {
+          # An ANSI-C string starts at a $ that pairs with no $ before it
+          # ($$ is a variable) and that no backslash escapes. r counts the
+          # $ signs before the quote, less one escaped by a backslash.
+          for (j = i - 1; j >= 1 && substr(pre, j, 1) == "$"; j--) ;
+          r = i - 1 - j
+          b = 0
+          for (; j >= 1 && substr(pre, j, 1) == "\\"; j--) b++
+          if (b % 2) r--
+          sq = (r % 2 == 1) ? 2 : 1
+          continue
+        }
+        if (c == "\"") { dq = !dq; continue }
+        if (c == "(") {
+          if (dq && k != "$") continue
+          sp++; fls[sp] = ls; fdq[sp] = dq; dq = 0; ls = i
+          continue
+        }
+        if (dq) continue
+        if (c == "#" && (k == "" || k ~ /[ \t\n(;&|]/)) LS_UNSURE = 1
+        if (c == ")" && sp) { dq = fdq[sp]; ls = fls[sp]; sp--; continue }
+        if ((c == "&" || c == "|") && (k == ">" || k == "<")) continue
+        if (c == ";" || c == "&" || c == "|" || c == "\n") ls = i
+      }
+      LS_OPEN = (sq || dq || sp > 0)
+      return ls
+    }
+    # langdata=1 only (BD_LANG_DATA): is the command that owns a heredoc
+    # introduced at the end of pre a language interpreter, whose heredoc
+    # body is its script and is data wherever its output goes? Only in
+    # plain forms; anything else is not one, and the body is read. Not one
+    # when the line starts inside a quote (q0), when an earlier line of the
+    # command left a quote or a frame open or held what last_sep does not
+    # follow (lsopen: the line may sit inside a substitution or string),
+    # while the backquotes so far are odd (bq), or
+    # when pre itself holds such text. The command starts after the last
+    # separator bash reads (last_sep), so `bash -s "x;python3 -" <<EOF` is
+    # a bash heredoc. Before the interpreter only these may come: shell
+    # keywords, assignments whose value has no quote, backslash,
+    # parenthesis, brace or backquote, timeout or nice with numbers, env
+    # with such assignments, or a Python project runner with run right after
+    # it (uv, poetry, pipenv, pdm, hatch, rye), with no option in between
+    # (`do python3`, `A=1 python3`, `timeout 60 python3`, `env A=1 node`,
+    # `uv run python3`). A word with a quote, a backslash or a $ in
+    # it is not read as the interpreter.
+    function lang_owner(pre,   seg, m, w, j, x, b, wrap, ls) {
+      if (langdata != 1 || lsopen || bq % 2 || q0 != "") return 0
+      ls = last_sep(pre)
+      if (LS_UNSURE) return 0
+      seg = substr(pre, ls + 1)
+      m = split(seg, w, /[ \t]+/)
+      wrap = ""
+      for (j = 1; j <= m; j++) {
+        x = w[j]
+        if (x == "") continue
+        if (x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) {
+          if ((wrap == "" || wrap == "env") && x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=[A-Za-z0-9_.\/:@%+,=$-]*$/) continue
+          return 0
+        }
+        if (wrap == "" && x ~ /^(if|then|elif|else|while|until|do|!|[{]|time)$/) continue
+        if (x ~ ("[\"" SQ "\\\\$]")) return 0
+        b = x
+        sub(/^.*\//, "", b)
+        if (b ~ langre) return 1
+        if (wrap == "" && b ~ /^(timeout|nice|env)$/) { wrap = b; continue }
+        if (wrap == "" && b ~ /^(uv|poetry|pipenv|pdm|hatch|rye)$/ && w[j + 1] == "run") { wrap = "run"; j++; continue }
+        if ((wrap == "timeout" || wrap == "nice") && x ~ /^[0-9.]+[smhd]?$/) continue
+        if (wrap == "nice" && x == "-n") continue
+        return 0
+      }
+      return 0
+    }
+    function is_sink(w) {
+      w = owner_name(w)
       return (w == "cat" || w == "tee" || w == "echo" || w == "printf" || w == "gh")
     }
     # Does the quote at i open a dollar-quoted string? Only when the character
@@ -584,39 +694,21 @@ _bd_strip_noncode() {
     # substitution, which may be either. Nor when the command sets BASH_ENV
     # or ENV on this line or an earlier one (envset, env_named): a shell
     # started with BASH_ENV=/dev/stdin reads its input as its startup file,
-    # whatever it was asked to run. vq says the delimiter is quoted (bash
-    # expands nothing in the body); with qdata=1 (BD_QUOTED_BODIES) a command
-    # word that is a variable may then be read as one that runs nothing of
-    # the body when it names a program of BD_DATA_PROGRAMS (var_reader_ok),
-    # unless an assignment comes before it (asg) or the text holds a
-    # substitution or a group (hlp): a word split there is not one this
-    # function can check.
-    function reader_ok(str, vq,   n, cmds, i, m, w, j, c, x, asg, hlp) {
+    # whatever it was asked to run.
+    function reader_ok(str,   n, cmds, i, m, w, j, c, x) {
       if (envset) return 0
-      hlp = 0
-      # A plain ${NAME} is read as $NAME there, so its braces do not split
-      # the word as a group would. Any other ${...} still splits it.
-      if (vq && qdata == 1)
-        while (match(str, /[$][{][A-Za-z_][A-Za-z0-9_]*[}]/))
-          str = substr(str, 1, RSTART) substr(str, RSTART + 2, RLENGTH - 3) substr(str, RSTART + RLENGTH)
       n = split(str, cmds, /[;&|(){}`]|[$][(]/)
       for (i = 1; i <= n; i++) {
         m = split(cmds[i], w, /[ \t]+/)
         c = 1
-        asg = 0
         for (j = 1; j <= m; j++) {
           if (w[j] == "") continue
           x = w[j]
           gsub("[\"" SQ "\\\\]", "", x)
           if (c) {
             if (x ~ /^(if|then|elif|else|while|until|do|!|time)$/) continue
-            if (x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) { asg = 1; continue }
-            if (x == "" || x ~ /^[$]/) {
-              if (!(vq && qdata == 1 && !asg && var_reader_ok(w, j, m))) return 0
-              hlp = 1
-              c = 0
-              continue
-            }
+            if (x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) continue
+            if (x == "" || x ~ /^[$]/) return 0
             c = 0
           }
           sub(/^.*\//, "", x)
@@ -624,56 +716,6 @@ _bd_strip_noncode() {
           if (x ~ shre) return 0
           if (x ~ runre) return 0
         }
-      }
-      if (hlp && str ~ /[(){}`]/) return 0
-      return 1
-    }
-    # qdata=1 only (BD_QUOTED_BODIES): does the program named by the variable
-    # w[j], the command word of the words w[j..m], run nothing of a quoted
-    # heredoc body it is handed? Only when it is one of the programs the
-    # caller lists in BD_DATA_PROGRAMS (isdata), which tier-gate.sh builds
-    # from the scripts in the bin/ of this plugin that run nothing they read.
-    # A variable may name any program, a shell or sqlite3 or ssh among them,
-    # and the arguments of such a program do not show whether it reads its
-    # commands from its input ("$P" x.sh, "$D/bin/ed" notes.md, "$D/bin/ssh"
-    # host.sh all may), so a name the gate can see and check is the only
-    # thing that makes a body data. All of these must hold:
-    #   - w[j] is one double-quoted word, so word splitting cannot add
-    #     arguments to it, holding a / ("$FLOW_ROOT/bin/journal-append.sh";
-    #     reader_ok has read a plain ${NAME} as $NAME, so
-    #     "${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh" is one too);
-    #   - the name after its last / is written out and is on the list;
-    #   - no argument holds a backquote or a redirection, or an expansion
-    #     other than a double-quoted word whose expansions are plain
-    #     variables ("$JOURNAL", "$DIR/issue-$N.md"), and none names a path
-    #     under /dev/ or /proc/.
-    # Not when the word expands anything but plain names ("$@", "$1"), not
-    # after an assignment before the command word (asg in reader_ok:
-    # LC_ALL=C or BASH_ENV=/dev/stdin before it), and not once the command
-    # sets BASH_ENV or ENV (envset), may set it out of sight ($'...'
-    # escapes, a sourced file), as a shell script started with either set
-    # reads its input as a startup file.
-    function var_reader_ok(w, j, m,   r, b, k, t) {
-      if (envset) return 0
-      r = w[j]
-      if (r !~ /^"[$][^"`\\]*"$/) return 0
-      r = substr(r, 2, length(r) - 2)
-      # Only plain names expand in it: "$@", "$*", "$1" or "$-" expand to
-      # any number of words, or ones the command does not show, so
-      # "$@/journal-append.sh" can run /bin/bash -s with the body as its
-      # script.
-      if (r ~ /[$]([^A-Za-z_{]|[{][^A-Za-z_]|$)/) return 0
-      if (r !~ /\//) return 0
-      b = r
-      sub(/^.*\//, "", b)
-      if (b !~ /^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/ || !(b in isdata)) return 0
-      for (k = j + 1; k <= m; k++) {
-        t = w[k]
-        if (t == "") continue
-        if (t ~ /[`<>]/) return 0
-        if (index(t, "$") && t !~ /^"[^"$`\\]*([$][A-Za-z_][A-Za-z0-9_]*[^"$`\\]*)*"$/) return 0
-        gsub("[\"" SQ "\\\\]", "", t)
-        if (t ~ /(^|[\/=])(dev|proc)\//) return 0
       }
       return 1
     }
@@ -868,12 +910,15 @@ _bd_strip_noncode() {
             # The same inside a substitution, where a quote or a $ in the
             # word would pair with text the scan reads past (body_code).
             PLAINS = "^[$][{]#?([A-Za-z_][A-Za-z0-9_]*|[0-9]+)(:?[-=+?][^" BT "{}()\\\\[\n\"" SQ "$]*)?[}]"
-            # The programs whose quoted body is data (var_reader_ok).
-            ndp = split(dataprogs, dpl, /[ \t\n]+/)
-            for (dpk = 1; dpk <= ndp; dpk++) if (dpl[dpk] ~ /^[A-Za-z0-9_][A-Za-z0-9_.+-]*$/) isdata[dpl[dpk]] = 1
             am = 0; pd = 0; bk = 0; am0 = 0; pd0 = 0; bk0 = 0
+            lsopen = 0; bq = 0; LS_OPEN = 0; LS_UNSURE = 0
             shre = shells; gsub(/ +/, "|", shre); shre = "^(" shre ")$"
-            runre = "^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$" }
+            runre = "^(python[23]?|perl|ruby|node|deno|bun|eval|source|[.]|exec|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at|script|watch|command|builtin|nice|setsid|stdbuf|caffeinate|parallel|tmux|screen)$"
+            # The language interpreters (_BD_LANGS), whose heredoc body is
+            # data with langdata=1, and the wrappers that may stand before
+            # one (lang_owner).
+            langre = langs; gsub(/ +/, "|", langre); langre = "^(" langre ")$"
+            wrapre = "^(sudo|doas|env|nohup|timeout|xargs|command|builtin|exec|nice|ionice|setsid|stdbuf|caffeinate|time|chronic)$" }
     {
       line = $0
       sub(/\r$/, "", line)
@@ -1032,7 +1077,7 @@ _bd_strip_noncode() {
       # inside a string that runs across lines is text, and treating it as an
       # introducer would drop the lines after it as a body.
       # A command that sets BASH_ENV or ENV may make a shell read its input
-      # as a startup file (reader_ok, var_reader_ok, env_named).
+      # as a startup file (reader_ok, env_named).
       if (!envset && env_named(out, q0)) envset = 1
       # BASH_ENV can be set out of sight: spelled with ANSI-C escapes
       # ($'BASH_\x45NV'), or by a file the command sources (. ./env.sh,
@@ -1046,13 +1091,13 @@ _bd_strip_noncode() {
       # dropped too, when the line ends outside quotes and reader_ok says
       # nothing on it runs the body: the reading of a command without the
       # data its loops and readers take in.
-      if (hits == 1 && (out !~ /[|>]/ || blank == 1) &&
+      if (hits == 1 && (out !~ /[|>]/ || blank == 1 || langdata == 1) &&
           match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*$/) &&
           intro_at(out, RSTART)) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
         vq = (intro ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"/)
-        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1), vq))) {
+        if ((out !~ /[|>]/ && is_sink(owner)) || lang_owner(substr(out, 1, RSTART - 1)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
           d = intro
           sub(/^<</, "", d)
           tabs = 0
@@ -1064,35 +1109,17 @@ _bd_strip_noncode() {
       }
       # The same shape with a single-quoted delimiter. Written separately
       # because embedding an apostrophe in this program would end it.
-      if (!inhd && hits == 1 && (out !~ /[|>]/ || blank == 1) &&
+      if (!inhd && hits == 1 && (out !~ /[|>]/ || blank == 1 || langdata == 1) &&
           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*$") &&
           intro_at(out, RSTART)) {
         intro = substr(out, RSTART)
         owner = owner_word(substr(out, 1, RSTART - 1))
-        if ((out !~ /[|>]/ && is_sink(owner)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1), 1))) {
+        if ((out !~ /[|>]/ && is_sink(owner)) || lang_owner(substr(out, 1, RSTART - 1)) || (blank == 1 && q == "" && reader_ok(substr(out, 1, RSTART - 1)))) {
           d = intro
           sub(/^<</, "", d)
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
           gsub(SQ, "", d)
-          gsub(/[ \t]+$/, "", d)
-          if (d != "") { inhd = 1; delim = d; buf = ""; hdq = 1 }
-        }
-      }
-      # The same shape with a backslash-quoted delimiter (`<<\EOF`), which
-      # bash reads as a quoted one: in the body-free reading with qdata=1
-      # (BD_QUOTED_BODIES) only, when reader_ok says nothing on the line runs
-      # the body. Every other reading keeps such a body.
-      if (!inhd && blank == 1 && qdata == 1 && q == "" && hits == 1 &&
-          match(out, /<<-?\\[A-Za-z_][A-Za-z0-9_]*[ \t]*$/) &&
-          intro_at(out, RSTART)) {
-        # Taken before reader_ok, whose own match() moves RSTART.
-        d = substr(out, RSTART)
-        if (reader_ok(substr(out, 1, RSTART - 1), 1)) {
-          sub(/^<</, "", d)
-          tabs = 0
-          if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
-          sub(/^\\/, "", d)
           gsub(/[ \t]+$/, "", d)
           if (d != "") { inhd = 1; delim = d; buf = ""; hdq = 1 }
         }
@@ -1126,24 +1153,29 @@ _bd_strip_noncode() {
       # >/dev/null`, `cat <<EOF | gh pr create --body-file -`) is dropped too
       # when reader_ok finds no shell, interpreter or variable command word
       # anywhere on the line, the text after the introducer included: `cat
-      # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies.
-      if (!inhd && blank == 1 && hits == 1 && q == "" &&
-          (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|])/) ||
-           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])") ||
-           (qdata == 1 && match(out, /<<-?\\[A-Za-z_][A-Za-z0-9_]*[ \t]*([0-9]*>|&>|[|])/))) &&
+      # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies. With
+      # langdata=1 (in every reading) the body of a language interpreter is
+      # dropped here too (`python3 - <<PY 2>&1`, `node - <<JS | tail`): it
+      # is the script of the program, also with `&&` or `;` and a further
+      # command after it, and wherever its output goes. What the script
+      # prints is not read: printed into a shell (`| bash`), it is text this
+      # reading cannot see, as `curl ... | sh` is, and the gh and git
+      # wrappers of flow refuse a merge, release or tag push in it when it runs.
+      if (!inhd && (blank == 1 || langdata == 1) && hits == 1 && q == "" &&
+          (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|]|&&|;)/) ||
+           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|]|&&|;)")) &&
           intro_at(out, RSTART)) {
         pre = substr(out, 1, RSTART - 1)
         rest = substr(out, RSTART)
-        match(rest, "^<<-?([\"" SQ "]?|\\\\)[A-Za-z_][A-Za-z0-9_]*[\"" SQ "]?")
+        match(rest, "^<<-?[\"" SQ "]?[A-Za-z_][A-Za-z0-9_]*[\"" SQ "]?")
         d = substr(rest, 1, RLENGTH)
         post = substr(rest, RLENGTH + 1)
-        vq = (d ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"$/ || d ~ ("^<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "$") ||
-              d ~ /^<<-?\\[A-Za-z_][A-Za-z0-9_]*$/)
-        if (reader_ok(pre " " post, vq)) {
+        vq = (d ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"$/ || d ~ ("^<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "$"))
+        if (lang_owner(pre) || (blank == 1 && post !~ /^[ \t]*(&&|;)/ && reader_ok(pre " " post))) {
           sub(/^<</, "", d)
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
-          gsub("[\"" SQ "\\\\]", "", d)
+          gsub("[\"" SQ "]", "", d)
           if (d != "") { inhd = 1; delim = d; buf = ""; hdq = vq }
         }
       }
@@ -1154,6 +1186,21 @@ _bd_strip_noncode() {
       # including a shift such as 1<<x; that costs only a second reading.
       if (!inhd && (out ~ /(^|[^<])<<-?[ \t]*[\\"]?[A-Za-z_]/ ||
                     out ~ ("(^|[^<])<<-?[ \t]*" SQ "[A-Za-z_]"))) kept = 1
+      # A line that leaves a quote or $( ) open, or holds what last_sep does
+      # not follow: a heredoc on a later line may sit inside it, so its
+      # owner is not decided from that line alone (lang_owner). Backquotes
+      # are counted over the whole command instead (bq): a later heredoc is
+      # undecided while their number is odd, and a markdown fence in a kept
+      # body closes again. This counts every line, the text of a kept
+      # heredoc body too.
+      if (langdata == 1) {
+        t = out
+        bq += gsub(BT, "", t)
+        if (!lsopen) {
+          last_sep(t)
+          if (LS_OPEN || LS_UNSURE) lsopen = 1
+        }
+      }
       print out
     }
     END {
@@ -1420,8 +1467,17 @@ _BD_SEG_AWK='
 # nesting arrives here as its own quoted argument on the next pass anyway.
 # Shared because every hook that reads commands has the same blind spot: the
 # merge gate let `bash -c 'gh pr merge 9'` through until it called this too.
+# Does the program $1 hand the words after it to a shell as text? A shell,
+# and su, ssh, eval and the programs that run a command line they are given.
+_bd_runs_text() {
+  [ -n "$1" ] || return 1
+  _bd_is_shell "$1" && return 0
+  case "$1" in su|ssh|eval|watch|script|tmux|screen|parallel|chroot|runuser|sg|flock|at|batch) return 0 ;; esac
+  return 1
+}
+
 _bd_expand_interpreter_args() {
-  local seg tok base i n found h prev
+  local seg tok base i n found runs h prev by
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=()
   local BD_RIN=0 BD_CMDI=0
   local extra=""
@@ -1436,13 +1492,24 @@ _bd_expand_interpreter_args() {
     _bd_words "$seg"
     n=${#TOK[@]}
     found=0
+    runs=0
+    # by: the last interpreter word on the line. A language word after one
+    # that hands on shell text (a shell, su, ssh, eval and the like) is a
+    # word of that text, a user or a host (`su node -c '...'`, `ssh node
+    # '...'`, `eval python3 '...'`), and the words after it stay read. After
+    # any other word (sudo, env, timeout, xargs) it is the program.
+    by=""
     for ((i = 0; i < n; i++)); do
       tok="${TOK[i]}"
-      # Only the last path component of a word can name an interpreter, and
-      # a name longer than sixteen characters is none.
       if [ "${#tok}" -le 4096 ]; then
         base="${tok##*/}"
-        if [ "${#base}" -le 16 ] && _bd_is_interpreter "$base"; then found=1; continue; fi
+        if [ "${#base}" -le 16 ] && _bd_is_interpreter "$base" &&
+           { [ "${BD_LANG_DATA:-0}" != 1 ] || ! _bd_is_language "$base" || ! _bd_runs_text "$by"; }; then
+          by=$base
+          found=1
+          if [ "${BD_LANG_DATA:-0}" = 1 ] && _bd_is_language "$base"; then found=2; else runs=1; fi
+          continue
+        fi
       fi
       if [ "$found" = "1" ]; then
         case "$tok" in
@@ -1454,8 +1521,10 @@ $tok" ;;
     # A here-string is the input of the command it is written on, and an
     # interpreter reads its input as a script: `bash <<<'...'`, `<<<'...'
     # bash`, and, as with a heredoc body, a line that names an interpreter
-    # anywhere (`cat <<<'...' | bash`). Each one is read as a command.
-    if [ "$found" = "1" ] && [ "${#BD_HSTR[@]}" -gt 0 ]; then
+    # anywhere (`cat <<<'...' | bash`). Each one is read as a command. With
+    # BD_LANG_DATA=1 a line whose only interpreters are language ones
+    # (`python3 <<<'...'`) keeps its here-strings as data.
+    if [ "$runs" = "1" ] && [ "${#BD_HSTR[@]}" -gt 0 ]; then
       for h in "${BD_HSTR[@]}"; do
         extra="$extra
 $h"

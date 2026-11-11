@@ -1720,7 +1720,7 @@ GH
   chmod +x "$E2E_DIR/okbin/gh"
   e2e_run_bin "PATH=$E2E_DIR/okbin:$PATH" evals/results-2026-10-12-s1-guard/fetch_texts.py --repo a/b --out "$E2E_DIR/ok.jsonl"
   e2e_expect_equal "0" "$E2E_RC" "fetch_texts.py exit when gh answers"
-  e2e_expect_equal "gh api repos/a/b/issues/comments/11 --jq .body=Comment one, long enough to be kept by pick|gh api repos/a/b/pulls/comments/21 --jq .body=Review one, long enough to be kept by pick too|gh issue view 1 --repo a/b --json body --jq .body=Issue body, long enough to be kept by the pick|gh pr view 2 --repo a/b --json body --jq .body=PR body, long enough to be kept by the pick rule" "$(jq -r '"\(.command)=\(.output)"' "$E2E_DIR/ok.jsonl" | sort -t= -k1,1 | paste -sd'|' -)" "the rows fetch_texts.py writes"
+  e2e_expect_equal "gh api repos/a/b/issues/comments/11 --jq .body=Comment one, long enough to be kept by pick|gh api repos/a/b/pulls/comments/21 --jq .body=Review one, long enough to be kept by pick too|gh issue view 1 --repo a/b --json body --jq .body=Issue body, long enough to be kept by the pick|gh pr view 2 --repo a/b --json body --jq .body=PR body, long enough to be kept by the pick rule" "$(jq -r '"\(.command)=\(.output)"' "$E2E_DIR/ok.jsonl" | sort -t '=' -k1,1 | paste -sd'|' -)" "the rows fetch_texts.py writes"
   # A label line that is not JSON names its file and line; a repeated text
   # id leaves both sets as they were (review round 2 ERR-4, ERR-6).
   printf 'not json\n' >> "$E2E_DIR/merge/labels-real.jsonl"

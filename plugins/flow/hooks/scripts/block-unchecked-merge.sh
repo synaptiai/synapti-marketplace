@@ -48,19 +48,23 @@
 # directory and `gh repo set-default` alike: with it written, none of them
 # matter. Anything else that is a merge is refused with the shape to use, and a
 # value that cannot be read is named. `gh api` on a merge endpoint or a merge
-# mutation is refused outright, as is one whose whole endpoint is a variable, or
-# a GraphQL call whose query comes from a file.
+# mutation written out is refused outright.
 #
 # Words are read as bash passes them: quotes and backslash escapes removed, so
 # `gh pr me""rge 7` and `g\h pr mer\ge 7` are gh pr merge 7 and are checked as
 # such.
 #
-# Not covered, by design. This hook catches merges written in good faith, or
-# misdirected by a variable or a directory. It does not stop deliberate
-# evasion: an ANSI-C quoted word (`$'m\x65rge'`), a whole command held in a
-# variable and run as `$CMD`, a gh alias defined in an earlier call, a script
-# piped into a shell, a gh extension, or curl to the REST API. Branch protection
-# with required checks is the mechanism for that, as #170 says.
+# Only text this hook can read is judged. A gh or subcommand word that is a
+# variable or a substitution (`$GH pr merge 7`, `gh pr $A 7`), a whole
+# command held in a variable (`$CMD`), eval or source of text it cannot read,
+# a gh api endpoint or GraphQL query it cannot read, and the script of a
+# language interpreter (python, perl, ruby, node, deno, bun), whose strings
+# are data, are not read as a merge. tier-gate.sh does not ask about them
+# either, and the gh wrapper refuses a merge nobody approved when it runs
+# (lib/tier-runtime.sh). Not covered at all: an ANSI-C quoted word
+# (`$'m\x65rge'`), a gh alias defined in an earlier call, a gh extension,
+# gh called by a path the wrapper is not on, or curl to the REST API. Branch
+# protection with required checks is the mechanism for those.
 
 set -uo pipefail
 # An exported CDPATH makes cd print the directory it found, which turns a
@@ -102,6 +106,10 @@ if [ -z "${_BD_SEG_AWK:-}" ]; then
   echo "Next: this will not change on retry. The user must reinstall the flow plugin: /plugin install flow@synapti-marketplace" >&2
   exit 2
 fi
+# A Python, Perl, Ruby or JavaScript script is data here, not shell: a merge
+# it runs has not been approved, and the gh wrapper refuses it when it runs
+# (lib/tier-runtime.sh). A shell's script is still read as commands.
+BD_LANG_DATA=1
 
 INPUT=$(cat)
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
@@ -236,19 +244,6 @@ _bum_is_gh() {
   return 1
 }
 
-# NAME=value, NAME+=value and NAME[index]=value are assignments.
-_bum_is_assignment() {
-  case "$1" in
-    [A-Za-z_]*=*)
-      local name="${1%%=*}"
-      name="${name%+}"
-      case "$name" in *\[*\]) name="${name%%\[*}" ;; esac
-      case "$name" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac
-      return 0 ;;
-  esac
-  return 1
-}
-
 # gh's own options that take a value, at the root or on a subcommand, for
 # finding the subcommand words past them.
 _bum_takes_value() {
@@ -308,9 +303,6 @@ _bum_unterminated() {
 # refuses, and a refusal exits the hook.
 _bum_judge_merge() {
   if [ "$c" -gt 0 ] || ! _bum_is_gh "${TOK[0]}"; then
-    if _bum_unreadable "${TOK[c]}"; then
-      { _bum_refuse_unreadable "gh command" "${TOK[c]}"; return 1; }
-    fi
     { _bum_refuse_shape "\"$(_bum_show "${TOK[*]:0:$c}")\" comes before gh, and whatever runs first can change which pull request gh merges"; return 1; }
   fi
 
@@ -439,66 +431,22 @@ while IFS= read -r SEG; do
   n=${#TOK[@]}
   [ "$n" -gt 0 ] || continue
 
-  # A command word this hook cannot read, in a command whose text names a
-  # merge: a variable or a substitution with nothing after it (`$CMD`,
-  # `""$CMD`, `${CMD%/}`; not `"$CMD"`, one quoted program name), or eval of
-  # anything but one word that reads a variable by name (`eval
-  # "v=\${$name}"`) with an argument this hook cannot read. Either may run
-  # the merge the text names.
-  if [ "$PREV_MERGE" = 0 ]; then
-    f=0
-    while [ "$f" -lt "$n" ] && _bum_is_assignment "${TOK[f]}"; do f=$((f + 1)); done
-    if [ "$f" -lt "$n" ]; then
-      # A word with a / of its own, outside ${...}, names a file
-      # (`"$ROOT/bin/x.sh"`).
-      if [ $((f + 1)) -eq "$n" ] && _bum_unreadable "${TOK[f]}" && [ "${TOKQ[f]:-0}" != 1 ] &&
-         ! printf '%s' "${TOK[f]}" | sed 's/[$][{][^}]*[}]//g' | grep -q /; then
-        _bum_refuse "BLOCKED: the command runs \"$(_bum_show "${TOK[f]}")\", which this hook cannot read, and the command text names a merge." \
-          "Next: run the merge as its own command, written out: $_BUM_SHAPE."
-      fi
-      if [ "${TOK[f]##*/}" = eval ] && [ $((f + 1)) -lt "$n" ]; then
-        _bum_eval_ok=0
-        if [ $((f + 2)) -eq "$n" ]; then
-          case "${TOK[f+1]}" in
-            [A-Za-z_]*'=${$'*'}') _bum_eval_ok=1 ;;
-          esac
-        fi
-        if [ "$_bum_eval_ok" = 0 ]; then
-          for ((k = f + 1; k < n; k++)); do
-            if _bum_unreadable "${TOK[k]}"; then
-              _bum_refuse "BLOCKED: eval of \"$(_bum_show "${TOK[*]:$((f + 1))}")\", which this hook cannot read, in a command whose text names a merge." \
-                "Next: run the merge as its own command, written out: $_BUM_SHAPE."
-            fi
-          done
-        fi
-      fi
-    fi
-  fi
-
   # --- is there a merge in this command, wherever gh stands? -----------------
-  # gh anywhere, or a word this hook cannot read that might expand to gh, then
-  # `pr merge`, `api`, or `alias`. Finding it anywhere, rather than only first,
-  # is what lets `sudo gh pr merge` or `xargs gh pr merge` be refused instead of
-  # passed over.
+  # gh anywhere, then `pr merge`, `api`, or `alias`. Finding it anywhere,
+  # rather than only first, is what lets `sudo gh pr merge` or `xargs gh pr
+  # merge` be refused instead of passed over. A word this hook cannot read
+  # (`$GH pr merge 7`, `gh pr $A 7`, `$CMD`, eval of a variable) is not read
+  # as a merge: tier-gate.sh does not ask about it, and the gh wrapper refuses
+  # a merge nobody approved when it runs (lib/tier-runtime.sh).
   c=-1
   kind=""
   for ((k = 0; k < n; k++)); do
     [ "${#TOK[k]}" -le 4096 ] || continue
-    if _bum_is_gh "${TOK[k]}"; then
-      :
-    elif _bum_unreadable "${TOK[k]}" && ! _bum_is_assignment "${TOK[k]}"; then
-      :
-    else
-      continue
-    fi
+    _bum_is_gh "${TOK[k]}" || continue
     _bum_subwords $((k + 1))
     case "${SUB[0]:-} ${SUB[1]:-}" in
       "pr merge") c=$k; kind="merge"; break ;;
     esac
-    # `gh pr $A 7`: a subcommand this hook cannot read may be merge.
-    if [ "${SUB[0]:-}" = pr ] && _bum_unreadable "${SUB[1]:-}"; then
-      _bum_refuse_unreadable "gh pr subcommand" "${SUB[1]}"
-    fi
     case "${SUB[0]:-}" in
       api)   _bum_is_gh "${TOK[k]}" && { c=$k; kind="api"; break; } ;;
       alias) _bum_is_gh "${TOK[k]}" && { c=$k; kind="alias"; break; } ;;
@@ -514,7 +462,9 @@ while IFS= read -r SEG; do
     # so are the fields autoMergeRequest, autoMergeAllowed and
     # viewerCanEnableAutoMerge, which is why the auto-merge mutation is matched
     # by its whole name.
-    is_graphql=0
+    # An endpoint or a GraphQL query this hook cannot read (a variable, a
+    # file, stdin) is not read as a merge; the gh wrapper reads what gh is
+    # given when it runs.
     for ((k = c + 1; k < n; k++)); do
       case "${TOK[k]}" in
         */[Mm][Ee][Rr][Gg][Ee]|*/[Mm][Ee][Rr][Gg][Ee][/?#]*|*/[Mm][Ee][Rr][Gg][Ee][Ss]|*/[Mm][Ee][Rr][Gg][Ee][Ss][/?#]*|\
@@ -522,47 +472,8 @@ while IFS= read -r SEG; do
           echo "BLOCKED: gh api on a merge endpoint or mutation. Its checks cannot be verified from here." >&2
           echo "Next: to merge, run $_BUM_SHAPE. To ask whether it merged: gh pr view <number> --repo owner/name --json mergedAt." >&2
           exit 2 ;;
-        graphql|/graphql|*://*/graphql) is_graphql=1 ;;
       esac
     done
-    # An endpoint that is wholly a variable or a substitution may be a merge
-    # endpoint. Only the whole endpoint: `repos/$REPO/pulls/$PR` is not a merge
-    # whatever it expands to, since `/merge` would have to be written, and a
-    # GraphQL query with `$id` in it is a query with variables. Values of -f
-    # and -F are not read for `$` either; a merge mutation is caught by name.
-    # The endpoint is the first word after `api` that is not an option or an
-    # option's value; gh api's own value-taking options are skipped here.
-    ep=""
-    seen_api=0
-    for ((k = c + 1; k < n; k++)); do
-      t="${TOK[k]}"
-      if [ "$seen_api" = "0" ]; then [ "$t" = "api" ] && seen_api=1; continue; fi
-      case "$t" in
-        -X|--method|-f|--raw-field|-F|--field|-H|--header|--input|-q|--jq|-t|--template|--hostname|-p|--preview|--cache)
-          k=$((k + 1)); continue ;;
-        -*) continue ;;
-      esac
-      ep="$t"; break
-    done
-    case "$ep" in
-      */*) ;;
-      *)
-        if _bum_unreadable "$ep"; then
-          echo "BLOCKED: gh api with its endpoint given as \"$(_bum_show "$ep")\". Whether it merges cannot be read from the command." >&2
-          echo "Next: write the endpoint literally, or merge with: $_BUM_SHAPE." >&2
-          exit 2
-        fi ;;
-    esac
-    if [ "$is_graphql" = "1" ]; then
-      for ((k = c + 1; k < n; k++)); do
-        case "${TOK[k]}" in
-          --input|--input=*|@*|*=@*)
-            echo "BLOCKED: gh api graphql with its query in a file or on stdin. Whether it merges cannot be read from the command." >&2
-            echo "Next: pass the query inline, or merge with: $_BUM_SHAPE." >&2
-            exit 2 ;;
-        esac
-      done
-    fi
     continue
   fi
   if [ "$kind" = "alias" ]; then
