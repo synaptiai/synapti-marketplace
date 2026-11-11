@@ -2558,6 +2558,15 @@ EOF
     case "$A" in *'"$('*) printf ')"\n' >> "$C/$N.txt" ;; *'$('*) printf ')\n' >> "$C/$N.txt" ;; esac
     N=$((N + 1))
   done
+  # The interpreter after a shell keyword, and output stored or followed by
+  # another command.
+  for L in "for f in a b; do python3 - \"\$f\" <<'PY'" "if python3 - <<'PY'" "{ python3 - <<'PY'" \
+           "! python3 - <<'PY'" "python3 - <<'PY' &> log.txt" "python3 - <<'PY' && echo done" \
+           "python3 - <<'PY' 2>&1 | tail -3 > out.txt"; do
+    printf "%s\ndoc = \"\"\"\ngh pr merge 7\n\"\"\"\nPY\n" "$L" > "$C/$N.txt"
+    case "$L" in for*) printf 'done\n' >> "$C/$N.txt" ;; if*) printf 'then :; fi\n' >> "$C/$N.txt" ;; '{'*) printf '}\n' >> "$C/$N.txt" ;; esac
+    N=$((N + 1))
+  done
   cat > "$C/9.txt" <<'EOF'
 node - <<'JS' 2>&1 | tail -3
 console.log(`we merge at release: ${"gh pr merge 7"}`)
@@ -2590,7 +2599,9 @@ bash <<<'gh pr merge 7' && python3 -c 1
 cat <<<'gh pr merge 7' | bash && python3 -c 1
 EOF
   # A shell reads what the script prints: the body is kept and read.
-  for R in '| bash' '| sh -s' '> >(bash)' '| sudo sh' '| xargs -I{} sh -c {}' '| ssh host' '|& bash'; do
+  for R in '| bash' '| sh -s' '> >(bash)' '| sudo sh' '| xargs -I{} sh -c {}' '| ssh host' '|& bash' \
+           '| "$SHELL"' '| $(which bash)' '| `which bash`' '| sudo -s' '| sudo -i' '| xargs -L1 env' \
+           '| xargs -L1 sudo' '| xargs -L1 timeout 60' '| timeout 5'; do
     printf "python3 - <<'PY' %s\nprint('gh pr merge 7')\nPY\n" "$R" > "$C/pipe.txt"
     _tg_case "$C/pipe.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
   done
@@ -2604,6 +2615,16 @@ EOF
   done
   printf "python3 - <<'PY' |\nprint('gh pr merge 7')\nPY\nbash\n" > "$C/encl.txt"
   _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  # A quoted ) inside the substitution, and a quoted ; or ( before a bash
+  # heredoc, which bash reads as text.
+  for L in "bash -c \"\$(echo ')' >/dev/null; python3 - <<'PY'" "eval \"\$(: ')'; python3 - <<'PY'"; do
+    printf "%s\nprint('gh pr merge 7')\nPY\n)\"\n" "$L" > "$C/encl.txt"
+    _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done
+  for L in "bash -s \"x;python3 -\" <<'EOF'" "bash -s \"a(python3 -\" <<'EOF'"; do
+    printf "%s\ngh pr merge 7\nEOF\n" "$L" > "$C/encl.txt"
+    _tg_case "$C/encl.txt"; _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  done
   cat > "$C/release.txt" <<'EOF'
 gh release create v1
 echo "$(gh release create v1)"

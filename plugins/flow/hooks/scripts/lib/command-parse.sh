@@ -577,21 +577,59 @@ _bd_strip_noncode() {
       sub(/^.*\//, "", w)
       return w
     }
-    # langdata=1 only (BD_LANG_DATA): is the command that owns a heredoc
-    # introduced at the end of pre a language interpreter, whose heredoc body
-    # is its script? Its first word decides, or the first word after
-    # wrappers (wrapre), options, numbers and assignments (`timeout 60
-    # python3`, `env A=1 node`, `nice -n 5 ruby`). Any other word first
+    # langdata=1 only (BD_LANG_DATA). Reads pre, the text before a heredoc
+    # introducer, as bash quotes it. Sets FSP to the number of $( ), <( ),
+    # >( ), backquote and ( ) frames still open at its end, with FTY[k] (s,
+    # p, b or g), FOP[k] (where the frame opens) and FLS[k] (the last
+    # separator before it), and LASTSEP to the last ; & | or frame opening
+    # in the innermost open frame. A $( or backquote starts a new quoting
+    # context, also inside double quotes: a quote inside it pairs inside it,
+    # and the double-quote state outside it comes back when it closes.
+    function scan_pre(pre,   n, i, c, k, sq, dq) {
+      n = length(pre); sq = 0; dq = 0; FSP = 0; LASTSEP = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(pre, i, 1)
+        if (sq) { if (c == SQ) sq = 0; continue }
+        if (c == "\\") { i++; continue }
+        if (c == SQ && !dq) { sq = 1; continue }
+        if (c == "\"") { dq = !dq; continue }
+        if (c == "`") {
+          if (FSP && FTY[FSP] == "b") { dq = FDQ[FSP]; LASTSEP = FLS[FSP]; FSP-- }
+          else { FSP++; FTY[FSP] = "b"; FOP[FSP] = i; FLS[FSP] = LASTSEP; FDQ[FSP] = dq; dq = 0; LASTSEP = i }
+          continue
+        }
+        if (c == "(") {
+          k = (i > 1) ? substr(pre, i - 1, 1) : ""
+          if (k == "$") k = "s"
+          else if (k == "<" || k == ">") k = "p"
+          else if (!dq) k = "g"
+          else continue
+          FSP++; FTY[FSP] = k; FOP[FSP] = (k == "g") ? i : i - 1; FLS[FSP] = LASTSEP; FDQ[FSP] = dq
+          dq = 0; LASTSEP = i
+          continue
+        }
+        if (dq) continue
+        if (c == ")" && FSP && FTY[FSP] != "b") { dq = FDQ[FSP]; LASTSEP = FLS[FSP]; FSP--; continue }
+        if (c == ";" || c == "&" || c == "|") LASTSEP = i
+      }
+    }
+    # langdata=1 only: is the command that owns a heredoc introduced at the
+    # end of pre a language interpreter, whose heredoc body is its script?
+    # The command starts after the last separator that bash sees (scan_pre;
+    # a ; or ( inside quotes is text). Its first word decides, after shell
+    # keywords, wrappers (wrapre), options, numbers and assignments (`do
+    # python3`, `timeout 60 python3`, `env A=1 node`). Any other word first
     # means it is not one, and the body is read.
-    function lang_owner(pre,   n, parts, seg, m, w, j, x) {
+    function lang_owner(pre,   seg, m, w, j, x) {
       if (langdata != 1) return 0
-      n = split(pre, parts, /[;&|(`]/)
-      seg = (n > 0) ? parts[n] : pre
+      scan_pre(pre)
+      seg = substr(pre, LASTSEP + 1)
       m = split(seg, w, /[ \t]+/)
       for (j = 1; j <= m; j++) {
         if (w[j] == "") continue
         x = owner_name(w[j])
         if (x ~ langre) return 1
+        if (x ~ /^(if|then|elif|else|while|until|do|!|[{]|time)$/) continue
         if (x ~ wrapre || x ~ /^-/ || x ~ /^[0-9.]+[smhd]?$/ || x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) continue
         return 0
       }
@@ -601,87 +639,57 @@ _bd_strip_noncode() {
       w = owner_name(w)
       return (w == "cat" || w == "tee" || w == "echo" || w == "printf" || w == "gh")
     }
-    # langdata=1 only. Does the simple command s (no ; & | in it) run what it
-    # is given as shell? Its command word decides: a shell, or a program that
-    # runs a shell (hostre: eval, source, ssh, docker and the like), or a
-    # variable or substitution, which may be either. Behind a wrapper (wrapre:
-    # sudo, env, xargs, timeout and the like) any later word that is a shell
-    # or such a program counts. Words after any other command word are its
-    # arguments (`jq .`, `grep -c env`). A python, node, ruby or perl reading
-    # the text runs it as a script, which the gh and git wrappers check when
-    # the script starts them. No BASH_ENV check: it changes what a shell
-    # reads at startup, which the shell word already counts.
-    function runs_shell(s,   m, w, j, x, wrap, tgt) {
-      m = split(s, w, /[ \t]+/)
-      wrap = 0; tgt = 0
-      for (j = 1; j <= m; j++) {
-        if (w[j] == "") continue
-        x = w[j]
-        if (!wrap && x ~ /^[0-9]*(<|>|>>|&>|>&|<&|>[|])$/) { tgt = 1; continue }
-        if (tgt) { tgt = 0; continue }
-        if (!wrap && x ~ /^[0-9]*[<>]/) continue
-        if (x ~ /^[$`]/) return 1
-        gsub("[\"" SQ "\\\\]", "", x)
-        if (x == "") continue
-        if (!wrap && x ~ /^(if|then|elif|else|while|until|do|!|time)$/) continue
-        if (!wrap && x ~ /^[A-Za-z_][A-Za-z0-9_]*[+]?=/) continue
-        sub(/^.*\//, "", x)
-        x = tolower(x)
-        if (x ~ shre || x ~ hostre) return 1
-        if (x ~ wrapre) { wrap = 1; continue }
-        if (!wrap) return 0
-      }
-      return 0
-    }
-    # langdata=1 only. May the output of a language heredoc, with str the
-    # text after its introducer, be left out of the reading? Not when a
-    # command of str runs shell (runs_shell), as in `| bash` or `> >(sh)`,
-    # and not when str ends in a pipe: the command it feeds is on the line
-    # after the body, which this reading does not see.
-    function post_ok(str,   s, n, cmds, i) {
+    # langdata=1 only. May the body of a language heredoc be left out of the
+    # reading, with str the text after its introducer? Only when every
+    # command there is a listed filter (filterre), a language interpreter or
+    # gh, behind at most timeout, nice or stdbuf, and the rest is redirections
+    # to files: then what the script prints is printed, filtered or stored.
+    # Anything else may run it as commands, and the body is read: a shell or
+    # any other program (`| bash`, `| sudo -s`, `| xargs env`), a word with a
+    # quote, a $ or a backquote in it (`| "$SHELL"`), a substitution or a
+    # group, and a pipe at the end of the line, whose reader comes after the
+    # body.
+    function post_ok(str,   s, n, cmds, i, m, w, j, x, tgt, pre) {
       s = str
       sub(/[ \t]+$/, "", s)
       if (s ~ /[|]&?$/ && s !~ /[|][|]$/) return 0
-      n = split(s, cmds, /[;&|(){}`]|[$][(]/)
-      for (i = 1; i <= n; i++) if (runs_shell(cmds[i])) return 0
+      if (s ~ /[$`(){}]/) return 0
+      gsub(/[0-9]*>&[0-9-]+/, " ", s)
+      gsub(/&>/, ">", s)
+      gsub(/[|]&/, "|", s)
+      n = split(s, cmds, /[|;&]+/)
+      for (i = 1; i <= n; i++) {
+        m = split(cmds[i], w, /[ \t]+/)
+        tgt = 0; pre = 0
+        for (j = 1; j <= m; j++) {
+          x = w[j]
+          if (x == "") continue
+          if (x ~ /^[0-9]*(<|>|>>|>[|]|<>)$/) { tgt = 1; continue }
+          if (tgt) { tgt = 0; continue }
+          if (x ~ /^[0-9]*[<>]/) continue
+          if (x ~ ("[\"" SQ "\\\\]")) return 0
+          sub(/^.*\//, "", x)
+          if (x ~ /^(timeout|nice|stdbuf)$/) { pre = 1; continue }
+          if (pre && (x ~ /^-/ || x ~ /^[0-9.]+[smhd]?$/)) continue
+          if (x ~ filterre || x ~ langre || x == "gh") { pre = 2; break }
+          return 0
+        }
+        if (tgt || pre == 1) return 0
+      }
       return 1
     }
     # langdata=1 only. Is the heredoc introduced at the end of pre outside
-    # every unclosed $( ), <( ), >( ), backquote and ( ) group? Inside one,
-    # where its output goes is decided past the body (`bash -c "$(python3`,
+    # every open $( ), <( ), >( ), backquote and ( ) group (scan_pre)? Inside
+    # one, where its output goes is decided past the body (`bash -c "$(python3`,
     # `eval "$(python3`, `bash <(python3`, `echo "$(python3 ... )" | bash`),
-    # so the body is kept. One exception: a substitution whose value is
+    # so the body is read. One exception: a substitution whose value is
     # assigned to a name (`out=$(python3`, `local out=$(python3`) only sets
     # the name.
-    function encl_ok(pre,   n, i, c, k, sq, dq, sp, st, ty, from, seg, parts, np) {
-      n = length(pre); sq = 0; dq = 0; sp = 0
-      for (i = 1; i <= n; i++) {
-        c = substr(pre, i, 1)
-        if (sq) { if (c == SQ) sq = 0; continue }
-        if (c == "\\") { i++; continue }
-        if (c == SQ && !dq) { sq = 1; continue }
-        if (c == "\"") { dq = !dq; continue }
-        if (c == "`") {
-          if (sp && ty[sp] == "b") sp--
-          else { sp++; st[sp] = i; ty[sp] = "b" }
-          continue
-        }
-        if (c == "(") {
-          k = (i > 1) ? substr(pre, i - 1, 1) : ""
-          if (k == "$" && i > 2 && substr(pre, i - 2, 1) == "\\") k = ""
-          if (k == "$") { sp++; st[sp] = i - 1; ty[sp] = "s" }
-          else if (k == "<" || k == ">") { sp++; st[sp] = i - 1; ty[sp] = "p" }
-          else if (!dq) { sp++; st[sp] = i; ty[sp] = "g" }
-          continue
-        }
-        if (c == ")" && sp && (!dq || ty[sp] != "g")) sp--
-      }
-      for (k = 1; k <= sp; k++) {
-        if (ty[k] != "s" && ty[k] != "b") return 0
-        from = (k > 1) ? st[k - 1] + (ty[k - 1] == "s" || ty[k - 1] == "p" ? 2 : 1) : 1
-        seg = substr(pre, from, st[k] - from)
-        np = split(seg, parts, /[;&|]/)
-        seg = (np > 0) ? parts[np] : ""
+    function encl_ok(pre,   k, seg) {
+      scan_pre(pre)
+      for (k = 1; k <= FSP; k++) {
+        if (FTY[k] != "s" && FTY[k] != "b") return 0
+        seg = substr(pre, FLS[k] + 1, FOP[k] - FLS[k] - 1)
         gsub("[\"" SQ "]", "", seg)
         if (seg !~ /^[ \t]*((local|export|declare|typeset|readonly)([ \t]+-[A-Za-z]+)*[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[+]?=$/) return 0
       }
@@ -924,9 +932,10 @@ _bd_strip_noncode() {
             # The language interpreters (_BD_LANGS), whose heredoc body is
             # data with langdata=1 (is_lang).
             langre = langs; gsub(/ +/, "|", langre); langre = "^(" langre ")$"
-            # Programs that run a shell on what they are given (runs_shell),
-            # and wrappers that run the command named after them.
-            hostre = "^(eval|source|[.]|ssh|su|docker|podman|kubectl|at|batch|script|watch|parallel|tmux|screen|make|chroot|unshare|nsenter|flock)$"
+            # Programs that only filter, count or store what a script
+            # prints (post_ok), and wrappers that run the command named
+            # after them (lang_owner).
+            filterre = "^(tail|head|grep|egrep|fgrep|rg|jq|yq|sort|uniq|wc|tee|cat|less|more|sed|awk|cut|tr|column|fold|nl|paste|diff|cmp|od|xxd|hexdump|base64|gzip|true|false|echo|printf)$"
             wrapre = "^(sudo|doas|env|nohup|timeout|xargs|command|builtin|exec|nice|ionice|setsid|stdbuf|caffeinate|time|chronic)$" }
     {
       line = $0
@@ -1165,14 +1174,14 @@ _bd_strip_noncode() {
       # <<EOF | bash` and `cat <<EOF > >(bash)` keep their bodies. With
       # langdata=1 (in every reading) the body of a language interpreter is
       # dropped here too (`python3 - <<PY 2>&1`, `node - <<JS | tail`): it
-      # is the script of the program, unless the output reaches a shell: the
-      # text after the introducer hands it to one (post_ok: `| bash`,
-      # `> >(sh)`), or the heredoc is inside a substitution or group whose
-      # output is decided past the body (encl_ok). What the script prints is
-      # then commands, and its body is kept.
+      # is the script of the program, also with `&&` or `;` and a further
+      # command after it. The body is kept when the output may reach
+      # anything but the terminal, a file or a listed filter: the text
+      # after the introducer (post_ok), or a substitution or group around
+      # the heredoc whose output is decided past the body (encl_ok).
       if (!inhd && (blank == 1 || langdata == 1) && hits == 1 && q == "" &&
-          (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|])/) ||
-           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|])")) &&
+          (match(out, /<<-?["]?[A-Za-z_][A-Za-z0-9_]*["]?[ \t]*([0-9]*>|&>|[|]|&&|;)/) ||
+           match(out, "<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "[ \t]*([0-9]*>|&>|[|]|&&|;)")) &&
           intro_at(out, RSTART)) {
         pre = substr(out, 1, RSTART - 1)
         rest = substr(out, RSTART)
@@ -1180,7 +1189,7 @@ _bd_strip_noncode() {
         d = substr(rest, 1, RLENGTH)
         post = substr(rest, RLENGTH + 1)
         vq = (d ~ /^<<-?"[A-Za-z_][A-Za-z0-9_]*"$/ || d ~ ("^<<-?" SQ "[A-Za-z_][A-Za-z0-9_]*" SQ "$"))
-        if ((lang_owner(pre) && encl_ok(pre) && post_ok(post)) || (blank == 1 && reader_ok(pre " " post))) {
+        if ((lang_owner(pre) && encl_ok(pre) && post_ok(post)) || (blank == 1 && post !~ /^[ \t]*(&&|;)/ && reader_ok(pre " " post))) {
           sub(/^<</, "", d)
           tabs = 0
           if (substr(d, 1, 1) == "-") { tabs = 1; d = substr(d, 2) }
