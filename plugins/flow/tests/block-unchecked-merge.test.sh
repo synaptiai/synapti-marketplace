@@ -565,6 +565,11 @@ for CMD in \
   "ssh -F 'perl ruby' host 'gh pr merge 7'" \
   "$(printf "bash -s \"x;python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "bash -s \"a(python3 -\" <<'EOF'\ngh pr merge 7\nEOF")" \
+  'su node -c '\''gh pr merge 7'\''' \
+  'ssh node '\''gh pr merge 7'\''' \
+  'x=$(su node -c '\''gh pr merge 7'\'')' \
+  'eval python3 '\''x; gh pr merge 1'\''' \
+  'ssh host python3 '\''x; gh pr merge 1'\''' \
   "$(printf "uv run bash <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "uv run --with python3 bash <<'EOF'\ngh pr merge 7\nEOF")" \
   "$(printf "poetry run sh <<'EOF'\ngh pr merge 7\nEOF")" \

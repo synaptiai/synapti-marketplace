@@ -144,6 +144,26 @@ e2e_expect_equal 9 "$(jq '.permissions.ask | length' "$E2E_REPO/.claude/settings
 _sp_fence PERM_FILE=local
 e2e_expect_out "PERMISSIONS=unchanged"
 
+_sp_setup sp-unreadable "a settings file this user cannot read, and a directory where the settings file belongs, are refused and left as they were: nothing replaces settings setup could not read"
+mkdir -p "$E2E_REPO/.claude"
+printf '%s\n' '{"permissions":{"deny":["Bash(curl *)"]}}' > "$E2E_REPO/.claude/settings.json"
+chmod 000 "$E2E_REPO/.claude/settings.json"
+if [ -r "$E2E_REPO/.claude/settings.json" ]; then
+  _e2e_result pass "a mode-000 file is readable here (running as root); the unreadable case cannot be shown"
+else
+  # One shell: copying .claude back between shells would make the file
+  # readable again.
+  E2E_FENCE_SHELLS=bash e2e_run_fence PERM_FILE=shared "$E2E_ACTIVE_PLUGIN/commands/setup.md" "SETUP_PERMISSIONS_BEGIN"
+  e2e_expect_out "PERMISSIONS=refused"
+  chmod 644 "$E2E_REPO/.claude/settings.json"
+  e2e_expect_equal '{"permissions":{"deny":["Bash(curl *)"]}}' "$(cat "$E2E_REPO/.claude/settings.json")" "the unreadable file"
+fi
+chmod 644 "$E2E_REPO/.claude/settings.json"
+mkdir -p "$E2E_REPO/.claude/settings.local.json"
+_sp_fence PERM_FILE=local
+e2e_expect_out "PERMISSIONS=refused"
+e2e_expect_equal "" "$(ls -A "$E2E_REPO/.claude/settings.local.json")" "the directory's contents"
+
 _sp_setup sp-symlink "a settings file that is a symlink is not written through, and its target is left as it was (P3)"
 mkdir -p "$E2E_REPO/.claude"
 printf '%s\n' '{}' > "$E2E_DIR/elsewhere.json"

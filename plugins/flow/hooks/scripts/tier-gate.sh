@@ -1558,32 +1558,33 @@ _tg_gh() {   # $1 = index of gh
   return 0
 }
 
-# A program this hook does not know may run the rest of its line as a
-# command: caffeinate, stdbuf, setsid, watch, `find -exec`, parallel,
-# `script -q /dev/null`, and any other. So the words after it are read for gh
-# or git, and what each would do is kept when it is a Tier 3 action (a merge,
-# a release, a tag push or a possible one) and dropped otherwise: `npm run
-# git push` names no action, and a Tier 2 action there would cost a prompt
-# for every script that merely mentions git. A command word that is a
-# variable or a substitution (`$GH pr merge 7`) names no program this hook
-# can read, so only the words after it are read; what it runs is left to the
-# gh and git wrappers, which see the program when it runs and refuse a merge
-# or a release nobody approved (lib/tier-runtime.sh). A word with a space in it (a quoted
+# A program this hook does not know may run the rest of its line as a command:
+# caffeinate, stdbuf, setsid, watch, `find -exec`, parallel, `script -q
+# /dev/null`, and any other. So the words after it are read for gh or git, and
+# what each would do is kept when it is a Tier 3 action (a merge, a release, a
+# tag push or a possible one) and dropped otherwise: `npm run git push` names
+# no action, and a Tier 2 action there would cost a prompt for every script
+# that merely mentions git. A command word that is a variable or a
+# substitution (`$GH pr merge 7`) names no program this hook can read, so only
+# the words after it are read; what it runs is left to the gh and git
+# wrappers, which see the program when it runs and refuse a merge or a release
+# nobody approved (lib/tier-runtime.sh). A word with a space in it (a quoted
 # argument, as in `watch 'gh release create v9'`, `script -c '...'`, `trap
 # '...' EXIT`, `awk 'BEGIN { system("...") }'`) may be a whole command, and is
 # read as one, for the same Tier 3 actions, unless the parser already read it
 # as a command of its own (it does for every such word after bash, env, ssh
-# and the other words lib/command-parse.sh treats as running a script), it
-# is the script of a language interpreter (python, perl, ruby, node, deno,
-# bun: data, BD_LANG_DATA), or it could not hold one (_tg_may_run). A git config, a branch change or a write
-# to .git in such a word changes the repository for every later push, as it
-# does on its own (_tg_config_prescan). Some programs join their arguments
-# into one shell command (`ssh host gh\ pr merge 1`, `watch "gh pr" merge 1`,
-# `sudo -s`), so when a word after the program holds a space or a character
-# the shell reads specially, the words from the program on are also read
-# joined with spaces, as one command. The --verify-tag exemption does not
-# apply here. At most TG_SCAN_MAX (16) quoted words, here-strings and joined
-# readings are read per simple command; the rest are not read.
+# and the other words lib/command-parse.sh treats as running a script), it is
+# the script of a language interpreter (python, perl, ruby, node, deno, bun:
+# data, BD_LANG_DATA), or it could not hold one (_tg_may_run). A git config, a
+# branch change or a write to .git in such a word changes the repository for
+# every later push, as it does on its own (_tg_config_prescan). Some programs
+# join their arguments into one shell command (`ssh host gh\ pr merge 1`,
+# `watch "gh pr" merge 1`, `sudo -s`), so when a word after the program holds
+# a space or a character the shell reads specially, the words from the program
+# on are also read joined with spaces, as one command. The --verify-tag
+# exemption does not apply here. At most TG_SCAN_MAX (16) quoted words,
+# here-strings and joined readings are read per simple command; the rest are
+# not read.
 TG_SCAN_MAX=16
 _tg_scan() {   # $1 = index of the command word
   local k t p out line start=$(($1 + 1)) interp=0 reads=0 joined="" join=0 texts=()
@@ -1630,6 +1631,12 @@ _tg_scan() {   # $1 = index of the command word
   if [ "${#TOK[$1]}" -le 4096 ]; then
     _bd_is_shell "${TOK[$1]}" && join=0
     _bd_is_language "${TOK[$1]}" && join=0
+    # A Python project runner hands run's words on as a list, not as shell
+    # text: `uv run python3 -c '...'` runs python3 with its script.
+    case "${TOK[$1]##*/}" in
+      uv|poetry|pipenv|pdm|hatch|rye)
+        [ "${TOK[$1+1]:-}" = run ] && _bd_is_language "${TOK[$1+2]:-}" && join=0 ;;
+    esac
   fi
   if [ "$join" = 1 ]; then
     for ((k = $1; k < n; k++)); do joined="$joined${joined:+ }${TOK[k]}"; done
@@ -2444,6 +2451,45 @@ while IFS=$'\t' read -r KEY SUMMARY ADIR; do
       ;;
   esac
 done <<< "$ACTIONS"
+
+# How many times a merge or a release is written in the command text, read
+# with ($1=0) or without ($1=1) the scripts of language interpreters.
+_tg_written() {   # $1 = BD_LANG_DATA, $2 = merge or release
+  local BD_CODE="" re
+  case "$2" in
+    merge) re='pr[[:space:]]+merge|mergePullRequest|enablePullRequestAutoMerge' ;;
+    *) re='release[[:space:]]+(create|edit|delete|upload)|createRelease|updateRelease' ;;
+  esac
+  local code0 extra
+  BD_LANG_DATA="$1" _bd_strip_noncode "$COMMAND" || { printf '0'; return; }
+  code0="$BD_CODE"
+  BD_LANG_DATA="$1" _bd_expand_interpreter_args 2>/dev/null
+  # The scripts handed to interpreters, appended after the text. A $(...)
+  # or backquote in one is run by bash before the interpreter starts, and is
+  # in the text already (`python3 -c "$(gh pr merge 7)"`): counted once.
+  extra="${BD_CODE:${#code0}}"
+  extra=$(printf '%s' "$extra" | sed -e 's/\$([^)]*)//g' -e 's/`[^`]*`//g')
+  printf '%s\n%s' "$code0" "$extra" | grep -oE "$re" | wc -l | tr -d ' '
+}
+# The run-time check counts approvals by action, not by pull request or tag:
+# a merge asked about here may be spent by another merge that runs in the
+# same call. When a script this hook read as data (python, node, ruby, perl)
+# names a merge or a release, and the command also asks about one, the
+# approval could be spent by the script's merge, which nobody saw named in
+# the question. Such a command is refused, with the plain command to run on
+# its own.
+TG_SPLIT=""
+for TG_K in merge release; do
+  case " $TG_ASKED " in *" $TG_K "*) ;; *) continue ;; esac
+  if [ "$(_tg_written 0 "$TG_K")" -gt "$(_tg_written 1 "$TG_K")" ]; then
+    TG_SPLIT="$TG_SPLIT $TG_K"
+  fi
+done
+if [ -n "$TG_SPLIT" ]; then
+  jq -nc --arg r "Flow tier gate. This command merges a pull request or creates a release (Tier 3), and also runs a python, node, ruby or perl script whose text names a merge or a release. Flow approves Tier 3 actions by kind, not by pull request or tag, so an approval given here could be used by the script's merge or release instead. Run the merge or release as a command of its own, and the script as another." \
+    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+  exit 0
+fi
 
 if [ "${#REASONS[@]}" -gt 0 ]; then
   REASON="Flow tier gate. ${REASONS[0]}"

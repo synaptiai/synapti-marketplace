@@ -44,6 +44,12 @@ if [ -L "$file" ] || [ -L "$top/.claude" ]; then
   printf '%s\n' "PERMISSIONS=refused" "REASON=$file or its directory is a symlink; nothing was written through it" "FILE=$file"
   exit 0
 fi
+if [ -e "$file" ] && { [ ! -f "$file" ] || [ ! -r "$file" ]; }; then
+  # A directory, or a file this user cannot read (one written by sudo): its
+  # settings cannot be read, so they cannot be kept.
+  printf '%s\n' "PERMISSIONS=refused" "REASON=$file is not a file this user can read; it was left as it is" "FILE=$file"
+  exit 0
+fi
 if [ -e "$file" ] && [ -z "$(LC_ALL=C tr -d ' \t\r\n' < "$file")" ]; then
   # An empty file holds no settings: the rules are added to an empty object.
   old='{}'
@@ -59,7 +65,10 @@ elif [ -e "$file" ]; then
     printf '%s\n' "PERMISSIONS=refused" "REASON=$file: $shape; it was left as it is" "FILE=$file"
     exit 0
   fi
-  old=$(cat "$file")
+  old=$(cat "$file") || {
+    printf '%s\n' "PERMISSIONS=refused" "REASON=$file could not be read; it was left as it is" "FILE=$file"
+    exit 0
+  }
 else
   old='{}'
 fi

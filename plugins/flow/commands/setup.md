@@ -523,7 +523,11 @@ Only after the user picks one of the first two, run the block below with `PERM_F
 # SETUP_PERMISSIONS_BEGIN
 # The rules and the write are in bin/flow-setup-permissions.sh.
 FLOW_ROOT="$(__fr="${CLAUDE_PLUGIN_ROOT:-}";[ -x "$__fr/bin/cascade-resolve.sh" ]||__fr=$({ printf '%s\n' plugins/flow;ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/synapti-marketplace/flow/*/ 2>/dev/null|sort -Vr;printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/marketplaces/synapti-marketplace/plugins/flow"; }|while read -r __p;do [ -x "${__p%/}/bin/cascade-resolve.sh" ]&&{ printf '%s\n' "${__p%/}";break;};done);printf '%s\n' "$__fr")"
-"$FLOW_ROOT/bin/flow-setup-permissions.sh" "${PERM_FILE:-}"
+if [ -x "$FLOW_ROOT/bin/flow-setup-permissions.sh" ]; then
+  "$FLOW_ROOT/bin/flow-setup-permissions.sh" "${PERM_FILE:-}"
+else
+  printf '%s\n' "PERMISSIONS=skipped" "REASON=bin/flow-setup-permissions.sh was not found under ${FLOW_ROOT:-the flow plugin root}; the ask rules were not written" "FILE="
+fi
 # SETUP_PERMISSIONS_END
 ```
 

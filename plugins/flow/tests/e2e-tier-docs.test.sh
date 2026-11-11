@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # The documentation of the tier checks says what they catch, what they do not,
-# and what stops a merge or release that reaches GitHub, and says nothing the
-# hooks no longer do.
+# and what stops a merge or release that reaches GitHub, and makes no claim the
+# hooks do not hold to. The ask rules it lists are compared with the rules the
+# shipped setup fence installs in a scratch repository.
 #
 # Ways it can be wrong, written down before the checks:
 #   D1 a doc still claims the hook asks about text it cannot read, or that a
@@ -13,8 +14,9 @@
 #   D4 nothing says that GitHub rulesets, not the local checks, are what stops
 #      a merge or release that reaches GitHub
 
-{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null; } || {
-  printf '%s\n' "run this file with plugins/flow/tests/run.sh" >&2
+{ [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
+    && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
+  printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
   return 1 2>/dev/null; exit 1
 }
 
@@ -22,7 +24,6 @@ TD_P="$REPO_ROOT/plugins/flow"
 TD_README="$TD_P/README.md"
 TD_SAFETY="$TD_P/references/three-tier-safety.md"
 TD_GATES="$TD_P/references/gate-configuration.md"
-TD_SCRIPT="$TD_P/bin/flow-setup-permissions.sh"
 
 _td_has() {   # <file> <fixed text> <what>
   if grep -qF -- "$2" "$1"; then _flow_assert_pass "$3"; else _flow_assert_fail "$3: '$2' not found in ${1#"$REPO_ROOT"/}"; fi
@@ -31,7 +32,7 @@ _td_lacks() {   # <file> <fixed text> <what>
   if grep -qF -- "$2" "$1"; then _flow_assert_fail "$3: '$2' is still in ${1#"$REPO_ROOT"/}"; else _flow_assert_pass "$3"; fi
 }
 
-_flow_test_begin "tier docs: no claim the checks no longer make (D1)"
+_flow_test_begin "tier docs: no claim that the hook asks about text it cannot read (D1)"
 for F in "$TD_README" "$TD_SAFETY" "$TD_GATES" "$TD_P/commands/setup.md"; do
   _td_lacks "$F" "cannot hide the action" "no claim that nothing can hide an action"
   _td_lacks "$F" "asks, since it may merge or release" "no ask for a GraphQL query the hook cannot read"
@@ -41,14 +42,15 @@ for F in "$TD_README" "$TD_SAFETY" "$TD_GATES" "$TD_P/commands/setup.md"; do
 done
 
 _flow_test_begin "tier docs: the ask rules documented are the ones setup writes (D2)"
-# The rules are the ones the shipped setup script installs in a scratch
-# repository, not the ones its source spells out.
-TD_REPO=$(mktemp -d "${TMPDIR:-/tmp}/flow-tier-docs.XXXXXX")
-git -C "$TD_REPO" init -q
-TD_OUT=$(cd "$TD_REPO" && bash "$TD_SCRIPT" shared 2>&1)
-assert_contains "PERMISSIONS=written" "$TD_OUT" "the setup script wrote the rules in a scratch repository"
-TD_RULES=$(jq -r '.permissions.ask[]' "$TD_REPO/.claude/settings.json" 2>/dev/null)
-rm -rf "$TD_REPO"
+# The rules are the ones the shipped setup fence installs in a scratch
+# repository, not the ones the script's source spells out. One shell is
+# enough: the setup tests compare the fence's shells.
+e2e_new td-setup-rules
+e2e_describe "the shipped setup fence, run with the shared choice in a scratch repository, installs the rules the safety reference lists"
+e2e_repo main
+E2E_FENCE_SHELLS=bash e2e_run_fence PERM_FILE=shared "$E2E_ACTIVE_PLUGIN/commands/setup.md" "SETUP_PERMISSIONS_BEGIN"
+e2e_expect_out "PERMISSIONS=written"
+TD_RULES=$(jq -r '.permissions.ask[]' "$E2E_REPO/.claude/settings.json" 2>/dev/null)
 TD_N=$(printf '%s\n' "$TD_RULES" | grep -c 'Bash(')
 assert_equal "9" "$TD_N" "the setup script installs nine rules"
 while IFS= read -r R; do

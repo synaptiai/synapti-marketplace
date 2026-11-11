@@ -223,7 +223,8 @@ for TR_CMD in 'G=gh; $G pr merge 7' 'X="gh pr merge 7"; eval "$X"' \
     "python3 -c 'import subprocess, sys; sys.exit(subprocess.run([\"gh\", \"pr\", \"merge\", \"7\"]).returncode)'" \
     "node -e 'process.exitCode = require(\"child_process\").spawnSync(\"gh\", [\"release\", \"create\", \"v9\"], {stdio: \"inherit\"}).status'" \
     "$(printf "for f in a; do python3 - <<'PY'\nprint('gh pr merge 7')\nPY\ndone | bash")" \
-    "$(printf "x=\$(python3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)\neval \"\$x\"")"; do
+    "$(printf "x=\$(python3 - <<'PY'\nprint('gh pr merge 7')\nPY\n)\neval \"\$x\"")" \
+    "bash -c \"bash -c 'gh pr merge 7'\""; do
   _tr_call "$TR_CMD"
   e2e_expect_equal 0 "$TR_ASKED" "the gate did not ask for: $TR_CMD"
   e2e_expect_equal 1 "$E2E_RC" "exit status of: $TR_CMD"
