@@ -9,10 +9,10 @@
 # (standard library only).
 #
 # PYTHONS lists the interpreters to test, oldest first (default:
-# "/usr/bin/python3 python3"; PYTHON=<one interpreter> still works). The
-# original table, the markdown check and the citation check run under every
-# listed interpreter that exists; the mutations run under the first one, so
-# the oldest supported Python (3.9 on macOS) is always exercised.
+# "python3.14"; PYTHON=<one interpreter> still works). Flow supports Python
+# 3.14 or later; an older interpreter is skipped. The original table, the
+# markdown check and the citation check run under every listed interpreter
+# that exists; the mutations run under the first one.
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -27,8 +27,9 @@ fail=0
 
 PYS=""
 seen=""
-for p in ${PYTHONS:-${PYTHON:-/usr/bin/python3 python3}}; do
+for p in ${PYTHONS:-${PYTHON:-python3.14}}; do
   command -v "$p" > /dev/null 2>&1 || { echo "skip interpreter $p: not found"; continue; }
+  "$p" -c 'import sys; sys.exit(sys.version_info < (3, 14))' 2>/dev/null || { echo "skip interpreter $p: older than Python 3.14"; continue; }
   exe="$("$p" -c 'import os, sys; print(os.path.realpath(sys.executable))' 2>/dev/null)" || continue
   case " $seen " in *" $exe "*) continue ;; esac
   seen="$seen $exe"

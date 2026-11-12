@@ -73,13 +73,16 @@ the prose names, as data:
     named state, or when no allowed assignment agrees with its "when".
 
 With --markdown it writes transitions.md beside the JSON file.
-Exit code 0 only when every check passes. Standard library only (Python 3.9+).
+Exit code 0 only when every check passes. Standard library only (Python 3.14 or later).
 """
 import itertools
 import json
 import os
 import re
 import sys
+
+if sys.version_info < (3, 14):
+    sys.exit("check_transitions.py needs Python 3.14 or later; this is " + sys.version.split()[0])
 
 KINDS = ("active", "parked", "terminal")
 EVENT_KINDS = ("person", "github", "engine")
