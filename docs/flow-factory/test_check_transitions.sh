@@ -481,6 +481,148 @@ row("14")["records"]["resume_state"]["default"] = "spec"
 row("15")["resume"].append("spec")
 '
 
+# ---- reachability through winning rows only ----
+mutate gate_skips_review_to_sync \
+  "state 'review' is unreachable from the creation target queued" \
+  'row("22")["to"] = "sync"'
+
+# ---- stage-outcome safety rules (required expectations) ----
+mutate sync_to_ready_without_review \
+  "expectation 'ready_needs_valid_review': in \(sync, stage_succeeded\) the job must move to gate, but row '31' wins" \
+  '
+d["rows"] = [r for r in d["rows"] if r["id"] not in ("32c", "32d")]
+g = row("31")["guard"]; del g["valid_review_at_head"]; del g["ledger_passes"]
+'
+
+mutate protected_to_rework \
+  "expectation 'protected_violation_needs_human': in \(gate, stage_succeeded\) the job must move to needs_human, but row '25' wins" \
+  'r = row("25"); r["to"] = "rework"; del r["records"]'
+
+mutate conflict_protected_to_resolve \
+  "expectation 'protected_conflict_needs_human': in \(sync, stage_succeeded\) the job must move to needs_human, but row '33b' wins" \
+  'r = row("33b"); r["to"] = "resolve"; del r["records"]'
+
+mutate escalated_to_rework \
+  "expectation 'escalated_review_needs_human': in \(review, stage_succeeded\) the job must move to needs_human or waiting_operator, but row '29' wins" \
+  'r = row("29"); r["to"] = "rework"; del r["records"]'
+
+mutate ready_marker_disagreement_stays \
+  "expectation 'marker_disagreement_in_ready_parks': in \(ready, github_change\) the job must move to needs_human or waiting_operator, but row '38' wins \(\(stays\)\)" \
+  'r = row("38"); del r["to"]; del r["records"]; del r["writes"]; r["stay"] = True'
+
+mutate person_push_ignores_untrusted_edit \
+  "expectation 'person_push_waits_on_untrusted_edit': in \(needs_human, github_change\) the job must stay, but row '52h' wins" \
+  'del row("52h")["guard"]["untrusted_edit"]'
+
+mutate person_push_ignores_untrusted_close \
+  "expectation 'person_push_waits_on_untrusted_close': in \(needs_human, github_change\) the job must stay, but row '52h' wins" \
+  'del row("52h")["guard"]["untrusted_close"]'
+
+mutate person_push_ignores_build_reached \
+  "expectation 'person_push_before_build_waits': in \(needs_human, github_change\) the job must stay, but row '52h' wins" \
+  'del row("52h")["guard"]["build_started"]'
+
+mutate resolve_repeat_retry_launches \
+  "expectation 'resolve_repeat_refused': in \(needs_human, person_retry\) the job must stay, but row '44r' wins" \
+  'd["rows"] = [r for r in d["rows"] if r["id"] != "44xr"]'
+
+mutate merge_done_to_needs_human \
+  "expectation 'merge_success_merges': in \(merging, stage_succeeded\) the job must move to merged, but row '64' wins" \
+  'r = row("64"); r["to"] = "needs_human"; r["records"] = {"blocked_stage": {"default": "sync"}}; r["writes"] = ["undo of ready"]'
+
+mutate worker_parked_stays \
+  "expectation 'worker_park_needs_human': in \((spec|build|open_pr|review|rework), worker_parked\) the job must move to needs_human, but row '43' wins" \
+  'r = row("43"); del r["to"]; del r["records"]; r["stay"] = True'
+
+mutate ci_timeout_stays \
+  "expectation 'ci_timeout_needs_human': in \(waiting_ci, sync_tick\) the job must move to needs_human or waiting_operator, but row '63t' wins" \
+  'r = row("63t"); del r["to"]; del r["records"]; del r["writes"]; r["stay"] = True'
+
+mutate judge_reject_to_cancelled \
+  "expectation 'judge_reject_rejects': in \(intake, judge_reject\) the job must move to rejected, but row '5' wins" \
+  'row("5")["to"] = "cancelled"'
+
+mutate triage_retry_reintakes_in_needs_info \
+  "expectation 'needs_info_triage_retry_revouches_only': in \(needs_info, person_retry\) the job must stay, but row '(8r|9r)' wins" \
+  'd["rows"] = [r for r in d["rows"] if r["id"] != "8t"]'
+
+# ---- every rule, the event order and the expectations are required ----
+mutate drop_person_confirmation_and_69a \
+  "rules.person_confirmation is missing; the checker requires every rule" \
+  '
+del d["rules"]["person_confirmation"]
+for i in ("15", "15s"):
+    del row(i)["guard"]["unvouched_session_action"]
+d["rows"] = [r for r in d["rows"] if r["id"] != "69a"]
+'
+
+mutate drop_ready_mark_rule_and_undo_on_58 \
+  "rules.ready_mark is missing; the checker requires every rule" \
+  'del d["rules"]["ready_mark"]; del row("58")["writes"]'
+
+mutate drop_push_check_and_21f \
+  "rules.push_check is missing; the checker requires every rule" \
+  '
+del d["rules"]["push_check"]
+d["rows"] = [r for r in d["rows"] if r["id"] != "21f"]
+'
+
+mutate drop_all_expectations \
+  "required expectation 'cancel_ends_the_job' is missing from the table" \
+  'd["expectations"] = []'
+
+mutate drop_event_order \
+  "missing top-level key 'event_order'" \
+  'del d["event_order"]'
+
+mutate person_event_with_no_states \
+  "person event 'person_reject' has an empty occurs_in list" \
+  '
+d["events"]["person_reject"]["occurs_in"] = []
+d["rows"] = [r for r in d["rows"] if r["event"] != "person_reject"]
+d["expectations"] = [x for x in d["expectations"] if "person_reject" not in x["events"]]
+d["rules"]["person_confirmation"]["events"].remove("person_reject")
+'
+
+# ---- a person merge is applied before every event of the pass (pass_first) ----
+mutate drop_pass_first \
+  "missing top-level key 'pass_first'" \
+  'del d["pass_first"]'
+
+mutate pass_first_names_cancel_row \
+  "\[pass_first\] \(.*, github_change\): row '54' wins, but pass_first applies only rows 53b" \
+  'd["pass_first"]["rows"] = ["53b"]'
+
+# ---- the ready mark on computed targets ----
+mutate park_records_ready_resume_ready_unmarked \
+  "\[ready_mark\] row '44' can resume a job into ready, where the PR is marked ready; only rows 41, 41e, 41k may" \
+  '
+row("38")["records"]["blocked_stage"]["default"] = "ready"
+for i in ("44", "44r"):
+    row(i)["resume"].append("ready")
+'
+
+mutate draft_park_records_ready \
+  "\[ready_mark\] row '40' records resume_state ready for prepare, where the PR is not marked ready" \
+  'row("40")["records"]["resume_state"]["prepare"] = "ready"'
+
+mutate ready_park_resumes_into_sync \
+  "\[ready_mark\] row '40g' parks a job from ready, where the PR is marked ready, recording resume_state \['sync'\]; it must resume into ready" \
+  'row("40g")["records"]["resume_state"]["default"] = "sync"'
+
+# ---- the protected check before every engine push (rules.push_check) ----
+mutate freeze_row_skips_open_pr \
+  "\[push_check\] \(open_pr, stage_succeeded\): row '21' pushes, but when prepush_protected_failed is true row '21' wins" \
+  'row("21f")["from"].remove("open_pr")'
+
+mutate freeze_row_below_push_rows \
+  "\[push_check\] \((open_pr|review|rework|resolve|sync), stage_succeeded\): row '[0-9a-z]+' pushes, but when prepush_protected_failed is true row '[0-9a-z]+' wins" \
+  'row("21f")["precedence"] = 99'
+
+mutate freeze_row_pushes \
+  "\[push_check\] \(open_pr, stage_succeeded\): row '21' pushes, but when prepush_protected_failed is true row '21f' wins" \
+  'row("21f")["writes"] = ["push"]'
+
 wait
 
 for name in $NAMES; do

@@ -20,8 +20,11 @@ Checks, in order:
      and so is a row that wins no assignment in one of its from-states;
   3. derives the In, Out and Stays lists of row ids for every state, from the
      rows that win at least one assignment in each from-state;
-  4. every state is reachable from queued, and every non-terminal state can
-     reach a terminal state, again through winning rows only;
+  4. every state is reachable from queued through winning rows, and every
+     non-terminal state can reach a terminal state. A resume row counts as a
+     way from its parked state into a target only when a parking row it
+     reads wins in a reachable from-state other than that target and records
+     the target there, so a park taken in a state is never a way into it;
   5. every parked state has an exit row into an active state on a person
      event and on github_change;
   plus: resume rows list exactly the targets that the parking rows record,
@@ -29,8 +32,11 @@ Checks, in order:
   parked state records each value that a resume row of that state reads and
   is named by one of those resume rows.
 
-The "rules" object and the "expectations" list hold the rules the prose
-names, as data:
+The top-level keys event_order, pass_first, rules and expectations are
+required, every rule in "rules" is required, and the expectation ids in
+REQUIRED_EXPECTATIONS must all be present, so deleting a rule or an
+expectation together with the rows it protects fails. They hold the rules
+the prose names, as data:
   - creation: every creation row targets rules.initial_state, and
     reachability starts from the creation targets;
   - goal: every non-terminal state can reach rules.goal_state;
@@ -47,7 +53,18 @@ names, as data:
     ready, to a non-terminal state where it is not, declares the undo write,
     unless it is a confirm park or its guard says the mark is already gone; a
     row with a fixed target that enters such a state from another declares
-    the mark write;
+    the mark write. Only the rows in READY_RESUME_ROWS may resume a job into
+    such a state; a row may record such a state only from such a state; and
+    a confirm park taken in such a state records resume_state =
+    rules.ready_mark.resume_into;
+  - push_check: the pre-push check fact is derived like blocking_write: it
+    can be true only when the row that wins with it false lists the push
+    write, and then a row that moves the job to push_check.to without a push
+    must win;
+  - pass_first: in every state where its event occurs, whenever its "when"
+    holds, one of its rows wins, because those rows apply before every event
+    of event_order;
+  - a person event must name the states where it occurs;
   - a no_move_ok "when" must name only literals the fact dependencies leave
     open in each of its states, so an entry cannot hold whatever happens;
   - each expectation names states, events, a "when" and the outcome that the
@@ -68,16 +85,48 @@ KINDS = ("active", "parked", "terminal")
 EVENT_KINDS = ("person", "github", "engine")
 RUN_BY = ("engine", "directive", "judge", "worker")
 COMPUTED = ("resume_state", "blocked_stage")
-TOP_REQUIRED = ("facts", "events", "states", "rows")
-TOP_ALLOWED = set(TOP_REQUIRED) | {"title", "about", "conventions", "event_order",
-                                   "fact_dependencies", "creation", "rules", "expectations"}
+TOP_REQUIRED = ("facts", "events", "states", "rows", "event_order", "pass_first", "rules", "expectations")
+TOP_ALLOWED = set(TOP_REQUIRED) | {"title", "about", "conventions", "fact_dependencies", "creation"}
 ROW_ALLOWED = {"id", "from", "event", "guard", "to", "stay", "precedence", "effects",
                "resume", "resume_from", "records", "note", "phase", "writes"}
-RULES_ALLOWED = {"initial_state", "goal_state", "person_confirmation", "blocking_write", "ready_mark", "records_as_if"}
+# Every rule is required: a table without one of them fails, so deleting a
+# rule together with the rows it protects cannot pass.
+RULES_REQUIRED = ("initial_state", "goal_state", "person_confirmation", "blocking_write",
+                  "ready_mark", "push_check", "records_as_if")
+RULES_ALLOWED = set(RULES_REQUIRED)
 RECORDS_AS_IF_ALLOWED = {"row", "key", "fact", "why"}
 PERSON_CONFIRMATION_ALLOWED = {"fact", "events", "why"}
 BLOCKING_WRITE_ALLOWED = {"fact", "park_state", "kinds", "why"}
-READY_MARK_ALLOWED = {"states", "mark", "undo", "missing_fact", "why"}
+READY_MARK_ALLOWED = {"states", "mark", "undo", "missing_fact", "resume_into", "why"}
+PUSH_CHECK_ALLOWED = {"write", "fact", "to", "why"}
+PASS_FIRST_ALLOWED = {"event", "when", "rows", "why"}
+# The only rows that may resume a job into a state where the PR is marked
+# ready. Each resumes after the undo of ready ran or was observed, so the job
+# enters ready with ready_mark_missing set and row 36u restores the mark.
+READY_RESUME_ROWS = ("41", "41e", "41k")
+# Expectation ids the table must hold. They are kept here, not only in the
+# table, so an edit that drops an expectation together with the rows it
+# protects fails.
+REQUIRED_EXPECTATIONS = (
+    "cancel_ends_the_job", "merge_by_person_wins", "pr_close_cancels", "cancel_signal_cancels",
+    "untrusted_close_parks", "untrusted_close_parks_waiting", "untrusted_edit_parks",
+    "issue_change_before_build", "issue_change_after_build", "foreign_push_regates",
+    "foreign_push_before_build", "changes_requested_reworks", "rework_request_reworks",
+    "feedback_reworks", "reject_rejects", "approval_resumes", "needs_info_answer_reintakes",
+    "untrusted_answer_waits", "triage_retry_revouches_only", "triage_retry_revouches_edit",
+    "needs_info_triage_retry_revouches_only", "closed_issue_refuses_resume",
+    "closed_issue_refuses_answer", "confirm_tier_parks_before_launch",
+    "protected_check_before_launch",
+    "config_tamper_runs_no_git", "queued_waits_for_slot", "ready_waits_for_slot",
+    "ready_mark_restored", "approve_once_per_head", "marker_disagreement_parks",
+    "ready_needs_gate_record", "ready_needs_valid_review", "ready_needs_passing_ledger",
+    "protected_violation_needs_human", "protected_conflict_needs_human",
+    "escalated_review_needs_human", "marker_disagreement_in_ready_parks",
+    "person_push_waits_on_untrusted_edit", "person_push_waits_on_untrusted_close",
+    "person_push_after_build_regates", "person_push_before_build_waits",
+    "resolve_repeat_refused", "merge_success_merges", "worker_park_needs_human",
+    "ci_timeout_needs_human", "judge_reject_rejects",
+)
 EXPECT_ALLOWED = {"id", "states", "events", "when", "expect", "why"}
 EXPECT_KINDS = ("to", "stays", "rows")
 STATE_ALLOWED = {"kind", "meaning", "phase", "run_by"}
@@ -224,6 +273,8 @@ class Checker(object):
                 self.err("schema", "event '%s' has no occurs_in list" % name)
                 e["occurs_in"] = []
                 occ = []
+            if e.get("kind") == "person" and not occ:
+                self.err("schema", "person event '%s' has an empty occurs_in list; a person event names the states where it acts, and is refused elsewhere" % name)
             for s in occ:
                 if s not in states:
                     self.err("schema", "event '%s' occurs_in names undeclared state '%s'" % (name, s))
@@ -271,7 +322,9 @@ class Checker(object):
                 self.err("occurrence", "event '%s' occurs in state '%s', which is not run by %s" % (name, s, " or ".join(kinds)))
 
         order = d.get("event_order")
-        if order is not None:
+        if not isinstance(order, list):
+            self.err("schema", "event_order must be a list")
+        else:
             occurring = [n for n, e in events.items() if isinstance(e, dict) and e.get("occurs_in")]
             for n in order:
                 if n not in events:
@@ -416,6 +469,9 @@ class Checker(object):
             self.err("schema", "rules is not an object")
             rules = {}
         self.keys_ok(rules, RULES_ALLOWED, "rules")
+        for k in RULES_REQUIRED:
+            if k not in rules:
+                self.err("schema", "rules.%s is missing; the checker requires every rule" % k)
         self.rules = rules
         self.initial = rules.get("initial_state", "queued")
         if self.initial not in states or states[self.initial].get("kind") != "active":
@@ -426,6 +482,32 @@ class Checker(object):
         self.goal = rules.get("goal_state")
         if self.goal is not None and self.goal not in states:
             self.err("schema", "rules.goal_state '%s' is not a declared state" % self.goal)
+
+        pf = d.get("pass_first")
+        self.pass_first = None
+        if not isinstance(pf, dict):
+            self.err("schema", "pass_first must be an object")
+        else:
+            self.keys_ok(pf, PASS_FIRST_ALLOWED, "pass_first")
+            if pf.get("event") not in events:
+                self.err("schema", "pass_first names undeclared event '%s'" % pf.get("event"))
+            when = pf.get("when")
+            if not isinstance(when, dict) or not when:
+                self.err("schema", "pass_first needs a non-empty \"when\"")
+            else:
+                self._check_guard(when, "pass_first when")
+            prows = pf.get("rows")
+            if not isinstance(prows, list) or not prows:
+                self.err("schema", "pass_first needs a non-empty rows list")
+            else:
+                for rid in prows:
+                    r = self.by_id.get(rid)
+                    if r is None:
+                        self.err("schema", "pass_first names unknown row '%s'" % rid)
+                    elif r.get("event") != pf.get("event"):
+                        self.err("schema", "pass_first names row '%s', which is not on event '%s'" % (rid, pf.get("event")))
+            if not self.errors:
+                self.pass_first = pf
 
         pc = rules.get("person_confirmation")
         self.pc_fact, self.pc_events = None, []
@@ -491,7 +573,21 @@ class Checker(object):
                     self.err("schema", "rules.ready_mark.%s '%s' is not a blocking write kind" % (k, rm.get(k)))
             if rm.get("missing_fact") is not None and rm["missing_fact"] not in facts:
                 self.err("schema", "rules.ready_mark names undeclared fact '%s'" % rm["missing_fact"])
+            if rm.get("resume_into") not in rm.get("states", []):
+                self.err("schema", "rules.ready_mark.resume_into '%s' is not one of its states" % rm.get("resume_into"))
             self.rm = rm
+
+        pk = rules.get("push_check")
+        self.pk = None
+        if pk is not None:
+            self.keys_ok(pk, PUSH_CHECK_ALLOWED, "rules.push_check")
+            if pk.get("write") not in self.bw_kinds:
+                self.err("schema", "rules.push_check.write '%s' is not a blocking write kind" % pk.get("write"))
+            if pk.get("fact") not in facts:
+                self.err("schema", "rules.push_check names undeclared fact '%s'" % pk.get("fact"))
+            if pk.get("to") not in self.parked:
+                self.err("schema", "rules.push_check.to '%s' is not a parked state" % pk.get("to"))
+            self.pk = pk
 
         self.as_if = []
         for i, x in enumerate(rules.get("records_as_if", [])):
@@ -665,6 +761,12 @@ class Checker(object):
                     x["hits"][(s, en)] = 0
                 if bwf and any(self.writes_for(r, s) for r in rows):
                     facts.add(bwf)
+                pkf = self.pk["fact"] if self.pk else None
+                if pkf and any(self.pk["write"] in self.writes_for(r, s) for r in rows):
+                    facts.add(pkf)
+                pf = self.pass_first
+                if pf and en == pf["event"]:
+                    facts.update(pf["when"].keys())
                 deps = self.deps_for(s)
                 facts = self.closure(facts, deps)
                 if len(facts) > MAX_FACTS_PER_PAIR:
@@ -689,6 +791,18 @@ class Checker(object):
                         if len(top0) != 1 or not self.writes_for(top0[0], s):
                             continue
                         wants_park = top0[0]
+                    wants_freeze = None
+                    if pkf in a and a[pkf]:
+                        # The pre-push check is derived the same way: it can
+                        # fail only when the row that wins with it false pushes.
+                        a1 = dict(a)
+                        a1[pkf] = False
+                        if not self.consistent(a1, deps):
+                            continue
+                        top1 = self.top_rows(rows, a1)
+                        if len(top1) != 1 or self.pk["write"] not in self.writes_for(top1[0], s):
+                            continue
+                        wants_freeze = top1[0]
                     count += 1
                     self.assignments += 1
                     top = self.top_rows(rows, a)
@@ -708,6 +822,16 @@ class Checker(object):
                         self.err("blocking_write", "(%s, %s): row '%s' makes the blocking write(s) %s, but when %s is true %s instead of a row that parks in %s recording resume_state; when %s"
                                  % (s, en, wants_park["id"], ", ".join(self.writes_for(wants_park, s)), bwf,
                                     "no row matches" if w is None else "row '%s' wins" % w["id"], self.bw_park, fmt_assign(a)))
+                    if wants_freeze is not None and (w is None or w.get("stay") or self.targets(w) != [self.pk["to"]]
+                                                     or self.pk["write"] in self.writes_for(w, s)):
+                        self.err("push_check", "(%s, %s): row '%s' pushes, but when %s is true %s instead of a row that moves the job to %s without a push; when %s"
+                                 % (s, en, wants_freeze["id"], pkf,
+                                    "no row matches" if w is None else "row '%s' wins (%s)" % (w["id"], to_text(w)),
+                                    self.pk["to"], fmt_assign(a)))
+                    if pf and en == pf["event"] and self.agrees(pf["when"], a) and (w is None or w["id"] not in pf["rows"]):
+                        self.err("pass_first", "(%s, %s): %s, but pass_first applies only rows %s before every event of event_order; when %s"
+                                 % (s, en, "no row matches" if w is None else "row '%s' wins" % w["id"],
+                                    fmt_ids(pf["rows"]), fmt_assign(a)))
                     for x in exps:
                         if self.agrees(x["when"], a):
                             x["hits"][(s, en)] += 1
@@ -832,6 +956,36 @@ class Checker(object):
                         if rm["mark"] not in self.writes_for(r, s):
                             self.err("ready_mark", "row '%s' moves a job from %s into %s, where the PR is marked ready, without '%s' in its writes"
                                      % (r["id"], s, t, rm["mark"]))
+            # A computed target is checked too: only the resume rows that
+            # follow the undo of ready may resume a job into a marked state.
+            if r.get("to") in COMPUTED:
+                into = sorted(set(self.targets(r)) & marked)
+                if into and r["id"] not in READY_RESUME_ROWS:
+                    self.err("ready_mark", "row '%s' can resume a job into %s, where the PR is marked ready; only rows %s may, after the undo of ready"
+                             % (r["id"], ", ".join(into), fmt_ids(READY_RESUME_ROWS)))
+            # A row may record a marked state only from a marked from-state:
+            # a park taken where the PR is a draft never resumes into ready.
+            for key, m in r.get("records", {}).items():
+                for fs in r["from"]:
+                    v = m.get(fs, m.get("default"))
+                    if v is None or fs in marked:
+                        continue
+                    got = set(fs if x == "$from" else x for x in (v if isinstance(v, list) else [v]))
+                    for t in sorted(got & marked):
+                        self.err("ready_mark", "row '%s' records %s %s for %s, where the PR is not marked ready; only a park from %s may record a state where it is"
+                                 % (r["id"], key, t, fs, ", ".join(sorted(marked))))
+            # A confirm park taken where the PR is marked ready resumes into
+            # rules.ready_mark.resume_into, where the held event is replayed.
+            if self.is_confirm_park(r):
+                for s in r["from"]:
+                    if s not in marked or not self.live(r, s):
+                        continue
+                    m = r["records"]["resume_state"]
+                    v = m.get(s, m.get("default"))
+                    got = set(s if x == "$from" else x for x in (v if isinstance(v, list) else [v]))
+                    if got != {rm["resume_into"]}:
+                        self.err("ready_mark", "row '%s' parks a job from %s, where the PR is marked ready, recording resume_state %s; it must resume into %s"
+                                 % (r["id"], s, sorted(got), rm["resume_into"]))
 
     def dead_rows(self):
         for r in self.rows:
@@ -893,6 +1047,7 @@ class Checker(object):
         return out
 
     def resume_check(self):
+        self.resume_srcs = {}
         consumed = set()
         named = {}
         for r in self.rows:
@@ -928,6 +1083,7 @@ class Checker(object):
                 self.err("resume", "row '%s' resume_from must be a list of row ids or \"*\"" % r["id"])
                 continue
             named.setdefault((p, key), set()).update(x["id"] for x in srcs)
+            self.resume_srcs[r["id"]] = srcs
             want = set()
             for x in srcs:
                 consumed.add((x["id"], key))
@@ -954,29 +1110,63 @@ class Checker(object):
 
     # ---------------- 4. reachability ----------------
     def reach(self):
+        # Forward reachability counts an edge from a parked state p to a
+        # resume target t only when a parking row that p's resume row reads
+        # wins in a reachable from-state other than t and records t there. A
+        # park taken in t itself is not a way into t. The backward checks
+        # (terminal and goal) use every resume target.
         st = self.d["states"]
-        succ = dict((s, set()) for s in st)
+        fixed = dict((s, set()) for s in st)
+        full = dict((s, set()) for s in st)
+        resume = []
         for r in self.rows:
             for s in r["from"]:
-                if not self.live(r, s):
+                if not self.live(r, s) or s not in st:
                     continue
                 for t in self.targets(r):
-                    if s in succ and t in st:
-                        succ[s].add(t)
+                    if t in st:
+                        full[s].add(t)
+                        if r.get("to") not in COMPUTED:
+                            fixed[s].add(t)
+                if r.get("to") in COMPUTED:
+                    resume.append((s, r))
         starts = sorted(set(c.get("to") for c in self.d.get("creation", []) if c.get("to") in st)) or [self.initial]
-        seen = set(starts)
-        todo = list(starts)
-        while todo:
-            s = todo.pop()
-            for t in succ.get(s, ()):
-                if t not in seen:
-                    seen.add(t)
-                    todo.append(t)
+        succ = dict((s, set(ts)) for s, ts in fixed.items())
+        seen = set()
+        changed = True
+        while changed:
+            seen = set(starts)
+            todo = list(starts)
+            while todo:
+                s = todo.pop()
+                for t in succ.get(s, ()):
+                    if t not in seen:
+                        seen.add(t)
+                        todo.append(t)
+            changed = False
+            for p, r in resume:
+                if p not in seen:
+                    continue
+                key = r["to"]
+                for x in self.resume_srcs.get(r["id"], []):
+                    m = x.get("records", {}).get(key, {})
+                    for fs in x["from"]:
+                        if fs not in seen or not self.live(x, fs):
+                            continue
+                        v = m.get(fs, m.get("default"))
+                        if v is None:
+                            continue
+                        for y in (v if isinstance(v, list) else [v]):
+                            t = fs if y == "$from" else y
+                            if t != fs and t in r.get("resume", []) and t not in succ[p]:
+                                succ[p].add(t)
+                                changed = True
+        self.forward_seen = seen
         for s in st:
             if s not in seen:
                 self.err("reachability", "state '%s' is unreachable from the creation target %s" % (s, " or ".join(starts)))
         pred = dict((s, set()) for s in st)
-        for s, ts in succ.items():
+        for s, ts in full.items():
             for t in ts:
                 pred[t].add(s)
 
@@ -1000,6 +1190,13 @@ class Checker(object):
                 if s not in can:
                     self.err("reachability", "state '%s' cannot reach %s, so a job there can only end, never finish its work" % (s, self.goal))
 
+    # ---------------- required expectations ----------------
+    def required_expectations(self):
+        have = set(x.get("id") for x in self.d.get("expectations", []) if isinstance(x, dict))
+        for i in REQUIRED_EXPECTATIONS:
+            if i not in have:
+                self.err("expectation", "required expectation '%s' is missing from the table" % i)
+
     # ---------------- 5. parked exits ----------------
     def parked_exits(self):
         ev = self.d["events"]
@@ -1017,6 +1214,7 @@ class Checker(object):
             return False
         self.no_move_literals()
         self.coverage()
+        self.required_expectations()
         self.dead_rows()
         self.derive()
         self.resume_check()
@@ -1160,14 +1358,23 @@ def write_markdown(c, json_path, md_path):
                      % (bw["fact"], ", ".join(bw.get("kinds", [])), bw["park_state"], bw.get("why", "")))
         rm = rules.get("ready_mark")
         if rm:
-            L.append("- **Ready mark.** A row that moves a job out of %s to a non-terminal state outside them lists '%s', unless it is a confirm park or its guard reads %s true; a row that enters one of them from elsewhere lists '%s'. %s"
-                     % (", ".join(rm["states"]), rm["undo"], rm.get("missing_fact", "-"), rm["mark"], rm.get("why", "")))
+            L.append("- **Ready mark.** A row that moves a job out of %s to a non-terminal state outside them lists '%s', unless it is a confirm park or its guard reads %s true; a row that enters one of them from elsewhere lists '%s'. Only rows %s may resume a job into one of them, a row may record one of them only from one of them, and a confirm park taken in one of them records resume_state %s. %s"
+                     % (", ".join(rm["states"]), rm["undo"], rm.get("missing_fact", "-"), rm["mark"],
+                        ", ".join(READY_RESUME_ROWS), rm.get("resume_into", "-"), rm.get("why", "")))
+        pk = rules.get("push_check")
+        if pk:
+            L.append("- **Push check.** %s is derived: it can be true only when the row that wins with it false lists '%s', and then a row that moves the job to %s without a push must win. %s"
+                     % (pk["fact"], pk["write"], pk["to"], pk.get("why", "")))
+        pf = d.get("pass_first")
+        if pf:
+            L.append("- **Pass first.** On %s, whenever %s, one of rows %s wins in every state where the event occurs; these rows apply before every event of event_order. %s"
+                     % (pf["event"], guard_text(pf["when"]), ", ".join(pf["rows"]), pf.get("why", "")))
         for x in rules.get("records_as_if", []):
             L.append("- **Records as if.** Row %s records %s, for each from-state, as the targets the rows winning with %s false enter. %s" % (x["row"], x["key"], x["fact"], x.get("why", "")))
         L.append("- **no_move_ok literals.** Every literal of a no_move_ok \"when\" is left open by the fact dependencies in each of its states.")
         L.append("")
         if d.get("expectations"):
-            L.append("Expected outcomes. In each listed state, for every fact assignment the dependencies allow that agrees with \"When\", the winning row must give the outcome; each must apply at least once in each state.")
+            L.append("Expected outcomes. The checker requires every id below to be present. In each listed state, for every fact assignment the dependencies allow that agrees with \"When\", the winning row must give the outcome; each must apply at least once in each state.")
             L.append("")
             L.append("| Id | Events | States | When | Outcome | Why |")
             L.append("|---|---|---|---|---|---|")
@@ -1237,8 +1444,8 @@ def main(argv):
         print("")
         print("FAIL: %d error(s) in %s" % (len(c.errors), path))
         return 1
-    print("Checks passed: 1 schema and occurrence rules, 2 guard coverage, precedence and winning rows, 3 derived entry and exit lists, 4 reachability from the creation target and to the goal state, 5 parked exits into active states, resume targets; rules: person confirmation, blocking writes, ready mark, records as if, no_move_ok literals; %d expectations."
-          % len(c.expectations))
+    print("Checks passed: 1 schema and occurrence rules, 2 guard coverage, precedence and winning rows, 3 derived entry and exit lists, 4 reachability from the creation target and to the goal state, 5 parked exits into active states, resume targets; rules: person confirmation, blocking writes, ready mark, push check, pass first, records as if, no_move_ok literals; %d expectations (%d required by id)."
+          % (len(c.expectations), len(REQUIRED_EXPECTATIONS)))
     print("Summary: %d states (%d parked, %d terminal), %d events, %d facts, %d rows; %d (state, event) pairs, %d fact assignments checked."
           % (len(c.d["states"]), len(c.parked), len(c.terminal), len(c.d["events"]), len(c.d["facts"]),
              len(c.rows) + len(c.d.get("creation", [])), c.pairs, c.assignments))
