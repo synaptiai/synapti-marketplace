@@ -1,0 +1,236 @@
+[
+ {
+  "item": "The reachability check counts every target listed in a resume row's 'resume' list as an edge from the parked state, even when the only row that records that target is a park taken in the target state itself. A state with no real way in therefore passes 'reachable from queued'. The README and states_and_transitions both say reachability is checked through winning rows from the creation target.",
+  "evidence": "check_transitions.py reach() lines 958-966 use self.targets(r), which returns r['resume'] for computed targets (lines 848-854). Mutation /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/e852dfbc-33ef-4ff2-abeb-dc5bc5659433/scratchpad/mut/22_gate_skips_review_to_sync.json changes row 22 from gate->review to gate->sync, so no row with a fixed target enters review any more. The checker prints PASS. review's derived In list becomes only '41, 41b, 41e, 41k, 41p, 44, 44r', and each of those returns to review only after a park taken in review (rows 40, 40b, 43, 43a and others with from=review). Fix: add an edge p->t for a resume row only when some reachable parking row records t from a reachable from-state.",
+  "severity": "medium",
+  "lens": "table"
+ },
+ {
+  "item": "No expectation or rule protects the stage-outcome safety rules that the prose states, so a table edit that breaks one of them passes. These rules are: ready needs a gate record, a valid review and a passing ledger at the head; a protected-path violation or a conflict on a protected path goes to needs_human; an escalated review goes to needs_human; marker disagreement in ready parks; row 52h needs no untrusted edit; a repeated resolve is refused (44xr); the merge directive's success ends as merged.",
+  "evidence": "Mutations that print PASS, all in /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/e852dfbc-33ef-4ff2-abeb-dc5bc5659433/scratchpad/mut/: sync_to_ready_without_review.json (deletes 32c and 32d and drops valid_review_at_head and ledger_passes from row 31, so sync->ready happens without a review); 25_protected_to_rework.json; 33b_conflict_protected_to_resolve.json; 29_escalated_to_rework.json; 38_ready_marker_disagree_stays.json (states_and_transitions 'Marker disagreement: Row 38 parks a ready job'); 52h_ignores_untrusted_edit.json (prose: 'row 52h sends the job to gate only when no untrusted edit or issue change waits'); 44b_resolve_repeat_retry_launches.json (deletes 44xr; Loop bounds: 'Resolve repeats are bounded by row 44b'); 64_merge_done_to_needs_human.json; 43_worker_parked_stays.json; 63t_ci_timeout_stays.json; 40g_records_sync.json (40g records resume_state=sync, but prose says the job resumes into ready to replay the held event); 5_judge_reject_to_cancelled.json. The 30 expectations cover only person and GitHub events, slots and the ready mark (transitions.json 'expectations').",
+  "severity": "medium",
+  "lens": "table"
+ },
+ {
+  "item": "Every rule and expectation in the table is optional, so deleting a rule together with the rows it protects passes the checker. The README says the checker 'enforces' that a person action needs its confirmation and that a person's cancel, merge or rejection ends the job.",
+  "evidence": "check_transitions.py schema_rules: 'if pc is not None' (line 432), 'if bw is not None' (459), 'if rm is not None' (484), and expectations default to []. Mutation /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/e852dfbc-33ef-4ff2-abeb-dc5bc5659433/scratchpad/mut/drop_person_confirmation_and_69a.json removes rules.person_confirmation and row 69a, and drops unvouched_session_action from rows 15 and 15s, so approve-spec acts without an answer record. The checker prints PASS. drop_all_expectations.json and drop_event_order.json also pass. Fix: require rules.person_confirmation, blocking_write, ready_mark and records_as_if, and a fixed set of expectation ids, or keep them in the checker.",
+  "severity": "medium",
+  "lens": "table"
+ },
+ {
+  "item": "The ready_mark rule checks only rows with a fixed target, so a resume row (computed target) can move a job into ready from a state where the PR is a draft, without writing the ready mark. By design only 41, 41e and 41k may resume into ready, and only after the undo.",
+  "evidence": "check_transitions.py ready_mark line 831: 'elif t in marked and r.get(\"to\") == t'. Mutation /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/e852dfbc-33ef-4ff2-abeb-dc5bc5659433/scratchpad/mut/38_records_ready_resume_ready_unmarked.json makes row 38 record blocked_stage=ready and adds ready to the resume lists of rows 44 and 44r, so a job goes from needs_human to ready with the PR still a draft. The checker prints PASS.",
+  "severity": "low",
+  "lens": "table"
+ },
+ {
+  "item": "Row 40b's approve from-state wins only in an assignment that cannot occur, and the prose describes that unreachable path as the behaviour. In approve, the only tier key on the path is issueUpdate, which is also the key of 40b's own write (the undo of ready). So when tier_confirm_blocking is true, blocking_write_confirm is also true, and row 40l (precedence 6, resume_state ready) always wins over 40b (precedence 20, resume_state sync). Prose: 'a park from approve also resumes into sync'.",
+  "evidence": "transitions.json facts.tier_confirm_blocking: 'approve (phase 2): issueUpdate, for the undo of ready'. design.json github_writes_and_tiers: tiers.issueUpdate covers 'gh pr ready and --undo'. Row 40b writes {approve: ['undo of ready']}, and its own effect says 'a key that is confirm and unconfirmed for that undo parks through row 40l instead'. states_and_transitions, 'Confirm-tier writes': 'a park from approve also resumes into sync'. The checker treats tier_confirm_blocking and blocking_write_confirm as independent, so it reports 40b as winning in approve.",
+  "severity": "low",
+  "lens": "table"
+ },
+ {
+  "item": "Row 61 (waiting_ci -> approve on !approval_valid_at_head) does not read automerge_tried_at_head and does not require the head to have changed. The loop bound 'approve is entered at most once per head' therefore does not hold when the approval becomes invalid at the same head, for example a dismissed APPROVE review.",
+  "evidence": "transitions.json row 61 guard is {approval_valid_at_head: false}; its effects say 'approval not carried to the new head; write the approve-entry record for the new head'. Loop bounds in states_and_transitions: 'approve is entered at most once per head SHA: rows 55 and 61 write an approve-entry record'. Only row 55 reads automerge_tried_at_head. This is from reading the table only; I did not write a mutation for it.",
+  "severity": "low",
+  "lens": "table"
+ },
+ {
+  "item": "Row 52h (needs_human, foreign push -> gate) does not read untrusted_close. A job whose issue an outsider closed while it waited in needs_human goes to gate on a person's push, past the refusals in rows 44u, 44z and 45z, and returns to needs_human through row 53u in the next pass. Also, the guard !blocked_before_build does not match the prose 'had reached build': a job parked from spec after build (row 17 after 20b or 23b) stays parked under row 52hs.",
+  "evidence": "Row 52h guard: [foreign_head_change, !untrusted_edit, !issue_changed, !blocked_before_build]. The needs_human github_change no_move_ok entry does not read untrusted_close. states_and_transitions, 'Refusals in needs_human' and 'A push the factory did not make'. This is from reading the table only.",
+  "severity": "low",
+  "lens": "table"
+ },
+ {
+  "item": "A triage-only retry in needs_info re-runs intake even when no untrusted reply is waiting. Row 8r does not read retry_by_triage_only, which is defined in needs_info. The fact's meaning and the prose say such a retry 'only re-vouches text from someone without write access'.",
+  "evidence": "Row 8r guard: [!intake_rounds_exhausted, !unvouched_session_action]. The meaning of facts.retry_by_triage_only and its defined_in [needs_info, needs_human]. Only row 44t (needs_human) refuses. This is from reading the table only.",
+  "severity": "low",
+  "lens": "table"
+ },
+ {
+  "item": "The precedence of row 54 over person events in the same pass (the event_order exception) is in prose only. It is not in event_order or any other data the checker reads. event_order lists person_cancel first, and the expectation merge_by_person_wins tests only within github_change.",
+  "evidence": "transitions.json event_order starts with 'person_cancel', 'person_reject'. conventions.event_order and states_and_transitions step 2 describe 'One exception comes first ... row 54'. Mutation /private/tmp/claude-501/-Users-danielbentes-synapti-marketplace/e852dfbc-33ef-4ff2-abeb-dc5bc5659433/scratchpad/mut/drop_event_order.json passes.",
+  "severity": "low",
+  "lens": "table"
+ },
+ {
+  "item": "The design does not say what happens to a person event raised in a state where it does not occur. Examples are a `/flow-factory reject` comment or the reject subcommand on a job in ready or needs_info, and retry in ready. person_reject occurs only in needs_spec_approval, waiting_operator and needs_human, but runner and person_channels list reject, retry and the other subcommands without any state restriction. TRANSITION_REFUSED covers moves, not events.",
+  "evidence": "transitions.json events.person_reject.occurs_in; design.json runner (comment commands 'retry', 'reject' or 'cancel' with no state limit) and person_channels item 1; states_and_transitions: 'A move the table does not allow exits 3 with TRANSITION_REFUSED'.",
+  "severity": "low",
+  "lens": "table"
+ },
+ {
+  "item": "The environment pause from phasing ('probes_failed', in which no judge, worker or directive starts) has no fact or row in the table. Row 66c holds only worker and judge launches, on probes_stale, so launch_due rows for prepare, gate, sync and merging still win (66, 66m) during an environment pause. Either the engine does not raise launch_due while paused, which the design should state, or the table needs a fact for the pause.",
+  "evidence": "design.json phasing table: 'PAUSED probes_failed=environment ... no judge, worker or directive starts, and no attempt is counted'. transitions.json facts.probes_stale: 'Only worker and judge launches read it; engine directives go on'. Rows 66 and 66m (launch_due in prepare, gate, sync and merging) do not read any pause fact.",
+  "severity": "low",
+  "lens": "table"
+ },
+ {
+  "item": "The interactive executor's presence record is the pid of the `wait` process, and that process exits on purpose to wake the session. As a result, the question hold and confirming during the session do not work as written. interactive_presence and executor_can_confirm both require that pid to be alive. No text gives any other liveness source, such as a heartbeat from `next` or from the session.",
+  "evidence": "design.json interactive_executor, 'Presence': \"`wait` records factory/executors/interactive.json with its pid... Presence counts only while both pids are alive\". Same section, 'Wake source': wait \"exits when `next` would return something new: ... a new stored question\", and a new waiter starts only \"If `next` printed `wait` or `idle` and no waiter is alive\". transitions.json facts interactive_presence (\"its wait record's pid and claude pid are alive\") and executor_can_confirm (\"its presence record's pid and claude pid are alive\"). Consequences: (1) row 67 (question_stored) is evaluated by the session's `next` after wait has exited, so row 67b wins and await prints PARK. Also, while the session is inside AskUserQuestion, no waiter runs, so a worker's await polls see no presence and print PARK ('It prints PARK at once when no interactive presence exists'). (2) executor_can_confirm is false during every `next` the session runs, so rows 66bp, 66p and 41p never win and row 40b parks confirm-tier jobs, against github_writes_and_tiers and e2e-factory-executors ('under an interactive stub ... the job runs (row 66bp)'). This breaks decision 5, which the plan settled ('asks each question the moment a job needs it').",
+  "severity": "high",
+  "lens": "closure"
+ },
+ {
+  "item": "Prepare runs on a reused job clone with no snapshot and no reset. A job sent back to intake while a worker had left uncommitted edits therefore fails prepare's clean-tree guard. It parks in needs_human, and neither retry nor feedback can move it on.",
+  "evidence": "transitions.json row 50 (intake/prepare/spec/waiting_operator -> intake, 'kill a live worker first', 'keep branch and worktree for reuse') and row 18. Rows 44c and 44d also go through intake to prepare after 51 or 51b killed a live worker. design.json stages item 3: 'Reuse them if they exist (row 50)'; 'Guard: `git status --porcelain` is empty'. transitions.json fact failure_needs_person includes 'the tree is dirty', which gives row 12 -> needs_human with blocked_stage prepare. Row 44r goes back to prepare, where the tree is still dirty, and row 46p refuses feedback (blocked_before_spec). The snapshot-and-reset rule exists only for worker stages: row 66b and execution_model 'Every fresh launch starts on a clean tree'. Row 66 (prepare, gate, sync) only says 'launch the engine directive'. A common trigger: a trusted `/flow-factory spec` comment posted while the spec worker has uncommitted journal edits.",
+  "severity": "medium",
+  "lens": "closure"
+ },
+ {
+  "item": "A diff-risk approval at the gate (row 23b, resume_state gate) must name the current head H, but no form of approve-spec carries a head. A terminal or session approval typed after a code-only push therefore approves a head the person never saw, or row 15s refuses it whatever the person does.",
+  "evidence": "transitions.json fact approval_matches_current: 'The approval names the current spec_hash and, when resume_state is gate, the current head H'. Row 15s: 'refuse: the approval names an old spec_hash or head'. design.json person_channels item 1: `approve-spec <job> --spec-hash <h>`. Item 5 comment form: `/flow-factory approve-spec <spec-hash>`. interactive_executor `spec <job>`: `approve-spec <job> --spec-hash <h> --action <id>`. The action-file arguments in person_channels item 4 list spec_hash but no head. A code-only push leaves spec_hash unchanged. Row 52s's new notice protects only the comment path, through the 'posted after' timing rule.",
+  "severity": "medium",
+  "lens": "closure"
+ },
+ {
+  "item": "Row 52hs records a person's push in needs_human but does not move the job clone's branch. When a retry later sends the job through intake, prepare reuses the stale local branch. The later open_pr push is then not a fast-forward of the person's commit: either the push fails, or the commit is overwritten.",
+  "evidence": "transitions.json row 52hs effects: 'record the foreign head', 'invalidate the gate record'. It has no 'fetch and move the worktree branch', which rows 52, 52e, 52h, 52s and 52w all have. Under the event_order convention, the change is consumed once a row that reads foreign_head_change=true has applied, so row 52e does not fire later in intake. design.json gate_and_commit_binding: 'Each row that moves the branch first snapshots...'. stages item 3: branch reuse. stages item 6: open_pr 'Push', with no force or rebase rule.",
+  "severity": "medium",
+  "lens": "closure"
+ },
+ {
+  "item": "Two plan Step 1.2 defects close only if the user adopts the machine-account rule (phasing question 3, option a): the GitHub comment channel, and the comment path in the auto-mode defect. Under option b both stay open. Some paths stay open under either answer: the queue label added with the person's token (it vouches a job), title or body edits with that token, closing or merging the issue or PR with it, and credentials for other accounts stored outside gh.",
+  "evidence": "design.json finding_closure entries 0 and 11 ('closed only if the user adopts the rule'); phasing question 3; person_channels item 5 'What it does not cover'; residual_risks entries 1 and 28; README.md. The decision is correctly put to the user, but as of this design text the defect is not closed.",
+  "severity": "medium",
+  "lens": "closure"
+ },
+ {
+  "item": "Plan Step 1.2 says that in auto mode, interactive confirm items are 'always handled like the runner's: park before launch, confirm in a terminal'. The design parks only when P9 shows no working answer record. Otherwise rows 66bp, 66p and 41p launch the job and confirm in the session. finding_closure 11 folds this first bullet into the plan's third bullet ('or the engine requires a recorded AskUserQuestion answer'), which is a reading the plan's wording does not settle.",
+  "evidence": "plan.md Step 1.2 'Auto mode' bullets 1 and 3; design.json interactive_executor 'Auto mode and the classifier'; transitions.json rows 66bp, 66p and 41p; finding_closure entry 11.",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "Phase 2: marker agreement is not read in approve, merging or waiting_ci. A foreign trusted marker posted after row 55 does not stop the merge, although /flow:merge would read that marker as the latest.",
+  "evidence": "transitions.json: only row 38 (ready) and row 31b (sync) read marker_agreement. The no_move_ok entries for github_change in approve, merging and waiting_ci do not list it. design.json auto_merge_phase2 item 3 checks 'marker agreement holds' only at the pre-check.",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "Rows 44 and 44r resume a worker stage with `--resume <previous session_id>`. Rows 43c, 43p and 43g can park at launch_due before the stage has ever launched, so no session of that stage exists to resume. Row 66b does not say what happens then.",
+  "evidence": "transitions.json rows 43c, 43p and 43g (event launch_due, blocked_stage $from); row 44 effects; row 66b ('A relaunch after rows 39, 39l, 44 and 44r resumes a worker stage with --resume <previous session_id>'); design.json execution_model 'Resume relaunch'.",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "When the recorded interpreter is gone, the shell wrapper refuses every subcommand except `context --mode` and `probe`. The phasing table nevertheless says running workers keep going 'until they report'. `report` and `await` are wrapper subcommands, so launchers cannot report and the await loops of workers holding a question fail.",
+  "evidence": "design.json execution_model, Wrapper ('refuses every subcommand except `context --mode` and `probe`'); person_channels item 1 (`report` and `await` are flow-factory.sh subcommands); phasing, Phase 0 table, row 'Environment: interpreter gone', column 'What keeps running': 'running workers until they report'.",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "Rows 69b (confirm), 69c (feedback) and 69h (rebuild) tell the person to 'post a trusted comment', but those subcommands have no comment form.",
+  "evidence": "transitions.json rows 69b, 69c and 69h effects; design.json person_channels item 5: 'feedback, confirm and rebuild have no comment form'.",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "The free text passed with `--text`, for the needs-info `answer` and for the spec redraft `answer SPEC-<k> --text`, is not covered by the answer-record check. The record holds only the selected option label, so a session can pass text the person did not give, and that text joins the spec input.",
+  "evidence": "design.json person_channels item 4, steps 3 and 5 (the record holds 'the selected option label', and the check compares the question and the label only); interactive_executor `spec <job>` (`answer SPEC-<k> --choice 1 --text <redraft text>`); transitions.json row 8a ('record the answer in the job's answers file, which is in the spec-input set').",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "The detection rules for `context --mode` disagree between sections. factory_mode_in_commands lists four checks for `on`. execution_model and finding_closure 9 also require FLOW_FACTORY_JOB_KEY, BRANCH and GOAL_ID to equal job.json, and e2e_tests adds ISSUE.",
+  "evidence": "design.json factory_mode_in_commands 'Detection' (four checks); execution_model, after 'Added by the launcher' ('`context --mode` checks that FLOW_FACTORY_JOB_KEY, FLOW_FACTORY_BRANCH and FLOW_FACTORY_GOAL_ID equal job.json'); e2e_tests, e2e-factory-engine environment row.",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "Sections disagree on when the wrapper refuses. finding_closure 10 and new_files say it refuses only when the recorded interpreter is gone. execution_model, phasing and e2e_tests also refuse when no probe record exists (`FACTORY_REFUSED=no_probe_record`).",
+  "evidence": "design.json finding_closure entry 10 ('The shell wrapper refuses only when the recorded interpreter is gone'); new_files, the bin/flow-factory.sh entry; execution_model, Wrapper, 'Interpreter check', first case; phasing, the bullet below the Phase 0 table.",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "Sections disagree on which departures references/flow-factory.md records. new_files lists only the `/flow-factory rework` comment. trust_and_untrusted_text item 7 says all three departures (the comment, the `rework` subcommand, and `feedback` in ready) are recorded there, as plan Step 1.2 requires.",
+  "evidence": "design.json new_files, the references/flow-factory.md entry ('the recorded departure for `/flow-factory rework`'); trust_and_untrusted_text item 7 ('each is recorded as a departure in references/flow-factory.md and in residual_risks').",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "person_channels item 1 is presented as the complete list of subcommands with their exact forms, but it does not list the `runner print-launchd` and `runner print-cron` subcommands of flow-factory.sh, which phasing tells the person to run.",
+  "evidence": "design.json execution_model, Subcommands ('person_channels item 1 lists every subcommand with its exact form'); person_channels item 1 table; phasing, Phase 0 table, 'Launch context' row ('flow-factory.sh runner print-launchd').",
+  "severity": "low",
+  "lens": "closure"
+ },
+ {
+  "item": "The engine pushes worker commits before the protected-path check runs. Rows 21, 26-30 and 34 push after the open_pr, review, rework and resolve workers, and only then go to gate. A worker can be blocked from Edit/Write on protected paths and still create `.github/workflows/x.yml` with Bash and `git commit`. The engine then pushes it to a branch in the same repository, so GitHub Actions runs that workflow with the repository's secrets before the gate parks the job. failure_modes says the protected check catches planted config, but it does so only after the push. Fix: run the protected and config-loading check (and the clone config comparison) right before every engine push, not only at gate and before a launch.",
+  "evidence": "design.json stages: item 6 open_pr; item 8 review: 'Engine: 1. Finalize commit. 2. Push. 3. Validate markers'; item 9 rework: '1. Finalize commit and push'; item 11 resolve: 'The engine pushes, then gate'. gate_and_commit_binding item 3: 'Protected check (at gate and before every worker launch)'. transitions.json: row 21 open_pr->gate writes [push, PR create]; rows 26/27/27g/28/29 (review), 30 (rework) and 34 (resolve) list push. Row 20 goes build->open_pr with no gate. The worker's --disallowedTools blocks only Edit/Write on protected paths and the `git push` prefix, not `git commit` (execution_model, Worker command). failure_modes: 'Planted config: tracked or untracked. The merge-base protected check catches it.'",
+  "severity": "medium",
+  "lens": "security"
+ },
+ {
+  "item": "The GitHub comment channel stays open unless the user adopts the machine-account rule (phasing question 3, option a). Under option 2 the worker gets a read-only token, but `gh auth token` still prints the person's write token. With it, the worker can use curl or Python urllib to post a trusted `/flow-factory approve-spec <hash>`, `answer`, `rework`, `reject` or `cancel` comment. Any Claude session on the machine can do the same, including the interactive executor in auto mode. The tier-gate text match does not stop a comment body built at run time. Plan Step 2 requires this channel closed, and option 2 alone does not close it. The design states this openly and gives no default if the user declines.",
+  "evidence": "person_channels item 5: 'Whether to adopt the rule is the user's decision (phasing question 3). Without it, the comment channel stays open'. phasing question 3, option (b): 'both the comment channel and the in-session comment path ... stay open, against that step'. worker_github_access: 'So under either option the person's write token is one command away from a worker.' plan.md:90-92 (GitHub comment channel defect).",
+  "severity": "medium",
+  "lens": "security"
+ },
+ {
+  "item": "Under the chosen option 2, untrusted issue and PR text is not kept out of workers as the plan states. Worker prompts and flow's own read sites use the fenced in/ files; factory_mode_in_commands covers review.md:527, address.md:446 and 112-189, and the feedback-resolution Collect step. But the read-only token still lets a worker run `gh issue view --comments`, `gh pr view --comments` or `gh api .../comments` and read every outsider comment. Only the prompts stop it. Option 1, the gh stand-in, would enforce it.",
+  "evidence": "plan.md:59: 'Workers read issue and PR text only from trust-filtered files written outside the worktree'. trust_and_untrusted_text item 5: 'a worker can still run `gh issue view --comments` ... only the prompts stop it'. worker_github_access 'Chosen: option 2'. residual_risks: 'Under option 2 ... a worker can read untrusted issue and PR comments with gh; only the prompts keep it to in/.'",
+  "severity": "medium",
+  "lens": "security"
+ },
+ {
+  "item": "In auto mode, worker-written text can steer the interactive executor into a merge or push. The session reads fenced worker text (stored questions, drafted specs, comment intents). The answer-record check covers only flow-factory person subcommands. A `gh pr merge` or `git push` the session is led to run meets only tier-gate's ask, and the design itself says the auto-mode classifier may decide those asks. P9 records whether the classifier decides the ask only for `confirm`, not for merge or push. So a Tier 3 merge of a factory PR without a person is not excluded in auto mode. It is stated as a residual risk; nothing closes it (for example a session-scoped deny of merge and push while /flow:factory run is active, or refusing to run the executor in auto mode).",
+  "evidence": "interactive_executor 'What the session reads': 'A session in auto mode can still be steered by fenced text toward a command the person did not ask for ... other commands, such as a push or a merge, meet only the session's own permission rules.' person_channels item 3: 'in auto mode the classifier may decide them'. probes P9 checks the classifier only for confirm. plugins/flow/hooks/scripts/tier-gate.sh:217-221 (aab0d132) documents the ask behaviour only for interactive sessions and `claude -p`.",
+  "severity": "medium",
+  "lens": "security"
+ },
+ {
+  "item": "The plan's auto-mode rule for confirm items may not be followed. plan.md:107 says interactive `confirm` items in auto mode are 'always handled like the runner's: park before launch, confirm in a terminal'. The design instead lets an auto-mode interactive executor confirm in the session with an answer record (executor_can_confirm true, row 66bp). Line 109 ('or the engine requires a recorded AskUserQuestion answer') may allow this for confirm too, but the wording is ambiguous. Either confirm that line 109 covers confirm items, or record this as a departure.",
+  "evidence": "plan.md:106-109. design interactive_executor 'Auto mode and the classifier' and executor_can_confirm. transitions.json fact executor_can_confirm and row 66bp.",
+  "severity": "low",
+  "lens": "security"
+ },
+ {
+  "item": "The design does not say that the engine-issued AskUserQuestion text includes what is being approved: the confirm literal (or its hash), or the spec hash and its content. The session shows the drafted spec or the literal in its own model-written output before it asks. A steered session could show a harmless spec or command while the approved action carries a different spec_hash or literal. The answer record proves only which option the person picked on the engine's question.",
+  "evidence": "person_channels item 4 step 1 (action file holds 'the whole question the session must ask (its text, header, ...)', with no content requirement). interactive_executor step 2: '`spec <job>`. Show the drafted spec file ... Ask'; '`confirm <intent>`. Show the stored literal command ... and ask'. Only the comment intent says 'the question shows the comment text'.",
+  "severity": "low",
+  "lens": "security"
+ },
+ {
+  "item": "Bot and GitHub App actors are not covered by the trust rules. Nothing says how the permission check treats an actor such as github-actions[bot] or an App. Cases: an auto-labeler workflow that adds the queue label in response to an outsider's issue would vouch the job; a bot account with write access that relays outsider text in a comment or CHANGES_REQUESTED review would count as trusted. Machine accounts are only the logins gh is signed in as. P8 does not probe the collaborator permission endpoint for bot logins.",
+  "evidence": "A search of design.json for '[bot]', 'github-actions' and 'GitHub App' finds nothing. trust_and_untrusted_text item 1 (vouch: 'latest actor to add the queue label has triage or higher'). person_channels item 5 (trusted = role_name write/maintain/admin; machine accounts = `gh auth status` logins). probes P8.",
+  "severity": "low",
+  "lens": "security"
+ },
+ {
+  "item": "Removing the queue label cancels a job with no permission check on who removed it. A triage user can cancel this way, although `/flow-factory cancel` needs write access. So can a bot, for example a label-sync or stale workflow. The issue-close half of the same fact is limited to actors with write access; the label half is not.",
+  "evidence": "transitions.json facts.cancel_signal: 'The queue label was removed, or the issue was closed by an actor with write access or higher.' Row 53b ->cancelled. person_channels item 5: cancel comment needs write.",
+  "severity": "low",
+  "lens": "security"
+ },
+ {
+  "item": "A detached worker process can act as the outside-session runner and merge in phase 2. Refusal layer (a) refuses only the person subcommands, launch and report, not run, next, probe or action. A process that clears CLAUDECODE, FLOW_TIER_* and the factory variables, drops shims from PATH and detaches (so it has no claude ancestor) meets every condition in auto_merge_phase2 item 2. If no person-started runner holds runner.lock, it can enter approve and merging while the person uses only the interactive executor. The same process can re-run `probe --environment`, which re-records the interpreter, the machine-account list and the worker-token write check. residual_risks entry 1 covers escaping the refusal layers but does not name this outcome. P13 may stop it if the launch-context check applies to unscheduled runs, which is not stated.",
+  "evidence": "person_channels item 2(a). auto_merge_phase2 item 2 (merge refused when CLAUDECODE/FLOW_TIER_DIR/FLOW_TIER_CALL set, shims on PATH, claude ancestor, --no-merge, or started from /flow:factory). runner 'Single runner' lock. residual_risks entry 1.",
+  "severity": "low",
+  "lens": "security"
+ },
+ {
+  "item": "The auto-merge switch tamper check resets every time the runner starts. A worker can edit the user settings file, then kill the runner, which runs as the same user. launchd restarts the `--watch --scheduled` runner, and the new run records the edited values as the baseline. So the statement that 'a worker that edits the file mid-drain therefore stops auto-merge instead of starting it' holds only until the next restart.",
+  "evidence": "auto_merge_phase2 item 1 ('records the sha256 of the switch keys' values when it starts ... A change made between runs is not caught'). runner 'Starting it': print-launchd and print-cron run `run --watch --scheduled`. residual_risks auto-merge entry.",
+  "severity": "low",
+  "lens": "security"
+ },
+ {
+  "item": "The design does not say which environment bootstrap commands run in. rerunOn re-bootstrap runs branch-controlled install hooks, for example package.json lifecycle scripts a worker changed. If bootstrap inherits the engine's environment ('The engine uses the person's auth'), those scripts get the person's GH_TOKEN and SSH_AUTH_SOCK, which workers are deliberately denied. The gate states a cleaned environment with no GH tokens; bootstrap states none.",
+  "evidence": "worktrees_ports_bootstrap_auth 'Bootstrap (engine directive)' items 1-3 and 'Auth': 'The engine uses the person's auth and the real binaries'. gate_and_commit_binding item 4: 'with a cleaned environment (no GH tokens, the slot's PORT)'. execution_model: SSH_AUTH_SOCK not passed to workers.",
+  "severity": "low",
+  "lens": "security"
+ },
+ {
+  "item": "The worker environment passes every AWS_* variable and GOOGLE_APPLICATION_CREDENTIALS, because the design requires a superset of flow-eval-run.sh's keep list. A prompt-injected worker with Bash then holds the person's cloud credentials. Bedrock or Vertex users need them, but residual_risks does not list them, and there is no option to narrow them.",
+  "evidence": "plugins/flow/bin/flow-eval-run.sh:150-158 at aab0d132: KEEP_ENV_NAMES includes GOOGLE_APPLICATION_CREDENTIALS and CLAUDE_CODE_OAUTH_TOKEN; KEEP_ENV_PATTERN includes `AWS_[A-Z0-9_]+`. design execution_model 'Worker environment': 'A test asserts the factory's list is a superset.'",
+  "severity": "low",
+  "lens": "security"
+ },
+ {
+  "item": "At a terminal, `confirm <intent>` prints the job, the subcommand and its arguments, which is the intent id, and asks for the job id typed back. Nothing says it prints the stored literal command or the comment text that will be released. The person could confirm a write without seeing it. A worker can rewrite the outbox file and the events hash, since both are in same-user factory state.",
+  "evidence": "person_channels item 4 'Outside a session, a controlling terminal': 'prints the job, the subcommand and its arguments, and reads the job id typed back'. Compare interactive_executor `confirm <intent>`, where the literal is shown.",
+  "severity": "low",
+  "lens": "security"
+ }
+]
