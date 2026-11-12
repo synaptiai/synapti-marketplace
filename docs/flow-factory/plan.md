@@ -41,6 +41,11 @@ Flow already has dependency and migration review, per-task checkpoints and proje
 | A conflict it cannot resolve mechanically | Stop and ask (`resolve.nonTrivial: park`) |
 | A reply from someone without write access | Counts only after someone with triage access or higher confirms it |
 | Sending a ready PR back | A trusted "request changes" review, or a trusted `/flow-factory rework <text>` comment. The comment is a recorded exception to "request changes only", because GitHub does not let you request changes on your own PR |
+| Filing the design (2026-11-12) | Approved for filing. The sandbox repository and the read-only worker token are still asked at phase 0 |
+| Comments and other GitHub writes made with your token (2026-11-12) | Accepted as a risk. No rule holds comments posted with your GitHub accounts, and workers do not run as a separate OS user. A worker or any Claude session running as you can read your keyring write token with `gh auth token` (checked 2026-11-12: scopes repo, workflow, delete_repo, gist, read:org) and post command comments, add labels, edit, close or merge as you. This closes the comment-channel defect in Step 1.2 by decision. Before auto-merge can be switched on in phase 2, this risk is shown to you again, because under auto-merge a comment posted as you could lead to a merge |
+| Workers reading raw issue and PR comments (2026-11-12) | Accepted. "Workers read issue and PR text only from trust-filtered files" is a recorded departure: the prompts and the fenced input files are the only guard |
+| A retry after the issue changed (2026-11-12) | The job goes back through intake, so the changed issue is judged again, and the intake launch stays the only writer of the baseline |
+| Cloud credentials in workers (2026-11-12) | Always passed (every `AWS_*` variable and `GOOGLE_APPLICATION_CREDENTIALS`), with no setting to drop them. A recorded residual risk |
 
 ## Design
 
