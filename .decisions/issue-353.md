@@ -86,6 +86,12 @@ artifacts:
   - P14 (up to $1)
   - and both P9 sessions in tmux; all on the installed Claude Code
   question_id: q-20261115T133118Z-125c40
+- type: review-cycle
+  captured_at: '2026-11-15T23:13:57Z'
+  cycle: 1
+  path: B
+  findings_count: 24
+  pr: 379
 ---
 ## Specification
 
