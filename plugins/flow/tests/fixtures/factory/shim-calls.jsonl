@@ -1,0 +1,376 @@
+{"where": "one", "tool": "gh", "argv": ["auth", "status"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["auth", "status", "--hostname", "github.com"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["auth", "token"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "user"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "repos/probe-fixture/sandbox"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "repos/other/repo"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "GET", "repos/other/repo/pulls"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "--method", "GET", "search/issues", "-f", "q=repo:other/repo is:open"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "--method=GET", "repos/other/repo/issues", "-F", "per_page=100"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["api", "--method=GET", "repos/other/repo/issues?per_page=100"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "--paginate", "repos/other/repo/issues/1/comments"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "--include", "repos/other/repo/pulls/1/reviews", "--jq", ".[].id"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "repos/{owner}/{repo}/actions/runs?branch=x&per_page=100"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-f", "query={ viewer { login } }"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-f", "query=query Q($n: String!) { repository(owner: \"o\", name: $n) { id } }", "-f", "n=r"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "query=@{dir}/q-read.graphql"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["pr", "view", "5"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "view", "--json", "title,body", "5"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "view", "https://github.com/other/repo/pull/5", "--json", "title"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "list", "--state", "open", "--json", "number"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "diff", "1"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "checks", "1", "--watch"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "status"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "--repo", "other/repo", "view", "1"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["issue", "view", "3", "--repo", "other/elsewhere"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["issue", "list", "--label", "bug"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["repo", "view", "probe-fixture/sandbox", "--json", "name"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["repo", "view"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["run", "view", "1", "--log"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["run", "list", "--branch", "main"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["run", "watch", "1"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["release", "view", "v1"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["release", "list"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["search", "issues", "flow"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["search", "prs", "--repo", "other/repo", "fix"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["label", "list"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "checkout", "7"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["repo", "set-default", "--view"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["repo", "clone", "other/repo"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["release", "download", "v1"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["run", "download", "1"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["issue", "status"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["workflow", "list"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["workflow", "view", "ci.yml"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["status"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["config", "get", "git_protocol"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["browse", "--no-browser"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["browse", "-n", "README.md"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["version"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["--version"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["help"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["pr", "create", "--title", "t", "--body", "b"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["pr", "new", "--title", "t"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["pr", "create", "-R", "other/repo", "--title", "t"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["pr", "create", "--repo=github.com/other/repo", "--title", "t"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["pr", "create", "--repo", "ghe.example.com/other/repo", "--title", "t"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["pr", "comment", "https://github.com/other/repo/pull/1", "--body", "hi"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["issue", "close", "https://github.com/other/repo/issues/4"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["pr", "merge", "1", "--squash"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["pr", "ready", "1"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["pr", "ready", "1", "--undo", "--repo", "probe-fixture/sandbox"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["api", "--include", "--method", "POST", "repos/probe-fixture/sandbox/issues/1/comments", "-f", "body=<!-- marker -->\nhello"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["pr", "--repo", "probe-fixture/sandbox", "ready", "1"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["pr", "--title", "view", "create"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["issue", "comment", "3", "--body", "x"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["issue", "transfer", "3", "other/repo"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["label", "create", "probe"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["release", "create", "v9"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["workflow", "run", "ci.yml"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["run", "rerun", "1"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["cache", "delete", "--all"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["repo", "edit", "--description", "d"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["repo", "edit", "other/repo", "--description", "d"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["repo", "delete", "other/repo", "--yes"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["repo", "archive", "https://github.com/other/repo", "--yes"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["repo", "delete", "justaname", "--yes"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["repo", "create", "newrepo", "--private"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["repo", "fork", "other/repo"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["repo", "deploy-key", "add", "key.pub"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["repo", "autolink", "create", "JIRA-", "https://j/<num>"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["secret", "set", "TOKEN", "--body", "x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["secret", "set", "TOKEN", "--org", "someorg", "--body", "x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["variable", "set", "V", "-o", "someorg", "--body", "x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["variable", "delete", "V"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["ruleset", "list"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["gist", "create", "f.txt"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["gist", "list"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["ssh-key", "add", "k.pub"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["gpg-key", "delete", "ABC"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["project", "create", "--owner", "@me", "--title", "p"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["extension", "install", "owner/gh-ext"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["alias", "set", "co", "pr create"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["codespace", "create"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["org", "list"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["browse"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["auth", "login"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["auth", "setup-git"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["co", "1"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["some-extension", "do"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["--repo", "other/repo", "pr", "create"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "-XPOST", "repos/other/repo/issues"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["api", "repos/other/repo/issues", "-f", "title=x"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["api", "--field=title=x", "repos/other/repo/labels"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["api", "--input", "{dir}/body.json", "repos/probe-fixture/sandbox/issues"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "PATCH", "repos/{owner}/{repo}/issues/1", "-f", "state=closed"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "GET", "-X", "DELETE", "repos/other/repo/git/refs/heads/x"], "expect": "write other/repo"}
+{"where": "one", "tool": "gh", "argv": ["api", "user/repos", "-f", "name=x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "--method", "PUT", "user/starred/other/repo"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-f", "query=mutation { addStar(input: {starrableId: \"x\"}) { clientMutationId } }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-f", "query=query A { viewer { login } }\nmutation B { addStar(input: {starrableId: \"x\"}) { clientMutationId } }", "-f", "operationName=A"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-f", "query=# a read\n{ viewer { login } } mutation M { deleteIssue(input: {issueId: \"x\"}) { clientMutationId } }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "query=@{dir}/q-mut.graphql", "-f", "operationName=A"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "query=@{dir}/no-such-file.graphql"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "query=@-"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "--input", "{dir}/body.json"], "expect": "write unresolved/unresolved"}
+{"where": "two", "tool": "gh", "argv": ["pr", "create", "--title", "t"], "expect": "write unresolved/unresolved"}
+{"where": "chosen", "tool": "gh", "argv": ["pr", "create", "--title", "t"], "expect": "write other/upstream"}
+{"where": "two", "tool": "gh", "argv": ["pr", "create", "-R", "other/repo"], "expect": "write other/repo"}
+{"where": "two", "tool": "gh", "argv": ["pr", "create", "--title", "t"], "expect": "write probe-fixture/sandbox", "env": {"GH_REPO": "probe-fixture/sandbox"}}
+{"where": "one", "tool": "gh", "argv": ["pr", "create", "--title", "t"], "expect": "write other/repo", "env": {"GH_REPO": "github.com/other/repo"}}
+{"where": "one", "tool": "gh", "argv": ["pr", "create", "--title", "t"], "expect": "write unresolved/unresolved", "env": {"GH_REPO": "ghe.example.com/probe-fixture/sandbox"}}
+{"where": "one", "tool": "git", "argv": ["status"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["rev-parse", "--show-toplevel"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=", "-C", ".", "ls-files", "--", "README.md"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["fetch", "origin", "main"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["fetch", "-q", "https://github.com/probe-fixture/sandbox.git", "refs/heads/main"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["ls-remote", "origin"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["ls-remote", "https://github.com/other/repo.git", "refs/heads/x"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["remote", "get-url", "origin"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["config", "--get", "alias.pp"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["log", "--oneline", "-1"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["st"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["lg", "-1"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["hi"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.zz=status", "zz"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.zz=!git status", "zz"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "local", "HEAD:refs/heads/x"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "{dir}/local.git", "HEAD:refs/heads/x"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "./relative/path.git", "HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "gl", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://gitlab.com/other/repo.git", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://github.example.com/other/repo.git", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://notgithub.com/other/repo.git", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "git@gitlab.com:other/repo.git", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["pp", "local", "HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.qq=push", "qq", "gl", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "origin", "HEAD"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "git", "argv": ["push"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "git", "argv": ["push", "-u", "origin", "HEAD", "--dry-run", "--porcelain"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "git", "argv": ["-C", ".", "push", "origin", "HEAD"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "git", "argv": ["push", "--repo=https://github.com/other/repo.git", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.origin.pushurl=https://github.com/other/repo.git", "push", "origin", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.local.pushurl=git@github.com:other/repo.git", "push", "local", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.newr.url=https://github.com/other/repo", "push", "newr", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.gl.pushurl=ssh://git@ssh.github.com:443/other/repo.git", "push", "gl", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["--config-env=remote.origin.pushurl=FLOW_SHIM_TEST_URL", "push", "origin", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["pp", "origin", "HEAD"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "git", "argv": ["pp", "https://github.com/other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["p2", "https://github.com/other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["pf", "git@github.com:other/repo.git", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.qq=push", "qq", "https://github.com/other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.qq=-c remote.origin.pushurl=https://github.com/other/repo push", "qq", "origin", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["sp"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.qq=!f() { git push \"$@\"; }; f", "qq", "origin"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://github.com:443/other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "ssh://git@ssh.github.com:443/other/repo.git", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "git@github.com:other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "github.com:other/repo.git", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "ssh://github.com/other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "git://github.com/other/repo.git", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "https://someone@github.com/other/repo.git", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "HTTPS://GitHub.COM/other/repo.git/", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://www.github.com/other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "https://github.com./other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.zz.command=push", "zz", "https://github.com/other/repo", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.zz.command=!git push origin", "zz"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.zz.command=log --oneline", "zz", "-1"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "persistent-https::https://github.com/other/repo", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "url.https://github.com/.pushInsteadOf=https://mirror.example/", "push", "https://mirror.example/other/repo", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "url.git@github.com:.insteadOf=gh:", "push", "gh:other/repo", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["send-pack", "https://github.com/other/repo.git", "main"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["lfs", "push", "https://github.com/other/repo", "main"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["subtree", "push", "-P", "sub", "https://github.com/other/repo", "main"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["lfs", "ls-files"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["-c", "url.{dir}/local.git.insteadOf=https://github.com/other/repo.git", "push", "https://github.com/other/repo.git", "HEAD"], "expect": "write other/repo"}
+{"where": "one", "tool": "git", "argv": ["push", "https://github.com/onlyowner", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://github.com/other/repo/extra/path", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "ext::ssh -i key git@github.com %S other/repo", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "nosuchremote", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "two", "tool": "git", "argv": ["push", "upstream", "HEAD"], "expect": "write other/upstream"}
+{"where": "one", "tool": "gh", "argv": ["api", "-iX", "DELETE", "repos/o/r/issues/1"], "expect": "write o/r"}
+{"where": "one", "tool": "gh", "argv": ["api", "-iXDELETE", "repos/o/r/labels/x"], "expect": "write o/r"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X=DELETE", "repos/o/r/git/refs/heads/x"], "expect": "write o/r"}
+{"where": "one", "tool": "gh", "argv": ["api", "-if", "title=x", "repos/o/r/issues"], "expect": "write o/r"}
+{"where": "one", "tool": "gh", "argv": ["api", "-iF", "title=x", "repos/o/r/issues"], "expect": "write o/r"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-if", "query=mutation { a }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-f=query=mutation { a }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "-iz", "repos/o/r"], "expect": "write o/r"}
+{"where": "one", "tool": "gh", "argv": ["api", "--frob", "repos/o/r"], "expect": "write o/r"}
+{"where": "one", "tool": "gh", "argv": ["api", "--meth", "DELETE", "repos/o/r/issues/1"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "-i", "--paginate", "repos/o/r/issues"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "-qX", "user"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "-iq", ".login", "user"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "-i=true", "--jq=.x", "user"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.zz=!git p''ush origin", "zz"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.zz=!git", "zz", "push", "origin", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "--rep=https://github.com/o/r.git"], "expect": "write o/r"}
+{"where": "one", "tool": "git", "argv": ["push", "--rep", "https://github.com/o/r.git"], "expect": "write o/r"}
+{"where": "one", "tool": "git", "argv": ["push", "--repo=https://github.com/o/r.git"], "expect": "write o/r"}
+{"where": "one", "tool": "git", "argv": ["push", "--repo=local", "https://github.com/o/r", "HEAD"], "expect": "write o/r"}
+{"where": "one", "tool": "git", "argv": ["push", "--push-opt", "./x", "https://github.com/o/r", "HEAD"], "expect": "write o/r"}
+{"where": "one", "tool": "git", "argv": ["push", "-qo", "./x", "https://github.com/o/r", "HEAD"], "expect": "write o/r"}
+{"where": "one", "tool": "git", "argv": ["push", "--recurse-submodules", "./x", "https://github.com/o/r", "HEAD"], "expect": "write o/r"}
+{"where": "one", "tool": "git", "argv": ["push", "--frobnicate", "local", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "--re=x", "local", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "--receive-pack=sh", "local", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "--ex", "sh", "local", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["subtree", "push", "--pref", "sub", "https://github.com/o/r", "main"], "expect": "write o/r"}
+{"where": "one", "tool": "git", "argv": ["push", "--dry-run", "--no-verify", "--force-with-lease=main:abc", "local", "HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "--set-up", "-qf", "local", "HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "--no-thin", "--repo", "local"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["psuh", "origin", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "help.autocorrect=immediate", "puhs", "https://github.com/o/r", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["Push", "origin", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["check-ref-format", "--branch", "main"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["range-diff", "main...HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["merge-tree", "main", "HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "git@gh-alias:o/r.git", "HEAD"], "expect": "write unresolved/unresolved", "env": {"HOME": "{dir}/sshhome"}}
+{"where": "one", "tool": "git", "argv": ["push", "ssh://git@gh-alias2/o/r", "HEAD"], "expect": "write unresolved/unresolved", "env": {"HOME": "{dir}/sshhome"}}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.gl.pushurl=git@gh-alias:o/r", "push", "gl", "HEAD"], "expect": "write unresolved/unresolved", "env": {"HOME": "{dir}/sshhome"}}
+{"where": "one", "tool": "git", "argv": ["push", "git@pj-alias:o/r", "HEAD"], "expect": "write unresolved/unresolved", "env": {"HOME": "{dir}/sshhome"}}
+{"where": "one", "tool": "git", "argv": ["push", "git@ip-alias:o/r", "HEAD"], "expect": "write unresolved/unresolved", "env": {"HOME": "{dir}/sshhome"}}
+{"where": "one", "tool": "git", "argv": ["push", "git@140.82.121.3:o/r", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://140.82.121.3/o/r", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "git@gitlab.com:o/r.git", "HEAD"], "expect": "write unresolved/unresolved", "env": {"GIT_SSH_COMMAND": "ssh -v"}}
+{"where": "one", "tool": "git", "argv": ["push", "ssh://git@gitlab.com/o/r", "HEAD"], "expect": "write unresolved/unresolved", "env": {"GIT_SSH": "ssh"}}
+{"where": "one", "tool": "git", "argv": ["-c", "core.sshCommand=ssh", "push", "git@gitlab.com:o/r", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "git@gitlab.com:o/r.git", "HEAD"], "expect": "write unresolved/unresolved", "env": {"HOME": "{dir}/sshhome"}}
+{"where": "one", "tool": "git", "argv": ["push", "https://gh-alias/o/r", "HEAD"], "expect": "write unresolved/unresolved", "env": {"HOME": "{dir}/sshhome"}}
+{"where": "one", "tool": "git", "argv": ["rebase", "-x", "git push origin", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["rebase", "--exec=true", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["rebase", "--ex", "true", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["rebase", "-ix", "true", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["bisect", "run", "sh", "-c", "true"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["submodule", "--quiet", "foreach", "true"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["submodule", "foreach", "true"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["filter-branch", "--tree-filter", "true", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.rx=rebase -x true", "rx", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["rebase", "-i", "main"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["rebase", "-Xours", "--empty=keep", "main"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["bisect", "start"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["submodule", "status"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "https://%67ithub.com/x/y", "HEAD"], "expect": "write x/y"}
+{"where": "one", "tool": "git", "argv": ["push", "https://github%2ecom/x/y", "HEAD"], "expect": "write x/y"}
+{"where": "one", "tool": "git", "argv": ["push", "https://%47ITHUB%2ECOM./x/y.git", "HEAD"], "expect": "write x/y"}
+{"where": "one", "tool": "git", "argv": ["push", "ssh://git@%67ithub.com/x/y", "HEAD"], "expect": "write x/y"}
+{"where": "one", "tool": "git", "argv": ["push", "ssh://%67it@github.com:22/%78/y.git", "HEAD"], "expect": "write x/y"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.other.pushurl=https://%67ithub.com/x/y", "push", "other", "HEAD"], "expect": "write x/y"}
+{"where": "one", "tool": "git", "argv": ["push", "https::https://github.com/x/y", "HEAD"], "expect": "write x/y"}
+{"where": "one", "tool": "git", "argv": ["push", "git@%67ithub.com:x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://140.82.0x70.3/x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://0x8c.0x52.0x70.0x3/x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "git@140.82.0x70.3:x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "ssh://git@0x8c.0x52.0x70.0x3/x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://api.github.com/x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://github.com%40evil.example/x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "https://github.com..//x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "frob://github.com/x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "frob::https://github.com/x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "core.gitProxy=sh", "push", "git://github.com/x/y", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["push", "file://{dir}/local.git", "HEAD:refs/heads/x"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["fetch", "https://gitlab.com/o/r.git"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["submodule--helper", "list"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["lfs", "lock", "README.md"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["lfs", "unlock", "README.md"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["frobnicate"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["credential", "fill"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.credential=status", "credential", "fill"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "alias.lfs=status", "lfs", "ls-files"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["maintenance", "start"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["difftool", "-x", "sh", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["submodule", "update", "--init"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["submodule"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["remote", "frob", "origin"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["remote", "-v"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["remote", "add", "newone", "https://github.com/x/y"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["worktree", "list"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["worktree", "frob"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["stash"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["stash", "list"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["stash", "frob"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["notes", "list"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["notes", "frob"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["bisect", "good"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["bisect", "visualize", "tig"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["config", "user.name"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["config", "--local", "--includes", "-z", "--list"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["config", "--type=bool", "--get", "push.followTags"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["config", "get", "user.name"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["config", "alias.x", "!sh"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["config", "--add", "remote.origin.pushurl", "https://github.com/x/y"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["config", "set", "core.sshCommand", "sh"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["config", "--frob", "user.name"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["grep", "-n", "x"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["grep", "-nOsh", "x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["grep", "--open-files-in-pager=sh", "x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["init", "-q", "{dir}/fresh"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["show", "HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.local.receivepack=sh", "push", "local", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.local.uploadpack=sh", "fetch", "local"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.local.vcs=frob", "push", "local", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["fetch", "--upload-pack=sh", "local"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["fetch", "--upl", "sh", "local"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["pull", "--upload-pack", "sh", "local"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["ls-remote", "--exec=sh", "local"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["ls-remote", "--exit-code", "origin"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["clone", "-u", "sh", "{dir}/local.git", "{dir}/c1"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["clone", "-qu", "sh", "{dir}/local.git", "{dir}/c2"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["clone", "-c", "remote.origin.uploadpack=sh", "{dir}/local.git", "{dir}/c3"], "expect": "write unresolved/unresolved"}
+{"where": "packs", "tool": "git", "argv": ["fetch", "origin"], "expect": "write unresolved/unresolved"}
+{"where": "packs", "tool": "git", "argv": ["push", "origin", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "packs", "tool": "git", "argv": ["ls-remote", "origin"], "expect": "write unresolved/unresolved"}
+{"where": "packs", "tool": "git", "argv": ["remote", "show", "origin"], "expect": "write unresolved/unresolved"}
+{"where": "packs", "tool": "git", "argv": ["status"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["push", "https://GitHub.COM/x/y.git/", "HEAD"], "expect": "write x/y"}
+{"where": "one", "tool": "git", "argv": ["merge", "-s", "ours", "main"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["merge", "-s", "frob", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["merge", "-qsfrob", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["merge", "--strategy=frob", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["pull", "-s", "frob", "local", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["rebase", "-s", "frob", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["rebase", "--strategy", "ort", "main"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["cherry-pick", "--strategy", "frob", "HEAD"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["cherry-pick", "-s", "HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["revert", "--strategy=recursive", "HEAD"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["clone", "--template={dir}/tpl", "{dir}/local.git", "{dir}/c4"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["init", "--templ", "{dir}/tpl", "{dir}/fresh2"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["init", "--no-template", "{dir}/fresh3"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["fetch", "frob::x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["fetch", "SSH://github.com/x/y"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["clone", "frob://h/x", "{dir}/c5"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "protocol.ext.allow=always", "ls-remote", "ext::sh -c true"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["pull", "frob::x", "main"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "remote.hx.url=frob::x", "fetch", "hx"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["-c", "url.frob::x.insteadOf=https://mirror.example/", "fetch", "https://mirror.example/x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["remote", "add", "-f", "hx", "frob::x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["fetch", "--depth", "1", "--filter", "blob:none", "origin", "refs/heads/main:refs/remotes/origin/main"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["--exec-path={dir}/elsewhere", "status"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "git", "argv": ["status"], "expect": "write unresolved/unresolved", "env": {"GIT_EXEC_PATH": "{dir}/elsewhere"}}
+{"where": "one", "tool": "git", "argv": ["--exec-path={exec}", "status"], "expect": "read"}
+{"where": "one", "tool": "git", "argv": ["status"], "expect": "read", "env": {"GIT_EXEC_PATH": "{exec}"}}
+{"where": "mutation", "tool": "gh", "argv": ["api", "graphql", "-F", "query={branch} { addStar(input: {starrableId: \"x\"}) { clientMutationId } }"], "expect": "write unresolved/unresolved"}
+{"where": "mutation", "tool": "gh", "argv": ["api", "graphql", "--field", "query=:branch { addStar(input: {starrableId: \"x\"}) { clientMutationId } }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "owner={owner}", "-f", "query=query($owner: String!) { repositoryOwner(login: $owner) { id } }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "login=:owneré", "-f", "query=query($login: String!) { user(login: $login) { id } }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "login=:owners", "-f", "query=query($login: String!) { user(login: $login) { id } }"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "query={viewer{login}}"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "first=5", "-f", "query=query($first: Int) { viewer { repositories(first: $first) { totalCount } } }"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-f", "query={branch} { viewer { login } }"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "n=@{dir}/q-read.graphql", "-f", "query={ viewer { login } }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-F", "n=@-", "-f", "query={ viewer { login } }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "--input", "{dir}/q-read.json"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "graphql", "-f", "query[]=mutation { addStar(input: {starrableId: \"x\"}) { clientMutationId } }"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/{owner}/other-repo/issues", "-f", "title=x"], "expect": "write probe-fixture/other-repo"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/other/{repo}/issues", "-f", "title=x"], "expect": "write other/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/{owner}/{repo}-fork/issues", "-f", "title=x"], "expect": "write probe-fixture/sandbox-fork"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/:owner-x/sandbox/issues", "-f", "title=x"], "expect": "write probe-fixture-x/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/{owner}/sandbox/issues", "-f", "title=x"], "expect": "write other/sandbox", "env": {"GH_REPO": "other/elsewhere"}}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/{owner}/{repo}/../../other/repo/issues", "-f", "title=x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/probe-fixture/sandbox/./issues", "-f", "title=x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/probe-fixture/sandbox/%2e%2E/%2E%2e/other/repo/issues", "-f", "title=x"], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "DELETE", "repos/probe-fixture/.."], "expect": "write unresolved/unresolved"}
+{"where": "one", "tool": "gh", "argv": ["api", "repos/{owner}/{repo}/pulls"], "expect": "read"}
+{"where": "one", "tool": "gh", "argv": ["api", "repos/:owner/:repo/issues/1/comments", "-f", "body=x"], "expect": "write probe-fixture/sandbox"}
+{"where": "one", "tool": "gh", "argv": ["api", "-X", "POST", "repos/{foo}/bar/issues", "-f", "title=x"], "expect": "write unresolved/unresolved"}
+{"where": "mutation", "tool": "gh", "argv": ["api", "-X", "POST", "repos/{branch}/issues", "-f", "title=x"], "expect": "write unresolved/unresolved"}

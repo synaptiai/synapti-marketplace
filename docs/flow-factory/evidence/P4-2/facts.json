@@ -1,0 +1,60 @@
+{
+  "control_init_plugins": [
+    {
+      "name": "flow",
+      "path": "~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0",
+      "source": "flow@synapti-marketplace",
+      "version": "3.16.0"
+    },
+    {
+      "name": "cc-plugin-agents-md",
+      "path": "builtin",
+      "source": "cc-plugin-agents-md@builtin"
+    },
+    {
+      "name": "cc-plugin-telemetry",
+      "path": "builtin",
+      "source": "cc-plugin-telemetry@builtin"
+    },
+    {
+      "name": "cc-plugin-privacy",
+      "path": "builtin",
+      "source": "cc-plugin-privacy@builtin"
+    },
+    {
+      "name": "cc-plugin-plugin-authoring",
+      "path": "builtin",
+      "source": "cc-plugin-plugin-authoring@builtin"
+    }
+  ],
+  "init_plugins": [
+    {
+      "name": "flow",
+      "path": "~/.local/state/flow-factory/probe/P4-3/plugin",
+      "source": "flow@inline",
+      "version": "3.16.0"
+    },
+    {
+      "name": "cc-plugin-agents-md",
+      "path": "builtin",
+      "source": "cc-plugin-agents-md@builtin"
+    },
+    {
+      "name": "cc-plugin-telemetry",
+      "path": "builtin",
+      "source": "cc-plugin-telemetry@builtin"
+    },
+    {
+      "name": "cc-plugin-privacy",
+      "path": "builtin",
+      "source": "cc-plugin-privacy@builtin"
+    },
+    {
+      "name": "cc-plugin-plugin-authoring",
+      "path": "builtin",
+      "source": "cc-plugin-plugin-authoring@builtin"
+    }
+  ],
+  "plugin_copy": "~/.local/state/flow-factory/probe/P4-3/plugin",
+  "project": "~/.local/state/flow-factory/probe/P4-3/project"
+}

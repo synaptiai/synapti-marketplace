@@ -1,0 +1,2013 @@
+{
+  "apiVersion": "flow.synapti.ai/v1",
+  "groups": {
+    "environment": {
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "sandbox": "danielbentes/flow-factory-sandbox",
+        "launch_context": "launchd",
+        "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+        "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+      },
+      "ran_at": "2026-11-15T21:38:34Z"
+    },
+    "github_write": {
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "sandbox": "danielbentes/flow-factory-sandbox"
+      },
+      "ran_at": "2026-11-15T21:39:31Z"
+    },
+    "interactive": {
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "jq_version": "jq-1.7.1-apple",
+        "permission_modes": "auto,default",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "model": "claude-opus-5-5"
+      },
+      "ran_at": "2026-11-15T21:57:54Z"
+    },
+    "platform": {
+      "keyed_on": {
+        "claude_version": "2.1.323 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+        "interpreter_version": "3.14.7"
+      },
+      "ran_at": "2026-11-15T12:11:51Z"
+    }
+  },
+  "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+  "kind": "FlowFactoryProbes",
+  "probes": {
+    "P1": {
+      "group": "platform",
+      "result": "no-go",
+      "reason": "factory_mode: context --mode giving on from a ! block and from Bash needs factory-mode detection, built in phase 1d; gh_log: GitHub writes in the gh call log, refused by the gh stand-in: gh pr create",
+      "stand_in": true,
+      "evidence": "docs/flow-factory/evidence/P1-2",
+      "cost_usd": 2.49411,
+      "github_writes": [
+        {
+          "repo": "unresolved/unresolved",
+          "call": "gh pr create",
+          "refused": true
+        }
+      ],
+      "parts": {
+        "bang_first_turn_start": {
+          "result": "go",
+          "reason": "the ! block ran and its output reached the first turn",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "bang_first_turn_pr": {
+          "result": "go",
+          "reason": "the ! block ran and its output reached the first turn",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "bang_first_turn_review": {
+          "result": "go",
+          "reason": "the ! block ran and its output reached the first turn",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "bang_first_turn_address": {
+          "result": "go",
+          "reason": "the ! block ran and its output reached the first turn",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "runs": {
+          "result": "go",
+          "reason": "all five runs completed",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "worktree_write": {
+          "result": "go",
+          "reason": "a Write into the worktree succeeded",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "worktree_edit": {
+          "result": "go",
+          "reason": "an Edit in the worktree succeeded",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "io_write": {
+          "result": "go",
+          "reason": "a Write into the --add-dir io directory succeeded",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "gh_log": {
+          "result": "no-go",
+          "reason": "GitHub writes in the gh call log, refused by the gh stand-in: gh pr create",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "leftover_paths": {
+          "result": "go",
+          "reason": "the runs left no untracked or ignored path",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        },
+        "factory_mode": {
+          "result": "deferred",
+          "reason": "context --mode giving on from a ! block and from Bash needs factory-mode detection, built in phase 1d",
+          "deferred_to": "synaptiai/synapti-marketplace#357",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:08:26Z"
+        }
+      },
+      "fallback": "the write is refused by the workers' gh stand-in, and the factory-mode path that leaves it to the engine is built in phase 1d",
+      "keyed_on": {
+        "claude_version": "2.1.323 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+        "interpreter_version": "3.14.7"
+      },
+      "ran_at": "2026-11-15T12:08:26Z"
+    },
+    "P10": {
+      "group": "platform",
+      "result": "go",
+      "reason": "every part passed",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P10-2",
+      "cost_usd": 0.256938,
+      "github_writes": [],
+      "parts": {
+        "main_bash": {
+          "result": "go",
+          "reason": "the main's Bash call was refused by --disallowedTools",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:24Z"
+        },
+        "main_write": {
+          "result": "go",
+          "reason": "the main's Write call was refused by --disallowedTools",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:24Z"
+        },
+        "main_edit": {
+          "result": "go",
+          "reason": "the main's Edit call was refused by --disallowedTools",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:24Z"
+        },
+        "subagent_bash": {
+          "result": "go",
+          "reason": "the subagent's Bash call was refused by --disallowedTools",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:24Z"
+        },
+        "subagent_write": {
+          "result": "go",
+          "reason": "the subagent's Write call was refused by --disallowedTools",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:24Z"
+        },
+        "subagent_edit": {
+          "result": "go",
+          "reason": "the subagent's Edit call was refused by --disallowedTools",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:24Z"
+        }
+      },
+      "keyed_on": {
+        "claude_version": "2.1.323 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+        "interpreter_version": "3.14.7"
+      },
+      "ran_at": "2026-11-15T12:11:24Z"
+    },
+    "P11": {
+      "group": "environment",
+      "result": "go",
+      "reason": "records ~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14; from a worktree with .python-version 0.0.0-flow-factory-planted and PYENV_VERSION=system the wrapper chooses ~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14, which runs Python 3.14.7 with PyYAML there",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P11-3",
+      "cost_usd": 0,
+      "github_writes": [],
+      "parts": {
+        "resolve": {
+          "result": "go",
+          "reason": "the wrapper chooses ~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P11-3"
+        },
+        "planted_worktree": {
+          "result": "go",
+          "reason": "from a worktree with .python-version 0.0.0-flow-factory-planted and PYENV_VERSION=system the wrapper chooses ~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14, which runs Python 3.14.7 with PyYAML there",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P11-3"
+        },
+        "tools": {
+          "result": "go",
+          "reason": "found claude at ~/.local/bin/claude, gh at /opt/homebrew/bin/gh, git at /opt/homebrew/bin/git, jq at /usr/bin/jq, timeout at /opt/homebrew/bin/timeout",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P11-3"
+        }
+      },
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "sandbox": "danielbentes/flow-factory-sandbox"
+      },
+      "ran_at": "2026-11-15T21:38:15Z"
+    },
+    "P13": {
+      "group": "environment",
+      "result": "deferred",
+      "reason": "in a launchd context: unmatched_context_refused: refusing run, next and probe from an unmatched context needs the scheduled runner, built in phase 1c",
+      "stand_in": true,
+      "evidence": "docs/flow-factory/evidence/P13-4",
+      "cost_usd": 0.070323,
+      "github_writes": [],
+      "parts": {
+        "tools": {
+          "result": "go",
+          "reason": "found claude at ~/.local/bin/claude, gh at /opt/homebrew/bin/gh, git at /opt/homebrew/bin/git, jq at /usr/bin/jq, timeout at /opt/homebrew/bin/timeout",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        },
+        "interpreter": {
+          "result": "go",
+          "reason": "from a worktree with .python-version 0.0.0-flow-factory-planted and PYENV_VERSION=system the wrapper chooses ~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14, which runs Python 3.14.7 with PyYAML there",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        },
+        "gh_auth_status": {
+          "result": "go",
+          "reason": "gh auth status exited 0",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        },
+        "git_ls_remote": {
+          "result": "go",
+          "reason": "git ls-remote origin exited 0",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        },
+        "git_fetch": {
+          "result": "go",
+          "reason": "git fetch of origin's refs/heads/main succeeded",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        },
+        "git_push_dry_run": {
+          "result": "go",
+          "reason": "git push --dry-run to origin succeeded and moved nothing",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        },
+        "signing": {
+          "result": "go",
+          "reason": "commit signing is not set up in the git config (with the files it includes), so workers commit unsigned as the person does",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        },
+        "claude_p": {
+          "result": "go",
+          "reason": "a one-turn claude -p completed for $0.070323",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        },
+        "unmatched_context_refused": {
+          "result": "deferred",
+          "reason": "refusing run, next and probe from an unmatched context needs the scheduled runner, built in phase 1c",
+          "deferred_to": "synaptiai/synapti-marketplace#356",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox",
+            "launch_context": "launchd",
+            "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+            "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+          },
+          "ran_at": "2026-11-15T21:38:34Z",
+          "evidence": "docs/flow-factory/evidence/P13-4"
+        }
+      },
+      "deferred_to": "synaptiai/synapti-marketplace#356",
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "sandbox": "danielbentes/flow-factory-sandbox",
+        "launch_context": "launchd",
+        "launch_context_path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+        "launch_context_sha256": "d289c8ba250b7ffd6e037528b83ea472069e039e2126ccd7cbcf87495e80c364"
+      },
+      "ran_at": "2026-11-15T21:38:34Z"
+    },
+    "P14": {
+      "group": "interactive",
+      "result": "deferred",
+      "reason": "real_await: the real await, its presence check, the stage timeout suspension and row 43 while a question is held are built in phase 1c",
+      "stand_in": true,
+      "evidence": "docs/flow-factory/evidence/P14-3",
+      "cost_usd": 0.143347,
+      "github_writes": [
+        {
+          "repo": "unresolved/unresolved",
+          "call": "git fetch --upload-pack=git-upload-pack --depth 1 origin b052c32bab7dd493513260228a36c88294f343f1",
+          "refused": true
+        },
+        {
+          "repo": "unresolved/unresolved",
+          "call": "git fetch --upload-pack=git-upload-pack --unshallow",
+          "refused": true
+        },
+        {
+          "repo": "unresolved/unresolved",
+          "call": "git fetch --upload-pack=git-upload-pack --depth 1 origin 9c792feb7e6db8feb42d26c98728dc6a29420e41",
+          "refused": true
+        },
+        {
+          "repo": "unresolved/unresolved",
+          "call": "git fetch --upload-pack=git-upload-pack --unshallow origin main",
+          "refused": true
+        }
+      ],
+      "parts": {
+        "continues_after_answer": {
+          "result": "go",
+          "reason": "the worker got the answer at poll 6 and finished in the same run, with no relaunch",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "model": "claude-opus-5-5"
+          },
+          "ran_at": "2026-11-15T21:49:53Z",
+          "evidence": "docs/flow-factory/evidence/P14-3"
+        },
+        "polls_within_limit": {
+          "result": "go",
+          "reason": "6 polls, within askHoldPolls (18)",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "model": "claude-opus-5-5"
+          },
+          "ran_at": "2026-11-15T21:49:53Z",
+          "evidence": "docs/flow-factory/evidence/P14-3"
+        },
+        "cost_per_30_minutes": {
+          "result": "go",
+          "reason": "6 polls, 7 turns and $0.143347 on claude-opus-5-5: the dearest turn after the first (the first writes the system prompt to the cache), $0.006959, plus its share of the $0.02402 the turns' usage does not price, is $0.010962 per poll, $0.197318 per 30 minutes at one poll per 100 s (limit $1); the turns price at $0.119327 of the run's $0.143347",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "model": "claude-opus-5-5"
+          },
+          "ran_at": "2026-11-15T21:49:53Z",
+          "evidence": "docs/flow-factory/evidence/P14-3"
+        },
+        "real_await": {
+          "result": "deferred",
+          "reason": "the real await, its presence check, the stage timeout suspension and row 43 while a question is held are built in phase 1c",
+          "deferred_to": "synaptiai/synapti-marketplace#356",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "model": "claude-opus-5-5"
+          },
+          "ran_at": "2026-11-15T21:49:53Z",
+          "evidence": "docs/flow-factory/evidence/P14-3"
+        }
+      },
+      "deferred_to": "synaptiai/synapti-marketplace#356",
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "jq_version": "jq-1.7.1-apple",
+        "permission_modes": "auto,default",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "model": "claude-opus-5-5"
+      },
+      "ran_at": "2026-11-15T21:49:53Z"
+    },
+    "P15": {
+      "group": "environment",
+      "result": "deferred",
+      "reason": "comparison: the config comparison named each planted key (core.fsmonitor, core.hookspath, credential.helper, url.insteadof, remote.origin.pushurl, config.worktree, submodule.update) before any git command ran in the clone; main_config_unchanged: git config core.hooksPath, run in the job clone as a worker runs it, took effect there and left the main checkout's config byte for byte unchanged; objects_after_prune: after the main checkout dropped a branch the job clone holds and git gc --prune=now removed its commit there, the job clone still read every object: git fsck passed and the branch's file read back; engine_check: the engine's prelaunch check, gate and push that must run this comparison are built in phase 1e; moved_ref: a moved refs/remotes/origin/<base> in the job clone must change nothing the gate reads; the gate, which reads the base from the main checkout's origin/<base> after its own fetch, is built in phase 1e",
+      "stand_in": true,
+      "evidence": "docs/flow-factory/evidence/P15-3",
+      "cost_usd": 0,
+      "github_writes": [],
+      "parts": {
+        "comparison": {
+          "result": "go",
+          "reason": "the config comparison named each planted key (core.fsmonitor, core.hookspath, credential.helper, url.insteadof, remote.origin.pushurl, config.worktree, submodule.update) before any git command ran in the clone",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P15-3"
+        },
+        "main_config_unchanged": {
+          "result": "go",
+          "reason": "git config core.hooksPath, run in the job clone as a worker runs it, took effect there and left the main checkout's config byte for byte unchanged",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P15-3"
+        },
+        "objects_after_prune": {
+          "result": "go",
+          "reason": "after the main checkout dropped a branch the job clone holds and git gc --prune=now removed its commit there, the job clone still read every object: git fsck passed and the branch's file read back",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P15-3"
+        },
+        "engine_check": {
+          "result": "deferred",
+          "reason": "the engine's prelaunch check, gate and push that must run this comparison are built in phase 1e",
+          "deferred_to": "synaptiai/synapti-marketplace#358",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P15-3"
+        },
+        "moved_ref": {
+          "result": "deferred",
+          "reason": "a moved refs/remotes/origin/<base> in the job clone must change nothing the gate reads; the gate, which reads the base from the main checkout's origin/<base> after its own fetch, is built in phase 1e",
+          "deferred_to": "synaptiai/synapti-marketplace#358",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P15-3"
+        }
+      },
+      "deferred_to": "synaptiai/synapti-marketplace#358",
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "sandbox": "danielbentes/flow-factory-sandbox"
+      },
+      "ran_at": "2026-11-15T21:38:15Z"
+    },
+    "P16": {
+      "group": "platform",
+      "result": "deferred",
+      "reason": "unavailable_refused: a worker that refuses to start when the sandbox cannot start is the launcher's behaviour, built in phase 1c",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P16-3",
+      "cost_usd": 0.216148,
+      "github_writes": [],
+      "parts": {
+        "gh_token": {
+          "result": "go",
+          "reason": "gh auth token returned nothing inside the sandbox (41 bytes outside)",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "keychain_token": {
+          "result": "go",
+          "reason": "the Keychain read of gh:github.com returned nothing inside the sandbox (75 bytes outside)",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "git_credential": {
+          "result": "go",
+          "reason": "git credential fill returned nothing inside the sandbox (1 password lines outside)",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "env_token": {
+          "result": "go",
+          "reason": "GH_TOKEN, set to a 36-character canary, was empty in the worker",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "write_outside": {
+          "result": "go",
+          "reason": "the write outside the clone was refused and the marker is not on disk",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "commit_inside": {
+          "result": "go",
+          "reason": "a commit inside the clone worked and is in the clone",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "offlist_curl": {
+          "result": "go",
+          "reason": "example.com from curl was refused by the sandbox",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "offlist_python": {
+          "result": "go",
+          "reason": "example.com from Python was refused by the sandbox",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "allowed_host": {
+          "result": "go",
+          "reason": "api.github.com answered 200 inside the sandbox",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "repo_settings_widen": {
+          "result": "go",
+          "reason": "the clone's .claude/settings.json widened nothing: example.com stayed refused and the write outside stayed blocked",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        },
+        "unavailable_refused": {
+          "result": "deferred",
+          "reason": "a worker that refuses to start when the sandbox cannot start is the launcher's behaviour, built in phase 1c",
+          "deferred_to": "synaptiai/synapti-marketplace#356",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:11:51Z"
+        }
+      },
+      "deferred_to": "synaptiai/synapti-marketplace#356",
+      "keyed_on": {
+        "claude_version": "2.1.323 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+        "interpreter_version": "3.14.7"
+      },
+      "ran_at": "2026-11-15T12:11:51Z"
+    },
+    "P2": {
+      "group": "platform",
+      "result": "deferred",
+      "reason": "person_forms_denied: the stand-in deny refused 72 of 72 person forms and none ran; tier-gate's own deny rule is built in phase 1b; session_end_writes: SessionEnd writing only to the per-job state dir needs that dir, which phase 0 does not have; stop_caps: Stop ending within its caps needs the factory-mode Stop hook, which phase 0 does not have; task_completed_refusals: TaskCompleted refusing at most 3 times per stage needs the factory's stages, which phase 0 does not have",
+      "stand_in": true,
+      "evidence": "docs/flow-factory/evidence/P2-2",
+      "cost_usd": 0.664853,
+      "github_writes": [],
+      "parts": {
+        "coverage": {
+          "result": "go",
+          "reason": "the worker ran all 75 commands",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "tier_gate_fires": {
+          "result": "go",
+          "reason": "tier-gate fired on all 75 commands the worker ran",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "person_forms_denied": {
+          "result": "deferred",
+          "reason": "the stand-in deny refused 72 of 72 person forms and none ran; tier-gate's own deny rule is built in phase 1b",
+          "deferred_to": "synaptiai/synapti-marketplace#355",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "worker_forms_allowed": {
+          "result": "go",
+          "reason": "allowed and ran: context --mode, question get p2-question, await p2-await --max-seconds 100",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "stop_hook": {
+          "result": "go",
+          "reason": "the Stop hook fired in -p",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "session_end_hook": {
+          "result": "go",
+          "reason": "the SessionEnd hook fired in -p",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "task_completed_hook": {
+          "result": "go",
+          "reason": "the TaskCompleted hook fired in -p",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "ask_user_question_absent": {
+          "result": "go",
+          "reason": "AskUserQuestion is not among the worker's 28 tools",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "claude_files_allowlist": {
+          "result": "go",
+          "reason": "the worker created no .claude file",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "stop_caps": {
+          "result": "deferred",
+          "reason": "Stop ending within its caps needs the factory-mode Stop hook, which phase 0 does not have",
+          "deferred_to": "synaptiai/synapti-marketplace#355",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "session_end_writes": {
+          "result": "deferred",
+          "reason": "SessionEnd writing only to the per-job state dir needs that dir, which phase 0 does not have",
+          "deferred_to": "synaptiai/synapti-marketplace#356",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        },
+        "task_completed_refusals": {
+          "result": "deferred",
+          "reason": "TaskCompleted refusing at most 3 times per stage needs the factory's stages, which phase 0 does not have",
+          "deferred_to": "synaptiai/synapti-marketplace#355",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:01Z"
+        }
+      },
+      "deferred_to": "synaptiai/synapti-marketplace#355",
+      "keyed_on": {
+        "claude_version": "2.1.323 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+        "interpreter_version": "3.14.7"
+      },
+      "ran_at": "2026-11-15T12:10:01Z"
+    },
+    "P3": {
+      "group": "environment",
+      "result": "go",
+      "reason": "every part passed",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P3-6",
+      "cost_usd": 0,
+      "github_writes": [
+        {
+          "repo": "danielbentes/flow-factory-sandbox",
+          "call": "git push -q https://github.com/danielbentes/flow-factory-sandbox.git HEAD:refs/heads/flow-factory-probe-20261115T213846Z-1bd439"
+        },
+        {
+          "repo": "danielbentes/flow-factory-sandbox",
+          "call": "gh pr create"
+        }
+      ],
+      "parts": {
+        "gh_auth_status": {
+          "result": "go",
+          "reason": "gh auth status exited 0",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P3-5"
+        },
+        "gh_api_user": {
+          "result": "go",
+          "reason": "gh api user exited 0",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P3-5"
+        },
+        "git_ls_remote": {
+          "result": "go",
+          "reason": "git ls-remote origin exited 0",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P3-5"
+        },
+        "git_fetch": {
+          "result": "go",
+          "reason": "git fetch of origin's refs/heads/main succeeded",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P3-5"
+        },
+        "git_push_dry_run": {
+          "result": "go",
+          "reason": "git push --dry-run to origin succeeded and moved nothing",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P3-5"
+        },
+        "signing": {
+          "result": "go",
+          "reason": "commit signing is not set up in the git config (with the files it includes), so workers commit unsigned as the person does",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P3-5"
+        },
+        "git_push_local": {
+          "result": "go",
+          "reason": "pushed a commit to a local bare remote",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P3-5"
+        },
+        "worker_token": {
+          "result": "go",
+          "reason": "the token reads danielbentes/flow-factory-sandbox and all three writes answered 403 (labels 403, pulls 403, contents 403)",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P3-5"
+        },
+        "sandbox_push": {
+          "result": "go",
+          "reason": "pushed flow-factory-probe-20261115T213846Z-1bd439 to danielbentes/flow-factory-sandbox from the engine environment",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:52Z",
+          "evidence": "docs/flow-factory/evidence/P3-6"
+        },
+        "sandbox_draft_pr": {
+          "result": "go",
+          "reason": "opened draft pull request #3 on danielbentes/flow-factory-sandbox",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:52Z",
+          "evidence": "docs/flow-factory/evidence/P3-6"
+        }
+      },
+      "evidence_history": [
+        "docs/flow-factory/evidence/P3-2",
+        "docs/flow-factory/evidence/P3-3",
+        "docs/flow-factory/evidence/P3-4",
+        "docs/flow-factory/evidence/P3-5"
+      ],
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "sandbox": "danielbentes/flow-factory-sandbox"
+      },
+      "ran_at": "2026-11-15T21:38:52Z"
+    },
+    "P4": {
+      "group": "platform",
+      "result": "go",
+      "reason": "every part passed",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P4-2",
+      "cost_usd": 0.154194,
+      "github_writes": [],
+      "parts": {
+        "project_flow": {
+          "result": "go",
+          "reason": "without --plugin-dir the project's own flow loads: ~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:10Z"
+        },
+        "flow_once": {
+          "result": "go",
+          "reason": "flow loaded once, from the --plugin-dir copy",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:10Z"
+        }
+      },
+      "keyed_on": {
+        "claude_version": "2.1.323 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+        "interpreter_version": "3.14.7"
+      },
+      "ran_at": "2026-11-15T12:10:10Z"
+    },
+    "P5": {
+      "group": "platform",
+      "result": "no-go",
+      "reason": "cost_scope: a one-turn resume of a four-step session reported tokens [12, 350, 164084, 17162], the first run's [10, 339, 133675, 17090] plus its own [2, 11, 30409, 72]: it reports the whole session",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P5-2",
+      "cost_usd": 1.205785,
+      "github_writes": [],
+      "parts": {
+        "session_id": {
+          "result": "go",
+          "reason": "the first launch reported its --session-id and each fork a new one",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:54Z"
+        },
+        "kill": {
+          "result": "go",
+          "reason": "the first launch was killed during its first tool call and charged its $0.5 limit, since it reported no cost",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:54Z"
+        },
+        "turn_limit": {
+          "result": "go",
+          "reason": "the resumed run stopped at its --max-turns 2",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:54Z"
+        },
+        "budget_limit": {
+          "result": "go",
+          "reason": "the resumed run stopped at its --max-budget-usd 0.02",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:54Z"
+        },
+        "cost_scope": {
+          "result": "no-go",
+          "reason": "a one-turn resume of a four-step session reported tokens [12, 350, 164084, 17162], the first run's [10, 339, 133675, 17090] plus its own [2, 11, 30409, 72]: it reports the whole session",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:54Z"
+        },
+        "no_block_rerun": {
+          "result": "go",
+          "reason": "the command's ! block ran once, in the first launch, and not on resume",
+          "keyed_on": {
+            "claude_version": "2.1.323 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+            "interpreter_version": "3.14.7"
+          },
+          "ran_at": "2026-11-15T12:10:54Z"
+        }
+      },
+      "fallback": "The engine records the increase in a session's reported cost between its runs, since a resumed run reports the whole session's cost.",
+      "keyed_on": {
+        "claude_version": "2.1.323 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.pyenv/versions/3.14.7/bin/python3.14",
+        "interpreter_version": "3.14.7"
+      },
+      "ran_at": "2026-11-15T12:10:54Z"
+    },
+    "P6": {
+      "group": "github_write",
+      "result": "go",
+      "reason": "every part passed; whether /flow:merge reads the engine's marker is checked in phase 1f (synaptiai/synapti-marketplace#359)",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P6-3",
+      "cost_usd": 0,
+      "github_writes": [
+        {
+          "repo": "danielbentes/flow-factory-sandbox",
+          "call": "POST repos/danielbentes/flow-factory-sandbox/pulls/3/reviews"
+        },
+        {
+          "repo": "danielbentes/flow-factory-sandbox",
+          "call": "POST repos/danielbentes/flow-factory-sandbox/pulls/3/reviews"
+        },
+        {
+          "repo": "danielbentes/flow-factory-sandbox",
+          "call": "POST repos/danielbentes/flow-factory-sandbox/pulls/3/reviews"
+        },
+        {
+          "repo": "danielbentes/flow-factory-sandbox",
+          "call": "POST repos/danielbentes/flow-factory-sandbox/issues/3/comments"
+        },
+        {
+          "repo": "danielbentes/flow-factory-sandbox",
+          "call": "gh pr ready"
+        },
+        {
+          "repo": "danielbentes/flow-factory-sandbox",
+          "call": "gh pr ready"
+        }
+      ],
+      "parts": {
+        "comment_review": {
+          "result": "go",
+          "reason": "COMMENT on its own pull request returned review id 5913054043",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:39:31Z",
+          "evidence": "docs/flow-factory/evidence/P6-3"
+        },
+        "review_association": {
+          "result": "go",
+          "reason": "the review's author_association is OWNER, in /flow:merge's default trust list (OWNER, MEMBER, COLLABORATOR)",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:39:31Z",
+          "evidence": "docs/flow-factory/evidence/P6-3"
+        },
+        "approve_refused": {
+          "result": "go",
+          "reason": "APPROVE on its own pull request was refused (422: Review Can not approve your own pull request)",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:39:31Z",
+          "evidence": "docs/flow-factory/evidence/P6-3"
+        },
+        "request_changes_refused": {
+          "result": "go",
+          "reason": "REQUEST_CHANGES on its own pull request was refused (422: Review Can not request changes on your own pull request)",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:39:31Z",
+          "evidence": "docs/flow-factory/evidence/P6-3"
+        },
+        "marker_lookup": {
+          "result": "go",
+          "reason": "the lookup found the posted comment and review marker again by its key; whether /flow:merge reads the engine's marker is checked in phase 1f",
+          "deferred_to": "synaptiai/synapti-marketplace#359",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:39:31Z",
+          "evidence": "docs/flow-factory/evidence/P6-3"
+        },
+        "ready_undo": {
+          "result": "go",
+          "reason": "gh pr ready and --undo succeeded; ready started 0 workflow run(s) and --undo cancelled 0, read 15 s after each",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:39:31Z",
+          "evidence": "docs/flow-factory/evidence/P6-3"
+        }
+      },
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "sandbox": "danielbentes/flow-factory-sandbox"
+      },
+      "ran_at": "2026-11-15T21:39:31Z"
+    },
+    "P7": {
+      "group": "environment",
+      "result": "deferred",
+      "reason": "isolation: two jobs each recorded 50 entries at once; each ledger holds exactly its own, and the default ledger none; launcher_state_dir: each job's FLOW_STATE_DIR is set here by the probe; the launcher that sets it per job is built in phase 1c",
+      "stand_in": true,
+      "evidence": "docs/flow-factory/evidence/P7-3",
+      "cost_usd": 0,
+      "github_writes": [],
+      "parts": {
+        "isolation": {
+          "result": "go",
+          "reason": "two jobs each recorded 50 entries at once; each ledger holds exactly its own, and the default ledger none",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P7-3"
+        },
+        "launcher_state_dir": {
+          "result": "deferred",
+          "reason": "each job's FLOW_STATE_DIR is set here by the probe; the launcher that sets it per job is built in phase 1c",
+          "deferred_to": "synaptiai/synapti-marketplace#356",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "sandbox": "danielbentes/flow-factory-sandbox"
+          },
+          "ran_at": "2026-11-15T21:38:15Z",
+          "evidence": "docs/flow-factory/evidence/P7-3"
+        }
+      },
+      "deferred_to": "synaptiai/synapti-marketplace#356",
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "jq_version": "jq-1.7.1-apple",
+        "timeout_version": "timeout (GNU coreutils) 9.12",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "sandbox": "danielbentes/flow-factory-sandbox"
+      },
+      "ran_at": "2026-11-15T21:38:15Z"
+    },
+    "P8": {
+      "cost_usd": 0,
+      "evidence": "",
+      "fallback": "comments and edits from unknown editors are treated as untrusted",
+      "github_writes": [],
+      "group": "github_write",
+      "reason": "not run by the person's decision of 2026-11-12: no second GitHub account is available to make the edits P8 checks",
+      "result": "not_run",
+      "stand_in": false
+    },
+    "P9": {
+      "group": "interactive",
+      "result": "deferred",
+      "reason": "executor: a detached directive outliving its Bash call, and next, wait, question, status and answer run by the interactive executor, need phase 1c; tier_gate_by_mode: tier-gate's ask in default mode and deny in auto mode on the factory's person subcommands are built in phase 1b",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P9-6",
+      "cost_usd": 0,
+      "github_writes": [],
+      "parts": {
+        "hook_mode_auto": {
+          "result": "go",
+          "reason": "every PreToolUse hook input (2) carries permission_mode: auto",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12"
+          },
+          "ran_at": "2026-11-15T21:56:34Z",
+          "evidence": "docs/flow-factory/evidence/P9-5"
+        },
+        "background_wake_auto": {
+          "result": "go",
+          "reason": "the session ran --step woke 3 s after the background wait ended, with no prompt from the person in between (1 task notification(s))",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12"
+          },
+          "ran_at": "2026-11-15T21:56:34Z",
+          "evidence": "docs/flow-factory/evidence/P9-5"
+        },
+        "hook_mode_default": {
+          "result": "go",
+          "reason": "every PreToolUse hook input (2) carries permission_mode: default",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12"
+          },
+          "ran_at": "2026-11-15T21:57:54Z",
+          "evidence": "docs/flow-factory/evidence/P9-6"
+        },
+        "background_wake_default": {
+          "result": "go",
+          "reason": "the session ran --step woke 8 s after the background wait ended, with no prompt from the person in between (1 task notification(s))",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12"
+          },
+          "ran_at": "2026-11-15T21:57:54Z",
+          "evidence": "docs/flow-factory/evidence/P9-6"
+        },
+        "tier_gate_by_mode": {
+          "result": "deferred",
+          "reason": "tier-gate's ask in default mode and deny in auto mode on the factory's person subcommands are built in phase 1b",
+          "deferred_to": "synaptiai/synapti-marketplace#355",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12"
+          },
+          "ran_at": "2026-11-15T21:57:54Z",
+          "evidence": "docs/flow-factory/evidence/P9-6"
+        },
+        "executor": {
+          "result": "deferred",
+          "reason": "a detached directive outliving its Bash call, and next, wait, question, status and answer run by the interactive executor, need phase 1c",
+          "deferred_to": "synaptiai/synapti-marketplace#356",
+          "keyed_on": {
+            "claude_version": "2.1.325 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12"
+          },
+          "ran_at": "2026-11-15T21:57:54Z",
+          "evidence": "docs/flow-factory/evidence/P9-6"
+        }
+      },
+      "evidence_history": [
+        "docs/flow-factory/evidence/P9-3",
+        "docs/flow-factory/evidence/P9-4",
+        "docs/flow-factory/evidence/P9-5"
+      ],
+      "deferred_to": "synaptiai/synapti-marketplace#355",
+      "keyed_on": {
+        "claude_version": "2.1.325 (Claude Code)",
+        "gh_version": "gh version 2.101.0 (2026-09-15)",
+        "git_version": "git version 2.55.0",
+        "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+        "interpreter_version": "3.14.7",
+        "jq_version": "jq-1.7.1-apple",
+        "permission_modes": "auto,default",
+        "timeout_path": "/opt/homebrew/bin/timeout",
+        "timeout_version": "timeout (GNU coreutils) 9.12"
+      },
+      "ran_at": "2026-11-15T21:57:54Z"
+    }
+  },
+  "spend": {
+    "cap_usd": 25,
+    "spent_usd": 11.499116
+  }
+}

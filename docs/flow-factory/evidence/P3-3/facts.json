@@ -1,0 +1,16 @@
+{
+  "gh_auth_token_with_empty_config": "prints a token",
+  "gh_login": "danielbentes",
+  "origin_scheme": "https",
+  "signing": {
+    "commit_gpgsign": false,
+    "gpg_format": "openpgp",
+    "signing_key_set": false
+  },
+  "worker_token": {
+    "contents": 403,
+    "get": 200,
+    "labels": 403,
+    "pulls": 403
+  }
+}

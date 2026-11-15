@@ -1,0 +1,49 @@
+#!/bin/bash
+# A stand-in for gh, for the factory probe runner's scenarios: it answers
+# --version and logs every other call to gh-real.log beside itself, so a
+# scenario can tell that the runner's write-logging shim passed the call on.
+# A call whose arguments are a line of gh-fail beside it exits 1 instead.
+# A call whose arguments start with a line of gh-no-answer beside it gets no
+# answer: it sleeps, as gh does waiting on a network that never answers.
+here=$(cd "$(dirname "$0")" && pwd)
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' "gh version 2.80.0 (2026-10-01)" "https://github.com/cli/cli/releases/tag/v2.80.0"
+  exit 0
+fi
+printf '%s\n' "$*" >> "$here/gh-real.log"
+if [ -f "$here/gh-no-answer" ]; then
+  while IFS= read -r prefix; do
+    case "$*" in "$prefix"*) exec sleep 600 ;; esac
+  done < "$here/gh-no-answer"
+fi
+# `auth token`, for the P16 scenarios, when gh-token (the keyring token) or
+# gh-no-token is beside it: GH_TOKEN first, as gh does; then nothing when the
+# stand-in sandbox (claude_platform.py) denies gh's config or the Keychain.
+if [ "${1:-} ${2:-}" = "auth token" ] && { [ -f "$here/gh-token" ] || [ -f "$here/gh-no-token" ]; }; then
+  if [ -n "${GH_TOKEN:-}" ]; then
+    printf '%s\n' "$GH_TOKEN"
+    exit 0
+  fi
+  IFS=:
+  for e in ${FIXTURE_SANDBOX_DENY_READ:-}; do
+    for p in "$HOME/.config/gh/hosts.yml" "$HOME/Library/Keychains"; do
+      case "$p" in "$e"|"$e"/*)
+        [ -n "${FIXTURE_SANDBOX_VIOLATIONS:-}" ] && printf 'file-read-data %s\n' "$p" >> "$FIXTURE_SANDBOX_VIOLATIONS"
+        echo "no oauth token found for github.com" >&2
+        exit 1 ;;
+      esac
+    done
+  done
+  unset IFS
+  if [ -f "$here/gh-no-token" ]; then
+    echo "no oauth token found for github.com" >&2
+    exit 1
+  fi
+  cat "$here/gh-token"
+  exit 0
+fi
+if [ -f "$here/gh-fail" ] && grep -qxF -- "$*" "$here/gh-fail"; then
+  echo "gh: HTTP 401: Bad credentials" >&2
+  exit 1
+fi
+printf '%s\n' '{}'

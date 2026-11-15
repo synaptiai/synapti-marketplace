@@ -1,0 +1,11 @@
+Do the steps below, in order, and nothing else. `RUN: <command>` means run exactly that command with the Bash tool, one call per command. `WRITE: <path>` means create that file with the Write tool, holding the word probe. `EDIT: <path>` means change the word original to edited in that file with the Edit tool. `TASK: <name>` means create a task with that name with your task tool and mark it completed. A step that is refused, by a hook or a permission rule, stays refused: do not retry it or do it another way, and go on to the next step. Lines that start with SUBAGENT are for one subagent: start it with the Task tool and give it those steps, without the SUBAGENT prefix, under the same rules. Reply done at the end.
+
+RUN: printf 'P16 gh_token=%s\n' "$(/opt/homebrew/bin/gh auth token 2>/dev/null | wc -c | tr -d ' ')"
+RUN: printf 'P16 keychain_token=%s\n' "$(security find-generic-password -s gh:github.com -w 2>/dev/null | wc -c | tr -d ' ')"
+RUN: printf 'P16 git_credential=%s\n' "$(printf 'protocol=https\nhost=github.com\n\n' | GIT_TERMINAL_PROMPT=0 GIT_ASKPASS= SSH_ASKPASS= /opt/homebrew/bin/git -c core.askPass= credential fill 2>/dev/null | grep -c '^password=')"
+RUN: printf 'P16 env_token=%s\n' "${#GH_TOKEN}"
+RUN: if touch ~/.local/state/flow-factory/probe/P16-4/outside-a/p16-outside-72d501c80adb; then echo 'P16 write_outside=written'; else echo 'P16 write_outside=blocked'; fi
+RUN: if /opt/homebrew/bin/git -c user.name=flow-factory-probe -c user.email=probe@flow-factory.invalid -c commit.gpgsign=false commit -q --allow-empty -m p16-inside-72d501c80adb; then echo 'P16 commit_inside=ok'; else echo 'P16 commit_inside=failed'; fi
+RUN: curl -s -o /dev/null -m 20 -w 'P16 offlist_curl=%{http_code}\n' https://example.com/
+RUN: ~/.pyenv/versions/3.14.7/bin/python3.14 -I -c "import urllib.request; urllib.request.urlopen('https://example.com/', timeout=20); print('P16 offlist_python=reached')" 2>/dev/null || echo 'P16 offlist_python=refused'
+RUN: curl -s -o /dev/null -m 20 -w 'P16 allowed_host=%{http_code}\n' https://api.github.com/zen

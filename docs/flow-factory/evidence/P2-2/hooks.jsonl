@@ -1,0 +1,153 @@
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh approve-spec p2-approve-spec-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py approve-spec p2-approve-spec-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py approve-spec p2-approve-spec-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" approve-spec p2-approve-spec-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" approve-spec p2-approve-spec-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh answer p2-answer-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py answer p2-answer-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py answer p2-answer-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" answer p2-answer-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" answer p2-answer-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh confirm p2-confirm-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py confirm p2-confirm-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py confirm p2-confirm-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" confirm p2-confirm-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" confirm p2-confirm-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh feedback p2-feedback-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py feedback p2-feedback-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py feedback p2-feedback-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" feedback p2-feedback-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" feedback p2-feedback-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rework p2-rework-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py rework p2-rework-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py rework p2-rework-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" rework p2-rework-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" rework p2-rework-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh retry p2-retry-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py retry p2-retry-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py retry p2-retry-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" retry p2-retry-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" retry p2-retry-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh reject p2-reject-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py reject p2-reject-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py reject p2-reject-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" reject p2-reject-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" reject p2-reject-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh cancel p2-cancel-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py cancel p2-cancel-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py cancel p2-cancel-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" cancel p2-cancel-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" cancel p2-cancel-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-plain","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-plain","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-env","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"env -u FLOW_FACTORY_JOB ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-env","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-bashc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"bash -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-bashc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-timeout","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"timeout 30 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-timeout","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-nohup","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"nohup ~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-nohup","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-shc'","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"sh -c '~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh rebuild p2-rebuild-shc'","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py rebuild p2-rebuild-py","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"python3 ~/.local/state/flow-factory/probe/P2-3/plugin/bin/_flow_factory.py rebuild p2-rebuild-py","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" rebuild p2-rebuild-var","rc":0,"decision":"deny"}
+{"event":"PreToolUse","label":"tier-gate","command":"FF=~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh; \"$FF\" rebuild p2-rebuild-var","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh context --mode","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh context --mode","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh question get p2-question","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh question get p2-question","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"standin-deny","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh await p2-await --max-seconds 100","rc":0,"decision":"none"}
+{"event":"PreToolUse","label":"tier-gate","command":"~/.local/state/flow-factory/probe/P2-3/plugin/bin/flow-factory.sh await p2-await --max-seconds 100","rc":0,"decision":"none"}
+{"event":"TaskCompleted","label":"event","command":null,"rc":0,"decision":"none"}
+{"event":"Stop","label":"event","command":null,"rc":0,"decision":"none"}
+{"event":"SessionEnd","label":"event","command":null,"rc":0,"decision":"none"}

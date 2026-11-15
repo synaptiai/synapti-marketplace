@@ -1,0 +1,29 @@
+#!/bin/bash
+# A stand-in for macOS security(1), for the factory environment probe's
+# scenarios. It logs each call to security-calls.log beside itself and
+# answers `find-generic-password ... -w` with the contents of security-token,
+# or, when security-behaviour holds `missing`, exits 44 as security does when
+# the Keychain has no such item; when it holds `hang`, it never answers, as
+# security waiting on a Keychain prompt no one answers does.
+here=$(cd "$(dirname "$0")" && pwd)
+printf '%s\n' "$*" >> "$here/security-calls.log"
+if [ -f "$here/security-behaviour" ] && [ "$(cat "$here/security-behaviour")" = missing ]; then
+  echo "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain." >&2
+  exit 44
+fi
+if [ -f "$here/security-behaviour" ] && [ "$(cat "$here/security-behaviour")" = hang ]; then
+  exec sleep 600
+fi
+[ "${1:-}" = find-generic-password ] || exit 1
+# Under the stand-in sandbox of the P16 scenarios (claude_platform.py), a
+# denied ~/Library/Keychains hides every item.
+IFS=:
+for e in ${FIXTURE_SANDBOX_DENY_READ:-}; do
+  case "$HOME/Library/Keychains" in "$e"|"$e"/*)
+    [ -n "${FIXTURE_SANDBOX_VIOLATIONS:-}" ] && printf 'file-read-data %s\n' "$HOME/Library/Keychains" >> "$FIXTURE_SANDBOX_VIOLATIONS"
+    echo "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain." >&2
+    exit 44 ;;
+  esac
+done
+unset IFS
+cat "$here/security-token"

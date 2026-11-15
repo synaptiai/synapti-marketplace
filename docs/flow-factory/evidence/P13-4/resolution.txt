@@ -1,0 +1,3 @@
+planted	PYTHON_CANDIDATE	python3.14	accepted	~/.local/bin/python3.14	~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14	a native executable
+planted	PYTHON_CANDIDATE	python3	accepted	~/.pyenv/shims/python3	~/.pyenv/versions/3.14.7/bin/python3.14	acceptable, after the one chosen
+planted	PYTHON=~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14

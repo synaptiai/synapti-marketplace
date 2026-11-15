@@ -1,0 +1,8 @@
+{"argv": ["gh", "repo", "view", "danielbentes/flow-factory-sandbox", "--json", "nameWithOwner,defaultBranchRef,url"], "repo": null, "method": "READ", "write": false}
+{"argv": ["gh", "auth", "status"], "repo": null, "method": "READ", "write": false}
+{"argv": ["git", "fetch", "-q", "https://github.com/danielbentes/flow-factory-sandbox.git", "refs/heads/main"], "repo": null, "method": null, "write": false}
+{"argv": ["git", "push", "-q", "https://github.com/danielbentes/flow-factory-sandbox.git", "HEAD:refs/heads/flow-factory-probe-20261115T213846Z-1bd439"], "repo": "danielbentes/flow-factory-sandbox", "method": "PUSH", "write": true, "call": "git push -q https://github.com/danielbentes/flow-factory-sandbox.git HEAD:refs/heads/flow-factory-probe-20261115T213846Z-1bd439"}
+{"argv": ["git", "ls-remote", "https://github.com/danielbentes/flow-factory-sandbox.git", "refs/heads/flow-factory-probe-20261115T213846Z-1bd439"], "repo": null, "method": null, "write": false}
+{"argv": ["gh", "pr", "create", "--draft", "--repo", "danielbentes/flow-factory-sandbox", "--head", "flow-factory-probe-20261115T213846Z-1bd439", "--base", "main", "--title", "flow factory probe P3", "--body", "A draft pull request opened by the flow factory's phase 0 probe P3. P6 posts reviews and a marker comment on it."], "repo": "danielbentes/flow-factory-sandbox", "method": "WRITE", "write": true, "call": "gh pr create"}
+{"argv": ["git", "remote", "-v"], "repo": null, "method": null, "write": false}
+{"argv": ["git", "config", "--get-regexp", "^branch\\.flow-factory-probe-20261115T213846Z-1bd439\\.(remote|merge|pushremote|gh-merge-base)$"], "repo": null, "method": null, "write": false}

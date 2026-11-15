@@ -1,0 +1,37 @@
+{
+  "api user": {
+    "id": 1,
+    "login": "flow-factory-probe",
+    "type": "User"
+  },
+  "auth status": "github.com\n  Logged in to github.com account flow-factory-probe (factory probe stand-in)",
+  "issue list": [],
+  "issue view": {
+    "assignees": [],
+    "author": {
+      "login": "flow-factory-probe"
+    },
+    "body": "## Outcome\n\nThe repository has a file hello.txt that holds the word hello.\n\n## Acceptance criteria\n\n- [ ] hello.txt exists and holds the word hello\n",
+    "comments": [],
+    "labels": [],
+    "milestone": null,
+    "number": 1,
+    "state": "OPEN",
+    "title": "Add a greeting file",
+    "url": "https://github.com/flow-factory-probe/scratch/issues/1"
+  },
+  "label list": [],
+  "pr list": [],
+  "repo view": {
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "name": "scratch",
+    "nameWithOwner": "flow-factory-probe/scratch",
+    "owner": {
+      "login": "flow-factory-probe"
+    },
+    "url": "https://github.com/flow-factory-probe/scratch",
+    "visibility": "PRIVATE"
+  }
+}

@@ -1,0 +1,10 @@
+{"argv": ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], "answered": true}
+{"argv": ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], "answered": true}
+{"argv": ["gh", "pr", "view", "1", "--repo", "flow-factory-probe/scratch", "--json", "reviews", "--jq", "[.reviews[] | select(.state == \"CHANGES_REQUESTED\")] | length"], "answered": false}
+{"argv": ["gh", "pr", "view", "1", "--repo", "flow-factory-probe/scratch", "--json", "headRefName,baseRefName,title,body", "--jq", "\n    \"TITLE=\\\"\\(.title)\\\"\\nHEAD_BRANCH=\\(.headRefName)\\nBASE_BRANCH=\\(.baseRefName)\\nBODY_LENGTH=\\(.body | length)\"\n  "], "answered": false}
+{"argv": ["gh", "api", "--paginate", "repos/flow-factory-probe/scratch/pulls/1/comments"], "answered": false}
+{"argv": ["gh", "api", "--paginate", "repos/flow-factory-probe/scratch/pulls/1/reviews"], "answered": false}
+{"argv": ["gh", "api", "--paginate", "repos/flow-factory-probe/scratch/issues/1/comments"], "answered": false}
+{"argv": ["gh", "pr", "view", "1", "--repo", "flow-factory-probe/scratch", "--json", "baseRefOid,baseRefName", "--jq", "\"\\(.baseRefOid) \\(.baseRefName)\""], "answered": false}
+{"argv": ["gh", "api", "--paginate", "repos/flow-factory-probe/scratch/pulls/1/reviews"], "answered": false}
+{"argv": ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], "answered": true}

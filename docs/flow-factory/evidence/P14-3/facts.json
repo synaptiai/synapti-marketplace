@@ -1,0 +1,64 @@
+{
+  "cost_usd": 0.143347,
+  "hold_seconds": 600,
+  "longest_poll_seconds": 100.496,
+  "num_turns": 7,
+  "outcome": "completed",
+  "poll_seconds": 100,
+  "polls": [
+    {
+      "at": 1794778806.696828,
+      "poll": 1,
+      "printed": "WAITING",
+      "seconds": 100.467
+    },
+    {
+      "at": 1794778910.132289,
+      "poll": 2,
+      "printed": "WAITING",
+      "seconds": 100.012
+    },
+    {
+      "at": 1794779012.888486,
+      "poll": 3,
+      "printed": "WAITING",
+      "seconds": 100.496
+    },
+    {
+      "at": 1794779116.162865,
+      "poll": 4,
+      "printed": "WAITING",
+      "seconds": 100.081
+    },
+    {
+      "at": 1794779218.9514592,
+      "poll": 5,
+      "printed": "WAITING",
+      "seconds": 100.468
+    },
+    {
+      "at": 1794779322.88147,
+      "poll": 6,
+      "printed": "ANSWERED",
+      "seconds": 70.029
+    }
+  ],
+  "pricing": {
+    "dearest_turn_usd": 0.006959,
+    "model": "claude-opus-5-5",
+    "per_30_minutes_usd": 0.197318,
+    "per_poll_usd": 0.010962,
+    "priced_usd": 0.119327,
+    "total_cost_usd": 0.143347,
+    "turn_costs_usd": [
+      0.079586,
+      0.006431,
+      0.006502,
+      0.006574,
+      0.006623,
+      0.006652,
+      0.006959
+    ],
+    "unpriced_usd": 0.02402
+  }
+}

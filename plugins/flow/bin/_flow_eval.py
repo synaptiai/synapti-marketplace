@@ -1063,35 +1063,33 @@ def parse_stream(path):
     events = 0
     if not os.path.exists(path):
         return None, tool_counts, skills, events
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line.startswith("{"):
+    # Under PYTHONSAFEPATH or -P the script's own directory is not on
+    # sys.path, so it is added before the sibling module is imported.
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    from _flow_stream import json_values
+    for event in json_values(path):
+        events += 1
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "result":
+            result = event
+            continue
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
-            try:
-                event = json.loads(line)
-            except ValueError:
-                continue
-            events += 1
-            if not isinstance(event, dict):
-                continue
-            if event.get("type") == "result":
-                result = event
-                continue
-            message = event.get("message")
-            content = message.get("content") if isinstance(message, dict) else None
-            if not isinstance(content, list):
-                continue
-            for block in content:
-                if not isinstance(block, dict) or block.get("type") != "tool_use":
-                    continue
-                name = str(block.get("name", "?"))
-                tool_counts[name] = tool_counts.get(name, 0) + 1
-                if name == "Skill":
-                    inp = block.get("input") or {}
-                    skill = inp.get("skill") or inp.get("name") or inp.get("command")
-                    if skill:
-                        skills.append(str(skill))
+            name = str(block.get("name", "?"))
+            tool_counts[name] = tool_counts.get(name, 0) + 1
+            if name == "Skill":
+                inp = block.get("input") or {}
+                skill = inp.get("skill") or inp.get("name") or inp.get("command")
+                if skill:
+                    skills.append(str(skill))
     return result, tool_counts, skills, events
 
 

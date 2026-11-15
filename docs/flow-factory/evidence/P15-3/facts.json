@@ -1,0 +1,58 @@
+{
+  "git_version": "git version 2.55.0",
+  "job_clone": {
+    "clone_fsck_exit": 0,
+    "clone_reads_side_file": true,
+    "main_config_changed": [],
+    "main_lost_side_commit": true,
+    "side_commit": "adfcfed1470db0931f07c0c9b5e164035a32ef50",
+    "write_seen_in_clone": true
+  },
+  "plants": {
+    "config.worktree": {
+      "caught": true,
+      "violations": [
+        "config extensions.worktreeconfig",
+        "config.worktree core.fsmonitor"
+      ]
+    },
+    "core.fsmonitor": {
+      "caught": true,
+      "marker_after_git_status": true,
+      "marker_before_git": false,
+      "violations": [
+        "config core.fsmonitor"
+      ]
+    },
+    "core.hookspath": {
+      "caught": true,
+      "violations": [
+        "config core.hookspath"
+      ]
+    },
+    "credential.helper": {
+      "caught": true,
+      "violations": [
+        "config credential.helper"
+      ]
+    },
+    "remote.origin.pushurl": {
+      "caught": true,
+      "violations": [
+        "config remote.origin.pushurl"
+      ]
+    },
+    "submodule.update": {
+      "caught": true,
+      "violations": [
+        "config submodule.probe.update"
+      ]
+    },
+    "url.insteadof": {
+      "caught": true,
+      "violations": [
+        "config url.$TMPDIR/flow-factory-probe-4yb_8z7z/p15/elsewhere.git.insteadof"
+      ]
+    }
+  }
+}

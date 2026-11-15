@@ -1,0 +1,8 @@
+{
+  "branch": "flow-factory-probe-20261115T213846Z-1bd439",
+  "default_branch": "main",
+  "earlier_evidence": "evidence/P3-5",
+  "pull_request": "https://github.com/danielbentes/flow-factory-sandbox/pull/3",
+  "sandbox": "danielbentes/flow-factory-sandbox",
+  "url": "https://github.com/danielbentes/flow-factory-sandbox.git"
+}

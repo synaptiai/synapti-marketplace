@@ -1,0 +1,1 @@
+Reply with the last command you ran with the Bash tool in this session, exactly as you ran it, and nothing else. Do not run any command.
