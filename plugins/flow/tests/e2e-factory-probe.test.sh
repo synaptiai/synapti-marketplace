@@ -10,6 +10,8 @@
 #      worker would run flow's commands as if no factory were driving them
 #   W3 a subcommand the wrapper does not run yet exits 0, or with a message a
 #      caller cannot parse, instead of exit 5 and FACTORY_REFUSED=<reason>
+#   W4 a temporary folder that cannot be made is reported as a missing
+#      interpreter, sending the person to install Python
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -58,6 +60,15 @@ for FP_SUB in next run status answer; do
   e2e_expect_out "FACTORY_REFUSED="
 done
 
+_flow_test_begin "factory wrapper: a temporary folder that cannot be made is refused as such, never as a missing interpreter (W4)"
+e2e_new fp-probe-tmp-unwritable
+e2e_describe "with TMPDIR naming a folder that does not exist, probe refuses with scratch_unwritable and exit 5, not python_missing"
+e2e_repo main
+e2e_run_bin TMPDIR="$E2E_DIR/no-such-folder" bin/flow-factory.sh probe --resolve-python
+e2e_expect_equal "5" "$E2E_RC" "exit status"
+e2e_expect_line "FACTORY_REFUSED=scratch_unwritable (mktemp -d in $E2E_DIR/no-such-folder failed)"
+e2e_expect_no_out "python_missing"
+
 # The probe record checker, `probe --verify-record <file>`.
 #
 # Ways it can be wrong, written down before the checks:
@@ -68,6 +79,9 @@ done
 #      that names neither a fallback nor the phases it stops
 #   R4 --writes-only-to passes a record whose gh call log shows a write to
 #      another repository
+#   R4b --writes-only-to reads only the shim's call log, so a gh or git run
+#      by its full path, or an HTTP client sending to GitHub, in a command a
+#      recorded run made, passes unseen; or a read made that way fails
 #   R5 a probe recorded under other tool versions than its group's, which
 #      has run again since without it, passes, so a result recorded under
 #      older tools is taken as current
@@ -210,6 +224,29 @@ e2e_expect_out "PROBES_RECORD=ok"
 _fp_verify_case fp-writes-not-refused "a write marked refused: false outside the sandbox fails" \
   'd["probes"]["P1"]["github_writes"] = [{"repo": "other/repo", "call": "gh pr create", "refused": False}]' \
   1 "PROBES_CHECK_FAIL=write_outside_sandbox P1 other/repo" --writes-only-to danielbentes/flow-factory-sandbox
+
+# The commands a recorded run made, from its stream-json, as P16's evidence
+# folder holds them. FP_STREAM_EDIT writes one Bash call with the command in
+# FP_CMD into evidence/P16-1/run-a/stream.jsonl beside the record.
+FP_STREAM_EDIT='import os, json
+ev = os.path.join(os.path.dirname(path), "evidence", "P16-1", "run-a")
+os.makedirs(ev, exist_ok=True)
+with open(os.path.join(ev, "stream.jsonl"), "w") as f:
+  f.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": os.environ["FP_CMD"]}}]}}) + "\n")
+d["probes"]["P16"]["evidence"] = "evidence/P16-1"'
+_flow_test_begin "probe record: a GitHub write a recorded run made around the shim fails the writes check (R4b)"
+export FP_CMD="/opt/homebrew/bin/gh pr create --repo other/repo --title t --body b"
+_fp_verify_case fp-writes-unlogged-gh "a gh pr create run by its full path in P16's recorded commands fails and is listed as a write" \
+  "$FP_STREAM_EDIT" 1 "PROBES_CHECK_FAIL=unlogged_github_write P16" --writes-only-to danielbentes/flow-factory-sandbox
+e2e_expect_out "PROBES_UNLOGGED_CALL=P16 write /opt/homebrew/bin/gh pr create --repo other/repo --title t --body b"
+export FP_CMD="curl -s -X POST https://api.github.com/repos/other/repo/issues -d '{\"title\": \"x\"}'"
+_fp_verify_case fp-writes-unlogged-curl "a curl POST to api.github.com in P16's recorded commands fails" \
+  "$FP_STREAM_EDIT" 1 "PROBES_CHECK_FAIL=unlogged_github_write P16" --writes-only-to danielbentes/flow-factory-sandbox
+export FP_CMD="printf '%s' \"\$(/opt/homebrew/bin/gh auth token | wc -c)\"; curl -s -o /dev/null -w '%{http_code}' https://api.github.com/zen"
+_fp_verify_case fp-writes-unlogged-reads "a gh auth token by full path and a curl GET to api.github.com are listed as reads and pass" \
+  "$FP_STREAM_EDIT" 0 "PROBES_UNLOGGED_CALL=P16 read /opt/homebrew/bin/gh auth token" --writes-only-to danielbentes/flow-factory-sandbox
+e2e_expect_out "PROBES_RECORD=ok"
+unset FP_CMD
 
 # The gh and git shim's call log, which --writes-only-to reads. Each row of
 # tests/fixtures/factory/shim-calls.jsonl is one call made through the shim
@@ -679,6 +716,24 @@ e2e_run_bin bin/flow-factory.sh probe --verify-record "$E2E_REPO/$FP_REC" --writ
 e2e_expect_out "PROBES_REFUSED_WRITE=P3 probe-fixture/no-such-repo git push -q origin HEAD:refs/heads/probe"
 e2e_expect_out "PROBES_REFUSED_WRITE=P3 unresolved/unresolved POST graphql"
 e2e_expect_no_out "write_outside_sandbox"
+
+# L16 probe --launch into a group replaces the group's keyed_on with its own
+# keys, dropping the launch context and the sandbox, and gives a group whose
+# probes run no model a model key, so the group's other probes read as
+# stale on the model and are never run again to clear it.
+_flow_test_begin "probe runner: a --launch into the environment group keeps its other keys and adds no model (L16)"
+_fp_runner_scenario fp-run-launch-env "the environment group holds a launch context, and a --launch P11 --group environment is killed at its time limit: the group keeps launch_context, gains no model key, and no probe is stale on the model or the launch context"
+mkdir -p "$E2E_REPO/.flow/factory"
+_fp_record "$E2E_REPO/$FP_REC" 'd["groups"]["environment"]["keyed_on"]["launch_context"] = "launchd"; d["probes"]["P13"]["group"] = "environment"' stamp
+printf 'sleep 30\n' > "$E2E_BIN/claude-behaviour"
+e2e_run_bin bin/flow-factory.sh probe --launch P11 --group environment --prompt-file "$E2E_DIR/prompt.txt" --max-budget-usd 0.5 --timeout-seconds 3 --kill-after-seconds 1
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+e2e_expect_out '"outcome": "timeout"'
+e2e_expect_equal "launchd no-model" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["groups"]["environment"]["keyed_on"].get("launch_context"),
+  "model" if "model" in d["groups"]["environment"]["keyed_on"] else "no-model")')" "the environment group's launch_context and model key"
+e2e_run_bin bin/flow-factory.sh probe --verify-record "$E2E_REPO/$FP_REC"
+e2e_expect_no_out "PROBES_STALE=P13 model"
+e2e_expect_no_out "PROBES_STALE=P13 launch_context"
 
 _flow_test_begin "probe runner: --cap-usd above the recorded cap does not lift it (L12)"
 _fp_runner_scenario fp-run-cap-above "with \$24 spent of a recorded \$25 cap, --cap-usd 30 and a \$2 run limit, the run is not started and the record keeps cap_usd 25"

@@ -36,7 +36,15 @@ through answer.json.tmp, and refuses a link at either name the same way.
   - with --writes-only-to <owner/repo>, no recorded GitHub write went to any
     other repository. A write marked refused (stopped by the probe's shim or
     gh stand-in before it reached GitHub) is listed on a
-    PROBES_REFUSED_WRITE=<probe> <repo> <call> line and does not fail;
+    PROBES_REFUSED_WRITE=<probe> <repo> <call> line and does not fail. The
+    shim's call log holds only the gh and git calls found on PATH, so the
+    Bash commands each probe's recorded runs made (its evidence folders'
+    stream.jsonl and session.jsonl) are read as well: a gh or git run by its
+    path, and an HTTP client in a command that names a GitHub host, is
+    listed on a PROBES_UNLOGGED_CALL=<probe> read|write <call> line, and
+    any one not shown to be a read fails (unlogged_github_write). This reads
+    command text, so a write hidden in a script a command runs, or behind a
+    variable, is not found;
   - no probe is stale: each entry, and each of its parts, carries the
     keyed_on and ran_at it was recorded under; a part kept from an earlier
     run keeps its own. An entry whose keyed_on differs from its group's on a
@@ -46,7 +54,9 @@ through answer.json.tmp, and refuses a link at either name the same way.
     are the launch_context keys for every probe but P13, the only one run in
     a launch context. The model (key model) counts only for the probes that
     start claude -p runs of their own: the platform group's, P14 and those
-    --launch runs; P13's model is part of its launch context. A model the
+    --launch runs. P13's model is part of its launch context only when the
+    context was loaded with --model; P13 records the model its run used in
+    its facts either way. A model the
     group holds and such an entry or part does not, written before the model
     was recorded, is a difference, since it cannot show which model it ran on;
   - no probe is unstamped: an entry with no keyed_on of its own in a group
@@ -525,6 +535,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 BIN_DIR = os.path.dirname(os.path.realpath(__file__))
+# The sibling modules (_journal_atomic, _flow_stream) are imported from this
+# folder. The guard above takes it off sys.path when it is also the working
+# directory, and -P or PYTHONSAFEPATH never puts it there, so it is added
+# back, after the standard library.
+if BIN_DIR not in sys.path:
+    sys.path.append(BIN_DIR)
 PLUGIN_ROOT = os.path.dirname(BIN_DIR)
 SCHEMA = os.path.join(PLUGIN_ROOT, "schemas", "v1", "factory-probes.schema.json")
 
@@ -558,6 +574,94 @@ def utc_now():
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# What the shim's call log cannot see, read from the commands the recorded
+# runs made: gh or git run by a path, and HTTP clients. Their text is all
+# there is, so a command that hides one (a script it runs, a variable
+# holding the path) is not found.
+TOOL_BY_PATH = re.compile(r"(?:^|[\s;&|(`'\"=])((?:~|\.{1,2})?/[^\s;&|()`'\"]*/(gh|git))(?=[\s;&|)`'\"]|$)")
+# A client program counts where a command starts (after a separator, a
+# subshell or $( ), so https in a URL or protocol=https is not httpie.
+CLIENT_AT = r"(?:^|[;&|(`]|\$\()\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:\S*/)?(%s)(?=\s|$)"
+OTHER_CLIENTS = re.compile(CLIENT_AT % "wget|http|https|nc|ncat|telnet|ssh|scp|sftp|rsync|socat", re.MULTILINE)
+NETWORK_CODE = re.compile(r"urllib|requests\.|http\.client|socket\.|fetch\(|Net::HTTP|LWP::")
+CURL_AT = re.compile(CLIENT_AT % "curl", re.MULTILINE)
+GITHUB_HOST = re.compile(r"(?:^|[^A-Za-z0-9.-])(?:[A-Za-z0-9-]+\.)*(?:github\.com|githubusercontent\.com|ghe\.io)"
+                         r"(?![A-Za-z0-9-])", re.IGNORECASE)
+CURL_SENDS = re.compile(r"(?:^|\s)(?:-d|--data(?:-[a-z]+)?|-F|--form(?:-string)?|-T|--upload-file|--json)(?:[\s=]|$)"
+                        r"|(?:^|\s)(?:-X|--request)[\s=]*['\"]?(?!GET\b|HEAD\b)[A-Za-z]")
+LOCAL_GIT_READS = (("credential", "fill"), ("credential", "get"))
+
+
+def evidence_folder(record_path, ev):
+    """The folder an evidence path names: relative to the record's folder in
+    the runtime record, and to the repository's top in the committed copy,
+    so each folder above the record's is tried. None when none exists."""
+    d = os.path.dirname(os.path.abspath(record_path))
+    while True:
+        folder = os.path.join(d, ev)
+        if os.path.isdir(folder):
+            return folder
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+
+
+def recorded_commands(folder):
+    """Every Bash command in the stream-json and session files under folder."""
+    out = []
+    for root, _, files in os.walk(folder):
+        for name in sorted(files):
+            if name in ("stream.jsonl", "session.jsonl"):
+                for tool, given, _ in tool_uses(read_jsonl(os.path.join(root, name))):
+                    if tool == "Bash" and isinstance(given.get("command"), str):
+                        out.append(given["command"])
+    return out
+
+
+def unlogged_calls(command, git):
+    """(kind, text) for each call in command the shim's log cannot hold, kind
+    being read or write: write unless the call is shown to make no GitHub
+    write."""
+    found = []
+    for m in TOOL_BY_PATH.finditer(command):
+        tool = m.group(2)
+        rest = re.split(r"&&|\|\||[;|)\n`]", command[m.end():], maxsplit=1)[0]
+        args = [a.strip("'\"") for a in rest.split() if not re.match(r"^\d*[<>]", a)]
+        words = tuple(a for a in args if not a.startswith("-") and "=" not in a)
+        if tool == "git" and words[:2] in LOCAL_GIT_READS:
+            write = False
+        else:
+            try:
+                with tempfile.TemporaryDirectory() as empty:
+                    write = bool(subprocess.run([sys.executable, "-E", os.path.realpath(__file__), "classify-one",
+                                                 tool, git] + args, cwd=empty, capture_output=True, text=True,
+                                                timeout=60, stdin=subprocess.DEVNULL).stdout.strip() != "read")
+            except (OSError, subprocess.SubprocessError):
+                write = True
+        found.append(("write" if write else "read", f"{m.group(1)} {' '.join(args)}".strip()))
+    others = OTHER_CLIENTS.search(command) or NETWORK_CODE.search(command)
+    if (others or CURL_AT.search(command)) and GITHUB_HOST.search(command):
+        # Only curl's request is read from its words: no body, no upload and
+        # no method but GET or HEAD is a read.
+        read = not others and not CURL_SENDS.search(command)
+        found.append(("read" if read else "write", command))
+    return found
+
+
+def classify_one(argv):
+    """classify-one <gh|git> <git> <args...>: print read or write, for
+    unlogged_calls, which runs it in an empty folder so no repository's
+    config or remotes take part."""
+    tool, git, args = argv[0], argv[1], argv[2:]
+    try:
+        write = classify_call(tool, args, git)[2]
+    except Exception:
+        write = True
+    print("write" if write else "read")
+    return 0
+
+
 def verify_record(path, dispositions, writes_only_to):
     try:
         import jsonschema
@@ -573,7 +677,8 @@ def verify_record(path, dispositions, writes_only_to):
         print(f"PROBES_CHECK_FAIL=unreadable {type(e).__name__}")
         return 1
 
-    fails, refused = [], []
+    fails, refused, unlogged = [], [], []
+    git_for_check = shutil.which("git") or "git"
     validator = jsonschema.Draft202012Validator(schema)
     for err in sorted(validator.iter_errors(record), key=lambda e: list(e.path)):
         where = "/".join(str(p) for p in err.path) or "(top)"
@@ -618,11 +723,28 @@ def verify_record(path, dispositions, writes_only_to):
                     refused.append(f"{pid} {repo} {w.get('call', '')}")
                 else:
                     fails.append(f"write_outside_sandbox {pid} {repo}")
+            # The call log holds only what went through the shim; the
+            # commands the runs made show what went around it.
+            folders = {p.get("evidence")} | {v.get("evidence") for v in (p.get("parts") or {}).values()
+                                             if isinstance(v, dict)}
+            for ev in sorted(e for e in folders if isinstance(e, str) and e):
+                folder = evidence_folder(path, ev)
+                if folder is None:
+                    continue
+                for command in recorded_commands(folder):
+                    for kind, text in unlogged_calls(command, git_for_check):
+                        line = f"{pid} {kind} {' '.join(text.split())[:300]}"
+                        if line not in unlogged:
+                            unlogged.append(line)
+                        if kind == "write" and f"unlogged_github_write {pid}" not in fails:
+                            fails.append(f"unlogged_github_write {pid}")
 
     stale = stale_probes(record, probes)
     unstamped = unstamped_probes(record, probes)
     for line in refused:
         print(f"PROBES_REFUSED_WRITE={line}")
+    for line in unlogged:
+        print(f"PROBES_UNLOGGED_CALL={line}")
     for line in stale:
         print(f"PROBES_STALE={line}")
     for line in unstamped:
@@ -647,6 +769,9 @@ LAUNCH_CONTEXT_PREFIX = "launch_context"
 # the person's session, do not depend on it.
 MODEL_KEY = "model"
 UNMODELLED_PROBES = ("P3", "P6", "P7", "P8", "P9", "P11", "P15")
+# The groups whose keyed_on records the model: their probes start claude -p
+# runs. The environment group's P13 carries its model in its launch context.
+MODEL_GROUPS = ("platform", "interactive")
 
 
 def probe_keys(pid, keyed_on):
@@ -2534,11 +2659,17 @@ def watch_stream(proc, stream, kill_on, limit):
             except ValueError:
                 continue
             if isinstance(ev, dict) and kill_on(ev):
+                # A process that had already ended, which poll() has reaped,
+                # was not killed, and its group id may now be another's.
+                if ended:
+                    return False
                 for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 30)):
                     try:
                         os.killpg(proc.pid, sig)
                     except OSError:
-                        return True
+                        # The group is gone: before SIGTERM it ended by
+                        # itself; after it, SIGTERM ended it.
+                        return sig != signal.SIGTERM
                     try:
                         proc.wait(timeout=wait)
                         return True
@@ -2642,7 +2773,6 @@ def launch_probe(args):
     if not prompt.strip():
         raise Refused("prompt_empty")
     tools = find_tools()
-    keyed = dict(tool_versions(tools), **{MODEL_KEY: args.model or PROBE_MODEL})
     fdir = factory_dir()
     with factory_lock(fdir):
         record_path = os.path.join(fdir, "probes.json")
@@ -2650,6 +2780,13 @@ def launch_probe(args):
         # Checked before the guard: a record the run's cost could not be
         # written into would let the run spend without the spend being kept.
         check_schema(record)
+        # The group's keys this run does not set (the sandbox, the launch
+        # context) are kept, and the model is a key only of the groups whose
+        # probes run on one, so the other probes of the group stay current.
+        old = ((record.get("groups") or {}).get(args.group) or {}).get("keyed_on") or {}
+        keyed = dict(old, **tool_versions(tools))
+        if args.group in MODEL_GROUPS:
+            keyed[MODEL_KEY] = args.model or PROBE_MODEL
         spent = record["spend"]["spent_usd"]
         cap = bind_cap(args, record)
         if would_pass_cap(spent, args.max_budget_usd, cap):
@@ -2782,12 +2919,15 @@ def run_cmd(cmd, cwd, env, timeout=120):
         try:
             out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired as e:
-            ended = proc.poll()
+            # Whether the command ended is read without reaping it, so its
+            # pid, and with it the group id kill_group signals, cannot be
+            # given to another process first. kill_group then reaps it.
+            ended = ended_unreaped(proc)
             kill_group(proc)
-            if ended is not None:
+            if ended:
                 # The command itself ended; what keeps its output open is a
                 # program it started in a session of its own, left to run.
-                return ended, as_text(e.stdout), as_text(e.stderr)
+                return proc.returncode, as_text(e.stdout), as_text(e.stderr)
             return None, "", f"{TIMED_OUT} {timeout} s"
         except BaseException:
             kill_group(proc)
@@ -2798,11 +2938,19 @@ def run_cmd(cmd, cwd, env, timeout=120):
 TIMED_OUT = "timed out after"
 
 
+def ended_unreaped(proc):
+    """Whether proc has exited, read without reaping it (WNOWAIT)."""
+    try:
+        return os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+    except ChildProcessError:
+        return proc.returncode is not None
+
+
 def as_text(data):
     """Output a timed-out communicate() kept, which is bytes even for a text
-    Popen, as text."""
+    Popen, as text, with line endings as a text Popen gives them."""
     if isinstance(data, bytes):
-        return data.decode("utf-8", "replace")
+        return data.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
     return data or ""
 
 
@@ -3227,7 +3375,7 @@ def origin_parts(git, env, repo, origin, facts):
     heads = [ln.split()[1] for ln in out.splitlines() if len(ln.split()) == 2] if rc == 0 else []
     head = next((h for h in heads if h in ("refs/heads/main", "refs/heads/master")), heads[0] if heads else None)
     source = "HEAD"
-    if rc is None:
+    if rc != 0:
         parts["git_fetch"] = part("not_run", f"git ls-remote origin {exit_text(rc)}, so no branch was fetched")
     elif head is None:
         parts["git_fetch"] = part("not_run", "git ls-remote listed no branch on origin to fetch")
@@ -3366,9 +3514,12 @@ def default_state_dir(env, cwd):
     cascade-resolve.sh got no answer)."""
     env = {k: v for k, v in env.items() if k != "FLOW_STATE_DIR"}
     rc, out, err = run_cmd(["/bin/bash", os.path.join(BIN_DIR, "cascade-resolve.sh"), "--state-dir"], cwd, env)
-    if rc is None:
-        return "", f"cascade-resolve.sh --state-dir {exit_text(rc, err)}, so the default ledger was not read"
-    return (out.strip() if rc == 0 else ""), None
+    if rc != 0 or not out.strip():
+        # With no folder named, the default ledger is not read, and a check
+        # that finds nothing in it would be a check of nothing.
+        said = exit_text(rc, err) if rc != 0 else "printed no folder"
+        return "", f"cascade-resolve.sh --state-dir {said}, so the default ledger was not read"
+    return out.strip(), None
 
 
 def ledger_entries(path):
@@ -3407,7 +3558,11 @@ def probe_p7(git, scratch, fdir):
     for j in ("a", "b"):
         clone = os.path.join(work, f"job-{j}")
         os.makedirs(clone)
-        run_cmd([git, "init", "-q"], clone, isolated_git_env())
+        rc, _, err = run_cmd([git, "init", "-q"], clone, isolated_git_env())
+        if rc != 0:
+            # Without a repository the trust records fail for that reason,
+            # which would read as the ledger refusing them.
+            raise scratch_failed([git, "init", "-q"], rc, err)
         state = os.path.join(work, f"state-{j}")
         os.makedirs(state, mode=0o700)
         goal_id = f"factory-probe-p7-job-{j}"
@@ -4430,10 +4585,15 @@ PROBE_HOOK = """#!/bin/bash
 # decided, and passes the hook's output and exit status on unchanged.
 label=$1; shift
 input=$(cat)
-err=$(mktemp "${{TMPDIR:-/tmp}}/factory-probe-hook.XXXXXX") || exit 1
+# Without a temporary file the wrapped hook still runs and is logged, its
+# stderr passed straight on: a recording hook that exits on its own would
+# read as tier-gate not firing.
+err=$(mktemp "${{TMPDIR:-/tmp}}/factory-probe-hook.XXXXXX") || err=""
 out=""; rc=0
-if [ $# -gt 0 ]; then
+if [ $# -gt 0 ] && [ -n "$err" ]; then
   out=$(printf '%s' "$input" | "$@" 2>"$err"); rc=$?
+elif [ $# -gt 0 ]; then
+  out=$(printf '%s' "$input" | "$@"); rc=$?
 fi
 decision=none
 if [ "$rc" = 2 ]; then
@@ -4447,8 +4607,10 @@ printf '%s' "$input" | {jq} -c --arg label "$label" --arg rc "$rc" --arg decisio
     rc: ($rc | tonumber), decision: $decision}}' \\
   >> {log}
 [ -n "$out" ] && printf '%s\\n' "$out"
-cat "$err" >&2
-rm -f "$err"
+if [ -n "$err" ]; then
+  cat "$err" >&2
+  rm -f "$err"
+fi
 exit "$rc"
 """
 
@@ -6687,11 +6849,19 @@ def interactive_p14(args):
         # was spent is not known until its run ends.
         if not started.get("launched"):
             p14_not_running(fdir)
-            with factory_lock(fdir):
+            # The same wait as the cost write below: a refund lost to another
+            # group's hold leaves the whole budget limit charged.
+            with factory_lock(fdir, timeout=P14_RECORD_LOCK_SECONDS):
                 record = read_record(record_path)
                 merge_group(record, "interactive", dict(old, **keyed), {}, -P14_BUDGET_USD, args.cap_usd)
                 write_record(record_path, record)
-    entry = p14_entry(args, fdir, ev_rel, run)
+    try:
+        entry = p14_entry(args, fdir, ev_rel, run)
+    except Exception as e:
+        # The run's cost is still written below, so a failure reading what
+        # it did never leaves its budget limit charged.
+        entry = probe_entry("interactive", "not_run", stopped_reason("P14", e), ev_rel, run.get("cost_usd") or 0,
+                            evidence_writes(os.path.join(fdir, ev_rel)))
     # The run has spent its cost: wait out another group's hold rather than
     # lose the entry and leave the whole budget limit charged.
     with factory_lock(fdir, timeout=P14_RECORD_LOCK_SECONDS):
@@ -7506,6 +7676,8 @@ def main(argv):
         a = sl.parse_args(argv[1:])
         rest = a.rest[1:] if a.rest[:1] == ["--"] else a.rest
         return shim_log(a.tool, a.log, a.git, rest, allow_repo=a.allow_repo, stub=a.stub)
+    if argv[:1] == ["classify-one"] and len(argv) >= 3:
+        return classify_one(argv[1:])
     if argv[:1] == ["capture-hook"]:
         ch = argparse.ArgumentParser(prog="_flow_factory.py capture-hook")
         ch.add_argument("--log", required=True)

@@ -73,7 +73,9 @@ record="$main_top/$runtime_dir/factory/probes.json"
 # that report, so the environment probe records the rules as they ran here.
 resolve_python() {
   local explain="${1:-}" scratch cand path out ver exe ym shim reason maj min chosen=""
-  scratch=$(mktemp -d "${TMPDIR:-/tmp}/flow-factory-py.XXXXXX") || return 1
+  # Exit 2, not 1: a temporary folder that cannot be made is not a missing
+  # interpreter.
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/flow-factory-py.XXXXXX") || return 2
   for cand in python3.14 python3; do
     path=$(command -v "$cand" 2>/dev/null) || path=""
     if [ -z "$path" ]; then
@@ -136,13 +138,19 @@ resolve_python() {
   return 0
 }
 
+# refuse_resolve <status> — the refusal for a resolve_python that failed.
+refuse_resolve() {
+  [ "$1" = 2 ] && refuse "scratch_unwritable (mktemp -d in ${TMPDIR:-/tmp} failed)"
+  refuse "python_missing (need Python 3.14 or later with PyYAML)"
+}
+
 if [ "${1:-}" = probe ] && [ "${2:-}" = --resolve-python ] && [ "$#" -eq 2 ]; then
-  resolve_python explain || refuse "python_missing (need Python 3.14 or later with PyYAML)"
+  resolve_python explain || refuse_resolve $?
   exit 0
 fi
 
 if [ "${1:-}" = probe ]; then
-  py=$(resolve_python) || refuse "python_missing (need Python 3.14 or later with PyYAML)"
+  py=$(resolve_python) || refuse_resolve $?
   exec "$py" -E "$HERE/_flow_factory.py" "$@"
 fi
 

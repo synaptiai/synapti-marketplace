@@ -15,8 +15,10 @@ here=$(cd "$(dirname "$0")" && pwd)
 fmt="" url=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    -w) fmt=$2; shift 2 ;;
-    -o|-m) shift 2 ;;
+    # A value flag given last has no value: shift it alone, or the loop
+    # never ends.
+    -w) fmt=${2:-}; [ $# -ge 2 ] && shift 2 || shift ;;
+    -o|-m) [ $# -ge 2 ] && shift 2 || shift ;;
     http://*|https://*) url=$1; shift ;;
     *) shift ;;
   esac

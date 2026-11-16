@@ -1,6 +1,6 @@
 # Factory phase 0: probe results
 
-These are the results of the go/no-go probes for every platform behaviour the factory depends on. They ran between 2026-11-12 and 2026-11-16 on one Mac (macOS, Apple silicon). Every `claude -p` run used Claude Opus 5.5 (`claude-opus-5-5`), and so did both P9 sessions; the probes name the model because Claude Code's own default changes between releases. The full record is in `probes.json` in this folder, with the evidence for each probe under `evidence/`.
+These are the results of the go/no-go probes for every platform behaviour the factory depends on. The results in the record ran on 2026-11-15 and 2026-11-16 on one Mac (macOS, Apple silicon); earlier runs from 2026-11-12 count only toward the spend. Every `claude -p` run used Claude Opus 5.5 (`claude-opus-5-5`); the probes name the model because Claude Code's own default changes between releases. The two P9 sessions ran in the person's own Claude Code session, and their captures do not record its model. The full record is in `probes.json` in this folder, with the evidence for each probe under `evidence/`.
 
 ## What the results ran against
 
@@ -14,7 +14,7 @@ These are the results of the go/no-go probes for every platform behaviour the fa
 
 A probe recorded under other tool versions than its group's, or on another model, is out of date and has to be run again; `flow-factory.sh probe --verify-record` names each one. Every group ran on Claude Code 2.1.325; after a Claude Code update, run each group again (`flow-factory.sh probe --platform`, and likewise `--environment`, `--github-write` and `--interactive`) before a phase depends on it.
 
-Model spend in the record is $16.58 of the $25 cap. That figure is $0.95 higher than what was spent: P5's two earlier runs each counted its first session again in each resumed run, which charged $0.47 too much each time. The probe now charges each run its own cost, and P5's last run was charged $0.73. Not in the record: $0.85 on three hand-run sandbox checks before P16 existed, and the use of the interactive P9 sessions, which run on the person's own Claude Code account.
+Model spend in the record is $16.58 of the $25 cap. That figure is more than was spent, by $0.95 and an amount that is not known. The $0.95: P5's two earlier runs each counted its first session again in each resumed run, which charged $0.47 too much each time; the probe now charges each run its own cost. The unknown amount: a run that is killed reports no cost, so it is charged its whole budget limit. P5 kills its first session on purpose in every run, so each P5 run was charged $0.50 for a session that cost less; P5's last run was charged $0.73, $0.50 of it for that session. Not in the record: $0.85 on three hand-run sandbox checks before P16 existed, and the use of the interactive P9 sessions, which run on the person's own Claude Code account.
 
 ## Results
 
