@@ -276,6 +276,22 @@ artifacts:
   - Cap each run's limit at the stage budget divided by 3
   - one share per run the table allows
   question_id: q-20261116T182500Z-134b73
+- type: escalation-asked
+  captured_at: '2026-11-16T20:10:02Z'
+  question_id: q-20261116T201002Z-68886a
+  blocking: 'yes'
+  class: decision
+  command:
+  - /flow:start 354 (PLAN
+  - Stranger Test gate)
+  situation: Five independent Stranger Test rounds each blocked the 1a plan with real
+    gaps; the fifth round's gaps were run-time details.
+- type: escalation-resolved
+  captured_at: '2026-11-16T20:10:03Z'
+  escalation_field: options
+  outcome: Start building after the round-5 fixes; a remaining wrong expectation shows
+    up as a RED test failing for the wrong reason and is fixed then
+  question_id: q-20261116T201002Z-68886a
 ---
 
 ## Design
@@ -403,3 +419,5 @@ _Captured by specification-capture skill on 2026-11-16. Source: mixed (from-desi
 ## Stranger Test
 
 BLOCK — T2, T3, T4, T5, T7, T10, T11, T16 (16 tasks reviewed by an independent agent on 2026-11-16, against d7d098bc). The plan's own PASS was not independent. Main gaps: a directive field `max_turns` left after the no-turn-limit decision; the stage-budget arithmetic left no budget for a relaunch after a run with no result (decided: each run's limit is capped at the stage budget ÷ 2, question q-20261116T175135Z-5b9bc1); no test for the allowance rising above its $0.50 floor; a probe-record pattern the export would break; T16 steps that would rewrite the released 3.17.0 entry and the merged release wording; and five scenario errors in T3, T4 and T11. The plan is being corrected, and the test is run again before any code.
+
+Rounds 2-5 (2026-11-16, each an independent agent): round 2 blocked T11, T12 and T13; round 3 blocked T2, T3, T6, T11, T12 and T13; round 4 blocked T1, T3, T3b, T10 and T11; round 5 blocked T3, T4, T7, T9, T10, T11 and T13. Every gap was fixed in the plan. Among them: tests that could have written into the main checkout's factory folder or read the person's settings, now all run in the scratch folder and home; a stage allowed three runs while the budget split assumed two (now thirds); start times compared with and without the padding `ps` prints on macOS. After round 5 the user decided to start building without a sixth round; a remaining wrong expectation will show as a test that fails for the wrong reason when it is first run.
