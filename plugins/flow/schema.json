@@ -770,6 +770,346 @@
             }
           },
           "additionalProperties": false
+        },
+        "factory": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The factory engine (bin/flow-factory.sh): jobs that take labelled issues through the stages of references/factory-transitions.json. Every key is read from the user's settings or this plugin's defaults only (cascade-resolve.sh --no-repo-settings), so a repository's own settings cannot set any of them.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Master switch. Unless true, `next` and the person subcommands that act on a job refuse with FACTORY_REFUSED=disabled; status, rebuild, probe and context --mode always work."
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "default": "flow:factory",
+              "description": "The GitHub issue label that makes an open issue a factory job."
+            },
+            "concurrency": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4,
+              "default": 1,
+              "description": "How many jobs may hold a worker slot at once."
+            },
+            "maxOpenJobs": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 5,
+              "description": "How many jobs may be open (not in a terminal state) at once; a labelled issue past this waits."
+            },
+            "leaseSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 180,
+              "description": "How long a launcher's lease lasts without a heartbeat before the engine treats its run as gone."
+            },
+            "heartbeatSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 60,
+              "description": "How often a launcher renews its lease."
+            },
+            "nextBudgetSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 60,
+              "description": "How long one `next` pass may take; lock waits inside it are shortened to fit."
+            },
+            "syncIntervalSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 60,
+              "description": "The least time between two GitHub syncs; 0 syncs on every pass."
+            },
+            "maxRounds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 3,
+              "description": "Review rounds a job may take before it parks for a person (round_limit = round + maxRounds)."
+            },
+            "worker": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "How the engine launches workers.",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The model every worker runs. Not set by default: the model the platform probe recorded is used, and a model that differs from it needs `flow-factory.sh probe --platform --model <m>` first."
+                },
+                "mcpConfig": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "JSON text passed to each worker as its MCP configuration. Not set by default: workers get no MCP server."
+                },
+                "extraEnv": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Z_][A-Z0-9_]*$"
+                  },
+                  "default": [],
+                  "description": "Names of further environment variables passed from the engine's environment to each worker."
+                },
+                "stages": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Per-stage worker limits. There is no turn limit: the budget and the timeout bound every run.",
+                  "properties": {
+                    "spec": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxBudgetUsd": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "default": 5,
+                          "description": "The stage's budget in dollars, for all its runs together. Each run's --max-budget-usd is the smaller of a third of this (rounded down to the cent) and what is left of it, less the overshoot allowance (twice the dearest turn in the job so far, at least $0.50); no run starts when that is $0 or less."
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 1800,
+                          "description": "How long one run of this stage may take before the launcher stops it."
+                        },
+                        "allowedTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "default": [
+                            "Bash",
+                            "Read",
+                            "Write",
+                            "Edit",
+                            "Glob",
+                            "Grep",
+                            "Agent",
+                            "Task",
+                            "Skill",
+                            "TaskCreate",
+                            "TaskUpdate",
+                            "TaskList",
+                            "TaskGet"
+                          ],
+                          "description": "The tools the worker may use in this stage (--allowedTools)."
+                        }
+                      }
+                    },
+                    "build": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxBudgetUsd": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "default": 20,
+                          "description": "The stage's budget in dollars, for all its runs together. Each run's --max-budget-usd is the smaller of a third of this (rounded down to the cent) and what is left of it, less the overshoot allowance (twice the dearest turn in the job so far, at least $0.50); no run starts when that is $0 or less."
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 3600,
+                          "description": "How long one run of this stage may take before the launcher stops it."
+                        },
+                        "allowedTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "default": [
+                            "Bash",
+                            "Read",
+                            "Write",
+                            "Edit",
+                            "Glob",
+                            "Grep",
+                            "Agent",
+                            "Task",
+                            "Skill",
+                            "TaskCreate",
+                            "TaskUpdate",
+                            "TaskList",
+                            "TaskGet"
+                          ],
+                          "description": "The tools the worker may use in this stage (--allowedTools)."
+                        }
+                      }
+                    },
+                    "open_pr": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxBudgetUsd": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "default": 5,
+                          "description": "The stage's budget in dollars, for all its runs together. Each run's --max-budget-usd is the smaller of a third of this (rounded down to the cent) and what is left of it, less the overshoot allowance (twice the dearest turn in the job so far, at least $0.50); no run starts when that is $0 or less."
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 1800,
+                          "description": "How long one run of this stage may take before the launcher stops it."
+                        },
+                        "allowedTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "default": [
+                            "Bash",
+                            "Read",
+                            "Write",
+                            "Edit",
+                            "Glob",
+                            "Grep",
+                            "Agent",
+                            "Task",
+                            "Skill",
+                            "TaskCreate",
+                            "TaskUpdate",
+                            "TaskList",
+                            "TaskGet"
+                          ],
+                          "description": "The tools the worker may use in this stage (--allowedTools)."
+                        }
+                      }
+                    },
+                    "review": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxBudgetUsd": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "default": 10,
+                          "description": "The stage's budget in dollars, for all its runs together. Each run's --max-budget-usd is the smaller of a third of this (rounded down to the cent) and what is left of it, less the overshoot allowance (twice the dearest turn in the job so far, at least $0.50); no run starts when that is $0 or less."
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 1800,
+                          "description": "How long one run of this stage may take before the launcher stops it."
+                        },
+                        "allowedTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "default": [
+                            "Bash",
+                            "Read",
+                            "Write",
+                            "Edit",
+                            "Glob",
+                            "Grep",
+                            "Agent",
+                            "Task",
+                            "Skill",
+                            "TaskCreate",
+                            "TaskUpdate",
+                            "TaskList",
+                            "TaskGet"
+                          ],
+                          "description": "The tools the worker may use in this stage (--allowedTools)."
+                        }
+                      }
+                    },
+                    "rework": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxBudgetUsd": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "default": 10,
+                          "description": "The stage's budget in dollars, for all its runs together. Each run's --max-budget-usd is the smaller of a third of this (rounded down to the cent) and what is left of it, less the overshoot allowance (twice the dearest turn in the job so far, at least $0.50); no run starts when that is $0 or less."
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 1800,
+                          "description": "How long one run of this stage may take before the launcher stops it."
+                        },
+                        "allowedTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "default": [
+                            "Bash",
+                            "Read",
+                            "Write",
+                            "Edit",
+                            "Glob",
+                            "Grep",
+                            "Agent",
+                            "Task",
+                            "Skill",
+                            "TaskCreate",
+                            "TaskUpdate",
+                            "TaskList",
+                            "TaskGet"
+                          ],
+                          "description": "The tools the worker may use in this stage (--allowedTools)."
+                        }
+                      }
+                    },
+                    "resolve": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxBudgetUsd": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "default": 5,
+                          "description": "The stage's budget in dollars, for all its runs together. Each run's --max-budget-usd is the smaller of a third of this (rounded down to the cent) and what is left of it, less the overshoot allowance (twice the dearest turn in the job so far, at least $0.50); no run starts when that is $0 or less."
+                        },
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 1800,
+                          "description": "How long one run of this stage may take before the launcher stops it."
+                        },
+                        "allowedTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "default": [
+                            "Bash",
+                            "Read",
+                            "Write",
+                            "Edit",
+                            "Glob",
+                            "Grep",
+                            "Agent",
+                            "Task",
+                            "Skill",
+                            "TaskCreate",
+                            "TaskUpdate",
+                            "TaskList",
+                            "TaskGet"
+                          ],
+                          "description": "The tools the worker may use in this stage (--allowedTools)."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "additionalProperties": false

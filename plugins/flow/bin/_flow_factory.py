@@ -1,7 +1,7 @@
 """[flow] The factory engine, run by bin/flow-factory.sh with the interpreter it
 resolved (Python 3.14 or later, -E).
 
-Only the `probe` subcommand exists so far.
+`probe` runs here; main() hands the other engine subcommands to their modules.
 
 The probes record results for this repository's factory epic: the phase
 issues a deferred check names (ISSUE_1B to ISSUE_1F) are issues of
@@ -7846,6 +7846,48 @@ def main(argv):
         ch.add_argument("--log", required=True)
         return capture_hook(ch.parse_args(argv[1:]).log)
 
+    # The engine subcommands (plan 2.7): each module is imported only when its
+    # subcommand runs, so a module not there yet fails only its own
+    # subcommands. The checks run in this order, before the module parses
+    # its arguments: the subcommands that are not built, the enabled gate
+    # (next and the acting person subcommands), the factory path check
+    # (every one but context).
+    person = ("answer", "approve-spec", "confirm", "feedback", "rework", "retry", "reject", "cancel")
+    engine = {"next": ("_flow_factory_next", "cmd_next"), "status": ("_flow_factory_person", "cmd_status"),
+              "context": ("_flow_factory_person", "cmd_context"), "rebuild": ("_flow_factory_person", "cmd_rebuild"),
+              "launch": ("_flow_factory_launch", "cmd_launch"), "report": ("_flow_factory_launch", "cmd_report")}
+    engine.update({p: ("_flow_factory_person", "cmd_person") for p in person})
+    if argv[:1] and argv[0] in ("wait", "run", "question", "runner", "await"):
+        print("FACTORY_REFUSED=not_built")
+        return 5
+    if argv[:1] and argv[0] in engine:
+        sub = argv[0]
+        name, fn = engine[sub]
+        try:
+            import importlib
+            import _flow_factory_jobs
+            if sub in person + ("next",) and _flow_factory_jobs.setting("flow.factory.enabled") is not True:
+                print("FACTORY_REFUSED=disabled next: set flow.factory.enabled")
+                return 5
+            if sub != "context":
+                line = _flow_factory_jobs.factory_path_check(_flow_factory_jobs.resolve(create=False))
+                if line:
+                    print(line)
+                    return 5
+            try:
+                module = importlib.import_module(name)
+            except ModuleNotFoundError as e:
+                if e.name != name:
+                    raise
+                print("FACTORY_REFUSED=not_built")
+                return 5
+            if fn == "cmd_person":
+                return getattr(module, fn)(sub, argv[1:])
+            return getattr(module, fn)(argv[1:])
+        except Refused as r:
+            print(f"FACTORY_REFUSED={r}")
+            return 5
+
     parser = argparse.ArgumentParser(prog="flow-factory.sh")
     sub = parser.add_subparsers(dest="command", required=True)
     probe = sub.add_parser("probe", description=PROBE_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -7966,4 +8008,8 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    # The engine modules import shared names from _flow_factory. Run as a
+    # script this file is __main__, and importing it by name would load a
+    # second copy whose Refused main() does not catch (plan 2.7).
+    sys.modules["_flow_factory"] = sys.modules["__main__"]
     sys.exit(main(sys.argv[1:]))
