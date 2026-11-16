@@ -33,7 +33,7 @@ Flow already has dependency and migration review, per-task checkpoints and proje
 | Topic | Decision |
 |---|---|
 | First scope | Queue to a ready PR (G1–G8, G11–G13, G16) |
-| Merge | Opt-in auto-merge in phase 2. Only the runner outside sessions can use it, a user-level switch turns it on, it ships off and is released after a live run, and the docs state it is an exception to Tier 3 |
+| Merge | Opt-in auto-merge in phase 2. Only the runner outside sessions can use it, a user-level switch turns it on, it ships off and is checked in a live run before the feature is released, and the docs state it is an exception to Tier 3 |
 | GitHub writes by the factory | Tier 2, under a new `tiers.issueUpdate` key |
 | Spec approval | Only for high-risk jobs (`specApproval: high`, or `all`) |
 | Executors | Both: a headless runner, and a full interactive executor |
@@ -131,7 +131,7 @@ The full design is the revised design file (see Step 1). In short:
 - **1a–1g merge to main as they finish, with the factory off.**
   - Without a `factory` setting, the wrapper prints `FACTORY_MODE=off` and nothing else changes.
   - Each merge needs your confirmation.
-- **The first release** that announces the factory is at 1h, after the live run.
+- **One release,** once every child issue of the epic is done, after the live runs.
 
 ## Step 2: phase 0 probes (go/no-go)
 
@@ -156,7 +156,7 @@ Each probe has a fallback. The probes are grouped by what makes their result out
 
 ## Phases
 
-Each phase is one child issue and ends in a release, with `plugin.json` and `marketplace.json` in sync.
+Each phase is one child issue. Every child merges to main without a release and leaves the flow version unchanged; the factory is released once, when every child issue of the epic is done, with `plugin.json` and `marketplace.json` in sync.
 
 **Phase 1: queue to a ready PR**
 - **1a.** Engine, wrapper and interpreter recording; schemas; TRANSITIONS; locks, leases, launcher, events and outbox; rebuild; person-only refusal; probe groups; status.
@@ -166,7 +166,7 @@ Each phase is one child issue and ends in a release, with `plugin.json` and `mar
 - **1e.** The gate, protected-path check, freeze, diff risk, and per-SHA records.
 - **1f** (after P6). Categories, routing, markers and ledger, and marker trust that matches `/flow:merge`.
 - **1g** (after P6). Sync and re-gate; resolve; ready and undo; needs_human; feedback, rework, retry, reject and answer; cost cap; waiting_operator.
-- **1h.** Setup, router, status and resume lines, docs, the full E2E suite, a live run and the release.
+- **1h.** Setup, router, status and resume lines, docs, the full E2E suite and a live run.
 
 **Phase 2: opt-in auto-merge.** Approver judge, eligibility rules, merge from the runner only, tier-gate classification, P12 and P13, Tier 3 docs, and the auto-merge E2E tests. It ships with the switch off, after a live run with it on.
 
