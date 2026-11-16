@@ -117,6 +117,19 @@ artifacts:
   - 'then /flow:merge #378 and #379 (each asks you to confirm)'
   - then start phase 1a (#354).
   question_id: q-20261116T093704Z-602569
+- type: workflow-run
+  captured_at: '2026-11-16T10:18:53Z'
+  workflow: review-pr
+  run_id: 2026-11-16T101807Z-review
+  status: active
+- type: dropped-finding
+  captured_at: '2026-11-16T11:27:49Z'
+  cycle: 1
+  finding_id: CONV-3
+  facet: convention-checker
+  reason: self-review-refuted
+  category: conventions
+  pr: 379
 ---
 ## Specification
 
