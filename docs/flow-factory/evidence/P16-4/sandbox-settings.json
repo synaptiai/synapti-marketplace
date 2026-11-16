@@ -1,0 +1,61 @@
+{
+  "sandbox": {
+    "allowUnsandboxedCommands": false,
+    "credentials": {
+      "envVars": [
+        {
+          "mode": "deny",
+          "name": "GH_TOKEN"
+        },
+        {
+          "mode": "deny",
+          "name": "GITHUB_TOKEN"
+        },
+        {
+          "mode": "deny",
+          "name": "GH_ENTERPRISE_TOKEN"
+        },
+        {
+          "mode": "deny",
+          "name": "GITHUB_ENTERPRISE_TOKEN"
+        }
+      ],
+      "files": [
+        {
+          "mode": "deny",
+          "path": "~/.config/gh"
+        },
+        {
+          "mode": "deny",
+          "path": "~/Library/Keychains"
+        },
+        {
+          "mode": "deny",
+          "path": "~/.git-credentials"
+        },
+        {
+          "mode": "deny",
+          "path": "~/.ssh"
+        },
+        {
+          "mode": "deny",
+          "path": "~/.netrc"
+        }
+      ]
+    },
+    "enabled": true,
+    "excludedCommands": [],
+    "failIfUnavailable": true,
+    "filesystem": {
+      "denyRead": [
+        "~/Library/Keychains"
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "api.github.com",
+        "github.com"
+      ]
+    }
+  }
+}

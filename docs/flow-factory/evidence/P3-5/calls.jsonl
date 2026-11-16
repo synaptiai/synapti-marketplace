@@ -1,0 +1,3 @@
+{"argv": ["gh", "auth", "status"], "repo": null, "method": "READ", "write": false}
+{"argv": ["gh", "api", "user", "--jq", ".login"], "repo": null, "method": "GET", "write": false}
+{"argv": ["gh", "auth", "token"], "repo": null, "method": "READ", "write": false}

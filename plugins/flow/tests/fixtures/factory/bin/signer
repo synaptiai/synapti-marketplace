@@ -1,0 +1,18 @@
+#!/bin/bash
+# A stand-in for the gpg program git signs commits with (gpg.program). It
+# reads the payload and prints the status line and signature git expects.
+# When signer-needs-agent exists beside it, it fails unless SSH_AUTH_SOCK is
+# set, as an SSH key held by the agent does. When signer-hangs exists beside
+# it, it waits 60 seconds before doing anything, as a signer waiting for a
+# passphrase or a touch with no one to give it does.
+here=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$here/signer-hangs" ]; then
+  sleep 60
+fi
+cat > /dev/null
+if [ -f "$here/signer-needs-agent" ] && [ -z "${SSH_AUTH_SOCK:-}" ]; then
+  echo "error: no agent to sign with" >&2
+  exit 1
+fi
+printf '\n[GNUPG:] SIG_CREATED D 1 8 00 1700000000 0123456789ABCDEF\n' >&2
+printf -- '-----BEGIN PGP SIGNATURE-----\n\nZmxvdy1wcm9iZQ==\n-----END PGP SIGNATURE-----\n'

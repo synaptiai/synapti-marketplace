@@ -1,0 +1,24 @@
+{
+  "appends_per_job": 50,
+  "default_ledger_new_entries": 0,
+  "jobs": {
+    "a": {
+      "failed_calls": 0,
+      "other_entries": 0,
+      "own_entries": 50,
+      "trusted_with_other_state": false,
+      "trusted_with_own_state": true,
+      "unanswered_calls": 0,
+      "unreadable_lines": 0
+    },
+    "b": {
+      "failed_calls": 0,
+      "other_entries": 0,
+      "own_entries": 50,
+      "trusted_with_other_state": false,
+      "trusted_with_own_state": true,
+      "unanswered_calls": 0,
+      "unreadable_lines": 0
+    }
+  }
+}

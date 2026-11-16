@@ -1,0 +1,7 @@
+#!/bin/bash
+# A stand-in for gh against one sandbox repository, for the factory's GitHub
+# write probe scenarios. A scenario copies it and gh_sandbox.py into its stub
+# bin; see that file for the calls it answers and the files beside it that
+# change its answers.
+here=$(cd "$(dirname "$0")" && pwd)
+exec python3 -I "$here/gh_sandbox.py" "$@"

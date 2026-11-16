@@ -1,0 +1,7 @@
+{"argv": ["gh", "issue", "view", "1", "--json", "title,body,labels,assignees,milestone", "--jq", "\n    \"TITLE=\\\"\\(.title)\\\"\\nLABELS=\\([.labels[].name] | join(\",\"))\\nASSIGNEES=\\([.assignees[].login] | map(\"@\" + .) | join(\",\"))\\nMILESTONE=\\(.milestone.title // \"(none)\")\\nBODY_LENGTH=\\(.body | length)\"\n  "], "answered": true}
+{"argv": ["gh", "auth", "status"], "answered": true}
+{"argv": ["gh", "issue", "view", "1", "--json", "body", "--jq", ".body"], "answered": true}
+{"argv": ["gh", "issue", "view", "1", "--json", "state", "--jq", ".state"], "answered": true}
+{"argv": ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], "answered": true}
+{"argv": ["gh", "api", "repos/flow-factory-probe/scratch/issues/1/comments", "--jq", "length"], "answered": false}
+{"argv": ["gh", "repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"], "answered": true}

@@ -1,0 +1,24 @@
+#!/bin/bash
+# A stand-in for touch, for the factory's P16 scenarios. Under the stand-in
+# sandbox (FIXTURE_SANDBOX_WRITE_ROOTS set by claude_platform.py) a path
+# outside those directories is refused with "Operation not permitted" and
+# logged as a violation; otherwise the real touch runs.
+if [ -n "${FIXTURE_SANDBOX_WRITE_ROOTS+set}" ]; then
+  for a in "$@"; do
+    case "$a" in -*) continue ;; esac
+    abs=$a
+    case "$abs" in /*) ;; *) abs="$PWD/$abs" ;; esac
+    ok=no
+    IFS=:
+    for r in $FIXTURE_SANDBOX_WRITE_ROOTS; do
+      case "$abs" in "$r"|"$r"/*) ok=yes ;; esac
+    done
+    unset IFS
+    if [ "$ok" != yes ]; then
+      [ -n "${FIXTURE_SANDBOX_VIOLATIONS:-}" ] && printf 'file-write-create %s\n' "$abs" >> "$FIXTURE_SANDBOX_VIOLATIONS"
+      echo "touch: $a: Operation not permitted" >&2
+      exit 1
+    fi
+  done
+fi
+exec /usr/bin/touch "$@"

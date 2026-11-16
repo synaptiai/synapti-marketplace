@@ -1,0 +1,4 @@
+{"event": "UserPromptSubmit", "permission_mode": "auto", "tool": null, "command": null, "run_in_background": false, "at": 1794779447.31853, "task_notification": false}
+{"event": "PreToolUse", "permission_mode": "auto", "tool": "Bash", "command": "~/synapti-marketplace/plugins/flow/bin/flow-factory.sh probe --interactive --step wait --seconds 30", "run_in_background": true, "at": 1794779449.71925}
+{"event": "UserPromptSubmit", "permission_mode": "auto", "tool": null, "command": null, "run_in_background": false, "at": 1794779481.953523, "task_notification": true}
+{"event": "PreToolUse", "permission_mode": "auto", "tool": "Bash", "command": "~/synapti-marketplace/plugins/flow/bin/flow-factory.sh probe --interactive --step woke", "run_in_background": false, "at": 1794779483.572905}

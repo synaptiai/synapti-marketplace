@@ -1,0 +1,47 @@
+#!/bin/bash
+# A stand-in for curl, for the factory's P16 scenarios. It never opens a
+# connection. Under the stand-in sandbox (FIXTURE_SANDBOX_HOSTS set by
+# claude_platform.py) a host off that list is refused as Claude Code's proxy
+# refuses it: http code 000 and exit 56. Otherwise the request is answered
+# 200. Only -o, -m and -w are understood; -w's %{http_code} and \n are
+# expanded, as curl expands them, and printed whether or not the request
+# failed.
+#
+# curl-codes beside it, when present: lines `<where> <host pattern> <code>`,
+# where is inside (under the stand-in sandbox), outside (not under it) or
+# any. The first line that matches gives the answer, as a network or a
+# server would: 000 is a connection that failed, any other code an answer.
+here=$(cd "$(dirname "$0")" && pwd)
+fmt="" url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    # A value flag given last has no value: shift it alone, or the loop
+    # never ends.
+    -w) fmt=${2:-}; [ $# -ge 2 ] && shift 2 || shift ;;
+    -o|-m) [ $# -ge 2 ] && shift 2 || shift ;;
+    http://*|https://*) url=$1; shift ;;
+    *) shift ;;
+  esac
+done
+host=${url#*://}; host=${host%%/*}; host=${host%%:*}
+code=200
+where=outside
+if [ -n "${FIXTURE_SANDBOX_HOSTS+set}" ]; then
+  where=inside
+  case ",$FIXTURE_SANDBOX_HOSTS," in
+    *",$host,"*) ;;
+    *) code=000 ;;
+  esac
+fi
+if [ "$code" = 200 ] && [ -f "$here/curl-codes" ]; then
+  while read -r w h c; do
+    [ "$w" = any ] || [ "$w" = "$where" ] || continue
+    case "$host" in $h) code=$c; break ;; esac
+  done < "$here/curl-codes"
+fi
+[ -n "$fmt" ] && printf '%b' "${fmt//%\{http_code\}/$code}"
+if [ "$code" = 000 ]; then
+  echo "curl: (56) CONNECT tunnel failed, response 403" >&2
+  exit 56
+fi
+exit 0

@@ -1,0 +1,112 @@
+#!/bin/bash
+# A stand-in for git, for the factory probe scenarios in which a git call
+# gets no answer. A scenario copies it into its stub bin, first on PATH. It
+# runs the next git on PATH after its own directory (passing over flow's
+# wrapper directories, as the probe does, and the probe's logging shim, which
+# would run this stand-in again), except a call whose subcommand is a line of
+# git-no-answer beside it: that call sleeps, as git does waiting on a remote
+# that never answers. A line there may name arguments after the subcommand
+# (rev-parse --verify): then only a call that has each of them sleeps. A
+# line "<directory name> <subcommand>" in git-no-answer-in makes that
+# subcommand sleep only when it runs in a working directory of that name. A
+# call whose subcommand is a line of git-answer-late runs and then sleeps, as
+# a push does that reaches the remote but whose answer never comes back. A
+# call whose subcommand is a line of git-fail beside it exits 128 with git's
+# words for a remote that refused it. With git-dry-run-pushes beside it, a
+# push with --dry-run is made without it, so it moves the ref, and then
+# sleeps, as a wrapper that drops the flag and then hangs would. A call
+# whose subcommand is a line of git-leaves-child runs, starts a program in a
+# session of its own that keeps git's output open for 60 s, and exits with
+# git's status, as git does when it starts a detached helper. A line in
+# git-clone-mode beside it changes every clone:
+# `shared` adds --shared, so the clone borrows the source's objects instead
+# of holding its own; `worktree` makes the destination a linked worktree of
+# the source (git worktree add --detach, with --no-checkout when the clone
+# has it), so it shares the source's config.
+here=$(cd "$(dirname "$0")" && pwd -P)
+args=("$@")
+sub=""
+i=0
+while [ "$i" -lt "${#args[@]}" ]; do
+  case "${args[$i]}" in
+    -C|-c) i=$((i + 2)) ;;
+    -*) i=$((i + 1)) ;;
+    *) sub=${args[$i]}; break ;;
+  esac
+done
+if [ -n "$sub" ] && [ -f "$here/git-no-answer" ]; then
+  while read -r first rest; do
+    [ "$first" = "$sub" ] || continue
+    hit=1
+    for want in $rest; do
+      found=""
+      for a in "${args[@]:$((i + 1))}"; do [ "$a" = "$want" ] && found=1; done
+      [ -n "$found" ] || hit=""
+    done
+    [ -n "$hit" ] && exec sleep 600
+  done < "$here/git-no-answer"
+fi
+if [ -n "$sub" ] && [ -f "$here/git-fail" ] && grep -qxF -- "$sub" "$here/git-fail"; then
+  printf '%s\n' "remote: Permission to the repository denied." \
+    "fatal: unable to access the remote: The requested URL returned error: 403" >&2
+  exit 128
+fi
+git=""
+IFS=:
+for d in $PATH; do
+  [ -n "$d" ] || continue
+  real=$(cd "$d" 2>/dev/null && pwd -P) || continue
+  [ "$real" = "$here" ] && continue
+  [ -f "$d/../scripts/lib/tier-runtime.sh" ] && continue
+  if [ -f "$d/git" ] && [ -x "$d/git" ] && ! grep -q shim-log "$d/git" 2>/dev/null; then
+    git="$d/git"
+    break
+  fi
+done
+unset IFS
+if [ -z "$git" ]; then
+  echo "git stand-in: no git on PATH after $here" >&2
+  exit 127
+fi
+if [ -n "$sub" ] && [ -f "$here/git-no-answer-in" ] && grep -qxF -- "${PWD##*/} $sub" "$here/git-no-answer-in"; then
+  exec sleep 600
+fi
+if [ -n "$sub" ] && [ -f "$here/git-leaves-child" ] && grep -qxF -- "$sub" "$here/git-leaves-child"; then
+  "$git" "$@"
+  rc=$?
+  python3 -c 'import os, time; os.setsid(); time.sleep(60)' &
+  exit "$rc"
+fi
+if [ -n "$sub" ] && [ -f "$here/git-answer-late" ] && grep -qxF -- "$sub" "$here/git-answer-late"; then
+  "$git" "$@"
+  exec sleep 600
+fi
+mode=""
+[ -f "$here/git-clone-mode" ] && read -r mode < "$here/git-clone-mode"
+if [ "$sub" = push ] && [ -f "$here/git-dry-run-pushes" ]; then
+  kept=()
+  dry=""
+  for a in "${args[@]}"; do
+    if [ "$a" = --dry-run ]; then dry=1; else kept+=("$a"); fi
+  done
+  if [ -n "$dry" ]; then
+    "$git" "${kept[@]}"
+    exec sleep 600
+  fi
+fi
+if [ "$sub" = clone ] && [ "$mode" = shared ]; then
+  exec "$git" "${args[@]:0:$i}" clone --shared "${args[@]:$((i + 1))}"
+fi
+if [ "$sub" = clone ] && [ "$mode" = worktree ]; then
+  places=()
+  checkout=()
+  for a in "${args[@]:$((i + 1))}"; do
+    case "$a" in
+      --no-checkout|-n) checkout=(--no-checkout) ;;
+      -*) ;;
+      *) places+=("$a") ;;
+    esac
+  done
+  exec "$git" -C "${places[0]}" worktree add -q --detach ${checkout[@]+"${checkout[@]}"} "${places[1]}"
+fi
+exec "$git" "$@"

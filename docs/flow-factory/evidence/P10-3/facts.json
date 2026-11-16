@@ -1,0 +1,67 @@
+{
+  "controls": {
+    "main": true,
+    "subagent": true
+  },
+  "outcome": "completed",
+  "permission_denials": [
+    {
+      "tool_input": {
+        "command": "touch ~/.local/state/flow-factory/probe/P10-4/work/p10-main-bash.txt",
+        "description": "Create main bash probe file"
+      },
+      "tool_name": "Bash",
+      "tool_use_id": "toolu_01HScFxHMSn9jqH1Bdz5c9qq"
+    },
+    {
+      "tool_input": {
+        "content": "probe",
+        "file_path": "~/.local/state/flow-factory/probe/P10-4/work/denied/p10-main-write.txt"
+      },
+      "tool_name": "Write",
+      "tool_use_id": "toolu_01UfW8up6Ex2LXK6B1ae9Pdz"
+    },
+    {
+      "tool_input": {
+        "file_path": "~/.local/state/flow-factory/probe/P10-4/work/denied/main-edit.txt",
+        "new_string": "edited",
+        "old_string": "original",
+        "replace_all": false
+      },
+      "tool_name": "Edit",
+      "tool_use_id": "toolu_019PkBoSAdwzHdc2UpV2qW2X"
+    },
+    {
+      "tool_input": {
+        "command": "touch ~/.local/state/flow-factory/probe/P10-4/work/p10-sub-bash.txt",
+        "description": "Create probe file via touch"
+      },
+      "tool_name": "Bash",
+      "tool_use_id": "toolu_01D7DJ3sAqyP2PnDQFC1phi5"
+    },
+    {
+      "tool_input": {
+        "content": "probe",
+        "file_path": "~/.local/state/flow-factory/probe/P10-4/work/denied/p10-sub-write.txt"
+      },
+      "tool_name": "Write",
+      "tool_use_id": "toolu_01CKWUAhasZ3qGDn4BGxk23X"
+    },
+    {
+      "tool_input": {
+        "file_path": "~/.local/state/flow-factory/probe/P10-4/work/denied/sub-edit.txt",
+        "new_string": "edited",
+        "old_string": "original",
+        "replace_all": false
+      },
+      "tool_name": "Edit",
+      "tool_use_id": "toolu_01MU84ZF3GXo49VmDuMA88wY"
+    }
+  ],
+  "rules": [
+    "Bash(touch:*)",
+    "Edit(denied/**)",
+    "Write(denied/**)"
+  ],
+  "work": "~/.local/state/flow-factory/probe/P10-4/work"
+}

@@ -1,0 +1,10 @@
+{
+  "model": "claude-opus-5-5",
+  "origin_scheme": "https",
+  "path": "~/.bun/bin:/opt/homebrew/opt/rustup/bin:~/.nvm/versions/node/v26.12.1/bin:~/.local/bin:~/.pyenv/shims:~/.pyenv/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Applications/Keybase.app/Contents/SharedSupport/bin:/Applications/Ghostty.app/Contents/MacOS:~/.docker/bin:~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0/bin:~/.claude/plugins/cache/synapti-marketplace/dossier/1.2.2/bin",
+  "signing": {
+    "commit_gpgsign": false,
+    "gpg_format": "openpgp",
+    "signing_key_set": false
+  }
+}

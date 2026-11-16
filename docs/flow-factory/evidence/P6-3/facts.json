@@ -1,0 +1,41 @@
+{
+  "approve": {
+    "errors": [
+      "Review Can not approve your own pull request"
+    ],
+    "message": "Unprocessable Entity",
+    "status": 422
+  },
+  "branch": "flow-factory-probe-20261115T213846Z-1bd439",
+  "ci": {
+    "cancelled_by_undo": [],
+    "readable": true,
+    "runs_before": 0,
+    "started_by_ready": [],
+    "wait_seconds": 15
+  },
+  "comment": {
+    "author_association": "OWNER",
+    "id": 6901777874,
+    "status": 201
+  },
+  "comment_lookup": [
+    6901777874
+  ],
+  "pull_request": "https://github.com/danielbentes/flow-factory-sandbox/pull/3",
+  "request_changes": {
+    "errors": [
+      "Review Can not request changes on your own pull request"
+    ],
+    "message": "Unprocessable Entity",
+    "status": 422
+  },
+  "review": {
+    "author_association": "OWNER",
+    "id": 5913054043,
+    "status": 200
+  },
+  "review_lookup": [
+    5913054043
+  ]
+}

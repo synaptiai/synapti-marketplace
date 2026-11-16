@@ -1,0 +1,72 @@
+#!/bin/bash
+# A stand-in for the claude CLI, for the factory probe runner's scenarios.
+# A scenario copies it into its stub bin. The runner starts it with a cleaned
+# environment, so it finds its files beside itself, never through a variable:
+#   claude-launches.log  one line per `claude -p` start, with the arguments
+#   claude-env.txt       the environment of the last start
+#   claude-script        when present, run with bash before answering
+#   claude-version       one line: what --version prints (default
+#                        2.1.322 (Claude Code))
+#   claude-behaviour     one line: `ok <cost>` (default `ok 0.42`) prints an
+#                        init and a result event; `sleep <seconds>` sleeps
+#                        and prints nothing; `noresult` prints only init;
+#                        `tworesult <cost>` prints a plain-text line, a line
+#                        starting with { that is not JSON, a result event
+#                        costing 0.11 and then the result event;
+#                        `apierror` ends as Claude Code ends a run the API
+#                        refused for a usage limit: an is_error result of
+#                        subtype success with api_error_status 429,
+#                        terminal_reason api_error and no cost, and exit 1;
+#                        `noevent` exits 1 before printing any event, with
+#                        one line on stderr, as claude does when it cannot
+#                        start (no credentials, a refused flag)
+#   claude-since-last    a JSON object, put into the `ok` result event (and the
+#                        error_max_budget_usd one) as
+#                        model_usage_since_last_result
+# A cost above --max-budget-usd ends as claude ends it: an error_max_budget_usd
+# result and exit 1, with the cost of the turn that passed the limit.
+here=$(cd "$(dirname "$0")" && pwd)
+if [ "${1:-}" = --version ]; then
+  if [ -f "$here/claude-version" ]; then cat "$here/claude-version"; else printf '%s\n' "2.1.322 (Claude Code)"; fi
+  exit 0
+fi
+printf '%s\n' "$*" >> "$here/claude-launches.log"
+env > "$here/claude-env.txt"
+cat > "$here/claude-prompt.txt"
+mode=ok; arg=0.42
+if [ -f "$here/claude-behaviour" ]; then
+  read -r mode arg < "$here/claude-behaviour"
+fi
+[ -f "$here/claude-script" ] && bash "$here/claude-script" >> "$here/claude-script.out" 2>&1
+if [ "$mode" = noevent ]; then
+  printf '%s\n' "Invalid API key · Please run /login" >&2
+  exit 1
+fi
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"fixture-session"}'
+case "$mode" in
+  sleep) exec sleep "$arg" ;;
+  noresult) exit 1 ;;
+  apierror)
+    api='"api_error_status":429,"api_error":"usage_limit_reached"'
+    sid='"session_id":"fixture-session"'
+    printf '%s\n' "{\"type\":\"assistant\",$sid,\"error\":\"rate_limit\",$api,\"message\":{\"content\":[]}}"
+    printf '%s\n' "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"num_turns\":1,$sid,$api,\
+\"total_cost_usd\":0,\"terminal_reason\":\"api_error\",\"result\":\"You have hit your limit\"}"
+    exit 1 ;;
+  tworesult)
+    printf '%s\n' 'plain text, not an event' '{"type":"result","total_cost_usd":0.99' \
+      '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"session_id":"fixture-session","total_cost_usd":0.11}' ;;
+esac
+since=""
+[ -f "$here/claude-since-last" ] && since=",\"model_usage_since_last_result\":$(cat "$here/claude-since-last")"
+budget=""
+prev=""
+for a in "$@"; do
+  [ "$prev" = --max-budget-usd ] && budget=$a
+  prev=$a
+done
+if [ -n "$budget" ] && awk -v c="$arg" -v b="$budget" 'BEGIN { exit !(c > b) }'; then
+  printf '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"num_turns":1,"session_id":"fixture-session","total_cost_usd":%s,"errors":["Reached maximum budget ($%s)"]%s}\n' "$arg" "$budget" "$since"
+  exit 1
+fi
+printf '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"session_id":"fixture-session","total_cost_usd":%s%s}\n' "$arg" "$since"

@@ -1,0 +1,6 @@
+#!/bin/bash
+# A stand-in for the claude CLI for the factory's platform probe scenarios.
+# A scenario copies it and claude_platform.py into its stub bin; see that file
+# for what it does and the files beside it that change its behaviour.
+here=$(cd "$(dirname "$0")" && pwd)
+exec python3 -I "$here/claude_platform.py" "$@"

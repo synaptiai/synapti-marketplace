@@ -1,0 +1,178 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-353
+  created_at: '2026-11-12T12:40:00Z'
+  created_by: /flow:start
+  owner: '@me'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-353-factory-phase0-probes
+  issue: 353
+  journal: .decisions/issue-353.md
+objective:
+  outcome: 'Issue #353 is implemented and verified.'
+  source:
+    issue_title: 'flow factory: go/no-go results for every platform behaviour the
+      factory depends on'
+  acceptance_criteria:
+  - id: AC1
+    text: Both questions were put to the user, and the answers are recorded.
+    verification_command: 'plugins/flow/bin/journal-read-section.sh --file .decisions/issue-353.md
+      --heading ''## Phase 0 decisions'' | grep -q ''sandbox: danielbentes/flow-factory-sandbox''
+      && plugins/flow/bin/journal-read-section.sh --file .decisions/issue-353.md --heading
+      ''## Phase 0 decisions'' | grep -q ''token:'''
+    must_pass: true
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-11-12T122249Z-issue-353/evidence/eval-20261114t172740z-ac1.evidence.yaml
+    last_evaluated_at: '2026-11-14T17:27:40Z'
+    last_result: pass
+  - id: AC2
+    text: Every probe has a recorded result set with the tool versions it ran against,
+      kept as an artifact.
+    verification_command: plugins/flow/bin/flow-factory.sh probe --verify-record docs/flow-factory/probes.json
+    must_pass: true
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-11-12T122249Z-issue-353/evidence/eval-20261114t172740z-ac2.evidence.yaml
+    last_evaluated_at: '2026-11-14T17:27:40Z'
+    last_result: pass
+  - id: AC3
+    text: Every probe has a result of go, no-go, deferred or not run. A no-go names
+      the fallback taken or the phases it stops; a deferred result names the phase
+      whose issue now carries that go condition; a not-run result names why.
+    verification_command: plugins/flow/bin/flow-factory.sh probe --verify-record docs/flow-factory/probes.json
+      --dispositions
+    must_pass: true
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-11-12T122249Z-issue-353/evidence/eval-20261114t172740z-ac3.evidence.yaml
+    last_evaluated_at: '2026-11-14T17:27:40Z'
+    last_result: pass
+  - id: AC4
+    text: No probe wrote to GitHub outside the approved sandbox repository, as shown by the shim's call log of gh and
+      git calls made through PATH and by the Bash commands the recorded runs made (gh or git run by its path, and
+      HTTP clients naming a GitHub host). A write hidden from both, such as one inside a script a command ran, is
+      not covered.
+    verification_command: plugins/flow/bin/flow-factory.sh probe --verify-record docs/flow-factory/probes.json
+      --writes-only-to danielbentes/flow-factory-sandbox
+    must_pass: true
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-11-12T122249Z-issue-353/evidence/eval-20261114t172740z-ac4.evidence.yaml
+    last_evaluated_at: '2026-11-14T17:27:40Z'
+    last_result: pass
+  - id: AC5
+    text: The go/no-go for P6, and for P3's sandbox writes, is stated before 1f and
+      1g start.
+    verification_command: jq -e '(.probes.P6.result != "not_run") and (.probes.P3.result
+      != "not_run")' docs/flow-factory/probes.json >/dev/null && gh issue view 359
+      --repo synaptiai/synapti-marketplace --json body --jq .body | grep -q 'P6 result:'
+      && gh issue view 360 --repo synaptiai/synapti-marketplace --json body --jq .body
+      | grep -q 'P6 result:'
+    must_pass: true
+    status: evidence_collected
+    evidence_ref: .flow/runs/2026-11-12T122249Z-issue-353/evidence/eval-20261114t172740z-ac5.evidence.yaml
+    last_evaluated_at: '2026-11-14T17:27:40Z'
+    last_result: pass
+specification:
+  non_goals:
+  - No job engine, queue, job state or worker launching (phase 1a and later). Only
+    the flow-factory.sh wrapper skeleton and the probe module.
+  - No change to existing flow commands, hooks or tier-gate behaviour.
+  - No GitHub writes outside danielbentes/flow-factory-sandbox; P1 makes none at all
+    (gh is stubbed and logged).
+  - No `go` for a condition that needs a phase 1 part; it is recorded `deferred` and
+    added to that phase's issue.
+  - P8 is not run (no second GitHub account available).
+  - No support for Python older than 3.14.
+  failure_modes:
+  - '**Timeouts** — every `claude -p` run has a turn limit, a budget limit and a hard
+    kill; a timed-out probe is recorded no-go with reason timeout, never go.'
+  - '**Partial failures** — each probe is recorded on its own. A failed prerequisite
+    (P11 interpreter, P3 auth) marks its dependents not_run. When the $25 model-spend
+    cap would be passed, the remaining model probes are recorded not_run with reason
+    budget.'
+  - '**Invalid input** — a missing sandbox, a token with write access or the wrong
+    repository is refused with a named reason; a token that can write makes P3 no-go.'
+  - '**Missing context** — no claude, gh, jq, timeout/gtimeout or Python 3.14 with
+    PyYAML: refuse and name the tool. Keychain token (service flow-factory-gh-token)
+    absent: P3''s token part is not_run with reason token-missing.'
+  interface_contracts:
+  - '`flow-factory.sh context --mode`: with FLOW_FACTORY_JOB and FLOW_FACTORY_DIRECTIVE
+    unset, prints exactly `FACTORY_MODE=off`, exits 0, starts no Python.'
+  - '`flow-factory.sh probe --platform | --environment | --github-write --sandbox
+    <owner/repo>`: writes `<runtime dir>/factory/probes.json`.'
+  - 'probes.json validates against `schemas/v1/factory-probes.schema.json`: per group
+    the values it was keyed on and when it ran; per probe id, result (go | no-go |
+    deferred | not_run), reason, fallback, deferred_to, evidence path, cost.'
+  - Every other subcommand exits 5 with `FACTORY_REFUSED=<reason>`.
+  - 'Committed copies: `docs/flow-factory/probes.json` and `docs/flow-factory/probe-results.md`,
+    with the tool versions each probe ran against.'
+  risk_map:
+  - area: Result classification of stand-in probes
+    plausible_wrong_version: a probe run against a stand-in is recorded `go`
+    discriminating_check: P2 with the stub deny rule firing → right `deferred` (to
+      1b); wrong `go`
+  - area: Interpreter resolution
+    plausible_wrong_version: a pyenv shim is accepted as the interpreter
+    discriminating_check: probe run from a worktree with `.python-version` = 3.12
+      → right records ~/.pyenv/versions/3.14.7/bin/python3.14; wrong records a shim
+      that runs 3.12
+  - area: Worker token write check
+    plausible_wrong_version: any 4xx is read as "cannot write"
+    discriminating_check: invalid-body POST with a write-capable token returns 422
+      → right no-go (token can write); wrong go
+  - area: Model spend cap
+    plausible_wrong_version: the cap is checked after a run starts
+    discriminating_check: $24 spent, next run limit $2 → right not_run (budget); wrong
+      run starts, total reaches $26
+  - area: context --mode independence
+    plausible_wrong_version: the wrapper starts Python or reads probes.json for `context
+      --mode`
+    discriminating_check: python3 removed from PATH → right `FACTORY_MODE=off`, exit
+      0; wrong error, non-zero exit
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  allowed_paths:
+  - plugins/flow/bin/flow-factory.sh
+  - plugins/flow/bin/_flow_factory.py
+  - plugins/flow/schemas/v1/factory-probes.schema.json
+  - plugins/flow/tests/e2e-factory-probe.test.sh
+  - plugins/flow/tests/fixtures/factory/*
+  - plugins/flow/tests/fixtures/factory/*/*
+  - plugins/flow/tests/fixtures/factory/*/*/*
+  - plugins/flow/tests/fixtures/factory/*/*/*/*
+  - plugins/flow/tests/fixtures/factory/*/*/*/*/*
+  - docs/flow-factory/*
+  - docs/flow-factory/*/*
+  - docs/flow-factory/*/*/*
+  - docs/flow-factory/*/*/*/*
+  - docs/flow-factory/*/*/*/*/*
+  - .decisions/*
+  - .decisions/*/*
+  - .decisions/*/*/*
+  - .decisions/*/*/*/*
+  - .decisions/*/*/*/*/*
+  - .flow/goals/issue-353.goal.yaml
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: achieved
+  last_evaluation:
+    result: pass
+    reason: All five acceptance checks exit 0 at d1d6989b; changed files within allowed
+      paths
+    at: '2026-11-14T17:28:59Z'

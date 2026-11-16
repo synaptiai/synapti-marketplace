@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapti.ai/schemas/flow/v1/factory-probes.schema.json",
+  "title": "FlowFactoryProbes",
+  "description": "The factory's probe record: what each go/no-go probe found, against which tool versions, and what was spent. Written by flow-factory.sh probe; read before any factory launch.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "groups", "probes", "spend"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "flow.synapti.ai/v1" },
+    "kind": { "const": "FlowFactoryProbes" },
+    "interpreter": {
+      "description": "The realpath of the Python interpreter the wrapper runs, recorded by the environment group. A copy made by probe --export writes the user's home as ~.",
+      "type": "string",
+      "pattern": "^(/|~/)"
+    },
+    "groups": {
+      "description": "Each probe group, with the values its results were keyed on and when it ran. A group whose keyed values change is out of date.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "platform": { "$ref": "#/$defs/group" },
+        "interactive": { "$ref": "#/$defs/group" },
+        "environment": { "$ref": "#/$defs/group" },
+        "github_write": { "$ref": "#/$defs/group" }
+      }
+    },
+    "probes": {
+      "type": "object",
+      "propertyNames": { "pattern": "^P[0-9]{1,2}$" },
+      "additionalProperties": { "$ref": "#/$defs/probe" }
+    },
+    "spend": {
+      "type": "object",
+      "required": ["cap_usd", "spent_usd"],
+      "additionalProperties": false,
+      "properties": {
+        "cap_usd": {
+          "description": "The total model spend the probes may reach. A run is started only when spent_usd plus its budget limit fits under the cap, but a budget limit is not an upper bound (a one-turn run has reported $0.148 against a $0.10 limit), so spent_usd can pass the cap by what the last run spent past its limit.",
+          "type": "number",
+          "minimum": 0
+        },
+        "spent_usd": {
+          "description": "What the probe runs were charged: for each run, what it spent since the session's last result (the costUSD of each model in its result's model_usage_since_last_result), else its total_cost_usd; its budget limit when it ended without a result (killed, timed out, stopped by a signal); nothing when claude never started.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "$defs": {
+    "group": {
+      "type": "object",
+      "required": ["keyed_on", "ran_at"],
+      "additionalProperties": false,
+      "properties": {
+        "keyed_on": {
+          "description": "Tool versions and other values the results depend on, for example claude_version, gh_version, git_version, interpreter, permission_mode, sandbox.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "ran_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "required": ["group", "result", "reason", "stand_in", "evidence", "cost_usd", "github_writes"],
+      "additionalProperties": false,
+      "properties": {
+        "group": { "enum": ["platform", "interactive", "environment", "github_write"] },
+        "result": { "enum": ["go", "no-go", "deferred", "not_run"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "fallback": { "type": "string" },
+        "stops_phases": { "type": "array", "items": { "type": "string" } },
+        "deferred_to": {
+          "description": "The phase issue that now carries the go condition this probe could not check, as owner/repo#N.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+$"
+        },
+        "parts": {
+          "description": "The probe's separate checks, each with its own result. The probe's result is computed from them: no-go when any part is no-go, else not_run when any part did not run, else deferred when any part is deferred, else go.",
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+          "additionalProperties": { "$ref": "#/$defs/part" }
+        },
+        "stand_in": {
+          "description": "True when the probe ran against a stand-in for a factory part that does not exist yet. Such a probe is never go.",
+          "type": "boolean"
+        },
+        "evidence": { "type": "string" },
+        "evidence_history": {
+          "description": "The earlier evidence folders this entry still draws on: a later run that keeps parts or writes an earlier run recorded points evidence at its own folder and lists the earlier ones here. The export copies them all.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "keyed_on": {
+          "description": "The values this probe's result was recorded under, as its group's keyed_on read then, without the launch_context keys unless the probe is P13. A probe whose keyed_on differs from its group's on a key both hold (permission_modes, and launch_context keys for every probe but P13, left out) is stale: the group ran again without it. An entry without it, in a group that has keyed_on, is unstamped and fails the record check, unless it never ran (not_run, cost 0, no evidence).",
+          "$ref": "#/$defs/group/properties/keyed_on"
+        },
+        "ran_at": {
+          "description": "When this probe's entry was recorded.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "github_writes": {
+          "description": "Every GitHub write the probe's runs attempted through the gh and git shim, from its call log: the calls that found gh or git on PATH, not a program run by its full path or git running another git itself. A gh command the shim does not know to be a read counts as a write, and a write whose repository cannot be told is listed as unresolved/unresolved. A write the shim or the gh stand-in refused never reached GitHub and is marked refused; --verify-record --writes-only-to lists it on a PROBES_REFUSED_WRITE= line and does not fail on it.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["repo", "call"],
+            "additionalProperties": false,
+            "properties": {
+              "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+              "call": { "type": "string", "minLength": 1 },
+              "refused": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    "part": {
+      "type": "object",
+      "required": ["result", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "result": { "enum": ["go", "no-go", "deferred", "not_run"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "deferred_to": { "$ref": "#/$defs/probe/properties/deferred_to" },
+        "keyed_on": {
+          "description": "The values this part was recorded under. A part kept from an earlier run keeps the keyed_on it was recorded under, so one entry's parts can hold different tool versions. A part whose keyed_on differs from its probe's group's on a key both hold is stale, compared as the entry's keyed_on is. A part without it, in a group that has keyed_on, is unstamped and fails the record check, unless its entry never ran.",
+          "$ref": "#/$defs/group/properties/keyed_on"
+        },
+        "ran_at": {
+          "description": "When this part was recorded.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidence": {
+          "description": "The evidence folder of the run that recorded this part. A part kept from an earlier run keeps its own, so one entry's parts can name folders the entry's evidence and evidence_history do not; the export copies every folder an entry or any of its parts names. A part without it, written before parts named their folder, was recorded in the entry's evidence folder or one its evidence_history lists.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
