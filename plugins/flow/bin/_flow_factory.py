@@ -1303,7 +1303,13 @@ def gh_default_repo(git):
         if len(fields) >= 3 and fields[-1] == "(fetch)":
             urls.setdefault(fields[0], fields[1])
     chosen = set()
-    for key, value in git_config_pairs(git, [], r"^remote\..*\.gh-resolved$"):
+    try:
+        resolved = git_config_pairs(git, [], r"^remote\..*\.gh-resolved$")
+    except ConfigUnreadable:
+        # The remote gh set as default cannot be read, so which one gh
+        # uses is not known.
+        return None
+    for key, value in resolved:
         name = key[len("remote."):-len(".gh-resolved")]
         chosen.add(github_repo_of_url(urls.get(name, "")) if value == "base" else gh_repo_arg(value))
     if chosen:
@@ -1689,18 +1695,34 @@ def git_out(git, cwd, args):
     return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()] if r.returncode == 0 else None
 
 
+class ConfigUnreadable(Exception):
+    """git config could not be read: it timed out, failed to start, or
+    exited with anything but 1, which is git's answer for no matching key.
+    A destination lookup that meets it cannot tell where a call goes."""
+
+
+def git_config_text(git, gopts, args):
+    """stdout of `git <gopts> config <args>`, "" when no key matches. Raises
+    ConfigUnreadable when the config could not be read, so that a failed
+    read is never taken for an empty config."""
+    try:
+        r = subprocess.run([git] + gopts + ["config"] + args, capture_output=True, text=True, timeout=20,
+                           stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise ConfigUnreadable(str(e)) from e
+    if r.returncode == 1 and not r.stdout:
+        return ""
+    if r.returncode != 0:
+        raise ConfigUnreadable(f"git config exited {r.returncode}")
+    return r.stdout
+
+
 def git_config_pairs(git, gopts, pattern):
     """(key, value) for each config entry whose key matches pattern, read
-    with the call's own options, so -c and --config-env count."""
-    try:
-        r = subprocess.run([git] + gopts + ["config", "--null", "--get-regexp", pattern], capture_output=True,
-                           text=True, timeout=20, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.SubprocessError):
-        return []
-    if r.returncode != 0:
-        return []
+    with the call's own options, so -c and --config-env count. Raises
+    ConfigUnreadable when the config could not be read."""
     pairs = []
-    for entry in r.stdout.split("\0"):
+    for entry in git_config_text(git, gopts, ["--null", "--get-regexp", pattern]).split("\0"):
         if entry:
             key, _, value = entry.partition("\n")
             pairs.append((key, value))
@@ -1708,7 +1730,9 @@ def git_config_pairs(git, gopts, pattern):
 
 
 def git_config_all(git, gopts, key):
-    return git_out(git, None, gopts + ["config", "--get-all", key]) or []
+    """Every value of key, [] when it is not set. Raises ConfigUnreadable
+    when the config could not be read."""
+    return [ln.strip() for ln in git_config_text(git, gopts, ["--get-all", key]).splitlines() if ln.strip()]
 
 
 def default_push_remote(git, gopts):
@@ -2108,6 +2132,16 @@ def git_alias_texts(git, gopts, name):
 
 
 def classify_git(args, git, depth=0):
+    """classify_git_call, with a config that cannot be read making the call
+    a write to UNRESOLVED_REPO: a rewrite, an ssh program or an alias the
+    read would have found could send the call anywhere."""
+    try:
+        return classify_git_call(args, git, depth)
+    except ConfigUnreadable:
+        return UNRESOLVED_REPO, "RUN", True, "git " + " ".join(args)
+
+
+def classify_git_call(args, git, depth=0):
     """(repo, method, write, call) for one git call. The classification fails
     closed: a call is a read only when it is shown to be one.
 

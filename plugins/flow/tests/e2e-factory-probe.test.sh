@@ -359,6 +359,63 @@ $FP_SHIM_ROWS
 EOF
 e2e_expect_equal "$(wc -l < "$REPO_ROOT/plugins/flow/tests/fixtures/factory/shim-calls.jsonl" | tr -d ' ')" "$FP_SHIM_COUNT" "rows checked"
 
+# S20 A config read that fails is taken for an empty config: the push
+# is judged on the address as typed, so a pushInsteadOf or core.sshCommand
+# the read would have found, sending it elsewhere, is missed and the push is
+# let through as a write to the sandbox. The stand-in git below fails only
+# those two reads (exit 128, as git does for a config it cannot parse), so
+# every other lookup the shim makes still works.
+_flow_test_begin "shim: a git config read that fails makes a push unresolved, never a write to the sandbox (S20)"
+e2e_new fp-shim-config-unreadable
+e2e_describe "with git config failing for insteadOf and core.sshCommand, a push to the sandbox address that config would send elsewhere is logged unresolved and refused"
+e2e_repo main
+FP_REAL_GIT=$(command -v git)
+mkdir -p "$E2E_DIR/badgit"
+cat > "$E2E_DIR/badgit/git" <<EOF
+#!/bin/sh
+case " \$* " in
+  *" config "*insteadof*|*" config "*core.sshCommand*) echo "fatal: bad config line 1" >&2; exit 128 ;;
+esac
+exec "$FP_REAL_GIT" "\$@"
+EOF
+chmod +x "$E2E_DIR/badgit/git"
+FP_S20=$(env -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT -u GIT_SSH_COMMAND -u GIT_SSH \
+  HOME="$E2E_HOME" GIT_CONFIG_NOSYSTEM=1 \
+  python3 - "$E2E_ACTIVE_PLUGIN/bin/_flow_factory.py" "$FP_REAL_GIT" "$E2E_DIR/badgit/git" "$E2E_DIR" "$E2E_REPO" <<'PY'
+import json, os, subprocess, sys
+module, real, bad, top, repo = sys.argv[1:6]
+log = os.path.join(top, "s20.log")
+cases = [
+    ("pushInsteadOf, config readable", real,
+     ["-c", "url.https://elsewhere.example/x/.pushInsteadOf=https://github.com/", "push",
+      "https://github.com/probe-fixture/sandbox.git", "HEAD:refs/heads/x"]),
+    ("pushInsteadOf, config read fails", bad,
+     ["-c", "url.https://elsewhere.example/x/.pushInsteadOf=https://github.com/", "push",
+      "https://github.com/probe-fixture/sandbox.git", "HEAD:refs/heads/x"]),
+    ("core.sshCommand, config read fails", bad,
+     ["-c", "core.sshCommand=ssh -o ProxyCommand=elsewhere", "push",
+      "git@github.com:probe-fixture/sandbox.git", "HEAD:refs/heads/x"]),
+]
+for name, git, argv in cases:
+    before = os.path.getsize(log) if os.path.exists(log) else 0
+    rc = subprocess.run([sys.executable, "-E", module, "shim-log", "--tool", "git", "--log", log, "--git", git,
+                         "--allow-repo", "probe-fixture/sandbox", "--"] + argv,
+                        cwd=repo, stdin=subprocess.DEVNULL, capture_output=True).returncode
+    with open(log, encoding="utf-8") as f:
+        f.seek(before)
+        got = f.read().splitlines()
+    e = json.loads(got[0]) if len(got) == 1 else {}
+    print(f"{name}\t{'write ' + str(e.get('repo')) if e.get('write') else 'read'} rc={rc}")
+PY
+)
+while IFS="$(printf '\t')" read -r FP_WHAT FP_GOT; do
+  [ -n "$FP_WHAT" ] || continue
+  e2e_expect_equal "write unresolved/unresolved rc=1" "$FP_GOT" "$FP_WHAT"
+done <<EOF
+$FP_S20
+EOF
+e2e_expect_equal "3" "$(printf '%s\n' "$FP_S20" | grep -c .)" "cases checked"
+
 # Each probe entry carries the keyed_on and ran_at it was recorded under. A
 # probe whose group ran again on other tools without it is stale. Wrong
 # versions: the per-entry fields fail the schema, a probe recorded under an
