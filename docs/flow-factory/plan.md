@@ -156,7 +156,7 @@ Each probe has a fallback. The probes are grouped by what makes their result out
 
 ## Phases
 
-Each phase is one child issue and ends in a release, with `plugin.json` and `marketplace.json` in sync.
+Each phase is one child issue. Phases 1a-1g merge without a release and leave the flow version unchanged; the factory is first released at 1h, and phase 2 ends in its own release, each with `plugin.json` and `marketplace.json` in sync.
 
 **Phase 1: queue to a ready PR**
 - **1a.** Engine, wrapper and interpreter recording; schemas; TRANSITIONS; locks, leases, launcher, events and outbox; rebuild; person-only refusal; probe groups; status.
