@@ -1,0 +1,16 @@
+{
+  "directive": "issue-12-j2-build-2",
+  "outcome": "not_started",
+  "written_at": "2026-11-16T11:52:40Z",
+  "event": null,
+  "session_id": null,
+  "num_turns": null,
+  "api_error_status": null,
+  "is_error": null,
+  "permission_denials": null,
+  "terminal_reason": null,
+  "charged_usd": null,
+  "charge_basis": null,
+  "total_cost_usd": null,
+  "since_last_usd": null
+}

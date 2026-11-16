@@ -1,0 +1,16 @@
+{
+  "event": "person_cancel",
+  "args": {},
+  "channel": "terminal",
+  "caller": {
+    "pid": 70110,
+    "start": "Mon Nov 16 12:01:00 2026",
+    "ancestry": [
+      70110,
+      70001,
+      1
+    ]
+  },
+  "facts": null,
+  "raised_at": "2026-11-16T12:01:01Z"
+}

@@ -1,0 +1,16 @@
+{
+  "directive": "issue-12-j2-build-2",
+  "outcome": "completed",
+  "written_at": "2026-11-16T11:52:40Z",
+  "event": "stage_succeeded",
+  "session_id": "9a1d3c55-0e4f-4b8a-8c71-6d2e0f9b4c13",
+  "num_turns": 14,
+  "api_error_status": null,
+  "is_error": false,
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "charged_usd": 0.23,
+  "charge_basis": "estimate",
+  "total_cost_usd": 1.43,
+  "since_last_usd": 0.23
+}

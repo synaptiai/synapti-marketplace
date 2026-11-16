@@ -1,0 +1,20 @@
+{
+  "event": "person_feedback",
+  "args": {
+    "text": "use the existing exporter"
+  },
+  "channel": "session:5f2e8a41-77c0-4d1b-a3e9-c0d4b6f81a22",
+  "caller": {
+    "pid": 70110,
+    "start": "Mon Nov 16 12:01:00 2026",
+    "ancestry": [
+      70110,
+      70001,
+      1
+    ]
+  },
+  "facts": {
+    "unvouched_session_action": false
+  },
+  "raised_at": "2026-11-16T12:01:01Z"
+}

@@ -1,0 +1,50 @@
+{
+  "apiVersion": "flow.synapti.ai/v1",
+  "kind": "FlowFactoryJob",
+  "key": "issue-30-j1",
+  "issue": 30,
+  "state": "needs_human",
+  "attempt": 2,
+  "stage_launches": {
+    "intake": 1,
+    "prepare": 1,
+    "spec": 1,
+    "build": 1,
+    "open_pr": 1,
+    "sync": 3
+  },
+  "sessions": {
+    "build": "0b6c1f0e-3a2d-4c5e-9f10-2b3c4d5e6f70"
+  },
+  "holds_slot": false,
+  "directive": null,
+  "cost": {
+    "usd_total": 5.5,
+    "runs": [],
+    "stage_usd": {
+      "sync": 5.5
+    },
+    "dearest_turn_usd": 0.62
+  },
+  "created_at": "2026-11-16T10:00:00Z",
+  "updated_at": "2026-11-16T15:00:00Z",
+  "vouch_at": "2026-11-16T10:00:00Z",
+  "blocked_stage": "needs_human",
+  "reason": "resolve_repeat",
+  "resume_state": null,
+  "pr": 88,
+  "head_sha": "3f9a1c0d2b4e6f8091a2b3c4d5e6f708192a3b4c",
+  "pending_changes": [
+    "issue_changed"
+  ],
+  "orphan_groups": [
+    {
+      "pgid": 4242,
+      "start": "Mon Nov 16 20:55:19 2026",
+      "stage": "sync",
+      "recorded_at": "2026-11-16T14:59:00Z"
+    }
+  ],
+  "lease_grace": "2026-11-16T14:58:00Z",
+  "relaunch": null
+}
