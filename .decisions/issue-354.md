@@ -156,7 +156,53 @@ artifacts:
   workflow: start-issue
   run_id: 2026-11-16T144941Z-issue-354
   status: active
+- type: escalation-asked
+  captured_at: '2026-11-16T16:19:56Z'
+  question_id: q-20261116T161955Z-8ab43d
+  blocking: soft
+  class: decision
+  command:
+  - /flow:start 354 (planning
+  - T5 settings)
+  situation: design.json gives each worker stage a budget and a timeout but no turn
+    limit; the launcher passes --max-turns on every run.
+- type: escalation-asked
+  captured_at: '2026-11-16T16:19:56Z'
+  question_id: q-20261116T161956Z-1b5058
+  blocking: soft
+  class: decision
+  command:
+  - /flow:start 354 (planning
+  - T5 settings)
+  situation:
+  - --max-budget-usd stops a run only after the turn that passes it
+  - so the spend guard must allow each run to overshoot by one turn; the only measurement
+    is P4's $0.048 on a $0.10 limit.
+- type: escalation-asked
+  captured_at: '2026-11-16T16:19:57Z'
+  question_id: q-20261116T161957Z-492a4d
+  blocking: soft
+  class: decision
+  command:
+  - /flow:start 354 (planning
+  - T5 settings)
+  situation: A worker run that hits a usage limit pauses the job without counting
+    an attempt; when the result gives no reset time the engine needs a default pause.
+- type: escalation-resolved
+  captured_at: '2026-11-16T17:20:52Z'
+  escalation_field: options
+  outcome:
+  - Twice the dearest turn seen in the job so far
+  - at least $0.50.
+  question_id: q-20261116T161956Z-1b5058
+- type: escalation-resolved
+  captured_at: '2026-11-16T17:20:53Z'
+  escalation_field: options
+  outcome: Pause 3600 s.
+  question_id: q-20261116T161957Z-492a4d
 ---
+
+## Design
 
 ## Design
 
@@ -199,8 +245,10 @@ Engine modules by area — option 2 also meets the criteria, but its single engi
 - `references/factory-transitions.json` equals `docs/flow-factory/transitions.json` byte for byte, and the checker passes on it.
 - With no factory setting, `flow-factory.sh context --mode` prints `FACTORY_MODE=off` and starts no Python.
 - With `flow.factory.enabled` not true, `next` and the acting person subcommands exit 5 with `FACTORY_REFUSED=disabled` and change nothing.
-- A person subcommand run from a worker (a FLOW_FACTORY_* variable set, or a live lease's launcher or claude process among its ancestors) exits 4 with `PERSON_ONLY_REFUSED` before any other check and changes nothing.
+- A person subcommand run from a worker (FLOW_FACTORY_JOB, FLOW_FACTORY_DIRECTIVE or FLOW_FACTORY_IO set, as design person_channels names them, or a live lease's launcher or claude process among its ancestors) exits 4 with `PERSON_ONLY_REFUSED` before any other check and changes nothing.
 - Each run is charged its own cost (`model_usage_since_last_result`), never the session total, and every launch names `--model`.
+
+## Specification
 
 ## Specification
 
@@ -237,7 +285,7 @@ _Captured by specification-capture skill on 2026-11-16. Source: mixed (from-desi
 - Every job move is a row of `plugins/flow/references/factory-transitions.json`; that file equals `docs/flow-factory/transitions.json` byte for byte and passes `check_transitions.py`. (from-design)
 - Exit codes: 0 answered; 2 usage error; 3 `TRANSITION_REFUSED=<from>-><to>: <reason>` or `EVENT_REFUSED=<event> state=<state>`; 4 `PERSON_ONLY_REFUSED=<reason>` or `PERSON_CONFIRM_REQUIRED next: run <command> in a terminal`; 5 `FACTORY_REFUSED=<reason>` or `PROBES_STALE=<group>`. Every refusal is one stdout line.
 - With no factory setting, `flow-factory.sh context --mode` prints `FACTORY_MODE=off` and starts no Python. With `flow.factory.enabled` not true, `next` and the acting person subcommands exit 5 with `FACTORY_REFUSED=disabled` and change nothing. (from-design)
-- A person subcommand run from a worker (a FLOW_FACTORY_* variable set, or a live lease's launcher or claude process among its ancestors) exits 4 with `PERSON_ONLY_REFUSED` before any other check and changes nothing. (from-design)
+- A person subcommand run from a worker (FLOW_FACTORY_JOB, FLOW_FACTORY_DIRECTIVE or FLOW_FACTORY_IO set, as design person_channels names them, or a live lease's launcher or claude process among its ancestors) exits 4 with `PERSON_ONLY_REFUSED` before any other check and changes nothing. (from-design)
 - `next` prints JSON lines (person items, then status lines), then exactly one of `wait`, `idle` or `done`.
 - job.json and directive files validate against `plugins/flow/schemas/v1/factory-job.schema.json` and `factory-directive.schema.json` under both the stdlib validator and jsonschema.
 - The worker environment is built from nothing; FLOW_FACTORY_JOB_KEY, FLOW_FACTORY_ISSUE, FLOW_FACTORY_BRANCH and FLOW_FACTORY_GOAL_ID equal job.json and in/job.env; every launch names `--model` (`worker.model`, else the probe record's platform model).
