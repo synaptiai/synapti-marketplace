@@ -1,0 +1,7 @@
+#!/bin/bash
+# [flow] The factory probe's gh stand-in: it logs this call for the probe
+# record, then answers it from fixture data or refuses it. It never runs the
+# real gh, so nothing it is asked reaches GitHub. Every write it is asked for
+# is logged as refused.
+~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14 -E ~/synapti-marketplace/plugins/flow/bin/_flow_factory.py shim-log --tool gh --log ~/synapti-marketplace/.flow/factory/evidence/P4-3/run/calls.jsonl --git /opt/homebrew/bin/git --stub -- "$@" || exit 97
+exec ~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14 -E ~/synapti-marketplace/plugins/flow/bin/_flow_factory.py gh-stub --fixtures ~/synapti-marketplace/.flow/factory/evidence/P4-3/run/shim/gh-fixtures.json --answers ~/synapti-marketplace/.flow/factory/evidence/P4-3/run/gh-answers.jsonl --jq-bin /usr/bin/jq --git /opt/homebrew/bin/git -- "$@"

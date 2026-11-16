@@ -1,0 +1,7 @@
+{"argv": ["gh", "repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"], "answered": true}
+{"argv": ["gh", "issue", "view", "1", "--json", "title,body,labels", "--jq", "\n      \"ISSUE_TITLE=\\\"\\(.title)\\\"\\nISSUE_LABELS=\\([.labels[].name] | join(\",\"))\\nISSUE_BODY_LENGTH=\\(.body | length)\"\n    "], "answered": true}
+{"argv": ["gh", "pr", "list", "--head", "feature/issue-1-add-greeting-file", "--state", "open", "--json", "number,url"], "answered": true}
+{"argv": ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], "answered": true}
+{"argv": ["gh", "api", "repos/flow-factory-probe/scratch/commits/main", "--jq", ".sha"], "answered": false}
+{"argv": ["gh", "issue", "view", "1", "--json", "title,body"], "answered": true}
+{"argv": ["gh", "pr", "create", "--base", "main", "--title", "feat: add hello.txt greeting file", "--body", "test", "--dry-run"], "answered": false}

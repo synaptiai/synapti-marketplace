@@ -92,6 +92,31 @@ artifacts:
   path: B
   findings_count: 24
   pr: 379
+- type: escalation-asked
+  captured_at: '2026-11-16T09:37:05Z'
+  question_id: q-20261116T093704Z-602569
+  blocking: 'yes'
+  class: decision
+  command: /flow:pr follow-up (phase 0)
+  situation:
+  - 'Phase 0 PR #379 is green and mergeable. Its platform group (P1'
+  - P2
+  - P4
+  - P5
+  - P10
+  - P16) ran on Claude Code 2.1.323; the other groups and the installed Claude Code
+    are 2.1.325
+  - so verify-record would cal
+- type: escalation-resolved
+  captured_at: '2026-11-16T09:48:13Z'
+  escalation_field: options
+  outcome:
+  - Re-run the platform group now on 2.1.325 (about $4.50 of model spend)
+  - 'add the new record and results to #379'
+  - wait for CI
+  - 'then /flow:merge #378 and #379 (each asks you to confirm)'
+  - then start phase 1a (#354).
+  question_id: q-20261116T093704Z-602569
 ---
 ## Specification
 

@@ -1,0 +1,8 @@
+#!/bin/bash
+# [flow] Logs this git call for the probe record, then runs the real git.
+# A call that cannot be logged is not made, and neither is a GitHub write to
+# any repository but the one this run may write to. The log holds only calls
+# that found git on PATH; a refused write never reached GitHub, and the
+# record check lists it on a PROBES_REFUSED_WRITE= line without failing.
+~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14 -E ~/synapti-marketplace/plugins/flow/bin/_flow_factory.py shim-log --tool git --log ~/synapti-marketplace/.flow/factory/evidence/P1-3/review/calls.jsonl --git /opt/homebrew/bin/git -- "$@" || exit 97
+exec /opt/homebrew/bin/git "$@"

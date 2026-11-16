@@ -1,6 +1,6 @@
 # Factory phase 0: probe results
 
-These are the results of the go/no-go probes for every platform behaviour the factory depends on. They ran between 2026-11-12 and 2026-11-15 on one Mac (macOS, Apple silicon). Every `claude -p` run used Claude Opus 5.5 (`claude-opus-5-5`), and so did both P9 sessions; the probes name the model because Claude Code's own default changes between releases. The full record is in `probes.json` in this folder, with the evidence for each probe under `evidence/`.
+These are the results of the go/no-go probes for every platform behaviour the factory depends on. They ran between 2026-11-12 and 2026-11-16 on one Mac (macOS, Apple silicon). Every `claude -p` run used Claude Opus 5.5 (`claude-opus-5-5`), and so did both P9 sessions; the probes name the model because Claude Code's own default changes between releases. The full record is in `probes.json` in this folder, with the evidence for each probe under `evidence/`.
 
 ## What the results ran against
 
@@ -8,13 +8,13 @@ These are the results of the go/no-go probes for every platform behaviour the fa
 |---|---|---|---|---|---|
 | Environment | P3, P7, P11, P15 | 2.1.325 | 2.101.0 | 2.55.0 | Python 3.14.7 |
 | Environment, launchd | P13 | 2.1.325 | 2.101.0 | 2.55.0 | ran from a launchd agent |
-| Platform | P1, P2, P4, P5, P10, P16 | 2.1.323 | 2.101.0 | 2.55.0 | |
+| Platform | P1, P2, P4, P5, P10, P16 | 2.1.325 | 2.101.0 | 2.55.0 | |
 | GitHub writes | P3 (sandbox part), P6 | 2.1.325 | 2.101.0 | 2.55.0 | sandbox danielbentes/flow-factory-sandbox |
 | Interactive | P9, P14 | 2.1.325 | 2.101.0 | 2.55.0 | auto and default permission modes |
 
-A probe recorded under other tool versions than its group's, or on another model, is out of date and has to be run again; `flow-factory.sh probe --verify-record` names each one. The platform group ran on Claude Code 2.1.323 and the other groups on 2.1.325, so run the platform group again (`flow-factory.sh probe --platform`) before phase 1 depends on it.
+A probe recorded under other tool versions than its group's, or on another model, is out of date and has to be run again; `flow-factory.sh probe --verify-record` names each one. Every group ran on Claude Code 2.1.325; after a Claude Code update, run each group again (`flow-factory.sh probe --platform`, and likewise `--environment`, `--github-write` and `--interactive`) before a phase depends on it.
 
-Model spend in the record is $11.50 of the $25 cap. That figure counts P5's first session again in each of its three resumed runs: the record charges P5 $1.21, and by each run's own cost it is $0.73, so the record is $0.47 high. The probe now charges each run its own cost. Not in the record: $0.85 on three hand-run sandbox checks before P16 existed, and the use of the interactive P9 sessions, which run on the person's own Claude Code account.
+Model spend in the record is $16.58 of the $25 cap. That figure is $0.95 higher than what was spent: P5's two earlier runs each counted its first session again in each resumed run, which charged $0.47 too much each time. The probe now charges each run its own cost, and P5's last run was charged $0.73. Not in the record: $0.85 on three hand-run sandbox checks before P16 existed, and the use of the interactive P9 sessions, which run on the person's own Claude Code account.
 
 ## Results
 
