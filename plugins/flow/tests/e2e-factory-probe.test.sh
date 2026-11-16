@@ -8,7 +8,7 @@
 #      fails instead of printing FACTORY_MODE=off
 #   W2 `context --mode` prints off while a factory job variable is set, so a
 #      worker would run flow's commands as if no factory were driving them
-#   W3 a subcommand the wrapper does not run yet exits 0, or with a message a
+#   W3 a subcommand run with no probe record exits 0, or with a message a
 #      caller cannot parse, instead of exit 5 and FACTORY_REFUSED=<reason>
 #   W4 a temporary folder that cannot be made is reported as a missing
 #      interpreter, sending the person to install Python
@@ -47,13 +47,13 @@ e2e_describe "with FLOW_FACTORY_JOB set and no probe record, context --mode is r
 e2e_repo main
 e2e_run_bin FLOW_FACTORY_JOB=issue-7-j1 bin/flow-factory.sh context --mode
 e2e_expect_equal "5" "$E2E_RC" "exit status"
-e2e_expect_line "FACTORY_REFUSED=no_probe_record"
+e2e_expect_line "FACTORY_REFUSED=no_probe_record next: run the phase 0 probes"
 e2e_expect_no_line "FACTORY_MODE=off"
 
 _flow_test_begin "factory wrapper: other subcommands are refused with exit 5 (W3)"
 for FP_SUB in next run status answer; do
   e2e_new "fp-refuse-$FP_SUB"
-  e2e_describe "flow-factory.sh $FP_SUB is not built in phase 0: exit 5 with a FACTORY_REFUSED line"
+  e2e_describe "flow-factory.sh $FP_SUB has no probe record: exit 5 with a FACTORY_REFUSED line"
   e2e_repo main
   e2e_run_bin bin/flow-factory.sh "$FP_SUB"
   e2e_expect_equal "5" "$E2E_RC" "exit status for $FP_SUB"
