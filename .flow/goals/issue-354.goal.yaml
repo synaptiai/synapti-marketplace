@@ -1,0 +1,297 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-354
+  created_at: '2026-11-16T15:09:50Z'
+  created_by: /flow:start
+  owner: '@me'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-354-factory-job-engine
+  issue: 354
+  journal: .decisions/issue-354.md
+objective:
+  outcome: 'Issue #354 is implemented and verified.'
+  source:
+    issue_title: 'flow factory: a job engine that is the only writer of job state
+      and refuses illegal moves'
+  acceptance_criteria:
+  - id: AC1
+    text: With no factory setting, `flow-factory.sh context --mode` prints `FACTORY_MODE=off`
+      without starting Python, and flow's existing suites pass unchanged.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-wrapper.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC2
+    text: The state table checker passes on the shipped table, and rejects every broken
+      edit in its mutation test with that rule's message.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-transitions.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC3
+    text: Every row of the state table is driven at least once through `next` with
+      fixtures and lands in its target state; a move outside the table is refused
+      with its own exit code.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC4
+    text: Two `next` calls at the same time launch one worker, and `next` returns
+      within its time budget.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-next.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC5
+    text: A worker killed mid-stage is relaunched; a relaunch after a dirty tree was
+      reset starts a fresh session, and the old edits are kept in a snapshot ref.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-next.test.sh
+      plugins/flow/tests/e2e-factory-engine-git.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC6
+    text: Every worker gets the job key, issue, branch and goal id in its environment,
+      equal to the job's record.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-launch.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC7
+    text: Each person-only command (answer, approve-spec, confirm, feedback, rework,
+      retry, reject, cancel, rebuild) run from a worker, in every wrapped form, exits
+      with `PERSON_ONLY_REFUSED`.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-refusal.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC8
+    text: With no probe record, or with the recorded interpreter missing, every subcommand
+      except the allowed few exits with a status line naming the next step.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-wrapper.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC9
+    text: With a stale platform probe record, `next` still syncs and moves jobs but
+      starts no worker, counts no attempt, and prints the re-run command.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-probes.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC10
+    text: '`rebuild` reconstructs a job''s state from its event log, and `status`
+      prints every job''s state and every active status line.'
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-person.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC11
+    text: Every change in this phase ships with E2E tests run through the flow E2E
+      harness, each scenario keeps a repeatable artifact, and the full suite passes
+      before the push.
+    verification_command: FLOW_E2E_ARTIFACT_DIR="$(mktemp -d)" plugins/flow/tests/run.sh
+      plugins/flow/tests/e2e-factory-*.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC12
+    text: The phase merges to main without a release and leaves the flow version unchanged;
+      the factory is first released at 1h (#361), once it works end to end.
+    verification_command: v=$(jq -r .version plugins/flow/.claude-plugin/plugin.json);
+      [ "$v" = "$(git show origin/main:plugins/flow/.claude-plugin/plugin.json | jq
+      -r .version)" ] && jq -e --arg v "$v" '.plugins[] | select(.name=="flow") |
+      .version == $v' .claude-plugin/marketplace.json >/dev/null
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: G1
+    text: 'P5 cost scope: the engine charges each run the cost in its result''s `model_usage_since_last_result`,
+      so a job''s spend is never counted twice; P5''s `engine_charge` part, re-run
+      once the engine exists, comes out go.'
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-launch.test.sh
+      && jq -e '.probes.P5.parts.engine_charge.result == "go"' docs/flow-factory/probes.json
+      >/dev/null
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: G2
+    text: The launcher names the model for every worker.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-launch.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: G3
+    text: The spend guard allows for each run passing its `--max-budget-usd` limit
+      by up to one turn.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-launch.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+specification:
+  non_goals:
+  - 'No GitHub write is sent: the outbox holds items and nothing sends them (1b).'
+  - No tier-gate change and no `factory-state-guard.sh` (1b).
+  - No worker area, real job clone, bootstrap, ports, worker token or worker sandbox
+    (1c); git runs only in fixture clones.
+  - No headless runner, scheduled runner, interactive executor, `wait`, `question`
+    or `await` (1c).
+  - No factory mode in flow's commands or the ask policy (1d).
+  - No gate or protected-path check (1e); gate rows are driven by fixtures only.
+  - No cost cap (1g).
+  - No path from `flow-factory.sh` to the test entry point or to a fixture fact provider.
+  - 'No second copy of the state table in code: the engine reads `plugins/flow/references/factory-transitions.json`.'
+  - No turn counter, and no reading of `maxStageAttempts` (the table says 2).
+  - No release and no change to the flow version.
+  - No new helper in `plugins/flow/tests/lib/e2e.sh`; factory helpers go in `plugins/flow/tests/lib/factory-e2e.sh`.
+  - No settings key outside design.json `settings_keys`, and only the keys 1a reads.
+  - No separate OS user for workers.
+  - No change to any flow behaviour while the factory is off.
+  failure_modes:
+  - '**Timeouts** — Every lock wait has a timeout. `next` stops starting work as it
+    nears `nextBudgetSeconds` and returns. A stage past its timeout gets SIGTERM,
+    then SIGKILL after 30 s. A lease with no heartbeat for `leaseSeconds` is revoked
+    only after the launcher (pid and start time) is checked. A probe holding its lock
+    never blocks `next`.'
+  - '**Partial failures** — A killed claude gives a stage_failed report (rows 39,
+    39d); a killed launcher stops the heartbeat and gives lease expiry (rows 39l,
+    39ld). A process group that survives the kill is recorded and parks the job at
+    the next launch (row 43g). A dirty tree is snapshotted, untracked files included,
+    to `refs/flow-factory/issue-N/snapshot-<k>`, then reset and cleaned, and the relaunch
+    starts a fresh session. A run with no result event is charged its limit plus one
+    turn''s allowance. An unreadable or invalid job.json is listed as unreadable,
+    and `rebuild` restores it from events.jsonl.'
+  - '**Invalid input** — A move outside the table exits 3 (`TRANSITION_REFUSED` or
+    `EVENT_REFUSED`) and changes nothing. A fact combination with no winning row moves
+    nothing. A report from a revoked lease, from a pid other than the lease''s launcher,
+    or from a claude descendant is refused. A malformed directive id or a symlinked
+    pending report is refused. A person subcommand from a worker exits 4 with `PERSON_ONLY_REFUSED`
+    before any other check.'
+  - '**Missing context** — No probe record, or a recorded interpreter that is missing
+    or fails vetting: exit 5 with a `next:` line, never PATH python. `flow.factory.enabled`
+    not true: `next` and the acting person subcommands exit 5 with `FACTORY_REFUSED=disabled`.
+    Stale platform record: `next` syncs and moves jobs, starts no worker, counts no
+    attempt, and prints the re-run command. Failed environment re-run: no launch,
+    and a `PAUSED` status line. `ps` unreadable during the ancestry walk: the caller
+    is refused. Usage limit: `paused_until` is set and no attempt is counted. No controlling
+    terminal, or inside a session, for a person subcommand: exit 4 with `PERSON_CONFIRM_REQUIRED`.'
+  interface_contracts:
+  - Only the engine writes job state, always under the job lock and through `plugins/flow/bin/_journal_atomic.py`;
+    the global lock is taken before a job lock, and every lock wait has a timeout.
+    (from-design)
+  - Every job move is a row of `plugins/flow/references/factory-transitions.json`;
+    that file equals `docs/flow-factory/transitions.json` byte for byte and passes
+    `check_transitions.py`. (from-design)
+  - 'Exit codes: 0 answered; 2 usage error; 3 `TRANSITION_REFUSED=<from>-><to>: <reason>`
+    or `EVENT_REFUSED=<event> state=<state>`; 4 `PERSON_ONLY_REFUSED=<reason>` or
+    `PERSON_CONFIRM_REQUIRED next: run <command> in a terminal`; 5 `FACTORY_REFUSED=<reason>`
+    or `PROBES_STALE=<group>`. Every refusal is one stdout line.'
+  - With no factory setting, `flow-factory.sh context --mode` prints `FACTORY_MODE=off`
+    and starts no Python. With `flow.factory.enabled` not true, `next` and the acting
+    person subcommands exit 5 with `FACTORY_REFUSED=disabled` and change nothing.
+    (from-design)
+  - A person subcommand run from a worker (a FLOW_FACTORY_* variable set, or a live
+    lease's launcher or claude process among its ancestors) exits 4 with `PERSON_ONLY_REFUSED`
+    before any other check and changes nothing. (from-design)
+  - '`next` prints JSON lines (person items, then status lines), then exactly one
+    of `wait`, `idle` or `done`.'
+  - job.json and directive files validate against `plugins/flow/schemas/v1/factory-job.schema.json`
+    and `factory-directive.schema.json` under both the stdlib validator and jsonschema.
+  - The worker environment is built from nothing; FLOW_FACTORY_JOB_KEY, FLOW_FACTORY_ISSUE,
+    FLOW_FACTORY_BRANCH and FLOW_FACTORY_GOAL_ID equal job.json and in/job.env; every
+    launch names `--model` (`worker.model`, else the probe record's platform model).
+  - 'Launcher command line: `<recorded python> -E <plugin>/bin/_flow_factory_launch.py
+    --factory-dir <abs> <directive-id>`; the launcher applies its own report in its
+    own process.'
+  - Each run is charged its own cost, the sum of `model_usage_since_last_result`,
+    never the session total. (from-design)
+  - 'events.jsonl line: event, from, row, to or stay, effects applied and deferred,
+    attempt, channel, caller, time.'
+  risk_map:
+  - area: worker refusal order and record lookup
+    plausible_wrong_version: the worker check runs after argument parsing or job lookup,
+      or the record is found from the cwd's checkout
+    discriminating_check: 'person subcommand from a process with every FLOW_FACTORY_*
+      cleared, cwd in another clone, a live launcher ancestor, bad arguments, job
+      outside the event''s states → right: exit 4 `PERSON_ONLY_REFUSED=lease_ancestor`;
+      wrong: exit 2, 3 or 5'
+  - area: row precedence of derived facts
+    plausible_wrong_version: the confirm park (row 40, precedence 45) is taken before
+      the pre-push check (row 21f, precedence 44)
+    discriminating_check: 'open_pr stage success with both inputs true → right: row
+      21f wins and no push intent is recorded; wrong: row 40 parks and records a push
+      intent'
+  - area: relaunch kind after a dirty tree
+    plausible_wrong_version: resume is keyed on "a session id exists", and the snapshot
+      leaves out untracked files
+    discriminating_check: 'failed stage with a recorded session id, a modified tracked
+      file and a new untracked file → right: both files in the snapshot ref, relaunch
+      carries `--session-id`; wrong: relaunch carries `--resume`, or the untracked
+      file is lost'
+  - area: cost charged per run
+    plausible_wrong_version: a resumed run is charged `total_cost_usd`
+    discriminating_check: 'resumed run with a session total of $1.20 and `model_usage_since_last_result`
+      summing to $0.23 → right: job spend rises by $0.23; wrong: by $1.20'
+  - area: two concurrent `next` calls
+    plausible_wrong_version: both launch the same job, or one blocks behind the other's
+      lock
+    discriminating_check: 'two `next` started together, one job due, concurrency 1
+      → right: one directive and one lease, both return within `nextBudgetSeconds`;
+      wrong: two launches, or a return after the budget'
+  - area: partial platform re-run
+    plausible_wrong_version: the group's current version hides an entry still stamped
+      with the old one
+    discriminating_check: 'platform group stamped with the installed claude version,
+      P5 entry with an older one → right: stale, no worker, no attempt, re-run line
+      printed; wrong: a worker launches'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+  allowed_paths:
+  - plugins/flow/bin/flow-factory.sh
+  - plugins/flow/bin/_flow_factory*.py
+  - plugins/flow/references/factory-transitions.json
+  - plugins/flow/references/gate-configuration.md
+  - plugins/flow/schemas/v1/factory-*.schema.json
+  - plugins/flow/settings.json
+  - plugins/flow/schema.json
+  - plugins/flow/CHANGELOG.md
+  - plugins/flow/templates/factory/**
+  - plugins/flow/tests/lib/factory-e2e.sh
+  - plugins/flow/tests/lib/flow-workflow-check.py
+  - plugins/flow/tests/e2e-factory-*.test.sh
+  - plugins/flow/tests/fixtures/factory/**
+  - .github/workflows/flow-tests.yml
+  - docs/flow-factory/**
+  - .decisions/issue-354.md
+  - .decisions/session-*.md
+  - .flow/goals/issue-354.goal.yaml
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
+  current_phase: explore
+  current_activity: specification captured; goal created
+  turns_evaluated: 0
+  last_evaluation:
+    result: incomplete
+    reason: specification captured and Spec Validation Gate passed with 15 of 15 criteria
+      carrying a verification command
+    at: '2026-11-16T15:10:00Z'
