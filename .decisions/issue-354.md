@@ -226,6 +226,56 @@ artifacts:
   - 'withdrawn: Superseded by q-20261116T173811Z-5ca7ce'
   - which offered no turn limit; the user chose it
   question_id: q-20261116T161955Z-8ab43d
+- type: workflow-run
+  captured_at: '2026-11-16T17:40:58Z'
+  workflow: start-issue
+  run_id: 2026-11-16T144941Z-issue-354
+  status: active
+- type: escalation-asked
+  captured_at: '2026-11-16T17:51:36Z'
+  question_id: q-20261116T175135Z-5b9bc1
+  blocking: 'yes'
+  class: decision
+  command:
+  - /flow:start 354 (PLAN
+  - Stranger Test of T5)
+  situation:
+  - A worker run's limit is stage budget - spent - overshoot allowance
+  - and a run that ends with no result is charged its limit + allowance. That charge
+    uses up the whole remaining stage budget
+  - so no fai
+- type: escalation-resolved
+  captured_at: '2026-11-16T18:00:15Z'
+  escalation_field: options
+  outcome:
+  - Cap each run's limit at the stage budget divided by the attempts allowed (2)
+  - so a killed first run leaves budget for the retry; charging stays limit + allowance
+  question_id: q-20261116T175135Z-5b9bc1
+- type: stranger-test
+  captured_at: '2026-11-16T18:00:55Z'
+  result: BLOCK
+  task_count: 16
+  failed_task: T5
+- type: escalation-asked
+  captured_at: '2026-11-16T18:25:00Z'
+  question_id: q-20261116T182500Z-134b73
+  blocking: 'yes'
+  class: decision
+  command:
+  - /flow:start 354 (PLAN
+  - Stranger Test fixes)
+  situation:
+  - The budget split decided in q-20261116T175135Z-5b9bc1 used 2 runs per stage
+  - but the state table allows 3 (attempts_exhausted = attempt reached 2; each failed
+    run adds 1)
+  - so halves leave the third ru
+- type: escalation-resolved
+  captured_at: '2026-11-16T18:25:01Z'
+  escalation_field: options
+  outcome:
+  - Cap each run's limit at the stage budget divided by 3
+  - one share per run the table allows
+  question_id: q-20261116T182500Z-134b73
 ---
 
 ## Design
@@ -349,3 +399,7 @@ _Captured by specification-capture skill on 2026-11-16. Source: mixed (from-desi
 | G1 | P5 cost scope: the engine charges `model_usage_since_last_result` | `plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-launch.test.sh`, then the P5 re-run (asked first) records `engine_charge` go: `jq -e '.probes.P5.parts.engine_charge.result == "go"' docs/flow-factory/probes.json` | PASS |
 | G2 | Worker model named on every launch | `plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-launch.test.sh` | PASS |
 | G3 | Budget limit overshoot allowed for | `plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-launch.test.sh` | PASS |
+
+## Stranger Test
+
+BLOCK — T2, T3, T4, T5, T7, T10, T11, T16 (16 tasks reviewed by an independent agent on 2026-11-16, against d7d098bc). The plan's own PASS was not independent. Main gaps: a directive field `max_turns` left after the no-turn-limit decision; the stage-budget arithmetic left no budget for a relaunch after a run with no result (decided: each run's limit is capped at the stage budget ÷ 2, question q-20261116T175135Z-5b9bc1); no test for the allowance rising above its $0.50 floor; a probe-record pattern the export would break; T16 steps that would rewrite the released 3.17.0 entry and the merged release wording; and five scenario errors in T3, T4 and T11. The plan is being corrected, and the test is run again before any code.
