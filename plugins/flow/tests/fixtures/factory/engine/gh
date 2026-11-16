@@ -1,0 +1,58 @@
+#!/bin/bash
+# The factory gh stub: answers the gh calls the factory engine makes, from
+# fixture files beside itself. tests/lib/factory-e2e.sh (fe_new) installs it
+# over the scenario's $E2E_BIN/gh, and fe_gh writes its fixtures.
+#
+# It finds everything beside itself, never through E2E_GH or E2E_DIR: it runs
+# in the worker's environment, which the launcher builds from nothing.
+#
+# A call's key is its arguments joined with single spaces, with every / and
+# space turned into _: `gh api repos/o/r/pulls/12` is api_repos_o_r_pulls_12.
+# The answer is fe-gh/<key>.json beside the stub:
+#   hang <seconds>          sleep that long (the stub's own pid sleeps)
+#   fail <rc> <stderr text> print the text on stderr and exit rc
+#   anything else           printed as it is
+# With no fixture, `gh --version` prints gh version 2.101.0 (2026-09-15) and
+# the creation scan of flow-e2e/scratch prints []; any other call is logged to
+# fe-gh-unhandled.log and exits 99.
+#
+# Every call is appended to fe-gh-calls.log, and the stub's pid to fe-gh-pids
+# before it answers, so a test can check that no stub outlives a timeout.
+
+here=$(cd "$(dirname "$0")" && pwd)
+args="$*"
+key=${args//\//_}
+key=${key// /_}
+printf '%s\n' "$args" >> "$here/fe-gh-calls.log"
+printf '%s\n' "$$" >> "$here/fe-gh-pids"
+
+fixture="$here/fe-gh/$key.json"
+if [ -f "$fixture" ]; then
+  IFS= read -r first < "$fixture" || first=""
+  case "$first" in
+    "hang "*)
+      exec sleep "${first#hang }" ;;
+    "fail "*)
+      rest=${first#fail }
+      rc=${rest%% *}
+      msg=${rest#"$rc"}
+      msg=${msg# }
+      printf '%s\n' "$msg" >&2
+      exit "$rc" ;;
+  esac
+  cat "$fixture"
+  exit 0
+fi
+
+case "$key" in
+  --version)
+    printf '%s\n' "gh version 2.101.0 (2026-09-15)"
+    exit 0 ;;
+  "api_repos_flow-e2e_scratch_issues?labels=flow:factory&state=open&per_page=100")
+    printf '%s\n' "[]"
+    exit 0 ;;
+esac
+
+printf '%s\n' "$args" >> "$here/fe-gh-unhandled.log"
+printf 'factory gh stub: no fixture fe-gh/%s.json for: gh %s\n' "$key" "$args" >&2
+exit 99

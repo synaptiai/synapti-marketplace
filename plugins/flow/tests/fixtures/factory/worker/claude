@@ -1,0 +1,77 @@
+#!/bin/bash
+# The factory's worker claude: a stand-in for `claude -p` that records each
+# launch, then runs fixtures/factory/platform/claude_platform.py (copied beside
+# it by tests/lib/factory-e2e.sh fe_worker_says), whose docstring lists the
+# knob files that change what it does.
+#
+# It reads nothing from E2E_* variables: it runs in the worker environment the
+# launcher builds from nothing, and finds its files beside itself.
+#
+# Files beside it:
+#   claude-version   first line answers --version (default 2.1.325 (Claude
+#                    Code), the version fe_record stamps; claude_platform.py's
+#                    own --version prints a fixed 2.1.322)
+#   claude-argv-<n>.txt, claude-env-<n>.txt, claude-pid-<n>, claude-stdin-<n>.txt
+#                    written for the n-th launch: one argument per line, the
+#                    environment, this process's pid, and the prompt on stdin
+#   worker-result    when present, claude_platform.py is not run: this prints
+#                    an init event (session_id from --session-id, else from
+#                    --resume, else a new uuid), then the file's JSON on one
+#                    line as the result event, then sleeps the seconds in
+#                    worker-sleep when that file exists, and exits 1 when the
+#                    result has is_error true, else 0. It appends its
+#                    arguments to claude-launches.log as claude_platform.py
+#                    does. This mode runs no Python, so a scenario can remove
+#                    the recorded interpreter while it sleeps.
+here=$(cd "$(dirname "$0")" && pwd)
+
+if [ "${1:-}" = --version ] && [ "$#" -eq 1 ]; then
+  v=""
+  [ -f "$here/claude-version" ] && IFS= read -r v < "$here/claude-version"
+  printf '%s\n' "${v:-2.1.325 (Claude Code)}"
+  exit 0
+fi
+
+# Keep the repository out of PYTHONPATH before python3 starts, as
+# bin/flow-factory.sh does (copied from it).
+[ -n "${FLOW_USER_PYTHONPATH+x}" ] || export FLOW_USER_PYTHONPATH="${PYTHONPATH-}" FLOW_USER_PYTHONPATH_SET="${PYTHONPATH+1}" FLOW_USER_PYTHONSAFEPATH="${PYTHONSAFEPATH-}" FLOW_USER_PYTHONSAFEPATH_SET="${PYTHONSAFEPATH+1}"
+_flow_pp=""; if [ -n "${PYTHONPATH-}" ]; then _flow_pp=$(python3 -I -c 'exec("import os, sys\ndef ids(p):\n    out = set()\n    while True:\n        try:\n            st = os.stat(p)\n        except OSError:\n            return out\n        out.add((st.st_dev, st.st_ino))\n        q = os.path.dirname(p)\n        if q == p:\n            return out\n        p = q\ntry:\n    cwd = os.getcwd()\nexcept OSError:\n    sys.exit(0)\ntop = d = cwd\nwhile True:\n    if os.path.lexists(os.path.join(d, \".git\")):\n        top = d\n        break\n    q = os.path.dirname(d)\n    if q == d:\n        break\n    d = q\nst = os.stat(top)\ntop_id = (st.st_dev, st.st_ino)\nup = ids(cwd)\nkeep = []\nfor e in os.environ.get(\"PYTHONPATH\", \"\").split(\":\"):\n    if not e.startswith(\"/\"):\n        continue\n    r = os.path.realpath(e)\n    if \":\" in r or chr(10) in r or not os.path.isdir(r):\n        continue\n    try:\n        st = os.stat(r)\n    except OSError:\n        continue\n    if (st.st_dev, st.st_ino) in up or top_id in ids(r):\n        continue\n    keep.append(r)\nsys.stdout.buffer.write(os.fsencode(\":\".join(keep)))")' 2>/dev/null) || _flow_pp=""; fi
+if [ -n "$_flow_pp" ]; then export PYTHONPATH="$_flow_pp"; else unset PYTHONPATH; fi
+export PYTHONSAFEPATH=1
+
+n=1
+[ -f "$here/claude-launches.log" ] && n=$(( $(wc -l < "$here/claude-launches.log") + 1 ))
+printf '%s\n' "$@" > "$here/claude-argv-$n.txt"
+env -0 | tr '\0' '\n' > "$here/claude-env-$n.txt"
+printf '%s\n' "$$" > "$here/claude-pid-$n"
+cat > "$here/claude-stdin-$n.txt"
+
+if [ ! -f "$here/worker-result" ]; then
+  exec python3 -I "$here/claude_platform.py" "$@" < "$here/claude-stdin-$n.txt"
+fi
+
+printf '%s\n' "$*" >> "$here/claude-launches.log"
+
+# worker-result: shell only, so no Python runs while it sleeps (a scenario
+# may remove the recorded interpreter during the sleep).
+sid=""; prev=""
+for a in "$@"; do
+  case "$prev" in
+    --session-id) sid="$a" ;;
+    --resume) [ -z "$sid" ] && sid="$a" ;;
+  esac
+  prev="$a"
+done
+if [ -z "$sid" ]; then
+  if [ -r /proc/sys/kernel/random/uuid ]; then sid=$(cat /proc/sys/kernel/random/uuid)
+  else sid=$(/usr/bin/uuidgen | tr 'A-F' 'a-f'); fi
+fi
+printf '{"type":"system","subtype":"init","session_id":"%s"}\n' "$sid"
+tr '\n' ' ' < "$here/worker-result" | sed 's/ *$//'
+printf '\n'
+if [ -f "$here/worker-sleep" ]; then
+  IFS= read -r s < "$here/worker-sleep" || s=""
+  sleep "${s:-0}"
+fi
+if grep -Eq '"is_error"[[:space:]]*:[[:space:]]*true' "$here/worker-result"; then exit 1; fi
+exit 0
