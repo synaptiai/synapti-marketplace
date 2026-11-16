@@ -1590,7 +1590,7 @@ e2e_expect_equal "refs/heads/main" "$(cd "$E2E_DIR/origin.git" && command git fo
 _fp_env_after
 
 _flow_test_begin "environment: --github-api takes only GitHub's API hosts or this machine (E15)"
-_fp_env_scenario fp-env-api-host "an https host that is not GitHub's API is a usage error before anything runs; a GitHub Enterprise /api/v3 address is accepted (and then refused for the unapproved sandbox, so nothing is sent)"
+_fp_env_scenario fp-env-api-host "an https host that is not GitHub's API is a usage error before anything runs; a GitHub Enterprise /api/v3 address is accepted as an address (and then refused because the journal does not approve it, so nothing is sent)"
 e2e_run_bin bin/flow-factory.sh probe --environment --sandbox "$FP_SANDBOX" --github-api https://api.example.com --only P3
 e2e_expect_equal "2" "$E2E_RC" "exit status for https://api.example.com"
 e2e_expect_err "https://api.example.com"
@@ -1598,7 +1598,7 @@ e2e_expect_equal "" "$(cat "$E2E_BIN/security-calls.log" 2>/dev/null)" "Keychain
 e2e_expect_equal "no" "$([ -e "$E2E_REPO/$FP_REC" ] && echo yes || echo no)" "a record was written"
 e2e_run_bin bin/flow-factory.sh probe --environment --sandbox someone/else --github-api https://ghe.example.com/api/v3 --only P3
 e2e_expect_equal "5" "$E2E_RC" "exit status for a GitHub Enterprise address"
-e2e_expect_out "FACTORY_REFUSED=sandbox_not_approved"
+e2e_expect_out "FACTORY_REFUSED=github_api_not_approved"
 
 # _fp_closed_api — an http address on this machine where nothing listens, so
 # a request sent there gets no answer; masked in the artifact.
@@ -3315,8 +3315,8 @@ _fp_gw_run "$FP_GW_SANDBOX"
 e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
 e2e_expect_equal '{"approve_refused": "go", "comment_review": "go", "marker_lookup": "go", "ready_undo": "not_run", "request_changes_refused": "go", "review_association": "go"}' \
   "$(_fp_parts P6)" "every P6 part"
-e2e_expect_equal "yes" "$(_fp_get "$E2E_REPO/$FP_REC" '"yes" if "effect on CI was not seen" in
-  d["probes"]["P6"]["parts"]["ready_undo"]["reason"] else d["probes"]["P6"]["parts"]["ready_undo"]["reason"]')" \
+e2e_expect_equal "yes" "$(_fp_get "$E2E_REPO/$FP_REC" '("yes" if "effect on CI was not seen" in
+  d["probes"]["P6"]["parts"]["ready_undo"]["reason"] else d["probes"]["P6"]["parts"]["ready_undo"]["reason"])')" \
   "ready_undo's reason"
 
 _flow_test_begin "github write: a push that exited 0 whose ls-remote failed is not run, never no-go (G21)"

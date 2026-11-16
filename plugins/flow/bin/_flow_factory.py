@@ -7406,7 +7406,10 @@ class ExportScrub:
         # public (the owner of a repository it names, the GitHub login).
         public = {n.lower() for n in public_names}
         names = {n for n in account_names() if len(n) >= 2 and n.lower() not in public}
-        self.accounts = [re.compile(r"(?<![A-Za-z0-9_.-])" + re.escape(n) + r"(?![A-Za-z0-9_-])") for n in names]
+        # A dot before a name character continues the name (fpacct.old is
+        # another name), as for the home; one ending a sentence does not.
+        self.accounts = [re.compile(r"(?<![A-Za-z0-9_.-])" + re.escape(n) + r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])")
+                         for n in names]
         self.account_bytes = [re.compile(r.pattern.encode("utf-8", "surrogateescape")) for r in self.accounts]
 
     def paths(self, text):
