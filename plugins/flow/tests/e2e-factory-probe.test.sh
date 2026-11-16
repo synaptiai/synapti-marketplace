@@ -5311,18 +5311,20 @@ e2e_expect_out "export_account_name"
 # X25 The export looks for the credential values set in its own
 # environment, so a value the probes ran with and the export's shell lacks
 # (a gateway token set for the probe session only) is never looked for.
-_flow_test_begin "export: a credential the probes ran with that the export's environment lacks is refused (X25)"
-_fp_runner_scenario fp-export-cred-unset "a probe --launch with ANTHROPIC_AUTH_TOKEN set notes its name and a hash, never the value; an export without it is refused naming it, and an export with the same value is not"
+_flow_test_begin "export: evidence holding a credential value the probe ran with is refused, although the export's environment lacks it (X25)"
+_fp_runner_scenario fp-export-cred-unset "a probe --launch with ANTHROPIC_AUTH_TOKEN set writes its value into its evidence and is killed at its limit: the scan made when the entry is recorded flags the folder by kind, holds no value, and an export run without the variable is refused naming the folder"
 FP_GATEWAY="fp-gateway-token-0123456789"
-e2e_run_bin ANTHROPIC_AUTH_TOKEN="$FP_GATEWAY" bin/flow-factory.sh probe --launch P5 --group platform --prompt-file "$E2E_DIR/prompt.txt" --max-budget-usd 0.5 --timeout-seconds 10
+printf 'sleep 30\n' > "$E2E_BIN/claude-behaviour"
+printf 'mkdir -p %q && printf "%%s\\n" %q > %q\n' "$E2E_REPO/.flow/factory/evidence/P5-1" "$FP_GATEWAY" \
+  "$E2E_REPO/.flow/factory/evidence/P5-1/worker-note.txt" > "$E2E_BIN/claude-script"
+e2e_run_bin ANTHROPIC_AUTH_TOKEN="$FP_GATEWAY" bin/flow-factory.sh probe --launch P5 --group platform --prompt-file "$E2E_DIR/prompt.txt" --max-budget-usd 0.5 --timeout-seconds 3 --kill-after-seconds 1
 e2e_expect_equal "0" "$E2E_RC" "exit status of the launch ($E2E_OUT $E2E_ERR)"
-e2e_expect_equal "ANTHROPIC_AUTH_TOKEN no" "$(_fp_get "$E2E_REPO/.flow/factory/credential-hashes.json" '" ".join(sorted(d)) + (" yes" if "'"$FP_GATEWAY"'" in open("'"$E2E_REPO/.flow/factory/credential-hashes.json"'").read() else " no")')" \
-  "the noted names, and whether the value is in the file"
+e2e_expect_equal "evidence/P5-1 value of ANTHROPIC_AUTH_TOKEN no" "$(_fp_get "$E2E_REPO/.flow/factory/credential-scan.json" '" ".join("%s %s" % kv for kv in sorted(d.items())) + (" yes" if "'"$FP_GATEWAY"'" in open("'"$E2E_REPO/.flow/factory/credential-scan.json"'").read() else " no")')" \
+  "the scan's folders and kinds, and whether the value is in the scan file"
 e2e_run_bin bin/flow-factory.sh probe --export docs/flow-factory
 e2e_expect_equal "5" "$E2E_RC" "exit status of the export without the variable"
-e2e_expect_out "FACTORY_REFUSED=export_credential_unset (ANTHROPIC_AUTH_TOKEN"
-e2e_run_bin ANTHROPIC_AUTH_TOKEN="$FP_GATEWAY" bin/flow-factory.sh probe --export docs/flow-factory
-e2e_expect_no_out "export_credential_unset"
+e2e_expect_out "FACTORY_REFUSED=export_secret evidence/P5-1 (value of ANTHROPIC_AUTH_TOKEN, found when the probe recorded it)"
+e2e_expect_equal "no" "$([ -e "$E2E_REPO/docs/flow-factory/probes.json" ] && echo yes || echo no)" "a copy was written"
 
 _flow_test_begin "export: an interrupt while an interrupted export moves the earlier evidence back names its folder (X23)"
 _fp_export_scenario fp-export-undo-interrupt "an earlier export is in docs/flow-factory; the next export is \

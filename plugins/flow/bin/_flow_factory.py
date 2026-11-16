@@ -1081,6 +1081,7 @@ def record_probes(record, record_path, group, keyed_on, probes, added_usd, cap_u
     write_record(record_path, trial)
     record.clear()
     record.update(trial)
+    scan_evidence_credentials(os.path.dirname(os.path.abspath(record_path)), recorded)
     return recorded
 
 
@@ -2750,54 +2751,73 @@ def would_pass_cap(spent, budget, cap):
     return money(spent) + money(budget) > money(cap)
 
 
-CREDENTIAL_NOTE = "credential-hashes.json"
+CREDENTIAL_SCAN = "credential-scan.json"
 
 
-def credential_hash(value):
-    return hashlib.sha256(value.encode("utf-8", "surrogateescape")).hexdigest()
-
-
-def note_credentials(fdir):
-    """Add to CREDENTIAL_NOTE in the factory folder the name of each
-    credential variable set while probes run, with a hash of its value, never
-    the value: the export looks for the values in its own environment, and
-    refuses when one the probes ran with is missing or changed there."""
-    path = os.path.join(fdir, CREDENTIAL_NOTE)
+def scan_evidence_credentials(fdir, entries):
+    """Look in each evidence folder the entries name for the credential
+    values set now, while the probe that wrote it still has them, and keep
+    in CREDENTIAL_SCAN, per folder, the kind of the first one found or
+    null: never a value or a hash of one. The export refuses a folder found
+    holding one, so it needs no credential set the way the probes had it."""
+    folders = set()
+    for entry in entries.values():
+        if not isinstance(entry, dict):
+            continue
+        for item in [entry] + [v for v in (entry.get("parts") or {}).values() if isinstance(v, dict)]:
+            ev = item.get("evidence")
+            if isinstance(ev, str) and ev:
+                folders.add(ev)
+    if not folders:
+        return
+    path = os.path.join(fdir, CREDENTIAL_SCAN)
     try:
         with open(path, encoding="utf-8") as f:
-            noted = json.load(f)
+            scanned = json.load(f)
     except (OSError, ValueError):
-        noted = {}
-    if not isinstance(noted, dict):
-        noted = {}
-    for name in credential_names():
-        value = os.environ.get(name, "")
-        if value:
-            hashes = noted.get(name) if isinstance(noted.get(name), list) else []
-            if credential_hash(value) not in hashes:
-                noted[name] = hashes + [credential_hash(value)]
-    write_json(path, noted)
-    os.chmod(path, 0o600)
-
-
-def unmatched_credentials(fdir):
-    """The credential variables noted while probes ran whose value this
-    environment does not hold, so the export cannot look for it."""
-    try:
-        with open(os.path.join(fdir, CREDENTIAL_NOTE), encoding="utf-8") as f:
-            noted = json.load(f)
-    except (OSError, ValueError):
-        return []
-    if not isinstance(noted, dict):
-        return []
-    out = []
-    for name, hashes in sorted(noted.items()):
-        value = os.environ.get(name, "")
-        for h in hashes if isinstance(hashes, list) else []:
-            if not value or credential_hash(value) != h:
-                out.append(name)
+        scanned = {}
+    if not isinstance(scanned, dict):
+        scanned = {}
+    values = credential_values()
+    for ev in sorted(folders):
+        folder = os.path.join(fdir, ev)
+        if not os.path.isdir(folder) or os.path.islink(folder):
+            continue
+        found = None
+        for d, dirs, files in os.walk(folder):
+            dirs.sort()
+            for name in sorted(files):
+                fp = os.path.join(d, name)
+                if os.path.islink(fp):
+                    continue
+                try:
+                    with open(fp, "rb") as f:
+                        data = f.read()
+                except OSError:
+                    continue
+                found = next((kind for pattern, kind in values if pattern.search(data)), None)
+                if found:
+                    break
+            if found:
                 break
-    return out
+        # A folder found holding a value stays flagged, whatever a later
+        # run with other values finds.
+        if scanned.get(ev) is None:
+            scanned[ev] = found
+    write_json(path, scanned)
+
+
+def flagged_evidence(fdir, folders):
+    """(folder, kind) for each of folders that CREDENTIAL_SCAN found holding
+    a credential value when its probe recorded it."""
+    try:
+        with open(os.path.join(fdir, CREDENTIAL_SCAN), encoding="utf-8") as f:
+            scanned = json.load(f)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(scanned, dict):
+        return []
+    return [(ev, scanned[ev]) for ev in sorted(folders) if isinstance(scanned.get(ev), str)]
 
 
 def bind_cap(args, record):
@@ -2838,7 +2858,6 @@ def launch_probe(args):
         if args.group in MODEL_GROUPS:
             keyed[MODEL_KEY] = args.model or PROBE_MODEL
         spent = record["spend"]["spent_usd"]
-        note_credentials(fdir)
         cap = bind_cap(args, record)
         if would_pass_cap(spent, args.max_budget_usd, cap):
             entry = probe_entry(args.group, "not_run", "budget", "", 0, [])
@@ -4175,7 +4194,6 @@ def environment_probes(args):
             record_path = os.path.join(fdir, "probes.json")
             record = read_record(record_path)
             check_schema(record)
-            note_credentials(fdir)
             bind_cap(args, record)
             entries = {}
             current = []
@@ -5800,7 +5818,6 @@ def platform_probes(args):
         record_path = os.path.join(fdir, "probes.json")
         record = read_record(record_path)
         check_schema(record)
-        note_credentials(fdir)
         ctx = Platform(tools, keyed, fdir, record, record_path, bind_cap(args, record), model=args.model)
         only = args.only or PLATFORM_PROBES
         for pid in PLATFORM_PROBES:
@@ -6271,7 +6288,6 @@ def github_write_probes(args):
             record_path = os.path.join(fdir, "probes.json")
             record = read_record(record_path)
             check_schema(record)
-            note_credentials(fdir)
             bind_cap(args, record)
             ev3_rel = new_evidence_dir(fdir, "P3")
             ev3 = os.path.join(fdir, ev3_rel)
@@ -6635,7 +6651,6 @@ def interactive_record(args):
         record_path = os.path.join(fdir, "probes.json")
         record = read_record(record_path)
         check_schema(record)
-        note_credentials(fdir)
         bind_cap(args, record)
         now = interactive_state(fdir, required=False)
         marker = now.get("p14")
@@ -6922,7 +6937,6 @@ def interactive_p14(args):
     with factory_lock(fdir):
         record = read_record(record_path)
         check_schema(record)
-        note_credentials(fdir)
         bind_cap(args, record)
         old = ((record.get("groups") or {}).get("interactive") or {}).get("keyed_on") or {}
         if would_pass_cap(record["spend"]["spent_usd"], P14_BUDGET_USD, args.cap_usd):
@@ -7633,10 +7647,6 @@ def export_probes(args):
     record = read_record(record_path)
     check_schema(record)
     refuse_unrelated_target(target)
-    missing = unmatched_credentials(fdir)
-    if missing:
-        raise Refused(f"export_credential_unset ({', '.join(missing)} held another value when the probes ran; set "
-                      "each as it was then, so the export can look for it in the evidence)")
     scrub = ExportScrub(record_public_names(record))
     rel_dir = os.path.relpath(real_target, main_top).replace(os.sep, "/")
     tmp = os.path.realpath(tempfile.mkdtemp(prefix="flow-factory-export-"))
@@ -7672,6 +7682,11 @@ def export_probes(args):
             for name, part_entry in sorted((p.get("parts") or {}).items()):
                 if part_entry.get("evidence"):
                     part_entry["evidence"] = copied_path(f"{pid}/{name}", part_entry["evidence"])
+        # A credential value the probes ran with, which this environment
+        # may not hold, was looked for when each folder was recorded.
+        flagged = flagged_evidence(fdir, [c.replace(os.sep, "/") for c in copied])
+        if flagged:
+            raise Refused(f"export_secret {flagged[0][0]} ({flagged[0][1]}, found when the probe recorded it)")
         out = scrub_record(out, scrub)
         try:
             check_schema(out)
