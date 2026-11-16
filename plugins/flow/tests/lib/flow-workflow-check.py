@@ -28,6 +28,11 @@ PATHS = [
     "plugins/flow/references/**",
     "plugins/flow/skills/**",
     "plugins/flow/tests/**",
+    "plugins/flow/schemas/**",
+    "plugins/flow/templates/**",
+    "plugins/flow/settings.json",
+    "plugins/flow/schema.json",
+    "docs/flow-factory/**",
     "tests/**",
     ".github/workflows/flow-tests.yml",
 ]
