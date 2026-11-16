@@ -218,7 +218,9 @@ _cf_router() { e2e_run_bin bin/flow-finding-route.sh --pr 7 --cycle 1 "$@"; }
 # added NOT_COUNTED, NOT_COUNTED_PRIORITIES and NO_TRIGGER after it; for
 # cycle-1 rows that all name a trigger they are empty, and only an empty one
 # is dropped here, so a value in any of them still fails the comparison.
-_pre326() { grep -v '^NOT_COUNTED=$\|^NOT_COUNTED_PRIORITIES=$\|^NO_TRIGGER=$'; }
+# Extended syntax: in a basic pattern BSD grep (macOS) reads a $ that comes
+# before \| as a literal character, so those lines would not be dropped.
+_pre326() { grep -Ev '^(NOT_COUNTED|NOT_COUNTED_PRIORITIES|NO_TRIGGER)=$'; }
 
 _requests() { e2e_expect_equal "$1" "$(e2e_stub_requests "$CF_STUB")" "requests received by stub $CF_STUB"; }
 _record() { jq -c "$1" "$E2E_HOME/$CF_RECORDS" 2>/dev/null; }
