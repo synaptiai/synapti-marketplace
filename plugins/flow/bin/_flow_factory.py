@@ -2825,6 +2825,23 @@ def first_text(text):
     return next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
 
 
+def http_refused(status):
+    """Whether an HTTP status is GitHub refusing the request: a 4xx other
+    than 429. A 5xx, a 429 or no status says the server or the network
+    failed, which shows nothing about whether GitHub allows the request."""
+    return status is not None and 400 <= status < 500 and status != 429
+
+
+def gh_refused(err):
+    """Whether a failed gh command's stderr shows GitHub refusing it (a
+    GraphQL error, or an HTTP 4xx other than a rate limit), as opposed to
+    the network or the server failing."""
+    text = err or ""
+    if re.search(r"rate limit|HTTP 429", text, re.IGNORECASE):
+        return False
+    return bool(re.search(r"^GraphQL: |HTTP 4\d\d", text, re.MULTILINE))
+
+
 def scratch_failed(cmd, rc, err):
     """Refused naming the git step that failed in a scratch repository and
     the first line it printed on stderr."""
@@ -3038,8 +3055,11 @@ def worker_token_part(args, facts, writes):
     if statuses["get"] is None:
         return part("not_run", f"the GET of {args.sandbox} at {args.github_api} got no answer, so the token was not "
                                "tried")
-    if statuses["get"] != 200:
+    if statuses["get"] in (401, 403, 404):
         return part("no-go", f"the token cannot read {args.sandbox} (GET answered {statuses['get']})")
+    if statuses["get"] != 200:
+        return part("not_run", f"the GET of {args.sandbox} answered {statuses['get']}, which is not a refusal, so "
+                               "whether the token reads it was not seen and the writes were not tried")
     checks = (("labels", "POST", f"{repo}/labels", {"name": ""}),
               ("pulls", "POST", f"{repo}/pulls", {}),
               ("contents", "PUT", f"{repo}/contents/{WRITE_CHECK_PATH}", {"message": "flow factory write check"}))
@@ -3054,9 +3074,9 @@ def worker_token_part(args, facts, writes):
         return part("no-go", f"token can write: {said}")
     if all(statuses[n] == 403 for n, _, _, _ in checks):
         return part("go", f"the token reads {args.sandbox} and all three writes answered 403 ({said})")
-    if any(statuses[n] is None for n, _, _, _ in checks):
-        return part("not_run", f"a write the check sends got no answer ({said}); only 403 on all three shows the "
-                               "token cannot write")
+    if any(not http_refused(statuses[n]) for n, _, _, _ in checks):
+        return part("not_run", f"a write the check sends got no answer, a server error or a rate limit ({said}); "
+                               "only 403 on all three shows the token cannot write")
     return part("no-go", f"the write check did not tell the cases apart ({said}); only 403 on all three "
                          f"shows the token cannot write")
 
@@ -4735,9 +4755,17 @@ def probe_p1(ctx, ev_rel):
     write_target = os.path.join(repo, "factory-probe-write.txt")
     edit_target = os.path.join(repo, "factory-probe-edit.txt")
     io_target = os.path.join(io, "factory-probe-io.txt")
-    runs["writes"] = ctx.launch("P1", ev, "writes", STEPS_PROMPT + f"\n\nWRITE: {write_target}\nEDIT: {edit_target}\n"
-                                f"WRITE: {io_target}\n", P1_WRITE_RUN, extra_args=args, workdir=repo,
-                                allowed_tools=WORKER_TOOLS, gh_fixtures=P1_GH_FIXTURES)
+    # The command runs above are judged on their own, so a writes run the
+    # cap or the API stops leaves its own parts not run and keeps theirs.
+    writes_stop = None
+    try:
+        runs["writes"] = ctx.launch("P1", ev, "writes", STEPS_PROMPT + f"\n\nWRITE: {write_target}\n"
+                                    f"EDIT: {edit_target}\nWRITE: {io_target}\n", P1_WRITE_RUN, extra_args=args,
+                                    workdir=repo, allowed_tools=WORKER_TOOLS, gh_fixtures=P1_GH_FIXTURES)
+    except BudgetStop:
+        writes_stop = "budget"
+    except ApiStop as e:
+        writes_stop = f"the run {e}"
     parts = {}
     marks = [ln.split() for ln in read_lines(marker) if ln.strip()]
     for name, _ in P1_COMMANDS:
@@ -4761,11 +4789,13 @@ def probe_p1(ctx, ev_rel):
             return False
 
     tried = [(n, i.get("file_path")) for n, i, _ in tool_uses(runs["writes"]["events"])
-             if isinstance(i.get("file_path"), str)]
+             if isinstance(i.get("file_path"), str)] if writes_stop is None else []
 
     def write_part(tool, target, done, what):
         """go when the file shows the change; no-go when the worker made the
         call and the change is not there; not_run when no call was made."""
+        if writes_stop is not None:
+            return part("not_run", f"writes: {writes_stop}")
         if done:
             return part("go", f"{what} succeeded")
         if any(n == tool and os.path.realpath(p) == os.path.realpath(target) for n, p in tried):
@@ -5469,6 +5499,10 @@ def probe_p16(ctx, ev_rel):
                            P16_WIDEN_RUN, extra_args=sandbox_args, workdir=clone_b, allowed_tools="Bash")
     except BudgetStop:
         parts["repo_settings_widen"] = part("not_run", "budget")
+    except ApiStop as e:
+        # Run A's parts are kept, a no-go among them too: run B never
+        # reached the model, so only its own part is not run.
+        parts["repo_settings_widen"] = part("not_run", f"the run {e}")
     seen_b = {}
     if run_b is not None:
         calls_b = bash_calls(run_b["events"])
@@ -5731,7 +5765,9 @@ def sandbox_pull_request(args, git, env, scratch, default_branch):
     unseen = f"git push of {branch} to {args.sandbox} {exit_text(rc, err)}" if rc is None else None
     listed, out, listed_err = run_cmd(["git", "ls-remote", url, f"refs/heads/{branch}"], repo, env)
     remote = out.split()[0] if out.split() else None
-    if listed is None and remote != head and rc == 0:
+    # A push that exited 0 whose check could not be read (ls-remote timed
+    # out or failed) is a failed check, not a failed push.
+    if listed != 0 and remote != head and rc == 0:
         unseen = (f"git push of {branch} to {args.sandbox} {exit_text(rc)}, and the git ls-remote that shows "
                   f"whether the sandbox holds the commit {exit_text(listed, listed_err)}")
     if (refused or unseen) and remote != head:
@@ -5815,8 +5851,11 @@ def probe_p6(args, env, cwd, n, branch, facts, trust):
         parts["comment_review"] = part("go", f"COMMENT on its own pull request returned review id {review_id}")
     elif status is None:
         parts["comment_review"] = part("not_run", "the COMMENT review on its own pull request got no HTTP answer")
-    else:
+    elif http_refused(status):
         parts["comment_review"] = part("no-go", f"COMMENT on its own pull request answered {status}")
+    else:
+        parts["comment_review"] = part("not_run", f"COMMENT on its own pull request answered {status}, a server "
+                                                  "error or rate limit, so whether GitHub allows it was not seen")
     assoc = review.get("author_association")
     if review_id is None and status is None:
         parts["review_association"] = part("not_run", "the COMMENT review got no HTTP answer, so whether a review "
@@ -5882,8 +5921,12 @@ def probe_p6(args, env, cwd, n, branch, facts, trust):
         parts["marker_lookup"] = part("not_run", "posting the marker comment got no HTTP answer, so whether it was "
                                                  "posted is unknown and no comment id came back to look up",
                                       deferred_to=ISSUE_1F)
-    elif comment_id is None:
+    elif comment_id is None and http_refused(status):
         parts["marker_lookup"] = part("no-go", f"the marker comment was not posted ({status})", deferred_to=ISSUE_1F)
+    elif comment_id is None:
+        parts["marker_lookup"] = part("not_run", f"posting the marker comment answered {status or 'no id'}, which "
+                                                 "is not a refusal, so whether the lookup finds it was not seen",
+                                      deferred_to=ISSUE_1F)
     elif lost:
         parts["marker_lookup"] = part("no-go", "the lookup did not find the posted marker again by its key in the "
                                                + " and ".join(lost) + " list", deferred_to=ISSUE_1F)
@@ -5915,10 +5958,17 @@ def probe_p6(args, env, cwd, n, branch, facts, trust):
         said = (f"ready started {len(started)} workflow run(s) and --undo cancelled {len(cancelled)}, "
                 f"read {args.ci_wait_seconds} s after each")
     facts["ci"] = ci
-    if rc_ready == 0 and rc_undo == 0:
+    refused = [what for what, rc, err in (("gh pr ready", rc_ready, err_ready), ("--undo", rc_undo, err_undo))
+               if rc not in (0, None) and gh_refused(err)]
+    if rc_ready == 0 and rc_undo == 0 and ci["readable"]:
         parts["ready_undo"] = part("go", f"gh pr ready and --undo succeeded; {said}")
-    elif rc_ready not in (0, None) or rc_undo not in (0, None):
-        parts["ready_undo"] = part("no-go", f"gh pr ready {exit_text(rc_ready)}, --undo {exit_text(rc_undo)}")
+    elif rc_ready == 0 and rc_undo == 0:
+        parts["ready_undo"] = part("not_run", f"gh pr ready and --undo succeeded, but {said}, so their effect on "
+                                              "CI was not seen")
+    elif refused:
+        parts["ready_undo"] = part("no-go", f"gh pr ready {exit_text(rc_ready)}, --undo {exit_text(rc_undo)}; "
+                                            f"GitHub refused {' and '.join(refused)}: "
+                                            + first_text(err_ready if rc_ready not in (0, None) else err_undo))
     else:
         parts["ready_undo"] = part("not_run", f"gh pr ready {exit_text(rc_ready, err_ready)}, --undo "
                                               f"{exit_text(rc_undo, err_undo)}")

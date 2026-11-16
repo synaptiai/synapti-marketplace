@@ -1122,6 +1122,25 @@ e2e_expect_equal "4" "$(e2e_stub_requests api)" "requests to the stub API"
 e2e_expect_equal "[]" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P3"]["github_writes"]')" "github_writes"
 _fp_env_after
 
+# E31 A server error on the token check is read as the token's answer: a
+# GET answered 503 records "token cannot read", and a write answered 502
+# among 403s records "did not tell the cases apart", both no-go.
+_flow_test_begin "environment: a token check answered 5xx is not run, never no-go (E31)"
+_fp_env_scenario fp-env-token-503 "the GET answers 503: the token part is not_run and no write is tried" \
+  '{"replies": [{"status": 503, "body": {"message": "Service Unavailable"}}]}'
+_fp_env_run -- --only P3
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+e2e_expect_equal "not_run 1" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P3"]["parts"]["worker_token"]["result"]') $(e2e_stub_requests api)" \
+  "token part result and requests to the stub API"
+e2e_expect_equal "no" "$(_fp_get "$E2E_REPO/$FP_REC" '"yes" if d["probes"]["P3"].get("fallback") else "no"')" "P3 names a fallback"
+_fp_env_after
+_fp_env_scenario fp-env-token-502 "labels and contents answer 403 and pulls 502: the token part is not_run, never no-go" \
+  '{"replies": [{"status": 200, "body": {"full_name": "probe-fixture/sandbox"}}, {"status": 403, "body": {"message": "Resource not accessible by personal access token"}}, {"status": 502, "body": {"message": "Bad Gateway"}}, {"status": 403, "body": {"message": "Resource not accessible by personal access token"}}]}'
+_fp_env_run -- --only P3
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+e2e_expect_equal "not_run" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P3"]["parts"]["worker_token"]["result"]')" "token part result"
+_fp_env_after
+
 _flow_test_begin "environment: a missing Keychain item leaves the token part not run and the rest running (E5)"
 _fp_env_scenario fp-env-token-missing "security exits 44: the token part is not_run with reason token-missing, no request is sent, the other parts still run, and P3 is not go"
 printf 'missing\n' > "$E2E_BIN/security-behaviour"
@@ -2057,6 +2076,23 @@ e2e_expect_equal "yes" "$(_fp_p '"yes" if p.get("fallback") else "no"')" "P1 nam
 e2e_expect_equal "0" "$(cat "$E2E_BIN/gh-real.log" 2>/dev/null | wc -l | tr -d ' ')" "calls that reached the gh on PATH"
 e2e_expect_equal "yes" "$(grep -q 'gh pr create' "$E2E_BIN/claude-script.out" && echo yes || echo no)" "the stand-in's refusal reached the worker"
 
+# PL22 The write run refused by the API makes the whole of P1 not_run,
+# dropping the four command runs' parts.
+_flow_test_begin "platform: P1's write run refused by the API leaves its own parts not run and keeps the command runs' (PL22)"
+_fp_platform_scenario fp-plat-p1-api-writes "the write run ends as a run the API refused: the four block parts stay go, the three write parts are not_run with the API's answer, and P1 is not_run"
+FP_PID=P1
+printf 'factory-probe-write.txt\n' > "$E2E_BIN/claude-api-error-when"
+_fp_platform_run -- --only P1
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "5" "$(_fp_launches)" "claude -p starts"
+e2e_expect_equal "go go go go" "$(_fp_p '" ".join(p["parts"]["bang_first_turn_" + c]["result"] for c in ("start", "pr", "review", "address"))')" "the four block parts"
+e2e_expect_equal "not_run not_run not_run yes" "$(_fp_p '"%s %s %s %s" % (p["parts"]["worktree_write"]["result"],
+  p["parts"]["worktree_edit"]["result"], p["parts"]["io_write"]["result"],
+  "yes" if p["parts"]["worktree_write"]["reason"].startswith("writes: the run ") else p["parts"]["worktree_write"]["reason"])')" \
+  "the three write parts and the reason of one"
+e2e_expect_equal "not_run" "$(_fp_p 'p["result"]')" "P1 result"
+e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
+
 _flow_test_begin "platform: P1's block check is no-go when no block runs (PL6)"
 _fp_platform_scenario fp-plat-p1-nobang "the stand-in leaves every \`\`\`! block unrun: each block part is no-go, and P1 names the run-each-block-with-Bash fallback"
 FP_PID=P1
@@ -2654,6 +2690,20 @@ e2e_expect_equal "yes" "$(_fp_p '"yes" if "error_max_budget_usd" in p["parts"]["
 e2e_expect_equal "error None" "$(_fp_get "$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')/facts.json" '"%s %s" % (d["outcomes"]["run_a"], d["outcomes"]["run_b"])')" "facts outcomes"
 e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
 
+# SB18 Run B refused by the API makes the whole of P16 not_run, dropping
+# what run A saw, a no-go among it.
+_flow_test_begin "platform: run B refused by the API keeps run A's parts, a no-go among them (SB18)"
+_fp_p16_scenario fp-plat-p16-api-b "run A writes the outside marker, so write_outside is no-go, and run B ends as a run the API refused: P16 stays no-go with run A's parts, and repo_settings_widen alone is not_run with the API's answer"
+printf '%s\n' "p=\$(sed -n 's/^RUN: if [^ ]*touch \\([^ ;]*\\);.*/\\1/p' '$E2E_BIN/claude-prompt-1.txt' | head -1); [ -n \"\$p\" ] && : > \"\$p\"" > "$E2E_BIN/claude-script"
+printf 'p16-widen-\n' > "$E2E_BIN/claude-api-error-when"
+_fp_platform_run -- --only P16
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "2" "$(_fp_launches)" "claude -p starts"
+e2e_expect_equal "no-go no-go not_run yes" "$(_fp_p '"%s %s %s %s" % (p["result"], p["parts"]["write_outside"]["result"],
+  p["parts"]["repo_settings_widen"]["result"], "yes" if p["parts"]["repo_settings_widen"]["reason"].startswith("the run ")
+  else p["parts"]["repo_settings_widen"]["reason"])')" "P16, write_outside, repo_settings_widen and its reason"
+e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
+
 _flow_test_begin "platform: P16 is no-go when GH_TOKEN reaches the worker (SB8)"
 _fp_p16_scenario fp-plat-p16-env "the stand-in sandbox does not drop GH_TOKEN: the worker sees the canary, env_token is no-go, and gh auth token prints it"
 printf '%s\n' 'GH_TOKEN' > "$E2E_BIN/claude-sandbox-ignore"
@@ -3163,7 +3213,48 @@ e2e_expect_equal "yes not_run" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % ("yes" 
   else "no", d["probes"]["P6"]["result"])')" "P3's fallback and P6's result"
 e2e_expect_equal "0" "$(_fp_probe_branches)" "probe branches in the sandbox"
 
-_flow_test_begin "github write: a gh repo view that gets no answer is refused as unreachable, never as not found (G16)"
+# G19-G21 A server error, a rate limit or a network failure is read as
+# GitHub refusing the request: the part is no-go and brings a fallback that
+# changes the design, although nothing about GitHub's rules was seen. Only a
+# 4xx other than 429, or gh printing GitHub's refusal, is a no-go.
+_flow_test_begin "github write: a COMMENT and a marker comment answered 5xx, and gh pr ready failing on the network, are not run, never no-go (G19)"
+FP_D="the COMMENT review answers 502, the marker comment 503, and gh pr ready exits 1 printing a network error:"
+FP_D+=" comment_review, marker_lookup and ready_undo are not_run, P6 is not no-go and names no fallback"
+_fp_gw_scenario fp-gw-server-errors "$FP_D" \
+  '{"status_COMMENT": 502, "status_comment": 503, "ready_fails": true, "ready_stderr": "error connecting to api.github.com"}'
+_fp_gw_run "$FP_GW_SANDBOX"
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "not_run not_run not_run" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s %s" % tuple(
+  d["probes"]["P6"]["parts"][k]["result"] for k in ("comment_review", "marker_lookup", "ready_undo"))')" \
+  "comment_review, marker_lookup and ready_undo"
+e2e_expect_equal "not no-go, no fallback" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s, %s" % (
+  "no-go" if d["probes"]["P6"]["result"] == "no-go" else "not no-go",
+  "a fallback" if d["probes"]["P6"].get("fallback") else "no fallback")')" "P6 result and fallback"
+
+_flow_test_begin "github write: gh pr ready and --undo succeeding with the workflow runs unreadable is not run, never go (G20)"
+_fp_gw_scenario fp-gw-runs-unreadable "the workflow runs GET fails with 502: ready_undo is not_run, naming that the CI effect was not seen, and every other P6 part is go" \
+  '{"runs_fail": true}'
+_fp_gw_run "$FP_GW_SANDBOX"
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal '{"approve_refused": "go", "comment_review": "go", "marker_lookup": "go", "ready_undo": "not_run", "request_changes_refused": "go", "review_association": "go"}' \
+  "$(_fp_parts P6)" "every P6 part"
+e2e_expect_equal "yes" "$(_fp_get "$E2E_REPO/$FP_REC" '"yes" if "effect on CI was not seen" in
+  d["probes"]["P6"]["parts"]["ready_undo"]["reason"] else d["probes"]["P6"]["parts"]["ready_undo"]["reason"]')" \
+  "ready_undo's reason"
+
+_flow_test_begin "github write: a push that exited 0 whose ls-remote failed is not run, never no-go (G21)"
+FP_D="git push to the sandbox exits 0 and the git ls-remote that checks it exits 128: sandbox_push is not_run naming"
+FP_D+=" the ls-remote, P3 names no fallback, and the draft pull request is not run"
+_fp_gw_scenario fp-gw-listing-fails "$FP_D"
+cp "$FP_FIXTURES/bin/git" "$E2E_BIN/"
+printf 'ls-remote\n' > "$E2E_BIN/git-fail"
+_fp_gw_run "$FP_GW_SANDBOX"
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "not_run yes not_run no" "$(_fp_get "$E2E_REPO/$FP_REC" '(lambda p: "%s %s %s %s" % (
+  p["parts"]["sandbox_push"]["result"], "yes" if "ls-remote" in p["parts"]["sandbox_push"]["reason"]
+  else p["parts"]["sandbox_push"]["reason"], p["parts"]["sandbox_draft_pr"]["result"],
+  "yes" if p.get("fallback") else "no"))(d["probes"]["P3"])')" "the push part, its reason, the pull request part and P3's fallback"
+
 FP_D="gh repo view of the approved sandbox gets no answer (it sleeps past --call-timeout-seconds 3): refused with"
 FP_D+=" sandbox_unreachable naming the call that did not answer, never sandbox_not_found, and nothing is written"
 _fp_gw_scenario fp-gw-view-no-answer "$FP_D" '{"no_answer": ["repo view"]}'

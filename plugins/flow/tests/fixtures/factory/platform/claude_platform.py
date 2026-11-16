@@ -102,6 +102,8 @@ Files beside it:
                          API refused (a usage limit): an is_error result of
                          subtype success with api_error_status 429 and
                          terminal_reason api_error, costing nothing
+  claude-api-error-when  the same, for a run whose prompt contains one of its
+                         lines only
   claude-resume-fresh    --resume starts a new, empty session, as if the
                          earlier conversation were not carried over
   claude-resume-lost     --resume exits 1 before printing any event, saying
@@ -566,7 +568,7 @@ def main(argv):
         init["slash_commands"] = commands
     emit(init)
     s.hooks("SessionStart", {"source": "resume" if resumed else "startup"})
-    if knob("claude-api-error"):
+    if knob("claude-api-error") or any(x in prompt for x in knob_lines("claude-api-error-when")):
         # Claude Code 2.1.323's own events when the account's usage limit is
         # reached: a synthetic assistant message and an is_error result of
         # subtype success that cost nothing.

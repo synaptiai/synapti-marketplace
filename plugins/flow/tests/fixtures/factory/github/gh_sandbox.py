@@ -43,6 +43,10 @@ gh-config.json beside it (every key optional):
                         one gets no answer, it sleeps as gh does waiting on a
                         network that never answers
   ready_fails           gh pr ready (and --undo) exits 1
+  ready_stderr          what gh prints when ready_fails (default GitHub's
+                        GraphQL refusal); a network error shows a failure
+                        that is not a refusal
+  runs_fail             the workflow runs GET exits 1 with GitHub's 502
   ready_starts_run      gh pr ready adds a queued workflow run
   undo_cancels          gh pr ready --undo marks queued runs cancelled
 """
@@ -53,7 +57,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REASONS = {200: "OK", 201: "Created", 403: "Forbidden", 404: "Not Found", 422: "Unprocessable Entity",
-           502: "Bad Gateway"}
+           429: "Too Many Requests", 502: "Bad Gateway", 503: "Service Unavailable"}
 
 # GitHub's text for a review of one's own pull request.
 OWN_PR_ERRORS = {"APPROVE": "Can not approve your own pull request",
@@ -61,11 +65,18 @@ OWN_PR_ERRORS = {"APPROVE": "Can not approve your own pull request",
 
 
 def load(name, default):
+    """The JSON in name beside this file; default when the file is missing.
+    A file that is there but cannot be read or parsed stops the stand-in, so
+    a scenario's failure settings are never replaced by the success
+    defaults without notice."""
     try:
         with open(os.path.join(HERE, name), encoding="utf-8") as f:
             return json.load(f)
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return default
+    except (OSError, ValueError) as e:
+        print(f"gh stand-in: cannot read {name}: {e}", file=sys.stderr)
+        sys.exit(98)
 
 
 def save_state(state):
@@ -143,7 +154,8 @@ def main(args):
         return 0
     if args[:2] == ["pr", "ready"] and option(args, "--repo") == repo:
         if cfg.get("ready_fails"):
-            print("GraphQL: Resource not accessible (markPullRequestReadyForReview)", file=sys.stderr)
+            print(cfg.get("ready_stderr", "GraphQL: Resource not accessible (markPullRequestReadyForReview)"),
+                  file=sys.stderr)
             return 1
         if "--undo" in args:
             if cfg.get("undo_cancels"):
@@ -201,6 +213,9 @@ def main(args):
             return 0
         if re.fullmatch(rf"repos/{re.escape(repo)}/actions/runs\?branch=[^&]+&per_page=100", endpoint) \
                 and method == "GET":
+            if cfg.get("runs_fail"):
+                print("gh: Bad Gateway (HTTP 502)", file=sys.stderr)
+                return 1
             print(json.dumps({"total_count": len(state["runs"]), "workflow_runs": state["runs"]}))
             return 0
     return unhandled(args)
