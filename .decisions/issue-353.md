@@ -130,6 +130,17 @@ artifacts:
   reason: self-review-refuted
   category: conventions
   pr: 379
+- type: review-cycle
+  captured_at: '2026-11-16T13:17:03Z'
+  cycle: 1
+  path: B
+  findings_count: 29
+  pr: 379
+- type: workflow-run
+  captured_at: '2026-11-16T13:18:00Z'
+  workflow: review-pr
+  run_id: 2026-11-16T101807Z-review
+  status: completed
 ---
 ## Specification
 
