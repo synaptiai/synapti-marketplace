@@ -31,6 +31,7 @@ API:
       -> (rc, out, err)
   config_changed(clone, copy_dir) -> (file, key) or None
   tree_dirty(fdir, clone, copy_dir, n, goal_id) -> bool
+  nested_repositories(fdir, clone) -> [clone-relative path, ...]
   snapshot(fdir, clone, copy_dir, n, reason) -> ref
   reset_and_clean(fdir, clone, copy_dir)
   copy_refs_to_main(fdir, clone, main, n) -> [main ref written, ...]
@@ -68,6 +69,10 @@ SNAPSHOT_IDENTITY = {"GIT_AUTHOR_NAME": "flow-factory", "GIT_AUTHOR_EMAIL": "eng
 DROPPED_VARS = (("FLOW_TIER_DIR", "FLOW_TIER_CALL", "GIT_ATTR_SOURCE", "GIT_CONFIG", "GIT_CONFIG_SYSTEM",
                  "GIT_CONFIG_GLOBAL") + tuple(p0.GIT_LOCATION_VARS))
 NO_COPY = "<no prepare copy>"
+# The bounds of nested_repositories' walk of one untracked folder: levels
+# (the folder itself is level 1) and directory entries read in all.
+NESTED_SCAN_MAX_DEPTH = 20
+NESTED_SCAN_MAX_ENTRIES = 10000
 
 
 class CloneConfigChanged(Exception):
@@ -302,6 +307,123 @@ def tree_dirty(fdir, clone, copy_dir, n, goal_id):
     out = _must(fdir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all",
                        "--", "."] + _excludes(fdir, n, goal_id), clone, copy_dir)
     return out != ""
+
+
+def _copy_dir_of(fdir, clone):
+    """J/clone-config of the job whose job.json names clone as its worktree
+    (both sides resolved), or None when no job does."""
+    want = os.path.realpath(clone)
+    jobs = os.path.join(fdir, "jobs")
+    try:
+        names = sorted(os.listdir(jobs))
+    except OSError:
+        return None
+    for name in names:
+        if not re.fullmatch(r"issue-[1-9][0-9]*", name):
+            continue
+        try:
+            with open(os.path.join(jobs, name, "job.json"), encoding="utf-8") as f:
+                worktree = json.load(f).get("worktree")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(worktree, str) and worktree and os.path.realpath(worktree) == want:
+            return os.path.join(jobs, name, "clone-config")
+    return None
+
+
+def _has_git_entry(clone, rel):
+    """Whether <clone>/<rel>/.git exists (a folder, a file or a symlink),
+    read with lstat: nothing inside the folder is followed or run."""
+    try:
+        os.lstat(os.path.join(clone, rel, ".git"))
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError as e:
+        raise GitFailed(f"nested_repository_unreadable: {rel}: {e}")
+    return True
+
+
+def _walk_untracked(clone, rel):
+    """The folders below the untracked folder <clone>/<rel> that hold a .git
+    entry, as clone-relative paths. Read with os.scandir and lstat only: no
+    git runs, no symlink is followed (a symlinked folder is skipped), and the
+    walk does not descend into a folder once it has a .git entry. Past
+    NESTED_SCAN_MAX_DEPTH levels (rel itself is level 1) or
+    NESTED_SCAN_MAX_ENTRIES entries in all, it raises GitFailed, so the
+    engine parks rather than misses a repository."""
+    found = []
+    seen = 0
+    stack = [(rel, 1)]
+    while stack:
+        d, depth = stack.pop()
+        if depth > NESTED_SCAN_MAX_DEPTH:
+            raise GitFailed(f"nested_repository_scan_limit: {rel}")
+        try:
+            with os.scandir(os.path.join(clone, d)) as it:
+                entries = list(it)
+        except OSError as e:
+            raise GitFailed(f"nested_repository_unreadable: {d}: {e}")
+        seen += len(entries)
+        if seen > NESTED_SCAN_MAX_ENTRIES:
+            raise GitFailed(f"nested_repository_scan_limit: {rel}")
+        for entry in entries:
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError as e:
+                raise GitFailed(f"nested_repository_unreadable: {d}/{entry.name}: {e}")
+            if not is_dir:
+                continue
+            sub = f"{d}/{entry.name}"
+            if _has_git_entry(clone, sub):
+                found.append(sub)
+            else:
+                stack.append((sub, depth + 1))
+    return found
+
+
+def nested_repositories(fdir, clone):
+    """The clone's untracked folders that hold a .git entry, as
+    clone-relative paths without the trailing slash, sorted (amendment
+    A.11). `status --untracked-files=normal` lists an untracked nested
+    repository as one folder entry, at the top level or below a tracked
+    folder; each such entry is checked for .git with lstat, and no git
+    command runs inside it. An untracked folder without its own .git is
+    walked (_walk_untracked) for repositories further down, which status
+    lists only as that folder. The clone's config is compared with its prepare
+    copy (the job whose worktree is clone) first, as for every command in a
+    clone: a difference, or no job naming the clone, raises
+    CloneConfigChanged. Returns [] and runs no git when clone is None or not
+    a directory."""
+    if clone is None or not os.path.isdir(clone):
+        return []
+    copy_dir = _copy_dir_of(fdir, clone)
+    if copy_dir is None:
+        raise CloneConfigChanged("config", NO_COPY)
+    out = _must(fdir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=normal"],
+                clone, copy_dir)
+    fields = out.split("\0")
+    found = []
+    i = 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        xy, path = entry[:2], entry[3:]
+        if "R" in xy or "C" in xy:
+            # A rename or copy is followed by its old path as a field of its
+            # own, with no status in front: skip it, so a file name cannot
+            # pose as an entry.
+            i += 1
+            continue
+        if xy != "??" or not path.endswith("/"):
+            continue
+        rel = path.rstrip("/")
+        if not _has_git_entry(clone, rel):
+            found.extend(_walk_untracked(clone, rel))
+            continue
+        found.append(rel)
+    return sorted(found)
 
 
 def _next_k(fdir, clone, copy_dir, n):
