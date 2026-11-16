@@ -91,8 +91,8 @@ objective:
     status: pending
     evidence_ref: null
   - id: AC12
-    text: The phase merges to main without a release and leaves the flow version unchanged; the factory is first released
-      at 1h (#361), once it works end to end.
+    text: The phase merges to main without a release and leaves the flow version unchanged; the factory is released once,
+      when every child of epic #352 is done.
     verification_command: v=$(jq -r .version plugins/flow/.claude-plugin/plugin.json); [ "$v" = "$(git show origin/main:plugins/flow/.claude-plugin/plugin.json
       | jq -r .version)" ] && jq -e --arg v "$v" '.plugins[] | select(.name=="flow") | .version == $v' .claude-plugin/marketplace.json
       >/dev/null

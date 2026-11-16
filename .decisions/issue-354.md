@@ -200,6 +200,32 @@ artifacts:
   escalation_field: options
   outcome: Pause 3600 s.
   question_id: q-20261116T161957Z-492a4d
+- type: escalation-asked
+  captured_at: '2026-11-16T17:38:11Z'
+  question_id: q-20261116T173811Z-5ca7ce
+  blocking: soft
+  class: decision
+  command:
+  - /flow:start 354 (planning
+  - T5 settings)
+  - asked again after the handover
+  situation:
+  - The launcher needs a turn limit policy for worker runs; claude -p and the Agent
+    SDK default to no turn limit
+  - and P5 showed --max-turns is accepted and enforced.
+- type: escalation-resolved
+  captured_at: '2026-11-16T17:38:16Z'
+  escalation_field: options
+  outcome: 'No turn limit: the launcher passes no --max-turns; budget and timeout
+    bound every run'
+  question_id: q-20261116T173811Z-5ca7ce
+- type: escalation-resolved
+  captured_at: '2026-11-16T17:38:17Z'
+  escalation_field: situation
+  outcome:
+  - 'withdrawn: Superseded by q-20261116T173811Z-5ca7ce'
+  - which offered no turn limit; the user chose it
+  question_id: q-20261116T161955Z-8ab43d
 ---
 
 ## Design
