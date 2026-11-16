@@ -48,7 +48,10 @@ objective:
     last_evaluated_at: '2026-11-14T17:27:40Z'
     last_result: pass
   - id: AC4
-    text: No probe wrote to GitHub outside the approved sandbox repository.
+    text: No probe wrote to GitHub outside the approved sandbox repository, as shown by the shim's call log of gh and
+      git calls made through PATH and by the Bash commands the recorded runs made (gh or git run by its path, and
+      HTTP clients naming a GitHub host). A write hidden from both, such as one inside a script a command ran, is
+      not covered.
     verification_command: plugins/flow/bin/flow-factory.sh probe --verify-record docs/flow-factory/probes.json
       --writes-only-to danielbentes/flow-factory-sandbox
     must_pass: true

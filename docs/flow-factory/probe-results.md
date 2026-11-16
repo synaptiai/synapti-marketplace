@@ -16,6 +16,10 @@ A probe recorded under other tool versions than its group's, or on another model
 
 Model spend in the record is $16.58 of the $25 cap. That figure is more than was spent, by $0.95 and an amount that is not known. The $0.95: P5's two earlier runs each counted its first session again in each resumed run, which charged $0.47 too much each time; the probe now charges each run its own cost. The unknown amount: a run that is killed reports no cost, so it is charged its whole budget limit. P5 kills its first session on purpose in every run, so each P5 run was charged $0.50 for a session that cost less; P5's last run was charged $0.73, $0.50 of it for that session. Not in the record: $0.85 on three hand-run sandbox checks before P16 existed, and the use of the interactive P9 sessions, which run on the person's own Claude Code account.
 
+## What the writes check covers
+
+Every probe that runs Claude ran it with the person's own home folder, so its runs could reach the person's saved GitHub and git logins; only P16's two runs ran inside Claude Code's sandbox, which keeps them out. The check that no probe wrote to GitHub outside the sandbox repository reads two things: the log of gh and git calls made through the probe's wrappers on PATH, and the commands each recorded run made, for gh or git run by its full path and for HTTP clients that name a GitHub host. Across the recorded runs it found four such calls, all in P16 and all reads: `gh auth token`, `git credential fill`, a local `git commit`, and a GET of api.github.com/zen. A write hidden from both, inside a script a command ran, would not be found. Workers in phase 1c start inside the sandbox P16 checked and receive none of the person's GitHub logins.
+
 ## Results
 
 | Probe | What it checks | Result | What follows |

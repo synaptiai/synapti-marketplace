@@ -1196,6 +1196,28 @@ e2e_expect_equal "0" "$E2E_RC" "exit status"
 e2e_expect_equal "not_run" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P3"]["parts"]["worker_token"]["result"]')" "token part result"
 _fp_env_after
 
+# E32 --github-api takes any https://<host>/api/v3, so a mistyped or
+# suggested host receives the worker token from the Keychain.
+_flow_test_begin "environment: a GitHub Enterprise address the journal does not approve is refused before the token is read (E32)"
+_fp_env_scenario fp-env-api-unapproved "--github-api https://127.0.0.1:1/api/v3 with no github_api: line in the journal: refused github_api_not_approved with exit 5, the Keychain is not read and no request is sent"
+e2e_run_bin bin/flow-factory.sh probe --environment --sandbox "$FP_SANDBOX" --github-api https://127.0.0.1:1/api/v3 --only P3
+e2e_expect_equal "5" "$E2E_RC" "exit status"
+e2e_expect_out "FACTORY_REFUSED=github_api_not_approved"
+e2e_expect_equal "no" "$([ -s "$E2E_BIN/security-calls.log" ] && echo yes || echo no)" "the Keychain was read"
+e2e_expect_equal "0" "$(e2e_stub_requests api)" "requests to the stub API"
+e2e_describe "with - github_api: https://127.0.0.1:1/api/v3 under the decisions heading, the address is taken: the run passes the check, and the token part is not run because nothing answers there"
+printf -- '- github_api: https://127.0.0.1:1/api/v3\n' > "$E2E_DIR/api-line"
+python3 - "$E2E_REPO/.decisions/issue-353.md" "$E2E_DIR/api-line" <<'PY'
+import sys
+path, line = sys.argv[1], open(sys.argv[2]).read()
+text = open(path).read().replace("## Phase 0 decisions\n\n", "## Phase 0 decisions\n\n" + line, 1)
+open(path, "w").write(text)
+PY
+e2e_run_bin bin/flow-factory.sh probe --environment --sandbox "$FP_SANDBOX" --github-api https://127.0.0.1:1/api/v3 --only P3
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_no_out "github_api_not_approved"
+e2e_expect_equal "not_run" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P3"]["parts"]["worker_token"]["result"]')" "token part result"
+
 _flow_test_begin "environment: a missing Keychain item leaves the token part not run and the rest running (E5)"
 _fp_env_scenario fp-env-token-missing "security exits 44: the token part is not_run with reason token-missing, no request is sent, the other parts still run, and P3 is not go"
 printf 'missing\n' > "$E2E_BIN/security-behaviour"
@@ -5267,6 +5289,40 @@ e2e_run_bin "HTTPS_PROXY=http://proxy.example:3128" bin/flow-factory.sh probe --
 e2e_expect_equal "0" "$E2E_RC" "exit status with a proxy address with no password ($E2E_OUT)"
 e2e_expect_equal "1" "$(grep -c 'connect via http://proxy.example:3128 failed' \
   "$E2E_REPO/docs/flow-factory/evidence/P5-1/stream.jsonl" 2>&1)" "the address in the copy"
+
+# X24 The export rewrites the home but not the local account's name, which
+# ls -l, stat, id and whoami print, so it is published when it differs from
+# the GitHub login the record already shows.
+_flow_test_begin "export: the local account's name is written as [user], and the record's repository owner is kept (X24)"
+_fp_export_scenario fp-export-account "with USER and LOGNAME fpacct-x, an evidence line from ls -l naming fpacct-x is exported with [user] in its place, fpacct-xy and fpacct-x.old are kept, and the sandbox owner danielbentes the record names is kept"
+printf 'drwxr-xr-x  3 fpacct-x  staff  96 Nov 16 10:00 work\nfpacct-xy fpacct-x.old\ndanielbentes/flow-factory-sandbox\n' \
+  > "$E2E_REPO/.flow/factory/evidence/P5-1/ls.txt"
+e2e_run_bin USER=fpacct-x LOGNAME=fpacct-x bin/flow-factory.sh probe --export docs/flow-factory
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "drwxr-xr-x  3 [user]  staff  96 Nov 16 10:00 work
+fpacct-xy fpacct-x.old
+danielbentes/flow-factory-sandbox" "$(cat "$E2E_REPO/docs/flow-factory/evidence/P5-1/ls.txt")" "the exported ls.txt"
+e2e_describe "the same name in a file that is not text is refused, as it cannot be rewritten there"
+printf 'owner\377 fpacct-x\n' > "$E2E_REPO/.flow/factory/evidence/P5-1/blob.bin"
+e2e_run_bin USER=fpacct-x LOGNAME=fpacct-x bin/flow-factory.sh probe --export docs/flow-factory
+e2e_expect_equal "5" "$E2E_RC" "exit status"
+e2e_expect_out "export_account_name"
+
+# X25 The export looks for the credential values set in its own
+# environment, so a value the probes ran with and the export's shell lacks
+# (a gateway token set for the probe session only) is never looked for.
+_flow_test_begin "export: a credential the probes ran with that the export's environment lacks is refused (X25)"
+_fp_runner_scenario fp-export-cred-unset "a probe --launch with ANTHROPIC_AUTH_TOKEN set notes its name and a hash, never the value; an export without it is refused naming it, and an export with the same value is not"
+FP_GATEWAY="fp-gateway-token-0123456789"
+e2e_run_bin ANTHROPIC_AUTH_TOKEN="$FP_GATEWAY" bin/flow-factory.sh probe --launch P5 --group platform --prompt-file "$E2E_DIR/prompt.txt" --max-budget-usd 0.5 --timeout-seconds 10
+e2e_expect_equal "0" "$E2E_RC" "exit status of the launch ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "ANTHROPIC_AUTH_TOKEN no" "$(_fp_get "$E2E_REPO/.flow/factory/credential-hashes.json" '" ".join(sorted(d)) + (" yes" if "'"$FP_GATEWAY"'" in open("'"$E2E_REPO/.flow/factory/credential-hashes.json"'").read() else " no")')" \
+  "the noted names, and whether the value is in the file"
+e2e_run_bin bin/flow-factory.sh probe --export docs/flow-factory
+e2e_expect_equal "5" "$E2E_RC" "exit status of the export without the variable"
+e2e_expect_out "FACTORY_REFUSED=export_credential_unset (ANTHROPIC_AUTH_TOKEN"
+e2e_run_bin ANTHROPIC_AUTH_TOKEN="$FP_GATEWAY" bin/flow-factory.sh probe --export docs/flow-factory
+e2e_expect_no_out "export_credential_unset"
 
 _flow_test_begin "export: an interrupt while an interrupted export moves the earlier evidence back names its folder (X23)"
 _fp_export_scenario fp-export-undo-interrupt "an earlier export is in docs/flow-factory; the next export is \

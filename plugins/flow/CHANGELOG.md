@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+Each entry below describes the change against 3.16.0.
+
+### Added
+
+- `bin/flow-factory.sh` is the flow factory's wrapper (#353). `context --mode`
+  prints `FACTORY_MODE=off`, exits 0 and starts no Python when no factory job
+  variable is set, so ordinary flow runs are unaffected. `probe` runs the
+  phase 0 go/no-go probes for the factory and keeps their record in the
+  runtime directory's `factory/probes.json`, checked against
+  `schemas/v1/factory-probes.schema.json`; `probe --verify-record` checks a
+  record, and `probe --export` writes a copy with homes, temporary folders,
+  the local account's name and credentials removed. Every other subcommand
+  exits 5 with `FACTORY_REFUSED=not_built`. The results are in
+  `docs/flow-factory/probe-results.md`.
+
+### Changed
+
+- `bin/_flow_eval.py` reads stream-json logs through the new
+  `bin/_flow_stream.py`, which the factory probes share. Its results are
+  unchanged.
+
 ## 3.16.0 (2026-11-11)
 
 Each entry below describes the change against 3.15.1.

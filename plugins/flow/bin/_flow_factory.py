@@ -1342,7 +1342,7 @@ def git_address_parts(url):
         try:
             parts = urllib.parse.urlsplit(u)
             host = parts.hostname
-            parts.port
+            _ = parts.port  # read only for its check: a port out of range raises ValueError
         except ValueError:
             return None, None, None
         if not host:
@@ -2750,6 +2750,56 @@ def would_pass_cap(spent, budget, cap):
     return money(spent) + money(budget) > money(cap)
 
 
+CREDENTIAL_NOTE = "credential-hashes.json"
+
+
+def credential_hash(value):
+    return hashlib.sha256(value.encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def note_credentials(fdir):
+    """Add to CREDENTIAL_NOTE in the factory folder the name of each
+    credential variable set while probes run, with a hash of its value, never
+    the value: the export looks for the values in its own environment, and
+    refuses when one the probes ran with is missing or changed there."""
+    path = os.path.join(fdir, CREDENTIAL_NOTE)
+    try:
+        with open(path, encoding="utf-8") as f:
+            noted = json.load(f)
+    except (OSError, ValueError):
+        noted = {}
+    if not isinstance(noted, dict):
+        noted = {}
+    for name in credential_names():
+        value = os.environ.get(name, "")
+        if value:
+            hashes = noted.get(name) if isinstance(noted.get(name), list) else []
+            if credential_hash(value) not in hashes:
+                noted[name] = hashes + [credential_hash(value)]
+    write_json(path, noted)
+    os.chmod(path, 0o600)
+
+
+def unmatched_credentials(fdir):
+    """The credential variables noted while probes ran whose value this
+    environment does not hold, so the export cannot look for it."""
+    try:
+        with open(os.path.join(fdir, CREDENTIAL_NOTE), encoding="utf-8") as f:
+            noted = json.load(f)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(noted, dict):
+        return []
+    out = []
+    for name, hashes in sorted(noted.items()):
+        value = os.environ.get(name, "")
+        for h in hashes if isinstance(hashes, list) else []:
+            if not value or credential_hash(value) != h:
+                out.append(name)
+                break
+    return out
+
+
 def bind_cap(args, record):
     """Set args.cap_usd to the cap this call works under: the recorded cap,
     or --cap-usd when it is lower. A --cap-usd above the recorded cap is not
@@ -2788,6 +2838,7 @@ def launch_probe(args):
         if args.group in MODEL_GROUPS:
             keyed[MODEL_KEY] = args.model or PROBE_MODEL
         spent = record["spend"]["spent_usd"]
+        note_credentials(fdir)
         cap = bind_cap(args, record)
         if would_pass_cap(spent, args.max_budget_usd, cap):
             entry = probe_entry(args.group, "not_run", "budget", "", 0, [])
@@ -4102,6 +4153,10 @@ def environment_probes(args):
     """probe --environment: P11, P3, P7 and P15 (or those --only names), or
     with --launch-context, P13. Holds the factory lock throughout."""
     context = os.environ.get("FLOW_FACTORY_LAUNCH_CONTEXT", "")
+    # The worker token goes to this address, so another host than GitHub's
+    # must be one the person approved.
+    if args.github_api != DEFAULT_GITHUB_API:
+        require_approved_api(main_checkout(), args.github_api)
     if args.launch_context:
         if context not in ("launchd", "cron"):
             return print_launch_context(args)
@@ -4120,6 +4175,7 @@ def environment_probes(args):
             record_path = os.path.join(fdir, "probes.json")
             record = read_record(record_path)
             check_schema(record)
+            note_credentials(fdir)
             bind_cap(args, record)
             entries = {}
             current = []
@@ -5744,6 +5800,7 @@ def platform_probes(args):
         record_path = os.path.join(fdir, "probes.json")
         record = read_record(record_path)
         check_schema(record)
+        note_credentials(fdir)
         ctx = Platform(tools, keyed, fdir, record, record_path, bind_cap(args, record), model=args.model)
         only = args.only or PLATFORM_PROBES
         for pid in PLATFORM_PROBES:
@@ -6137,6 +6194,38 @@ def probe_p6(args, env, cwd, n, branch, facts, trust):
     return parts
 
 
+API_APPROVAL_LINE = re.compile(r"^-\s+github_api:\s+(https://\S+?)/?(?=\s|$)")
+
+
+def require_approved_api(main_top, api):
+    """Refused when api, the address the worker token is sent to, is a
+    GitHub Enterprise server's that the decision journal does not approve
+    with a single `- github_api: <address>` line under ## Phase 0 decisions.
+    api.github.com and http on this machine need no approval."""
+    u = urllib.parse.urlsplit(api)
+    if api == DEFAULT_GITHUB_API or u.scheme == "http":
+        return
+    path, rel = epic_journal(main_top)
+    found = []
+    if path is not None:
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            lines = []
+        inside = False
+        for ln in lines:
+            if ln.startswith("## "):
+                inside = ln.strip() == APPROVAL_SECTION
+                continue
+            m = API_APPROVAL_LINE.match(ln) if inside else None
+            if m:
+                found.append(m.group(1))
+    if found != [api.rstrip("/")]:
+        raise Refused(f"github_api_not_approved ({api} needs a single `- github_api: {api}` line under "
+                      f"{APPROVAL_SECTION} in {rel})")
+
+
 def require_approved_sandbox(main_top, sandbox):
     """Refused unless sandbox is the one the decision journal approves."""
     approved, why = approved_sandbox(main_top)
@@ -6182,6 +6271,7 @@ def github_write_probes(args):
             record_path = os.path.join(fdir, "probes.json")
             record = read_record(record_path)
             check_schema(record)
+            note_credentials(fdir)
             bind_cap(args, record)
             ev3_rel = new_evidence_dir(fdir, "P3")
             ev3 = os.path.join(fdir, ev3_rel)
@@ -6545,6 +6635,7 @@ def interactive_record(args):
         record_path = os.path.join(fdir, "probes.json")
         record = read_record(record_path)
         check_schema(record)
+        note_credentials(fdir)
         bind_cap(args, record)
         now = interactive_state(fdir, required=False)
         marker = now.get("p14")
@@ -6831,6 +6922,7 @@ def interactive_p14(args):
     with factory_lock(fdir):
         record = read_record(record_path)
         check_schema(record)
+        note_credentials(fdir)
         bind_cap(args, record)
         old = ((record.get("groups") or {}).get("interactive") or {}).get("keyed_on") or {}
         if would_pass_cap(record["spend"]["spent_usd"], P14_BUDGET_USD, args.cap_usd):
@@ -7265,27 +7357,73 @@ def credential_values():
     return found
 
 
+ACCOUNT_REPLACEMENT = "[user]"
+
+
+def account_names():
+    """The local account's name as the system and the environment give it."""
+    names = {os.environ.get("USER", ""), os.environ.get("LOGNAME", "")}
+    try:
+        import pwd
+        names.add(pwd.getpwuid(os.getuid()).pw_name)
+    except (ImportError, KeyError):
+        pass
+    return {n for n in names if n}
+
+
+def record_public_names(record):
+    """The owners of the repositories the record names (the sandbox, each
+    GitHub write's repository): the export writes them as they are."""
+    names = set()
+
+    def walk(v, key=""):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                walk(x, k)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x, key)
+        elif isinstance(v, str) and key in ("sandbox", "repo") and RECORD_REPO.fullmatch(v):
+            names.add(v.split("/", 1)[0])
+    walk(record)
+    return names
+
+
 class ExportScrub:
     """What the export rewrites and what it refuses: the home spellings
     (written as ~), the temporary folders (written as $TMPDIR), and the
     credential forms and values."""
 
-    def __init__(self):
+    def __init__(self, public_names=()):
         homes, temps = home_variants(), temp_variants()
         self.homes = [whole_path(f, d) for f, d in homes]
         self.temps = [whole_path(f, d) for f, d in temps]
         self.home_bytes = [whole_path(f, d, as_bytes=True) for f, d in homes]
         self.temp_bytes = [whole_path(f, d, as_bytes=True) for f, d in temps]
         self.secrets = list(SECRET_FORMS) + credential_values()
+        # The local account's name, which ls -l, stat, id and whoami print,
+        # as a whole word, unless it is a name the record already makes
+        # public (the owner of a repository it names, the GitHub login).
+        public = {n.lower() for n in public_names}
+        names = {n for n in account_names() if len(n) >= 2 and n.lower() not in public}
+        self.accounts = [re.compile(r"(?<![A-Za-z0-9_.-])" + re.escape(n) + r"(?![A-Za-z0-9_-])") for n in names]
+        self.account_bytes = [re.compile(r.pattern.encode("utf-8", "surrogateescape")) for r in self.accounts]
 
     def paths(self, text):
         """The text with each home written as ~, then each temporary folder
-        as $TMPDIR: a home inside the temporary folder stays ~."""
+        as $TMPDIR: a home inside the temporary folder stays ~. Then the
+        local account's name, as ACCOUNT_REPLACEMENT."""
         for h in self.homes:
             text = h.sub("~", text)
         for t in self.temps:
             text = t.sub(lambda _: TEMP_REPLACEMENT, text)
-        return MACOS_TEMP_TEXT.sub(lambda _: TEMP_REPLACEMENT, text)
+        text = MACOS_TEMP_TEXT.sub(lambda _: TEMP_REPLACEMENT, text)
+        for a in self.accounts:
+            text = a.sub(ACCOUNT_REPLACEMENT, text)
+        return text
+
+    def account_in(self, *blobs):
+        return any(a.search(b) for a in self.account_bytes for b in blobs)
 
     def without_secrets(self, data, replacement):
         for pattern, _ in self.secrets:
@@ -7372,6 +7510,8 @@ def export_leak(root, scrub):
                 return f"export_home_path {shown}"
             if scrub.temp_in(raw, data):
                 return f"export_temp_path {shown}"
+            if scrub.account_in(raw, data):
+                return f"export_account_name {shown}"
     return None
 
 
@@ -7490,7 +7630,11 @@ def export_probes(args):
     record = read_record(record_path)
     check_schema(record)
     refuse_unrelated_target(target)
-    scrub = ExportScrub()
+    missing = unmatched_credentials(fdir)
+    if missing:
+        raise Refused(f"export_credential_unset ({', '.join(missing)} held another value when the probes ran; set "
+                      "each as it was then, so the export can look for it in the evidence)")
+    scrub = ExportScrub(record_public_names(record))
     rel_dir = os.path.relpath(real_target, main_top).replace(os.sep, "/")
     tmp = os.path.realpath(tempfile.mkdtemp(prefix="flow-factory-export-"))
     try:
@@ -7552,7 +7696,8 @@ def sandbox_name(text):
 def github_api_url(text):
     """GitHub's API (https://api.github.com), a GitHub Enterprise server's
     (https://<host>/api/v3), or http on this machine: the worker token is sent
-    there, so no other address is taken."""
+    there, so no other address is taken. An Enterprise address must also be
+    approved in the decision journal (require_approved_api)."""
     u = urllib.parse.urlsplit(text)
     clean = text.rstrip("/")
     if u.query or u.fragment or u.username or u.password:
