@@ -524,6 +524,18 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+# The early worker check (plan 1a T9; design person_channels L19): a worker
+# is refused with exit 4 before any other import or check. It comes before the
+# imports below, which need Python 3.11, so the direct form under an older
+# Python still refuses. bin/ is added here because the guard above removes it
+# when it is the working directory, and -I or -P never adds it. It does not
+# run when another module imports this one.
+if __name__ == "__main__":
+    _flow_bin = os.path.dirname(os.path.realpath(__file__))
+    if _flow_bin not in sys.path:
+        sys.path.append(_flow_bin)
+    import _flow_factory_caller
+    _flow_factory_caller.early_exit(sys.argv[1:])
 
 import argparse
 import contextlib
