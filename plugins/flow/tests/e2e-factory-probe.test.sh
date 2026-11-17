@@ -1324,7 +1324,9 @@ _fp_env_after
 _flow_test_begin "environment: a recorded P11 no-go stops P3 when --only leaves P11 out (E1)"
 _fp_env_scenario fp-env-p11-recorded "the record holds P11 no-go from an earlier run and the call is --only P3: P3 is not_run on the P11 prerequisite, the Keychain is not read and no request reaches the stub API"
 mkdir -p "$E2E_REPO/.flow/factory"
-_fp_record "$E2E_REPO/$FP_REC" 'd["probes"]["P11"].update(group="environment", result="no-go", reason="no Python 3.14", fallback="Refuse to enable, and name the missing tool.")'
+# The seeded record names no interpreter: replacing a recorded one needs a
+# person at a terminal (person_channels L19), which this scenario is not about.
+_fp_record "$E2E_REPO/$FP_REC" 'd["probes"]["P11"].update(group="environment", result="no-go", reason="no Python 3.14", fallback="Refuse to enable, and name the missing tool."); del d["interpreter"]'
 _fp_env_run -- --only P3
 e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
 e2e_expect_equal "not_run" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P3"]["result"]')" "P3 result"
@@ -2180,13 +2182,19 @@ e2e_expect_equal "no-go" "$(_fp_p 'p["result"]')" "P1 result"
 e2e_expect_equal "yes" "$(_fp_p '"yes" if "run each block with Bash" in p.get("fallback", "") else p')" "P1 fallback"
 
 _flow_test_begin "platform: P5 resumes a killed session within new limits (PL8)"
-_fp_platform_scenario fp-plat-p5 "the first launch is killed during its first tool call; two forks resume it, one stopped by --max-turns and one by --max-budget-usd; a fresh session and its fork show per-run costs; the block ran once: every part is go"
+FP_D="the first launch is killed during its first tool call; two forks resume it, one stopped by --max-turns and"
+FP_D+=" one by --max-budget-usd; a fresh session and its fork show per-run costs; the block ran once: every session"
+FP_D+=" part and cost_scope are go. The stand-in's resume reports its own cost as total_cost_usd and no since-last"
+FP_D+=" cost, so the engine, charging a resumed run the increase in the session total, charges it nothing:"
+FP_D+=" engine_charge, and with it P5, is no-go (issue #354 G1)"
+_fp_platform_scenario fp-plat-p5 "$FP_D"
 FP_PID=P5
 _fp_platform_run -- --only P5
 e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
-e2e_expect_equal '{"budget_limit": "go", "cost_scope": "go", "kill": "go", "no_block_rerun": "go", "session_id": "go", "turn_limit": "go"}' \
+e2e_expect_equal '{"budget_limit": "go", "cost_scope": "go", "engine_charge": "no-go", "kill": "go", "no_block_rerun": "go", "session_id": "go", "turn_limit": "go"}' \
   "$(_fp_p '{k: v["result"] for k, v in sorted(p["parts"].items())}')" "every P5 part"
-e2e_expect_equal "go" "$(_fp_p 'p["result"]')" "P5 result"
+e2e_expect_equal "no-go yes" "$(_fp_p '(lambda c: "%s %s" % (p["result"], "yes" if "its resume 0 (session_increase)"
+  in c["reason"] else c["reason"]))(p["parts"]["engine_charge"])')" "P5 result, and engine_charge naming the resume's charge of 0"
 e2e_expect_equal "5" "$(_fp_launches)" "claude -p starts"
 FP_SID=$(sed -n '1s/.*--session-id \([^ ]*\).*/\1/p' "$E2E_BIN/claude-launches.log")
 e2e_expect_equal "2" "$(grep -c -- "--resume $FP_SID --fork-session" "$E2E_BIN/claude-launches.log")" "resumes of the killed session with --fork-session"
@@ -3372,7 +3380,7 @@ e2e_expect_equal "not_run yes no" "$(_fp_get "$E2E_REPO/$FP_REC" '(lambda p: "%s
 _flow_test_begin "environment: an environment run keeps P3's sandbox parts and writes (G9)"
 _fp_env_scenario fp-env-keep-sandbox "the record holds P3's sandbox parts and writes from the GitHub write group: probe --environment --only P3 keeps both and drops the not-run environment placeholder"
 mkdir -p "$E2E_REPO/.flow/factory"
-_fp_record "$E2E_REPO/$FP_REC" 'd["probes"]["P3"].update(group="github_write", result="not_run", parts={"environment_checks": {"result": "not_run", "reason": "not yet"}, "sandbox_push": {"result": "go", "reason": "pushed"}, "sandbox_draft_pr": {"result": "go", "reason": "opened"}}, github_writes=[{"repo": "probe-fixture/sandbox", "call": "git push -q https://github.com/probe-fixture/sandbox.git HEAD:refs/heads/flow-factory-probe-x"}, {"repo": "probe-fixture/sandbox", "call": "gh pr create"}])'
+_fp_record "$E2E_REPO/$FP_REC" 'd["probes"]["P3"].update(group="github_write", result="not_run", parts={"environment_checks": {"result": "not_run", "reason": "not yet"}, "sandbox_push": {"result": "go", "reason": "pushed"}, "sandbox_draft_pr": {"result": "go", "reason": "opened"}}, github_writes=[{"repo": "probe-fixture/sandbox", "call": "git push -q https://github.com/probe-fixture/sandbox.git HEAD:refs/heads/flow-factory-probe-x"}, {"repo": "probe-fixture/sandbox", "call": "gh pr create"}]); del d["interpreter"]'
 _fp_env_run -- --only P3
 e2e_expect_equal "0" "$E2E_RC" "exit status"
 e2e_expect_equal "go go absent" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s %s" % (d["probes"]["P3"]["parts"]["sandbox_push"]["result"], d["probes"]["P3"]["parts"]["sandbox_draft_pr"]["result"], "present" if "environment_checks" in d["probes"]["P3"]["parts"] else "absent")')" "sandbox parts and the placeholder"
@@ -3383,6 +3391,8 @@ _fp_env_after
 # _fp_p3_keep <name> <description> <env or placeholder> <blocked or raises> —
 # P3 recorded with its sandbox parts and three sandbox writes (one of them,
 # against the rules, to someone/else) and, with env, two environment parts.
+# The seeded record names no interpreter, so the run records its own without
+# the terminal a replacement needs (person_channels L19).
 # Then probe --environment --only P3 does not finish P3's checks: the
 # record's P11 is no-go, or the scratch push-source repository's git config
 # cannot be read, so P3 stops part way (E16).
@@ -3402,6 +3412,7 @@ d['probes']['P3'].update(group='$group', result='not_run', evidence='evidence/P3
     {'repo': 'probe-fixture/sandbox', 'call': 'git push -q https://github.com/probe-fixture/sandbox.git HEAD:fp-x'},
     {'repo': 'probe-fixture/sandbox', 'call': 'gh pr create'},
     {'repo': 'someone/else', 'call': 'git push -q https://github.com/someone/else.git HEAD:fp-x'}])
+del d['interpreter']
 $p11
 "
   if [ "$4" = raises ]; then
@@ -3502,7 +3513,9 @@ _fp_sign_cond fp-env-sign-hasconfig-other "the includeIf hasconfig:remote.*.url:
 # an earlier run on other tools is stale although its entry was written
 # again (R6). _fp_p3_stale <name> <description> <part or entry> — P3's
 # sandbox parts recorded under gh 2.79.0, the stamp on each part or only on
-# the entry; then an environment run on gh 2.80.0.
+# the entry; then an environment run on gh 2.80.0. The seeded record names no
+# interpreter, so the run records its own without the terminal a replacement
+# needs (person_channels L19).
 _fp_p3_stale() {
   _fp_env_scenario "$1" "$2"
   local old='{"gh_version": "gh version 2.79.0 (2026-09-01)", "sandbox": "probe-fixture/sandbox"}' p='' e=''
@@ -3513,6 +3526,7 @@ _fp_p3_stale() {
 d['groups']['github_write'] = {'keyed_on': $old, 'ran_at': '2026-11-10T09:00:00Z'}
 d['probes']['P3'].update(group='github_write', result='go', parts={
   'sandbox_push': {'result': 'go', 'reason': 'pushed'$p}, 'sandbox_draft_pr': {'result': 'go', 'reason': 'opened'$p}}$e)
+del d['interpreter']
 "
   _fp_env_run -- --only P3
   e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
@@ -5433,6 +5447,221 @@ e2e_expect_equal "2" "$E2E_RC" "exit status without a reason"
 e2e_run_bin bin/flow-factory.sh probe --skip P8 --reason "r"
 e2e_expect_equal "2" "$E2E_RC" "exit status without a fallback"
 e2e_expect_equal "$FP_REC_BEFORE" "$(cat "$E2E_REPO/.flow/factory/probes.json")" "the record after the refusals"
+
+# The phase 1a changes to the probe command (#354, task T10): the probe lock,
+# re-recording the interpreter, `probe --environment` without --sandbox, the
+# factory_path pointer, and P5's engine_charge part.
+#
+# Ways it can be wrong, written down before the checks:
+#   PR1 `probe --environment` still demands --sandbox, or without it still
+#       reads the Keychain token and sends the token check's writes, or
+#       records a sandbox it was never given (a record the schema refuses)
+#   PR2 the interpreter is re-recorded without a person: a run with no
+#       controlling terminal replaces a recorded interpreter with another, or
+#       a person at a terminal who does not type probe still gets it
+#       replaced; or a first recording (no interpreter yet) needs a terminal
+#   PR3 factory_path is not recorded, or the pointer under the git common
+#       directory is not written; or the probe schema's pattern for it refuses
+#       the ~ form probe --export writes, so a record whose factory directory
+#       is under the home cannot be exported
+#   PR4 probes still take F/.lock, the engine's lock, so a long probe blocks
+#       `next`
+#   PR5 engine_charge is go when the engine's charge double counts (a resumed
+#       run charged the whole session's total), or is judged from runs that
+#       cannot be compared
+
+# The factory test helpers (fe_bg, fe_py, fe_person_terminal) for the
+# scenarios below, which start background holders and a terminal. The
+# scenarios still start with this file's own helpers.
+source "$REPO_ROOT/plugins/flow/tests/lib/factory-e2e.sh" || {
+  printf '%s\n' "cannot load tests/lib/factory-e2e.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
+
+FP_NO_SANDBOX_REASON="the token check reads the sandbox and sends it three writes built to be refused, and this run was given no sandbox (flow-factory.sh probe --environment --sandbox <owner/repo>)"
+
+_flow_test_begin "environment: probe --environment without --sandbox records the group and leaves the token check not_run (PR1)"
+_fp_env_scenario fp-env-no-sandbox "probe --environment with no --sandbox: exit 0; P3's worker token part is not_run naming --sandbox, its other parts run; the Keychain is not read, no request reaches the stub API, no sandbox is keyed and the record validates"
+e2e_run_bin bin/flow-factory.sh probe --environment --github-api "$(e2e_stub_url api)" --only P3
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "not_run|$FP_NO_SANDBOX_REASON" \
+  "$(_fp_get "$E2E_REPO/$FP_REC" '"|".join((d["probes"]["P3"]["parts"]["worker_token"]["result"], d["probes"]["P3"]["parts"]["worker_token"]["reason"]))')" \
+  "the worker token part"
+e2e_expect_equal "go go" "$(_fp_get "$E2E_REPO/$FP_REC" '" ".join(d["probes"]["P3"]["parts"][k]["result"] for k in ("gh_auth_status", "git_push_local"))')" \
+  "two of P3's other parts"
+e2e_expect_equal "" "$(cat "$E2E_BIN/security-calls.log" 2>/dev/null)" "Keychain lookups"
+e2e_expect_equal "0" "$(e2e_stub_requests api)" "requests to the stub API"
+e2e_expect_equal "absent" "$(_fp_get "$E2E_REPO/$FP_REC" '"present" if "sandbox" in d["groups"]["environment"]["keyed_on"] else "absent"')" "keyed_on sandbox"
+e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
+_fp_env_after
+e2e_describe "--launch-context from an ordinary shell without --sandbox prints a plist and cron line with no --sandbox"
+e2e_run_bin bin/flow-factory.sh probe --environment --launch-context
+e2e_expect_equal "0" "$E2E_RC" "exit status of the printing call ($E2E_OUT $E2E_ERR)"
+e2e_expect_out "--launch-context"
+e2e_expect_no_out "None"
+e2e_expect_no_out "--sandbox"
+
+# _fp_detached_env [probe arguments] — probe --environment --only P15 run
+# through detach.py, so it has no controlling terminal even when the suite
+# runs in one.
+_fp_detached_env() {
+  _e2e_exec "$FP_DETACH_PY" "$FP_FIXTURES/detach.py" "$E2E_ACTIVE_PLUGIN/bin/flow-factory.sh" probe --environment \
+    --sandbox "$FP_SANDBOX" --github-api "$(e2e_stub_url api)" --only P15 "$@"
+}
+
+_flow_test_begin "environment: another interpreter is recorded over a recorded one only from a terminal where the person types probe (PR2)"
+_fp_env_scenario fp-env-rerecord "the record names /opt/python/bin/python3.14, which is not the interpreter the wrapper resolves"
+mkdir -p "$E2E_REPO/.flow/factory"
+_fp_record "$E2E_REPO/$FP_REC" "d['groups']['environment']['keyed_on']['interpreter'] = d['interpreter']" stamp
+FP_SUM=$(cksum < "$E2E_REPO/$FP_REC")
+e2e_describe "(a) with no controlling terminal: exit 5 with the needs-terminal refusal, and the record is unchanged"
+_fp_detached_env
+e2e_expect_equal "5" "$E2E_RC" "exit status with no terminal ($E2E_OUT $E2E_ERR)"
+e2e_expect_line "FACTORY_REFUSED=interpreter_rerecord_needs_terminal next: run flow-factory.sh probe --environment in a terminal"
+e2e_expect_equal "$FP_SUM" "$(cksum < "$E2E_REPO/$FP_REC")" "the record after the refusal"
+e2e_describe "(b) at a terminal where the person types no: exit 5, and the record is unchanged"
+fe_person_terminal nope "$E2E_ACTIVE_PLUGIN/bin/flow-factory.sh" probe --environment --sandbox "$FP_SANDBOX" \
+  --github-api "$(e2e_stub_url api)" --only P15
+e2e_expect_equal "5" "$E2E_RC" "exit status after typing nope ($E2E_OUT)"
+e2e_expect_out "type probe to re-record the interpreter /opt/python/bin/python3.14 -> "
+e2e_expect_out "FACTORY_REFUSED=interpreter_rerecord_not_confirmed"
+e2e_expect_equal "$FP_SUM" "$(cksum < "$E2E_REPO/$FP_REC")" "the record after the unconfirmed prompt"
+e2e_describe "(c) at a terminal where the person types probe: exit 0, and the record names the resolved interpreter"
+fe_person_terminal probe "$E2E_ACTIVE_PLUGIN/bin/flow-factory.sh" probe --environment --sandbox "$FP_SANDBOX" \
+  --github-api "$(e2e_stub_url api)" --only P15
+e2e_expect_equal "0" "$E2E_RC" "exit status after typing probe ($E2E_OUT)"
+FP_INTERP=$(_fp_get "$E2E_REPO/$FP_REC" 'd["interpreter"]')
+e2e_expect_equal "$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$(fe_python)")" "$FP_INTERP" "the recorded interpreter"
+e2e_expect_equal "$FP_INTERP" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["groups"]["environment"]["keyed_on"]["interpreter"]')" "keyed_on interpreter"
+e2e_describe "(d) again with no terminal, now that the record names the same interpreter: exit 0"
+_fp_detached_env
+e2e_expect_equal "0" "$E2E_RC" "exit status with the same interpreter and no terminal ($E2E_OUT $E2E_ERR)"
+_fp_env_after
+
+_flow_test_begin "environment: a first interpreter is recorded with no terminal (PR2)"
+_fp_env_scenario fp-env-first-interp "the record holds no interpreter; probe --environment runs with no controlling terminal: exit 0 and the interpreter is recorded"
+mkdir -p "$E2E_REPO/.flow/factory"
+_fp_record "$E2E_REPO/$FP_REC" "del d['interpreter']" stamp
+_fp_detached_env
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$(fe_python)")" "$(_fp_get "$E2E_REPO/$FP_REC" 'd.get("interpreter")')" "the recorded interpreter"
+_fp_env_after
+
+_flow_test_begin "environment: probe --environment records factory_path and the pointer beside the git common directory (PR3)"
+_fp_env_scenario fp-env-factory-path "after probe --environment, the record's factory_path is the factory directory and <git common dir>/flow-factory-path holds it with one newline"
+_fp_env_run -- --only P15
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+FP_COMMON=$(cd "$E2E_REPO" && command git rev-parse --path-format=absolute --git-common-dir)
+FP_F="$(dirname "$FP_COMMON")/.flow/factory"
+e2e_expect_equal "$FP_F" "$(_fp_get "$E2E_REPO/$FP_REC" 'd.get("factory_path")')" "factory_path"
+e2e_expect_equal "$(printf '%s\nEND' "$FP_F")" "$(cat "$FP_COMMON/flow-factory-path"; printf END)" "the pointer file"
+e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
+_fp_env_after
+
+_flow_test_begin "export: a factory directory under the home exports factory_path as ~ and validates (PR3)"
+_fp_env_scenario fp-export-factory-path "HOME is the scenario folder, which holds the repository: probe --environment, then probe --export docs/flow-factory; the copy's factory_path is ~/repo/.flow/factory and validates. With the schema's pattern ^/ (a plugin copy), the export is refused naming factory_path"
+fe_user_site "$E2E_DIR"
+_fp_env_run HOME="$E2E_DIR" -- --only P15
+e2e_expect_equal "0" "$E2E_RC" "exit status of the probe ($E2E_OUT $E2E_ERR)"
+e2e_run_bin HOME="$E2E_DIR" bin/flow-factory.sh probe --export docs/flow-factory
+e2e_expect_equal "0" "$E2E_RC" "exit status of the export ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "~/repo/.flow/factory" "$(_fp_get "$E2E_REPO/docs/flow-factory/probes.json" 'd.get("factory_path")')" "the exported factory_path"
+e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/docs/flow-factory/probes.json")" "the copy validates against the schema"
+FP_SCHEMA=$(python3 - "$E2E_PLUGIN_DIR/schemas/v1/factory-probes.schema.json" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+s["properties"]["factory_path"]["pattern"] = "^/"
+print(json.dumps(s, indent=2))
+PY
+)
+e2e_plugin_copy schemas/v1/factory-probes.schema.json "$FP_SCHEMA"
+e2e_run_bin HOME="$E2E_DIR" bin/flow-factory.sh probe --export docs/flow-factory
+e2e_expect_equal "5" "$E2E_RC" "exit status of the export with ^/ ($E2E_OUT $E2E_ERR)"
+e2e_expect_out "FACTORY_REFUSED=export_invalid factory_path: "
+
+_flow_test_begin "probe lock: a probe holds F/probes.lock and leaves F/.lock free (PR4)"
+_fp_runner_scenario fp-probe-lock "a background process holds the probe lock (factory_lock) for 8 s; a non-blocking flock of F/probes.lock fails and one of F/.lock succeeds"
+mkdir -p "$E2E_REPO/.flow/factory"
+fe_bg holder fe_py "import os, sys, time
+import _flow_factory as ff
+with ff.factory_lock(os.path.realpath('.flow/factory')):
+    print('locked', flush=True)
+    time.sleep(8)"
+fe_wait_for 10 'grep -qx locked "$E2E_DIR/bg-holder.out"'
+fe_py "import fcntl, os
+for name in ('probes.lock', '.lock'):
+    fd = os.open(os.path.join('.flow/factory', name), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        print(name + ' free')
+    except BlockingIOError:
+        print(name + ' held')
+    finally:
+        os.close(fd)"
+e2e_expect_line "probes.lock held"
+e2e_expect_line ".lock free"
+fe_bg_wait holder 15
+
+# _fp_p5_results <evidence dir> — "a b t" of P5's cost check from the two
+# result events the stand-in printed: the four-step session's total_cost_usd
+# (a fresh run's own cost), the resume's model_usage_since_last_result sum
+# (its own cost) and the resume's total_cost_usd (the session's).
+_fp_p5_results() {
+  python3 - "$1" <<'PY'
+import json, os, sys
+def result(name):
+    last = None
+    for ln in open(os.path.join(sys.argv[1], name, "stream.jsonl"), encoding="utf-8"):
+        try:
+            e = json.loads(ln)
+        except ValueError:
+            continue
+        if isinstance(e, dict) and e.get("type") == "result":
+            last = e
+    return last
+first, resume = result("cost-first"), result("cost-resume")
+since = sum(m["costUSD"] for m in resume["model_usage_since_last_result"].values())
+print(first["total_cost_usd"], round(since, 7), resume["total_cost_usd"])
+PY
+}
+
+_flow_test_begin "platform: P5's engine_charge is go when the engine charges each run its own cost, and no-go when it charges a session total (PR5, RM4, G1)"
+FP_D="every result carries model_usage_since_last_result and every turn costs \$0.003. A first P5 run reads the"
+FP_D+=" four-step session's own cost a from its result; the stand-in then adds a to a resumed run's total, so a"
+FP_D+=" second P5 run's resume reports since-last b and total t = a + b: engine_charge is go naming a, b and t."
+FP_D+=" With a plugin copy whose charge_run charges a run its total_cost_usd, engine_charge is no-go"
+_fp_platform_scenario fp-plat-p5-engine-charge "$FP_D"
+FP_PID=P5
+printf '0\n' > "$E2E_BIN/claude-since-last"
+printf '0.003\n' > "$E2E_BIN/claude-cost-per-turn"
+_fp_platform_run -- --only P5
+e2e_expect_equal "0" "$E2E_RC" "exit status of the first run ($E2E_OUT $E2E_ERR)"
+read -r FP_A FP_B0 FP_T0 <<< "$(_fp_p5_results "$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')")"
+printf '%s\n' "$FP_A" > "$E2E_BIN/claude-since-last"
+_fp_platform_run -- --only P5
+e2e_expect_equal "0" "$E2E_RC" "exit status of the second run ($E2E_OUT $E2E_ERR)"
+read -r FP_A FP_B FP_T <<< "$(_fp_p5_results "$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')")"
+e2e_expect_equal "yes" "$(python3 -c 'import sys; from decimal import Decimal as D; a, b, t = map(D, sys.argv[1:4]); print("yes" if abs(a + b - t) <= D("0.000001") and b < t else "no")' "$FP_A" "$FP_B" "$FP_T")" \
+  "the stand-in's figures: a ($FP_A) + b ($FP_B) = t ($FP_T), b < t"
+e2e_expect_equal "go yes" "$(FP_FIG="$FP_A $FP_B $FP_T" _fp_p '(lambda c: "%s %s" % (c["result"], "yes"
+  if all(x in c["reason"] for x in __import__("os").environ["FP_FIG"].split()) else c["reason"]))(p["parts"]["engine_charge"])')" \
+  "engine_charge and its reason naming a, b and t"
+e2e_describe "the same with a plugin copy whose charge_run charges every run its total_cost_usd"
+FP_JOBS=$(python3 - "$E2E_PLUGIN_DIR/bin/_flow_factory_jobs.py" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+old = 'return {"charged_usd": since, "basis": "since_last"'
+assert s.count(old) == 1
+print(s.replace(old, 'return {"charged_usd": total, "basis": "since_last"'), end="")
+PY
+)
+e2e_plugin_copy bin/_flow_factory_jobs.py "$FP_JOBS"
+chmod 644 "$E2E_ACTIVE_PLUGIN/bin/_flow_factory_jobs.py"
+_fp_platform_run -- --only P5
+e2e_expect_equal "0" "$E2E_RC" "exit status of the run with the copy ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "no-go yes" "$(_fp_p '(lambda c: "%s %s" % (c["result"], "yes"
+  if "increase in the session" in (p.get("fallback") or "") and "total_cost_usd since the run before" in (p.get("fallback") or "") else p.get("fallback")))(p["parts"]["engine_charge"])')" \
+  "engine_charge and P5's fallback"
 
 _flow_test_begin "platform: the plugin's own hooks are unchanged by every platform scenario (PL11)"
 e2e_new fp-plat-hooks-unchanged

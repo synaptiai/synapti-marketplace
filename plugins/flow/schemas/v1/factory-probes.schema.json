@@ -14,6 +14,11 @@
       "type": "string",
       "pattern": "^(/|~/)"
     },
+    "factory_path": {
+      "description": "The factory directory (<main checkout>/<runtime dir>/factory) this record lives in, recorded by the environment group, which also writes it to <git common dir>/flow-factory-path; the engine refuses to run when the directory it resolves is another. A copy made by probe --export writes the user's home as ~ and a temporary folder as $TMPDIR.",
+      "type": "string",
+      "pattern": "^(/|~/|\\$TMPDIR/)"
+    },
     "groups": {
       "description": "Each probe group, with the values its results were keyed on and when it ran. A group whose keyed values change is out of date.",
       "type": "object",
