@@ -7780,6 +7780,32 @@ def publish_export(tmp, target):
             print(f"PROBE_EXPORT_EARLIER_EVIDENCE={earlier}", file=sys.stderr)
 
 
+def export_checkout_top(real_target, main_top):
+    """The top of the checkout (the main checkout or a linked worktree of it)
+    that holds real_target, or None when real_target is in no checkout of
+    the repository whose main checkout is main_top. The target need not
+    exist yet: its nearest existing folder is asked."""
+    d = real_target
+    while not os.path.isdir(d):
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+    try:
+        out = subprocess.run(["git", "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"],
+                             capture_output=True, text=True, check=True, cwd=d).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    if len(out) != 2:
+        return None
+    top, common = os.path.realpath(out[0]), os.path.realpath(out[1])
+    if os.path.dirname(common) != main_top:
+        return None
+    if not real_target.startswith(top + os.sep):
+        return None
+    return top
+
+
 def export_probes(args):
     """probe --export <dir>: <dir>/probes.json and <dir>/evidence/, built in a
     temporary directory and put in place (publish_export) only when nothing
@@ -7789,8 +7815,14 @@ def export_probes(args):
     target = os.path.abspath(args.export)
     main_top = os.path.realpath(main_checkout())
     real_target = os.path.realpath(target)
-    if not real_target.startswith(main_top + os.sep):
-        raise Refused(f"export_outside_repository ({target} is not inside {main_top})")
+    # The copy's paths are written from the top of the checkout that holds
+    # it, which for a linked worktree is the worktree, not the main checkout:
+    # measured from the main checkout they would name .worktrees/<name>/...
+    # and be wrong once the worktree's branch is merged. The checkout must
+    # belong to this repository.
+    top = export_checkout_top(real_target, main_top)
+    if top is None:
+        raise Refused(f"export_outside_repository ({target} is not inside a checkout of {main_top})")
     fdir = os.path.realpath(factory_dir())
     if real_target == fdir or real_target.startswith(fdir + os.sep):
         raise Refused("export_inside_runtime (the copy must be outside the runtime directory)")
@@ -7801,7 +7833,7 @@ def export_probes(args):
     check_schema(record)
     refuse_unrelated_target(target)
     scrub = ExportScrub(record_public_names(record))
-    rel_dir = os.path.relpath(real_target, main_top).replace(os.sep, "/")
+    rel_dir = os.path.relpath(real_target, top).replace(os.sep, "/")
     tmp = os.path.realpath(tempfile.mkdtemp(prefix="flow-factory-export-"))
     try:
         out = json.loads(json.dumps(record))

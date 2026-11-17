@@ -4673,6 +4673,27 @@ e2e_run_bin bin/flow-factory.sh probe --export docs/flow-factory
 e2e_expect_equal "0" "$E2E_RC" "exit status of the second export ($E2E_OUT $E2E_ERR)"
 e2e_expect_equal "no" "$([ -e "$FP_OUTDIR/evidence/P5-1/stale.txt" ] && echo yes || echo no)" "a file only the earlier export held"
 
+# X26 Exporting into a linked worktree writes evidence paths relative to the
+# main checkout (.worktrees/<name>/docs/flow-factory/...), so the paths are
+# wrong once the worktree's branch is merged; or a linked worktree outside
+# the main checkout is refused although it is the same repository.
+_flow_test_begin "export: an export into a linked worktree records paths from that worktree's top (X26)"
+_fp_export_scenario fp-export-worktree "probe --export into a linked worktree inside the main checkout and into one outside it: P5's evidence path is docs/flow-factory/evidence/P5-1 in both, the files are there, and a separate repository is still refused"
+(
+  _e2e_git_env
+  cd "$E2E_REPO" && git worktree add -q "$E2E_REPO/.wt/w1" -b x26-in && git worktree add -q "$E2E_DIR/wt-out" -b x26-out
+  cd "$E2E_DIR" && git init -q other-repo
+) || _flow_assert_fail "$E2E_NAME: could not create the worktrees"
+for FP_WT in "$E2E_REPO/.wt/w1" "$E2E_DIR/wt-out"; do
+  e2e_run_bin bin/flow-factory.sh probe --export "$FP_WT/docs/flow-factory"
+  e2e_expect_equal "0" "$E2E_RC" "exit status for $FP_WT ($E2E_OUT $E2E_ERR)"
+  e2e_expect_equal "docs/flow-factory/evidence/P5-1" "$(_fp_get "$FP_WT/docs/flow-factory/probes.json" 'd["probes"]["P5"]["evidence"]')" "P5's evidence path in the copy in $FP_WT"
+  e2e_expect_equal "yes" "$([ -f "$FP_WT/docs/flow-factory/evidence/P5-1/stream.jsonl" ] && echo yes || echo no)" "the evidence file in $FP_WT"
+done
+e2e_run_bin bin/flow-factory.sh probe --export "$E2E_DIR/other-repo/docs/flow-factory"
+e2e_expect_equal "5" "$E2E_RC" "exit status for a separate repository"
+e2e_expect_out "FACTORY_REFUSED=export_outside_repository"
+
 _flow_test_begin "export: a token in the evidence is refused and nothing is copied (X3)"
 _fp_export_scenario fp-export-token "an evidence file holds a ghp_ token: export refuses, names the file, and leaves no copy"
 printf 'Authorization: token ghp_%s\n' "$FP_TOKEN_TAIL" >> "$E2E_REPO/.flow/factory/evidence/P5-1/stream.jsonl"
