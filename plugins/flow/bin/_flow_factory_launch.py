@@ -495,7 +495,10 @@ def _fresh_tree(paths, n, job, did):
     """Before a fresh launch: refuse a clone whose config changed or that
     holds an untracked nested repository (amendments A.11: no snapshot, no
     reset); snapshot a dirty tree, untracked files included, then reset and
-    clean it. Returns the snapshot ref, or None for a clean tree."""
+    clean it. The snapshot is added to job.json snapshots, with a snapshot
+    event carrying the whole list, before the reset: a write that fails
+    leaves the edits in the tree as well as in the ref. Returns the snapshot
+    ref, or None for a clean tree. Under the job lock."""
     clone = job["worktree"]
     copy_dir = os.path.join(_job_dir(paths, n), "clone-config")
     try:
@@ -506,7 +509,15 @@ def _fresh_tree(paths, n, job, did):
             raise Refused(f"nested_repository directive={did} path={nested[0]}")
         if not fgit.tree_dirty(paths.fdir, clone, copy_dir, n, job.get("goal_id")):
             return None
-        ref = fgit.snapshot(paths.fdir, clone, copy_dir, n, f"fresh launch of {did}")
+        reason = f"fresh launch of {did}"
+        ref = fgit.snapshot(paths.fdir, clone, copy_dir, n, reason)
+        at = _utc()
+        entry = {"ref": ref, "k": int(ref.rsplit("-", 1)[1]), "reason": reason, "at": at}
+        job["snapshots"] = list(job.get("snapshots") or []) + [entry]
+        job["updated_at"] = at
+        jobs.write_job(paths, job)
+        jobs.append_event(paths, n, dict({"type": "snapshot", "job": job["key"], "directive": did},
+                                         **entry, snapshots=job["snapshots"]))
         fgit.reset_and_clean(paths.fdir, clone, copy_dir)
         return ref
     except fgit.CloneConfigChanged as e:

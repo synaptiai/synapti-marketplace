@@ -302,6 +302,14 @@ e2e_expect_equal new "$(_fe_in_scratch git -C "$LA_WT" show "$LA_REF:new.txt" 2>
 e2e_expect_equal "" "$(la_block 1)" "git status at the start of launch 1"
 e2e_expect_equal 1 "$(grep -cxF "Edits from an earlier session are kept in $LA_REF." "$E2E_BIN/claude-stdin-1.txt")" "prompt names the snapshot"
 e2e_expect_equal "$LA_REF" "$(la_jq "$LA_J/directives/$LA_ID.json" .snapshot_ref)" "directive snapshot_ref"
+# The job's record lists the snapshot as the engine's own snapshots do
+# ({ref, k, reason, at}), and a snapshot event carries the whole list, so the
+# person's history (rebuilt from events) names it too.
+LA_SNAP_WANT="[{\"ref\":\"$LA_REF\",\"k\":1,\"reason\":\"fresh launch of $LA_ID\"}]"
+e2e_expect_equal "$LA_SNAP_WANT" "$(jq -c '[.snapshots[]? | {ref, k, reason}]' "$LA_J/job.json" 2>&1)" "job.json snapshots"
+e2e_expect_equal yes "$(jq -r 'if (.snapshots | length) == 1 and (.snapshots[0].at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}")) then "yes" else "no" end' "$LA_J/job.json" 2>&1)" "job.json snapshot has a UTC time"
+e2e_expect_equal "$LA_SNAP_WANT" "$(jq -c 'select(.type == "snapshot") | [.snapshots[] | {ref, k, reason}]' "$LA_J/events.jsonl" 2>&1)" "one snapshot event with the whole list"
+e2e_expect_equal "$LA_REF 1 fresh launch of $LA_ID" "$(jq -r 'select(.type == "snapshot") | "\(.ref) \(.k) \(.reason)"' "$LA_J/events.jsonl" 2>&1)" "snapshot event names the ref"
 fi
 
 # ---------------------------------------------------------------- LA8
