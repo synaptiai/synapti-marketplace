@@ -681,6 +681,7 @@ NX_PG=$(nx_lease "$D1" child_pgid)
 fe_py "import _flow_factory_jobs as j
 p = j.resolve(create=False)
 print(j.store_pending(p, 7, 'person_cancel', {}, 'terminal', {'pid': 1, 'start': 'x', 'ancestry': [1]}, {'unvouched_session_action': False}))"
+fe_mask_output '[0-9]{19,20}-person_cancel\.json' '<seq>-person_cancel.json'
 nx_next
 e2e_expect_equal 0 "$E2E_RC" "pass 2 exit status ($E2E_ERR)"
 e2e_expect_equal "66b 53" "$(nx_rows 7)" "job 7 rows"
@@ -705,6 +706,7 @@ _fe_in_scratch sh -c 'cd "$1" && git update-ref refs/flow-factory/issue-7/snapsh
 fe_py "import _flow_factory_jobs as j
 p = j.resolve(create=False)
 print(j.store_pending(p, 7, 'person_cancel', {}, 'terminal', {'pid': 1, 'start': 'x', 'ancestry': [1]}, {'unvouched_session_action': False}))"
+fe_mask_output '[0-9]{19,20}-person_cancel\.json' '<seq>-person_cancel.json'
 nx_next
 e2e_expect_equal 53 "$(nx_rows)" "rows"
 e2e_expect_equal done "$(nx_last)" "last line"
@@ -814,6 +816,7 @@ e2e_expect_equal usage_limit "$(nx_jq "$NX_J/results/$D1.json" .outcome)" "resul
 NX_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 e2e_expect_equal yes "$([ "$(nx_jq "$NX_F/state.json" .paused_until)" \> "$NX_NOW" ] && echo yes || echo no)" "paused_until is in the future"
 nx_next
+fe_mask_output 'until=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' 'until=<time>'
 e2e_expect_equal 0 "$E2E_RC" "pass 2 exit status ($E2E_ERR)"
 e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c '^{"status":"PAUSED usage_limit until=[0-9TZ:-]*"}$')" "PAUSED usage_limit line"
 e2e_expect_equal 1 "$(nx_launches)" "claude launches"
@@ -903,6 +906,7 @@ e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_equal "39ld 66b" "$(nx_rows)" "rows"
 e2e_expect_equal 1 "$(nx_jq "$NX_J/job.json" '.snapshots | length')" "job.json snapshots entries"
 e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "snapshot"')" "snapshot lines"
+fe_mask_found "$(jq -cS '.snapshots' "$NX_J/job.json" 2>/dev/null)"
 e2e_expect_equal "$(jq -cS '.snapshots' "$NX_J/job.json" 2>/dev/null)" "$(nx17_entries snapshot 'ref, k, reason, at')" \
   "the snapshot line's entry equals job.json snapshots"
 nx_finish "$D2"
@@ -926,6 +930,7 @@ e2e_expect_equal 43o "$(nx_rows)" "rows"
 e2e_expect_equal "needs_human orphan_worker" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state, reason"
 e2e_expect_equal "$NX_Z build" "$(nx_jq "$NX_J/job.json" '.orphan_groups[0] | "\(.pgid) \(.stage)"')" "job.json orphan_groups[0] pgid, stage"
 e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "orphan_group"')" "orphan_group lines"
+fe_mask_found "$(jq -cS '.orphan_groups' "$NX_J/job.json" 2>/dev/null)"
 e2e_expect_equal "$(jq -cS '.orphan_groups' "$NX_J/job.json" 2>/dev/null)" "$(nx17_entries orphan_group 'pgid, start, stage, recorded_at')" \
   "the orphan_group line's entry equals job.json orphan_groups"
 e2e_expect_equal "$D1" "$(jq -r 'select(.type == "orphan_group") | .directive' "$NX_J/events.jsonl" 2>/dev/null)" "the orphan_group line's directive"

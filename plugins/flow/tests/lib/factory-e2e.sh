@@ -250,6 +250,105 @@ fe_wait_for() {
 fe_mask_pid() { printf '%s\t<pid %s>\n' "$1" "$2" >> "$E2E_DIR/masks"; }
 fe_mask_text() { printf '%s\t%s\n' "$1" "$2" >> "$E2E_DIR/masks"; }
 
+# The values a test or a fixture writes as they are (a time, a ps start time,
+# a uuid, the pid of a pid or pgid key), found once per test file in the
+# tests and in docs/flow-factory. fe_unvary keeps these and masks the rest.
+FE_CONSTANTS="$E2E_ROOT/fe-constants"
+{
+  grep -rhoE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z|(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+    "$REPO_ROOT/plugins/flow/tests" "$REPO_ROOT/docs/flow-factory" 2>/dev/null
+  grep -rhoE "[\"'](launcher_pid|child_pid|child_pgid|caller_pid|pid|pgid)[\"'] ?[:=] ?[0-9]+|[\"']ancestry[\"'] ?[:=] ?\[[0-9, ]*\]" \
+    "$REPO_ROOT/plugins/flow/tests" 2>/dev/null | grep -oE '[0-9]+' | sed 's/^/pid /'
+  printf 'pid 1\n'
+} | LC_ALL=C sort -u > "$FE_CONSTANTS"
+
+# fe_unvary — stdin to stdout with every value that changes from run to run
+# written as a fixed token, for text a factory helper or test writes to the
+# artifact (fe_art). Each unless FE_CONSTANTS holds it: a UTC time as <time>;
+# a ps start time (any weekday, month, and a day padded with a space) as
+# <lstart>; a uuid as <uuid>, except the fixed 00000000-0000-... session ids
+# fe_directive makes. The time-ordered number that starts a pending change's
+# file name as <seq>. Then the scenario's masks (fe_mask_pid, fe_mask_text),
+# so a named pid keeps its name; they come after the times, so a pid's digits
+# cannot be found inside one. Last, again unless FE_CONSTANTS holds it, the
+# value of a pid, pgid, launcher_pid, child_pid, child_pgid or caller_pid key
+# (in JSON, or in the Python a test edits a job with),
+# each pid of an ancestry list, the pid and parent pid that start an
+# ancestry entry ([pid, ppid, "<start>", ...]), and the group a launcher log
+# line names, as <pid>.
+fe_unvary() {
+  FE_MASKS="${E2E_DIR:-}/masks" FE_CONSTANTS="$FE_CONSTANTS" perl -0777 -e '
+    my %c;
+    if (open(my $fh, "<", $ENV{FE_CONSTANTS})) { $c{$_} = 1 for split /\n/, scalar <$fh> }
+    my $t = <STDIN>; $t = "" unless defined $t;
+    my $pid = sub { $c{"pid $_[0]"} ? $_[0] : "<pid>" };
+    $t =~ s/(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z)/$c{$1} ? $1 : "<time>"/ge;
+    $t =~ s/((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \d]\d \d\d:\d\d:\d\d \d{4})/$c{$1} ? $1 : "<lstart>"/ge;
+    $t =~ s/\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/my $u = $1; ($c{$u} || $u =~ m{^00000000-0000-}) ? $u : "<uuid>"/ge;
+    $t =~ s/\b\d{19,20}(-[a-z_]+\.json)/<seq>$1/g;
+    if (open(my $mh, "<", $ENV{FE_MASKS})) {
+      for my $ln (split /\n/, scalar <$mh>) {
+        my ($from, $to) = split /\t/, $ln, 2;
+        $t =~ s/\Q$from\E/$to/g if defined $from && length $from && defined $to;
+      }
+    }
+    $t =~ s/((["\x27])(?:launcher_pid|child_pid|child_pgid|caller_pid|pid|pgid)\2:\s*)(\d+)/$1 . $pid->($3)/ge;
+    $t =~ s/(\bgroup )(\d+)/$1 . $pid->($2)/ge;
+    $t =~ s/("ancestry":\s*\[)([^\]]*)(\])/my ($a, $l, $b) = ($1, $2, $3); $l =~ s{(\d+)}{$pid->($1)}ge; $a . $l . $b/ge;
+    my $pn = sub { my $v = $_[0]; $v =~ m{^\d+$} ? $pid->($v) : $v };
+    $t =~ s/\[(\d+|<pid [^>]*>), (\d+|<pid [^>]*>), (?="(?:<lstart>|[A-Z][a-z]{2} [A-Z][a-z]{2} ))/"[" . $pn->($1) . ", " . $pn->($2) . ", "/ge;
+    print $t;'
+}
+
+# fe_art — fe_unvary, then append to the scenario's artifact (_e2e_art).
+fe_art() { fe_unvary | _e2e_art; }
+
+# fe_mask_found <text> — register a mask (fe_mask_text) for each value in the
+# text that fe_unvary would write as a token: a time, a ps start time, a uuid.
+# For a value that reaches the artifact through e2e.sh, an expectation's
+# value or a command's output, which fe_art never sees. A pid alone cannot be
+# told from another number; fe_mask_pid names those.
+fe_mask_found() {
+  local v tok
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    case "$v" in *T*Z) tok='<time>' ;; *-*-*-*-*) tok='<uuid>' ;; *) tok='<lstart>' ;; esac
+    fe_mask_text "$v" "$tok"
+  done < <(printf '%s' "$1" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z|(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+    | LC_ALL=C sort -u | grep -vxF -f "$FE_CONSTANTS" | grep -v '^00000000-0000-')
+}
+
+# fe_mask_back <text> <token> — fe_mask_text, and the same replacement in what
+# the artifact already holds: for a value first seen in a command's output,
+# which e2e.sh has written to the artifact before the test can read it.
+fe_mask_back() {
+  [ -n "$1" ] || return 0
+  fe_mask_text "$1" "$2"
+  FE_FROM="$1" FE_TO="$2" perl -0777 -pi -e 's/\Q$ENV{FE_FROM}\E/$ENV{FE_TO}/g' "$E2E_ARTIFACT"
+}
+
+# fe_mask_output <extended regex> <token> — fe_mask_back for each distinct
+# match of the regex in the last command's stdout and stderr (E2E_OUT,
+# E2E_ERR): a name the command made up, such as a mktemp folder.
+fe_mask_output() {
+  local m
+  while IFS= read -r m; do
+    fe_mask_back "$m" "$2"
+  done < <(printf '%s\n%s\n' "${E2E_OUT:-}" "${E2E_ERR:-}" | grep -oE "$1" | LC_ALL=C sort -u)
+}
+
+# fe_mask_random <path> — register masks for the random part of a mktemp
+# name (what follows its last .), as written, in lower case and in upper
+# case, as XXXXXX: a test that writes the path in another case or with each
+# / as - keeps the random part, which no mask of the whole path matches.
+fe_mask_random() {
+  local r="${1##*.}"
+  [ -n "$r" ] && [ "$r" != "$1" ] || return 0
+  fe_mask_text "$r" XXXXXX
+  fe_mask_text "$(printf '%s' "$r" | tr '[:upper:]' '[:lower:]')" XXXXXX
+  fe_mask_text "$(printf '%s' "$r" | tr '[:lower:]' '[:upper:]')" XXXXXX
+}
+
 # _fe_in_scratch <command...> — run a command in the scratch environment in
 # the foreground, its output as the command's own. For the helpers' own
 # git and Python steps.
@@ -383,7 +482,7 @@ PY
     _e2e_result fail "fe_job wrote job issue-$n"
     return 1
   fi
-  printf 'job: fe_job %s %s%s\n' "$n" "$state" "${edits:+, edited by: $edits}" | _e2e_art
+  printf 'job: fe_job %s %s%s\n' "$n" "$state" "${edits:+, edited by: $edits}" | fe_art
 }
 
 # fe_job_clone <n> — clone $E2E_REPO into job.json's worktree with
@@ -517,7 +616,7 @@ _fe_run_py() {
     fi
     for a in "$@"; do shown="$shown${shown:+ }$(printf '%s' "$a" | tr '\n' ';')"; done
     printf 'python -E arguments: %s\n' "$shown"
-  } | _e2e_art
+  } | fe_art
   _e2e_exec "$(fe_python)" -E "$@"
   printf -- '--- expectations\n' | _e2e_art
 }
@@ -543,7 +642,7 @@ fe_bg() {
   _fe_need_repo || return 97
   _fe_py_cmd "$helper" "$@" || { _e2e_result fail "fe_bg: $helper is fe_py, fe_e or fe_direct"; return 1; }
   rm -f "$d/bg-$tag.out" "$d/bg-$tag.err" "$d/bg-$tag.rc"
-  printf 'background %s: %s %s\n' "$tag" "$helper" "$(printf '%s ' "$@" | tr '\n' ';')" | _e2e_art
+  printf 'background %s: %s %s\n' "$tag" "$helper" "$(printf '%s ' "$@" | tr '\n' ';')" | fe_art
   (
     ( _fe_scratch_env || exit 97; exec "${FE_CMD[@]}" ) < /dev/null > "$d/bg-$tag.out" 2> "$d/bg-$tag.err"
     printf '%s\n' "$?" > "$d/bg-$tag.rc.t" && mv "$d/bg-$tag.rc.t" "$d/bg-$tag.rc"
@@ -555,7 +654,7 @@ fe_bg_wait() {
   {
     printf -- '--- background %s: exit status %s\n' "$1" "$(cat "$E2E_DIR/bg-$1.rc")"
     printf -- '--- stdout\n%s\n--- stderr\n%s\n' "$(cat "$E2E_DIR/bg-$1.out")" "$(cat "$E2E_DIR/bg-$1.err")"
-  } | _e2e_art
+  } | fe_art
 }
 
 # _fe_next <prefix> — the next free n for $E2E_DIR/<prefix>-<n>, reserved.
@@ -570,7 +669,7 @@ _fe_record_outcome() {
   {
     printf 'ran: %s\n' "$1"
     printf -- '--- exit status: %s\n--- stdout\n%s\n--- stderr\n%s\n--- expectations\n' "$E2E_RC" "$E2E_OUT" "$E2E_ERR"
-  } | _e2e_art
+  } | fe_art
 }
 
 # fe_detached <command...> — run the command with no controlling terminal and
@@ -671,7 +770,7 @@ fe_art_state() {
         /^PATH=/ { v = substr($0, 6); sub(/:.*/, "", v); print "PATH=" v ":..."; next }
         /^[A-Za-z_][A-Za-z0-9_]*=/ { print $1 }'
     done
-  } | _e2e_art
+  } | fe_art
 }
 
 # fe_digest — the sha256 of the factory files e2e.sh's plugin digest leaves

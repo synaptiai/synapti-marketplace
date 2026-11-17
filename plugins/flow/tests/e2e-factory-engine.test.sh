@@ -434,6 +434,7 @@ e2e_expect_line '{"status":"TRANSITION_REFUSED=waiting_operator->ready: resume_s
 e2e_expect_equal "TRANSITION_REFUSED=waiting_operator->ready: resume_state not recorded by a parking row" \
   "$(jq -r 'select(.type == "refused") | .line' "$EN_F/jobs/issue-7/events.jsonl" 2>/dev/null)" "the refused event's line"
 e2e_expect_equal "" "$(en_line 7 "$(en_pass)" "$EN_E")" "no transition line"
+fe_mask_text "$EN_SHA" '<job.json sha256>'
 e2e_expect_equal "$EN_SHA" "$(_e2e_sha256 "$EN_F/jobs/issue-7/job.json")" "job.json sha256"
 fe_art_state 7
 fi

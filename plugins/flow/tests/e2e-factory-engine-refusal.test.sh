@@ -320,6 +320,7 @@ FR_LPID=$(fe_fake_launcher "$FR_F" "$FR_ID" "$E2E_DIR/worker.sh")
 fr_result reject
 fr_expect_lease_live worker.sh
 fr_expect_refused lease_ancestor "reject 7 --bogus extra"
+fe_mask_text "$FR_BEFORE" '<checksum> <size>'
 e2e_expect_equal "$FR_BEFORE" "$(fr_tree_sum "$FR_F")" "the checksum of the factory directory's files (leases left out)"
 fi
 
@@ -753,6 +754,9 @@ _fe_register "$FR_SLEEP"
 FR_START=$(_fe_lstart "$FR_SLEEP")
 sh -c 'exit 0' & FR_GONE=$!
 wait "$FR_GONE"
+fe_mask_pid "$FR_SLEEP" sleeper
+fe_mask_pid "$FR_GONE" ended
+fe_mask_found "$FR_START"
 fr_mpy "s = c.lstart($FR_SLEEP)
 print(repr(s)); print(len(s)); print(s == s.strip())
 print(c.lstart($FR_GONE))
@@ -778,6 +782,8 @@ FR_LPID=$(fe_fake_launcher "$FR_F" "$FR_ID" "$E2E_DIR/worker.sh")
 fr_result module
 fr_expect_lease_live worker.sh
 FR_A=$(printf '%s\n' "$E2E_OUT" | sed -n 1p)
+fe_mask_pid "$(jq .child_pid "$FR_LEASE")" child
+fe_mask_found "$(jq -r '.launcher_start, .child_start' "$FR_LEASE")"
 e2e_expect_equal True "$(printf '%s\n' "$E2E_OUT" | sed -n 2p)" "the first entry is the process itself"
 e2e_expect_equal "$(jq -c '[.launcher_pid, .launcher_start]' "$FR_LEASE")" \
   "$(jq -c --argjson p "$(jq .launcher_pid "$FR_LEASE")" '[.[] | select(.[0] == $p) | [.[0], .[2]]] | .[0]' <<<"$FR_A" 2>/dev/null)" \

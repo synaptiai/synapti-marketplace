@@ -445,6 +445,9 @@ PS_T0N=$(ps_now)
 ( fe_person_terminal issue-7-j1 "$PS_W" cancel 7 >/dev/null 2>&1 ) &
 PS_BG=$!
 fe_bg n1 fe_e ordinary.json next --executor headless
+# next prints wait or done by which of the two takes the job first; either is
+# right here, and nothing below reads it, so the artifact names both.
+fe_wait_for 12 "[ -f '$E2E_DIR/bg-n1.rc' ]" && perl -pi -e 's/^(wait|done)$/<wait or done>/' "$E2E_DIR/bg-n1.out"
 fe_bg_wait n1 12
 wait "$PS_BG"
 PS_T1N=$(ps_now)
@@ -863,6 +866,7 @@ fe_person_terminal issue-7-j1 "$PS_W" rebuild 7
 e2e_expect_equal 0 "$E2E_RC" "rebuild exit status"
 e2e_expect_line "REBUILT job=issue-7-j1 state=needs_human"
 printf -- '--- rebuilt job.json: orphan_groups, snapshots, pending_changes, state (masked)\n%s\n' "$(ps13c_masked "$PS_J/job.json")" | _e2e_art
+fe_mask_found "$(ps13c_fields "$E2E_DIR/live.json")"
 e2e_expect_equal "$(ps13c_fields "$E2E_DIR/live.json" | tr '\n' ';')" "$(ps13c_fields "$PS_J/job.json" | tr '\n' ';')" \
   "rebuilt orphan_groups; snapshots; pending_changes; state equal the live job's"
 # Held: the retry returns the job to build, and row 43g holds the launch while

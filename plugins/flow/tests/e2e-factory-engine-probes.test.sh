@@ -135,6 +135,7 @@ e2e_expect_equal 66b "$(pb_rows 7)" "job 7 rows (a launch)"
 fe_wait_for 45 "[ -f '$PB_F/jobs/issue-7/results/$PB_D7.json' ]"
 sleep 1.2
 pb_next
+fe_mask_found "$PB_AT"
 e2e_expect_equal "$PB_AT" "$(pb_jq "$PB_F/state.json" .env_recheck_at)" "env_recheck_at after pass 2 (no second re-run)"
 
 fe_new pb3b-interpreter-changed

@@ -543,6 +543,8 @@ fe_worker_says "worker-result=$LA_SUCCESS"
 la_launch
 la_wait
 LA_LP=$(la_jq "$LA_J/directives/$LA_ID.lease.json" .launcher_pid)
+fe_mask_pid "$LA_LP" launcher
+fe_mask_found "$(la_jq "$LA_J/directives/$LA_ID.lease.json" .launcher_start)"
 LA_P=$(find "$LA_J/pending" -name '*-stage_succeeded.json' | head -n 1)
 e2e_expect_equal 1 "$(find "$LA_J/pending" -name '*-stage_succeeded.json' | wc -l | tr -d ' ')" "pending stage_succeeded events"
 e2e_expect_equal "$LA_LP" "$(la_jq "$LA_P" .caller.pid)" "pending event caller pid (the launcher)"
@@ -569,6 +571,7 @@ fe_wait_for 15 "[ -f '$E2E_BIN/claude-pid-1' ]"
 rm -f "$E2E_DIR/py/python3.14"
 la_wait "$LA_ID" 30
 LA_LP=$(la_jq "$LA_J/directives/$LA_ID.lease.json" .launcher_pid)
+fe_mask_pid "$LA_LP" launcher
 e2e_expect_equal 1 "$(wc -l < "$LA_J/directives/$LA_ID.pending-report.jsonl" 2>/dev/null | tr -d ' ')" "pending-report lines"
 e2e_expect_equal "$LA_LP" "$(head -n 1 "$LA_J/directives/$LA_ID.pending-report.jsonl" | jq -r .caller_pid)" "pending-report caller_pid (the launcher)"
 e2e_expect_equal completed "$(head -n 1 "$LA_J/directives/$LA_ID.pending-report.jsonl" | jq -r .report.outcome)" "reported outcome"
@@ -602,6 +605,8 @@ case "$LA_CMD" in
   *) LA_X="not a marker: $LA_CMD" ;;
 esac
 e2e_expect_equal marker "$LA_X" "the launcher's command line names F and the directive"
+fe_mask_pid "$(la_jq "$LA_L" .child_pid)" child
+fe_mask_found "$(la_jq "$LA_L" .launcher_start)"
 e2e_expect_equal "$(la_jq "$LA_L" .child_pid)" "$(la_jq "$LA_L" .child_pgid)" "child_pgid equals child_pid"
 e2e_expect_equal "$(la_jq "$LA_L" .launcher_start)" "$(la_jq "$LA_L" .launcher_start | grep -E '^[A-Z][a-z]{2} [A-Z][a-z]{2} [ 0-9][0-9] [0-9:]{8} [0-9]{4}$')" "launcher_start in the lstart form"
 e2e_expect_equal null "$(la_jq "$LA_L" .revoked_at)" "revoked_at"

@@ -292,14 +292,16 @@ FH_PID=$(fe_fake_launcher "$FH_F" issue-7-j1-build-1 "$E2E_DIR/h6-worker.sh")
 FH_LEASE="$FH_F/jobs/issue-7/directives/issue-7-j1-build-1.lease.json"
 case "$FH_PID" in
   ''|*[!0-9]*) e2e_expect_equal "a pid" "'$FH_PID'" "what fe_fake_launcher printed" ;;
-  *) fe_mask_pid "$FH_PID" launcher; fe_mask_text "$(_fe_lstart "$FH_PID")" "<launcher start>"
+  # One token for both start times: the launcher and its child often start
+  # in the same second, and then one mask would name both.
+  *) fe_mask_pid "$FH_PID" launcher; fe_mask_text "$(_fe_lstart "$FH_PID")" "<lstart>"
      e2e_expect_equal ok ok "fe_fake_launcher printed a pid" ;;
 esac
 e2e_expect_equal "$FH_PID" "$(jq -r .launcher_pid "$FH_LEASE" 2>/dev/null)" "(a) the lease's launcher_pid"
 FH_CHILD=$(jq -r .child_pid "$FH_LEASE" 2>/dev/null)
 case "$FH_CHILD" in
   ''|*[!0-9]*) e2e_expect_equal "a pid" "'$FH_CHILD'" "the lease's child_pid" ;;
-  *) fe_mask_pid "$FH_CHILD" claude; fe_mask_text "$(_fe_lstart "$FH_CHILD")" "<claude start>" ;;
+  *) fe_mask_pid "$FH_CHILD" claude; fe_mask_text "$(_fe_lstart "$FH_CHILD")" "<lstart>" ;;
 esac
 FH_PPID=$(/bin/ps -o ppid= -p "$FH_CHILD" 2>/dev/null | tr -d ' ')
 e2e_expect_equal "$FH_PID" "$FH_PPID" "(b) the claude child's parent"

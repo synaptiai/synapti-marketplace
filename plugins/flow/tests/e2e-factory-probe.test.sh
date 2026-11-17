@@ -18,6 +18,15 @@
   printf '%s\n' "cannot load tests/lib/e2e.sh; run this file with plugins/flow/tests/run.sh" >&2
   return 1 2>/dev/null; exit 1
 }
+# The factory test helpers: the masks that keep each artifact the same from
+# run to run (fe_mask_text, fe_mask_back, fe_mask_output, fe_mask_random), and
+# fe_bg, fe_py and fe_person_terminal for the scenarios near the end, which
+# start background holders and a terminal. The scenarios still start with
+# this file's own helpers.
+source "$REPO_ROOT/plugins/flow/tests/lib/factory-e2e.sh" || {
+  printf '%s\n' "cannot load tests/lib/factory-e2e.sh" >&2
+  return 1 2>/dev/null; exit 1
+}
 
 _flow_test_begin "factory wrapper: context --mode is off with no Python on PATH (W1)"
 e2e_new fp-context-no-python
@@ -65,6 +74,7 @@ e2e_new fp-probe-tmp-unwritable
 e2e_describe "with TMPDIR naming a folder that does not exist, probe refuses with scratch_unwritable and exit 5, not python_missing"
 e2e_repo main
 e2e_run_bin TMPDIR="$E2E_DIR/no-such-folder" bin/flow-factory.sh probe --resolve-python
+fe_mask_output 'flow-factory-py\.[A-Za-z0-9]+' flow-factory-py.XXXXXX
 e2e_expect_equal "5" "$E2E_RC" "exit status"
 e2e_expect_line "FACTORY_REFUSED=scratch_unwritable (mktemp -d in $E2E_DIR/no-such-folder failed)"
 e2e_expect_no_out "python_missing"
@@ -1064,6 +1074,8 @@ _fp_env_scenario() {
   e2e_stub_start api "${3:-$FP_API_403}"
   FP_HEAD_BEFORE=$(cd "$E2E_REPO" && command git rev-parse HEAD)
   FP_CONFIG_BEFORE=$(cksum < "$E2E_REPO/.git/config")
+  fe_mask_text "$FP_HEAD_BEFORE" '<scratch HEAD>'
+  fe_mask_text "$FP_CONFIG_BEFORE" '<checksum> <size>'
 }
 
 # _fp_env_run [NAME=value ...] -- [probe arguments] — probe --environment
@@ -1300,6 +1312,7 @@ _fp_env_after
 _fp_no_local_signing() {
   (cd "$E2E_REPO" && command git config --unset commit.gpgsign)
   FP_CONFIG_BEFORE=$(cksum < "$E2E_REPO/.git/config")
+  fe_mask_text "$FP_CONFIG_BEFORE" '<checksum> <size>'
 }
 
 # git config --global does not follow [include] unless asked to, so a check
@@ -1389,6 +1402,7 @@ e2e_expect_equal "synaptiai/synapti-marketplace#358" "$(_fp_get "$E2E_REPO/$FP_R
 e2e_expect_equal "true true true" "$(_fp_get "$E2E_REPO/.flow/factory/$FP_EV/facts.json" '" ".join(str(d["job_clone"][k]).lower()
   for k in ("write_seen_in_clone", "main_lost_side_commit", "clone_reads_side_file"))')" \
   "the job clone saw the worker's write, the main checkout lost the dropped commit, and the clone still read it"
+fe_mask_text "$FP_GIT_SUM" '<checksum> <size>'
 e2e_expect_equal "$FP_GIT_SUM" "$(cd "$E2E_REPO/.git" && find objects refs -type f -print | LC_ALL=C sort | xargs cksum | cksum)" \
   "the person's repository's objects and refs"
 e2e_expect_equal "false true" "$(_fp_get "$E2E_REPO/.flow/factory/$FP_EV/facts.json" '"%s %s" % (str(d["plants"]["core.fsmonitor"]["marker_before_git"]).lower(), str(d["plants"]["core.fsmonitor"]["marker_after_git_status"]).lower())')" \
@@ -3202,6 +3216,7 @@ e2e_expect_equal "repo view|auth status" "$(python3 -c 'import json,sys
 print("|".join(" ".join(json.loads(l)[:2]) for l in open(sys.argv[1])))' "$E2E_BIN/gh-calls.jsonl")" "the gh calls made"
 e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
 e2e_run_bin bin/flow-factory.sh probe --verify-record "$E2E_REPO/$FP_REC" --writes-only-to "$FP_GW_SANDBOX"
+fe_mask_output 'flow-factory-probe-[0-9]{8}T[0-9]{6}Z-[0-9a-f]+' 'flow-factory-probe-<time>-<id>'
 e2e_expect_out "PROBES_REFUSED_WRITE=P3 unresolved/unresolved git push -q git@github.com:probe-fixture/sandbox.git"
 e2e_expect_no_out "write_outside_sandbox"
 
@@ -3995,6 +4010,9 @@ _fp_int --mode default
 FP_COPY=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_PLUGIN=//p')
 _fp_session default
 _fp_int --step record
+# Every part's reason is over the limit, and which one the refusal names
+# changes from run to run: the artifact names none of them.
+fe_mask_output 'P9/parts/[a-z_]+/reason: .* is too long' 'P9/parts/<part>/reason: <reason> is too long'
 e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
 e2e_expect_err "PROBE_ENTRY_REFUSED=P9"
 e2e_expect_equal "not_run none" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["probes"]["P9"]["result"],
@@ -4157,6 +4175,7 @@ e2e_expect_equal '["P14"] no' "$(sed -n 's/^PROBE_INTERACTIVE=//p' "$E2E_DIR/rec
 d = json.load(sys.stdin)
 print(json.dumps(d.get("running")), "yes" if "P14" in d["probes"] else "no")')" "--step record during the hold: P14 running, and no P14 result"
 e2e_expect_equal "not_run default" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["probes"]["P9"]["result"], d["groups"]["interactive"]["keyed_on"].get("permission_modes"))')" "the P9 entry and permission_modes --step record wrote, after P14"
+fe_mask_back "$(sed -n 's/^ANSWER_RECORDED question=\([0-9a-f][0-9a-f]*\).*/\1/p' "$E2E_DIR/answer.out")" '<question id>'
 e2e_expect_equal "yes" "$(grep -q '^ANSWER_RECORDED' "$E2E_DIR/answer.out" && echo yes || echo no)" "the session's answer was taken ($(cat "$E2E_DIR/answer.out"))"
 e2e_expect_equal '{"continues_after_answer": "go", "cost_per_30_minutes": "go", "polls_within_limit": "go", "real_await": "deferred"}' "$(_fp_parts P14)" "every P14 part"
 e2e_expect_equal "deferred synaptiai/synapti-marketplace#356 true" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s %s" % (d["probes"]["P14"]["result"], d["probes"]["P14"].get("deferred_to"), str(d["probes"]["P14"]["stand_in"]).lower())')" "P14 result, deferred_to and stand_in"
@@ -4329,7 +4348,11 @@ _flow_test_begin "interactive: a P14 worker that parks without an answer is no-g
 _fp_p14_scenario fp-int-p14-park "no one answers and the hold time is 4 s: the stand-in await prints PARK, the worker stops, and the continue part is no-go" 0.01
 _fp_int --step setup --mode default
 _fp_int --step p14 --poll-seconds 2 --hold-seconds 4
+# How many 2 s polls fit in the 4 s hold before PARK depends on timing, and
+# the spend follows the polls: the artifact names neither count.
+fe_mask_output '"spent_usd": [0-9.]+' '"spent_usd": <spent>'
 FP_POLLS=$(_fp_polls)
+fe_mask_text "($FP_POLLS)" '(<polls>)'
 e2e_expect_equal "PARK" "${FP_POLLS##* }" "the last poll ($FP_POLLS)"
 e2e_expect_equal "no-go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P14"]["parts"]["continues_after_answer"]["result"]')" "continue part"
 e2e_expect_equal "no-go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P14"]["result"]')" "P14 result"
@@ -4497,6 +4520,15 @@ _fp_record "$E2E_REPO/$FP_REC"
 cp "$E2E_REPO/$FP_REC" "$E2E_DIR/record.orig"
 # _fp_unlink <path> — remove the file or link at path, if there is one.
 _fp_unlink() { if [ -L "$1" ] || [ -e "$1" ]; then rm "$1"; fi; }
+# _fp_mask_hold_sums — mask the checksum and size of each hold.json and
+# polls.jsonl line of FP_SUM in the artifact: a hold records when it was
+# held and each poll when it ran, so both change from run to run.
+_fp_mask_hold_sums() {
+  local l
+  while IFS= read -r l; do
+    fe_mask_text "$l" "${l%% *} <checksum> <size>"
+  done < <(printf '%s\n' "$FP_SUM" | grep -E '/(hold\.json|polls\.jsonl) [0-9]+ [0-9]+$')
+}
 # _fp_polls <state> — the polls the hold at state holds, or none.
 _fp_polls() { if [ -f "$1" ]; then _fp_get "$1" 'd["polls"]'; else echo none; fi; }
 for FP_DIR in "$E2E_REPO/.flow/factory/evidence/P14-1" "$E2E_DIR/free"; do
@@ -4515,6 +4547,7 @@ for FP_DIR in "$E2E_REPO/.flow/factory/evidence/P14-1" "$E2E_DIR/free"; do
         if [ "$FP_HOW" = symbolic ]; then ln -s "$FP_TARGET" "$FP_DIR/$FP_NAME"
         else ln "$FP_TARGET" "$FP_DIR/$FP_NAME"; fi
         FP_SUM=$(_fp_factory_sum)
+        _fp_mask_hold_sums
         FP_CASE="a $FP_HOW link to $FP_TARGET at $FP_NAME, $FP_CALL call, in $FP_DIR"
         _fp_await --state "$FP_STATE"
         e2e_expect_equal "5" "$E2E_RC" "exit status for $FP_CASE ($E2E_OUT $E2E_ERR)"
@@ -4545,6 +4578,7 @@ for FP_HOW in symbolic hard; do
   _fp_unlink "$FP_DIR/polls.jsonl"
   FP_BEFORE=$(cksum < "$FP_STATE")
   FP_SUM=$(_fp_factory_sum)
+  _fp_mask_hold_sums
   # Once the call has written the hold it waits 4 s for an answer: the link
   # goes in then.
   (
@@ -4664,6 +4698,7 @@ e2e_expect_equal "" "$(grep -rlE 'ghp_|gho_|ghs_|github_pat_' "$FP_OUTDIR")" "fi
 e2e_expect_equal "~/.pyenv/versions/3.14.7/bin/python3.14" "$(_fp_get "$FP_OUTDIR/probes.json" 'd["interpreter"]')" "the interpreter in the copy"
 e2e_expect_equal '{"cwd": "~/work", "real": "~/work"}' "$(cat "$FP_OUTDIR/evidence/P5-1/stream.jsonl")" "the evidence text in the copy"
 e2e_expect_equal "yes" "$(_fp_get "$FP_OUTDIR/probes.json" '"yes" if "[token removed]" in d["probes"]["P4"]["reason"] else d["probes"]["P4"]["reason"]')" "the record's token is replaced"
+fe_mask_text "$FP_SUM" '<checksum> <size>'
 e2e_expect_equal "$FP_SUM" "$(cksum < "$E2E_REPO/$FP_REC")" "the runtime record's checksum"
 e2e_run_bin bin/flow-factory.sh probe --verify-record "$FP_OUTDIR/probes.json"
 e2e_expect_equal "0" "$E2E_RC" "the copy passes --verify-record ($E2E_OUT)"
@@ -4949,6 +4984,7 @@ _fp_export_scenario fp-export-tempdash "TMPDIR is a folder under /tmp, outside m
 file names it and its realpath in both dashed forms, and macOS per-user temporary folders in dashed forms: each is \
 rewritten as \$TMPDIR"
 FP_T=$(mktemp -d /tmp/fp-tmp_dash.XXXXXX); FP_TR=$(cd "$FP_T" && pwd -P)
+fe_mask_random "$FP_T"
 {
   _fp_dashed "$FP_T" | sed 's/$/-repo\/s.jsonl/; s/^/projects\//'
   _fp_dashed "$FP_TR" | sed 's/$/-repo/; s/^/projects\//'
@@ -5026,6 +5062,8 @@ it is and with each / written as -, are followed by . , ) ] : \` ; > and by the 
 and in the record each is rewritten, and in a file that is not text each is refused and named; a . that starts the \
 rest of a longer name keeps that name whole"
 FP_T=$(mktemp -d /tmp/fp-tmpend.XXXXXX)
+fe_mask_random "$FP_T"
+fe_mask_random "$E2E_ROOT"
 FP_DH=$(printf '%s' "$E2E_HOME" | tr / -); FP_DT=$(printf '%s' "$FP_T" | tr / -)
 # Each row is <path>|<what the copy holds instead>|<the kind a refusal names>.
 FP_KINDS=("$E2E_HOME|~|home" "projects/$FP_DH|projects/~|home" "$FP_T|\$TMPDIR|temp"
@@ -5089,6 +5127,8 @@ _fp_export_scenario fp-export-case "HOME and a TMPDIR under /tmp in lower and up
 temporary folder ending in a lower-case t, as git writes it inside a config key name: in an evidence file each is \
 rewritten, and in a file that is not text each is refused and named"
 FP_T=$(mktemp -d /tmp/fp-tmpcase.XXXXXX)
+fe_mask_random "$FP_T"
+fe_mask_random "$E2E_ROOT"
 FP_LOW() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 FP_UP() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
 FP_KINDS=("$(FP_LOW "$E2E_HOME")/x|~/x|home" "$(FP_UP "$E2E_HOME")/x|~/x|home"
@@ -5205,6 +5245,7 @@ _fp_record_edit 'd["probes"]["P4"]["reason"] = "checked again"'
 # _fp_partial_kept <how> — the copy is still the earlier export's, and docs/
 # holds nothing but the copy.
 _fp_partial_kept() {
+  fe_mask_output '\.flow-factory-export-[A-Za-z0-9_]+' .flow-factory-export-XXXXXXXX
   e2e_expect_equal "5" "$E2E_RC" "exit status $1 ($E2E_OUT $E2E_ERR)"
   e2e_expect_out "FACTORY_REFUSED=export_unwritable"
   e2e_expect_equal "$FP_OLD_SUM" "$(cksum < "$FP_OUTDIR/probes.json")" "the earlier record $1"
@@ -5377,6 +5418,7 @@ _fp_inject 'rename */.flow-factory-export-*/probes.json */docs/flow-factory/prob
   'rename */.flow-factory-export-*/earlier-evidence */docs/flow-factory/evidence'
 e2e_run_bin bin/flow-factory.sh probe --export docs/flow-factory
 FP_KEPT=$(printf '%s\n' "$E2E_ERR" | sed -n 's/^PROBE_EXPORT_EARLIER_EVIDENCE=//p')
+fe_mask_output '\.flow-factory-export-[A-Za-z0-9_]+' .flow-factory-export-XXXXXXXX
 e2e_expect_err "KeyboardInterrupt"
 e2e_expect_equal "$FP_OLD_SUM" "$(cksum < "$FP_OUTDIR/probes.json")" "the earlier record in the copy"
 e2e_expect_equal "$FP_OLD_EV" "$(if [ -n "$FP_KEPT" ]; then cat "$FP_KEPT/P5-1/stream.jsonl" 2>&1; \
@@ -5491,13 +5533,6 @@ e2e_expect_equal "$FP_REC_BEFORE" "$(cat "$E2E_REPO/.flow/factory/probes.json")"
 #       run charged the whole session's total), or is judged from runs that
 #       cannot be compared
 
-# The factory test helpers (fe_bg, fe_py, fe_person_terminal) for the
-# scenarios below, which start background holders and a terminal. The
-# scenarios still start with this file's own helpers.
-source "$REPO_ROOT/plugins/flow/tests/lib/factory-e2e.sh" || {
-  printf '%s\n' "cannot load tests/lib/factory-e2e.sh" >&2
-  return 1 2>/dev/null; exit 1
-}
 
 FP_NO_SANDBOX_REASON="the token check reads the sandbox and sends it three writes built to be refused, and this run was given no sandbox (flow-factory.sh probe --environment --sandbox <owner/repo>)"
 

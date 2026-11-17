@@ -330,6 +330,7 @@ e2e_run_bin bin/flow-factory.sh report ../../x < "$E2E_DIR/r.json"
 e2e_expect_equal 5 "$E2E_RC" "(i) exit status"
 e2e_expect_equal "FACTORY_REFUSED=directive_id_invalid" "$E2E_OUT" "(i) stdout"
 FW_AFTER=$(cd "$E2E_DIR" && find . ! -path ./out ! -path ./err | LC_ALL=C sort | cksum)
+fe_mask_text "$FW_BEFORE" '<checksum> <size>'
 e2e_expect_equal "$FW_BEFORE" "$FW_AFTER" "(i) the checksum of the list of files under the scenario folder"
 # (ii) the pending-report file is a symlink
 fe_directive "$FW_ID"
