@@ -33,11 +33,15 @@
 #   NX13 a probe's lock blocks `next` (R19)
 #   NX14 the output protocol is broken
 #   NX15 a terminal job's refs are not copied
+#   NX17 a pass that changes job.json orphan_groups, snapshots or
+#        pending_changes writes no events.jsonl line for it, so rebuild
+#        cannot restore the field; or the line's entry differs from the one
+#        job.json holds
 #
 # Amounts are compared in whole cents through jq. Elapsed times go to stdout,
 # not to the artifacts, so the artifacts stay the same from run to run.
 #
-# NX_ONLY=<id> (NX1 ... NX16, NXAC7, NXAC8) runs only that scenario.
+# NX_ONLY=<id> (NX1 ... NX17, NXAC7, NXAC8) runs only that scenario.
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -837,6 +841,110 @@ e2e_expect_equal 0 "$(nx_launches)" "claude launches"
 nx_next "$E2E_DIR/nx12.json"
 e2e_expect_equal "66i 6" "$(nx_rows)" "rows after pass 2"
 e2e_expect_equal prepare "$(nx_jq "$NX_J/job.json" .state)" "state"
+fi
+
+# ---------------------------------------------------------------- NX17
+if nx_run NX17; then
+_flow_test_begin "next: each change to orphan_groups, snapshots and pending_changes writes its event line (NX17, AC10)"
+# nx17_lease <directive> <child pid or null> <child start or null> — a lease
+# whose launcher has exited and whose heartbeat is old.
+nx17_lease() {
+  local dead cs=null
+  dead=$(_fe_in_scratch sh -c 'echo $$')
+  [ "$3" = null ] || cs="\"$3\""
+  cat > "$NX_J/directives/$1.lease.json" <<JSON
+{"directive": "$1", "kind": "worker", "host": "h", "launcher_pid": $dead, "launcher_start": "Mon Nov 16 00:00:00 2026",
+ "started_at": "2026-11-16T00:00:00Z", "heartbeat_at": "2026-11-16T00:00:00Z", "child_pid": $2, "child_pgid": $2,
+ "child_start": $cs, "revoked_at": null}
+JSON
+}
+# nx17_zombie_group — sets NX_Z to the pid of a `sleep 60` in a session of its
+# own, whose parent (a background python) never reaps it. Once the engine
+# kills it, the group leader is a zombie: killpg(pgid, 0) still finds the
+# group and ps still gives the leader's start, so the group is not confirmed
+# gone and stays alive by orphan_alive. Both processes are registered for
+# cleanup. (Observed on darwin: killpg gives EPERM for the zombie's group.)
+nx17_zombie_group() {
+  fe_bg zombie fe_py "import subprocess, time
+p = subprocess.Popen(['sleep', '60'], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print(p.pid, flush=True)
+time.sleep(60)"
+  fe_wait_for 10 "[ -s '$E2E_DIR/bg-zombie.out' ]" || return 1
+  NX_Z=$(head -n 1 "$E2E_DIR/bg-zombie.out")
+  _fe_register "$NX_Z"
+}
+# nx17_seed_expired [job edits] — job 7 in build whose current directive D1
+# has an expired lease; leaseSeconds 3.
+nx17_seed_expired() {
+  nx_seed "d['directive'] = '$D1'; d['stage_launches'] = {'build': 1}; d['holds_slot'] = True
+${1:-}"
+  nx_settings '.flow.factory.leaseSeconds = 3'
+  fe_directive "$D1" "d['max_budget_usd'] = 0.5; d['started_at'] = '2026-11-16T00:00:00Z'; d['model'] = 'claude-opus-5-5'"
+}
+# nx17_entries <event type> <keys> — the entries of that event type's lines,
+# reduced to the keys, as one sorted JSON array.
+nx17_entries() { jq -cS -s "[.[] | select(.type == \"$1\") | {$2}]" "$NX_J/events.jsonl" 2>/dev/null; }
+NX17_B40=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+fe_new nx17a-snapshot-event
+# Source: T:39ld (lease_expired, group_gone true, attempts_exhausted false,
+# tree_dirty true: snapshot, reset, attempt += 1, relaunch fresh); the
+# snapshot line's entry is the one job.json snapshots holds (T12 rebuild
+# table: a field the pass writes is restored from the log).
+e2e_describe "D1's lease expired with no child; the clone has an untracked file; leaseSeconds 3"
+nx17_seed_expired
+nx17_lease "$D1" null null
+nx_plugin 'RUN: true'
+fe_worker_says "worker-result=$NX_SUCCESS"
+NX_WT=$(nx_jq "$NX_J/job.json" .worktree)
+printf 'dirty\n' > "$NX_WT/dirty.txt"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "39ld 66b" "$(nx_rows)" "rows"
+e2e_expect_equal 1 "$(nx_jq "$NX_J/job.json" '.snapshots | length')" "job.json snapshots entries"
+e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "snapshot"')" "snapshot lines"
+e2e_expect_equal "$(jq -cS '.snapshots' "$NX_J/job.json" 2>/dev/null)" "$(nx17_entries snapshot 'ref, k, reason, at')" \
+  "the snapshot line's entry equals job.json snapshots"
+nx_finish "$D2"
+fe_art_state 7
+
+fe_new nx17b-orphan-group-event
+# Source: plan T11 (a group not confirmed gone is added to orphan_groups with
+# its start); T:43o (lease_expired, group_gone false: needs_human,
+# orphan_worker); the orphan_group line's entry is the one job.json holds.
+e2e_describe "D1's lease expired; its child group is a sleep 60 whose parent never reaps it; leaseSeconds 3"
+e2e_repo main
+nx17_zombie_group
+fe_mask_pid "$NX_Z" sleeper
+NX_ZS=$(_fe_lstart "$NX_Z")
+nx17_seed_expired
+nx17_lease "$D1" "$NX_Z" "$NX_ZS"
+nx_plugin 'RUN: true'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 43o "$(nx_rows)" "rows"
+e2e_expect_equal "needs_human orphan_worker" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state, reason"
+e2e_expect_equal "$NX_Z build" "$(nx_jq "$NX_J/job.json" '.orphan_groups[0] | "\(.pgid) \(.stage)"')" "job.json orphan_groups[0] pgid, stage"
+e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "orphan_group"')" "orphan_group lines"
+e2e_expect_equal "$(jq -cS '.orphan_groups' "$NX_J/job.json" 2>/dev/null)" "$(nx17_entries orphan_group 'pgid, start, stage, recorded_at')" \
+  "the orphan_group line's entry equals job.json orphan_groups"
+e2e_expect_equal "$D1" "$(jq -r 'select(.type == "orphan_group") | .directive' "$NX_J/events.jsonl" 2>/dev/null)" "the orphan_group line's directive"
+
+fe_new nx17c-pending-changes-event
+# Source: plan T11 Sync (a head the factory did not push adds
+# foreign_head_change to job.json pending_changes); the pending_changes line
+# holds the facts added and the list job.json was given.
+e2e_describe "job 7 in needs_human with PR 12 at head a*40; gh reports head b*40"
+nx_seed "d['state'] = 'needs_human'; d['reason'] = 'orphan_worker'; d['blocked_stage'] = 'build'; d['pr'] = 12; d['head_sha'] = 'a' * 40"
+nx_plugin 'RUN: true'
+fe_gh api_repos_flow-e2e_scratch_pulls_12 "{\"state\":\"open\",\"merged\":false,\"merged_at\":null,\"head\":{\"sha\":\"$NX17_B40\"}}"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "pending_changes"')" "pending_changes lines"
+e2e_expect_equal '["foreign_head_change"] ["foreign_head_change"]' \
+  "$(jq -c 'select(.type == "pending_changes") | .added, .pending_changes' "$NX_J/events.jsonl" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" \
+  "the pending_changes line's added and pending_changes"
+fe_art_state 7
 fi
 
 # ---------------------------------------------------------------- NX13

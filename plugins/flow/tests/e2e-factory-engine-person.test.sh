@@ -38,7 +38,10 @@
 #   PS13 a rebuilt job differs from the live one it replaces: a field a
 #        row's effect wrote (reason), the slot, the directive, the relaunch,
 #        the sessions or the charges; or a rebuild between a result and the
-#        next pass loses the result
+#        next pass loses the result; or a rebuild loses orphan_groups,
+#        snapshots or pending_changes, so a job held by a live orphan group
+#        (row 43g) is launched again, or keeps the first of several logged
+#        values instead of the last
 #   PS14 a wrong word typed at the prompt confirms
 #
 # PS_ONLY=<id> (PS1 ... PS14) runs only that scenario.
@@ -152,7 +155,7 @@ ps_mask_sids() {
 # same artifact.
 ps_art_state() {
   local j="$PS_F/jobs/issue-${1:-7}" f
-  local walk='walk(if type == "object" then with_entries(if (.key | test("^(time|raised_at|created_at|updated_at|heartbeat_at|started_at|revoked_at|written_at|recorded_at|launcher_pid|launcher_start|child_pid|child_pgid|child_start|pid|pgid|start|ancestry|head_sha|host)$")) and .value != null and .value != "'"$PS_T0"'" then .value = "<masked>" else . end) else . end)'
+  local walk='walk(if type == "object" then with_entries(if (.key | test("^(time|at|raised_at|created_at|updated_at|heartbeat_at|started_at|revoked_at|written_at|recorded_at|launcher_pid|launcher_start|child_pid|child_pgid|child_start|pid|pgid|start|ancestry|head_sha|host)$")) and .value != null and .value != "'"$PS_T0"'" then .value = "<masked>" else . end) else . end)'
   ps_mask_sids "${1:-7}"
   {
     printf -- '--- state of job issue-%s (times, pids, start times, the host and the head masked)\n' "${1:-7}"
@@ -747,6 +750,152 @@ e2e_expect_equal "66b 39 66b" "$(ps_rows)" "rows: the stored result applied (39)
 e2e_expect_equal "$D2" "$(ps_jq "$PS_J/job.json" .directive)" "directive after next"
 ps_finish "$D2"
 ps_art_state 7
+
+# ps13c_zombie_group — sets PS_Z to the pid of a `sleep 60` in a session of
+# its own, whose parent (a background python) never reaps it. Once the engine
+# kills it, the group leader is a zombie: killpg(pgid, 0) still finds the
+# group and ps still gives the leader's start, so the group is not confirmed
+# gone and stays alive by the engine's orphan_alive. Both processes are
+# registered for cleanup. (Observed on darwin: killpg gives EPERM for the
+# zombie's group.)
+ps13c_zombie_group() {
+  fe_bg zombie fe_py "import subprocess, time
+p = subprocess.Popen(['sleep', '60'], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print(p.pid, flush=True)
+time.sleep(60)"
+  fe_wait_for 10 "[ -s '$E2E_DIR/bg-zombie.out' ]" || return 1
+  PS_Z=$(head -n 1 "$E2E_DIR/bg-zombie.out")
+  _fe_register "$PS_Z"
+}
+# ps13c_lease <directive> — a lease for a directive no launcher ran: the
+# launcher has exited, the heartbeat is old and no child was started.
+ps13c_lease() {
+  local dead
+  dead=$(_fe_in_scratch sh -c 'echo $$')
+  cat > "$PS_J/directives/$1.lease.json" <<JSON
+{"directive": "$1", "kind": "worker", "host": "h", "launcher_pid": $dead, "launcher_start": "Mon Nov 16 00:00:00 2026",
+ "started_at": "2026-11-16T00:00:00Z", "heartbeat_at": "2026-11-16T00:00:00Z", "child_pid": null, "child_pgid": null,
+ "child_start": null, "revoked_at": null}
+JSON
+}
+# ps13c_kill_run <directive> — once the run's claude has written dirty.txt,
+# SIGKILL its launcher, then claude's group, and age the heartbeat, so the
+# next pass finds the lease expired with no result.
+ps13c_kill_run() {
+  local l="$PS_J/directives/$1.lease.json" lp pg
+  fe_wait_for 30 "[ -n \"\$(jq -r '.child_pgid // empty' '$l' 2>/dev/null)\" ] && [ -f '$PS_WT/dirty.txt' ]" || return 1
+  lp=$(jq -r .launcher_pid "$l")
+  pg=$(jq -r .child_pgid "$l")
+  kill -KILL "$lp" 2>/dev/null
+  fe_wait_for 15 "! kill -0 $lp 2>/dev/null"
+  kill -KILL -- "-$pg" 2>/dev/null
+  fe_wait_for 15 "! kill -0 -- -$pg 2>/dev/null"
+  jq '.heartbeat_at = "2026-11-16T00:00:00Z"' "$l" > "$l.t" && mv "$l.t" "$l"
+}
+# ps13c_fields <job.json> — orphan_groups, snapshots, pending_changes and
+# state, each as sorted compact JSON on its own line.
+ps13c_fields() { jq -cS '.orphan_groups, .snapshots, .pending_changes, .state' "$1" 2>/dev/null; }
+# ps13c_masked <job.json> — the same, with the values that change from run
+# to run written as fixed tokens, for the artifact.
+ps13c_masked() {
+  jq -cS '(.orphan_groups // [] | map(.pgid = "<pgid>" | .start = "<start>" | .recorded_at = "<time>")),
+    (.snapshots // [] | map(.at = "<time>")), .pending_changes, .state' "$1" 2>/dev/null
+}
+PS_A40=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+PS_B40=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+PS_D4=issue-7-j1-build-4
+
+fe_new ps13c-rebuild-keeps-orphan-snapshots-changes
+# Source: T12 rebuild table (every field a pass writes is restored from the
+# log); T:39ld (snapshot, reset, attempt += 1, relaunch fresh); T:43o (a group
+# not confirmed gone is recorded; needs_human, orphan_worker); plan T11 Sync
+# (a head the factory did not push joins pending_changes, which stays while
+# github_change is blocked); T:44r (retry to blocked_stage); T:43g (launch_due
+# with orphan_group_alive: needs_human, do not launch). The live job.json the
+# real passes wrote is the expected value.
+e2e_describe "four next passes: D1's lease expires on a dirty clone (39ld, snapshot-1, D2 launches); D2 is killed after dirtying the clone (39ld, snapshot-2, D3 launches); D3 is killed and its lease names a group that cannot be confirmed gone (43o); gh reports a foreign head while github_change is blocked. job.json is replaced by '{' and rebuilt; then retry and next"
+ps_seed
+ps13c_zombie_group
+fe_mask_pid "$PS_Z" sleeper
+fe_enable
+fe_job 7 build "d['directive'] = '$D1'; d['stage_launches'] = {'build': 1}; d['holds_slot'] = True; d['pr'] = 12; d['head_sha'] = '$PS_A40'"
+fe_job_clone 7
+ps_ev "$(ps_created "$(jq -c . "$PS_J/job.json")" build)"
+ps_settings '.flow.factory.leaseSeconds = 3 | .flow.factory.syncIntervalSeconds = 0'
+fe_directive "$D1" "d['max_budget_usd'] = 0.5; d['started_at'] = '2026-11-16T00:00:00Z'; d['model'] = 'claude-opus-5-5'"
+ps13c_lease "$D1"
+e2e_plugin_copy templates/factory/build.prompt.md 'RUN: printf run > dirty.txt
+RUN: sleep 60'
+ps_w
+fe_worker_says
+fe_gh api_repos_flow-e2e_scratch_pulls_12 "{\"state\":\"open\",\"merged\":false,\"merged_at\":null,\"head\":{\"sha\":\"$PS_A40\"}}"
+PS_WT=$(ps_jq "$PS_J/job.json" .worktree)
+printf 'seeded\n' > "$PS_WT/dirty.txt"
+fe_e ordinary.json next --executor headless
+e2e_expect_equal 0 "$E2E_RC" "pass 1 exit status ($E2E_ERR)"
+ps13c_kill_run "$D2"
+fe_e ordinary.json next --executor headless
+e2e_expect_equal 0 "$E2E_RC" "pass 2 exit status ($E2E_ERR)"
+ps13c_kill_run "$D3"
+PS_L3="$PS_J/directives/$D3.lease.json"
+jq --argjson z "$PS_Z" --arg s "$(_fe_lstart "$PS_Z")" '.child_pid = $z | .child_pgid = $z | .child_start = $s' "$PS_L3" > "$PS_L3.t" && mv "$PS_L3.t" "$PS_L3"
+fe_e ordinary.json next --executor headless
+e2e_expect_equal 0 "$E2E_RC" "pass 3 exit status ($E2E_ERR)"
+fe_gh api_repos_flow-e2e_scratch_pulls_12 "{\"state\":\"open\",\"merged\":false,\"merged_at\":null,\"head\":{\"sha\":\"$PS_B40\"}}"
+# No default_unbuilt: an unbuilt fact has no value, as without the seam, so
+# github_change in needs_human is blocked and the change stays pending.
+printf '%s\n' '{"unbuilt": {"*": {"executor_can_confirm": true}}}' > "$E2E_DIR/blocking.json"
+fe_e "$E2E_DIR/blocking.json" next --executor headless
+e2e_expect_equal 0 "$E2E_RC" "pass 4 exit status ($E2E_ERR)"
+e2e_expect_equal "39ld 66b 39ld 66b 43o" "$(ps_rows)" "rows of the live job"
+e2e_expect_equal "needs_human orphan_worker 1 2" \
+  "$(ps_jq "$PS_J/job.json" '"\(.state) \(.reason) \(.orphan_groups | length) \(.snapshots | length)"')" \
+  "live state, reason, orphan groups, snapshots"
+e2e_expect_equal '["foreign_head_change"]' "$(jq -c .pending_changes "$PS_J/job.json" 2>/dev/null)" "live pending_changes"
+fe_py "import json, _flow_factory_next as nx
+d = json.load(open('$PS_J/job.json'))
+print(sum(1 for e in d.get('orphan_groups') or [] if nx.orphan_alive(e)))"
+e2e_expect_equal 1 "$E2E_OUT" "live orphan groups alive by orphan_alive"
+cp "$PS_J/job.json" "$E2E_DIR/live.json"
+printf -- '--- live job.json: orphan_groups, snapshots, pending_changes, state (masked)\n%s\n' "$(ps13c_masked "$E2E_DIR/live.json")" | _e2e_art
+printf '{' > "$PS_J/job.json"
+fe_person_terminal issue-7-j1 "$PS_W" rebuild 7
+e2e_expect_equal 0 "$E2E_RC" "rebuild exit status"
+e2e_expect_line "REBUILT job=issue-7-j1 state=needs_human"
+printf -- '--- rebuilt job.json: orphan_groups, snapshots, pending_changes, state (masked)\n%s\n' "$(ps13c_masked "$PS_J/job.json")" | _e2e_art
+e2e_expect_equal "$(ps13c_fields "$E2E_DIR/live.json" | tr '\n' ';')" "$(ps13c_fields "$PS_J/job.json" | tr '\n' ';')" \
+  "rebuilt orphan_groups; snapshots; pending_changes; state equal the live job's"
+# Held: the retry returns the job to build, and row 43g holds the launch while
+# the orphan group lives.
+fe_person_terminal issue-7-j1 "$PS_W" retry 7
+e2e_expect_line "RAISED person_retry job=issue-7-j1"
+fe_e ordinary.json next --executor headless
+e2e_expect_equal 0 "$E2E_RC" "pass 5 exit status ($E2E_ERR)"
+e2e_expect_equal 44r "$(jq -r 'select(.type == "transition") | .row' "$PS_J/events.jsonl" 2>/dev/null | tail -n 1)" "pass 5 applies the retry"
+fe_e ordinary.json next --executor headless
+e2e_expect_equal 0 "$E2E_RC" "pass 6 exit status ($E2E_ERR)"
+e2e_expect_equal "needs_human orphan_worker" "$(ps_jq "$PS_J/job.json" '"\(.state) \(.reason)"')" "state, reason after retry and two passes"
+e2e_expect_equal 43g "$(jq -r 'select(.type == "transition") | .row' "$PS_J/events.jsonl" 2>/dev/null | tail -n 1)" "the last row"
+e2e_expect_equal absent "$([ -e "$PS_J/directives/$PS_D4.json" ] && echo present || echo absent)" "a fourth directive"
+ps_art_state 7
+# Mutant: rebuild keeps the first logged value of each field instead of the
+# last. In the scenario's plugin copy only; it must not equal the live job.
+PS_M="$E2E_ACTIVE_PLUGIN/bin/_flow_factory_person.py"
+cp "$PS_M" "$E2E_DIR/person.orig.py"
+_fe_in_scratch "$(fe_python)" -I -c 'import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "if isinstance(line.get(field), list):"
+assert s.count(old) == 1, "mutation site"
+open(p, "w").write(s.replace(old, "if isinstance(line.get(field), list) and not job.get(field):"))' "$PS_M"
+e2e_expect_equal changed "$(cmp -s "$PS_M" "$E2E_DIR/person.orig.py" && echo same || echo changed)" "the mutant differs from the module"
+printf 'mutant: rebuild keeps the first logged value of each field (plugin copy only)\n' | _e2e_art
+printf '{' > "$PS_J/job.json"
+fe_person_terminal issue-7-j1 "$PS_W" rebuild 7
+e2e_expect_equal 0 "$E2E_RC" "mutant rebuild exit status"
+e2e_expect_equal 1 "$(jq '.snapshots | length' "$PS_J/job.json" 2>/dev/null)" "the mutant keeps one snapshot of the live two"
+e2e_expect_equal different "$([ "$(ps13c_fields "$E2E_DIR/live.json" | tr '\n' ';')" = "$(ps13c_fields "$PS_J/job.json" | tr '\n' ';')" ] && echo equal || echo different)" \
+  "the mutant's rebuilt fields differ from the live job's"
 fi
 
 # ---------------------------------------------------------------- PS14

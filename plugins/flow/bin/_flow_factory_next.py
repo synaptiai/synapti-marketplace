@@ -46,6 +46,18 @@ orphan_group_alive, group_gone, unvouched_session_action and the sync's
 pr_* facts. A pr_* fact other than pr_exists reads true while its name is in
 job.json pending_changes, so a pass whose gh call failed reads the last
 change the sync saw, not "false".
+
+Every change the pass makes to job.json orphan_groups, snapshots or
+pending_changes writes an events.jsonl line in the same job-lock hold, so
+`rebuild` restores the field from the log. Each line carries the field's
+whole new list, and the last line of a type gives the value:
+  {"type":"orphan_group","directive":…,"pgid":…,"start":…,"stage":…,
+   "recorded_at":…,"orphan_groups":[…]}        a group not confirmed gone
+  {"type":"snapshot","ref":…,"k":…,"reason":…,"at":…,"snapshots":[…]}
+  {"type":"pending_changes","added":[…],"pending_changes":[…]}
+                                                the sync's new changes
+A row that clears a pending change writes no such line: rebuild replays that
+clear from the row's transition line, as apply() does.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -823,8 +835,10 @@ class JobPass:
             return
         ref = fgit.snapshot(self.paths.fdir, wt, os.path.join(self.jdir, "clone-config"), self.n, f"row {row}")
         k = int(ref.rsplit("-", 1)[1])
-        new["snapshots"] = list(new.get("snapshots") or []) + [{"ref": ref, "k": k, "reason": f"row {row}",
-                                                                "at": ff.utc_now()}]
+        entry = {"ref": ref, "k": k, "reason": f"row {row}", "at": ff.utc_now()}
+        new["snapshots"] = list(new.get("snapshots") or []) + [entry]
+        jobs.append_event(self.paths, self.n, dict({"type": "snapshot", "job": self.key, "pass": self.p.pass_id},
+                                                   **entry, snapshots=new["snapshots"]))
         self._clone = None
 
     def reset(self):
@@ -869,9 +883,12 @@ class JobPass:
         gone = kill_group(pgid, cstart, min(2.0, max(0.0, self.p.left())))
         if not gone and isinstance(pgid, int) and isinstance(cstart, str):
             directive = _read_json(_directive_path(self.paths, self.n, did)) or {}
-            new["orphan_groups"] = list(new.get("orphan_groups") or []) + [{
-                "pgid": pgid, "start": cstart, "stage": directive.get("stage") or self.job["state"],
-                "recorded_at": ff.utc_now()}]
+            entry = {"pgid": pgid, "start": cstart, "stage": directive.get("stage") or self.job["state"],
+                     "recorded_at": ff.utc_now()}
+            new["orphan_groups"] = list(new.get("orphan_groups") or []) + [entry]
+            jobs.append_event(self.paths, self.n, dict({"type": "orphan_group", "job": self.key,
+                                                        "pass": self.p.pass_id, "directive": did},
+                                                       **entry, orphan_groups=new["orphan_groups"]))
         return gone
 
     def charged(self, job, did):
@@ -946,6 +963,8 @@ class JobPass:
         if added:
             self.job = dict(self.job, pending_changes=changes + added, updated_at=ff.utc_now())
             jobs.write_job(self.paths, self.job)
+            jobs.append_event(self.paths, self.n, {"type": "pending_changes", "job": self.key, "pass": self.p.pass_id,
+                                                   "added": added, "pending_changes": changes + added})
         pending = self.load_pending()
         order = self.p.table.data["event_order"]
         github_raised = False

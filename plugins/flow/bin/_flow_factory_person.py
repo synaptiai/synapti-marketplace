@@ -418,6 +418,11 @@ def _directives(jdir, key):
     return out
 
 
+# The events.jsonl line types whose list replaces a job.json field in rebuild
+# (written by the next pass: _flow_factory_next module docstring).
+LOGGED_LISTS = {"orphan_group": "orphan_groups", "snapshot": "snapshots", "pending_changes": "pending_changes"}
+
+
 def rebuild_job(paths, table, n, lines, now):
     """job.json rebuilt from the event log (plan T12 rebuild table). Raises
     ftable.TransitionRefused at the first recorded move no row makes.
@@ -428,6 +433,10 @@ def rebuild_job(paths, table, n, lines, now):
       counters, round_limit, build_started, attempt, relaunch) and its attempt
       are replayed in order, and pending_changes loses the facts its row read
       as true, as apply() does.
+    - orphan_groups, snapshots and pending_changes are the whole list the
+      last orphan_group, snapshot or pending_changes line before that point
+      carries (LOGGED_LISTS), so a later line replaces an earlier one and a
+      later transition still clears pending changes.
     - The slot is the last slot line (taken or freed).
     - cost, last_session_total and sessions come from the charge lines.
     - stage_launches is the largest k per stage of the directive files, and
@@ -467,6 +476,10 @@ def rebuild_job(paths, table, n, lines, now):
             if isinstance(pending, list) and row is not None:
                 cleared = set(f for f, v in row.get("guard", {}).items() if v is True)
                 job["pending_changes"] = [f for f in pending if f not in cleared]
+        elif kind in LOGGED_LISTS:
+            field = LOGGED_LISTS[kind]
+            if isinstance(line.get(field), list):
+                job[field] = copy.deepcopy(line[field])
         elif kind == "slot":
             if line.get("taken") is True:
                 job["holds_slot"] = True
