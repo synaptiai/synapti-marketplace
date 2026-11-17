@@ -4212,7 +4212,7 @@ RERECORD_NEEDS_TERMINAL = ("interpreter_rerecord_needs_terminal next: run flow-f
 def same_interpreter(recorded, current):
     """Whether a recorded interpreter (a path, ~ for the home in an exported
     copy) is the one at the realpath current."""
-    return os.path.realpath(os.path.expanduser(recorded)) == current
+    return os.path.realpath(expand_home(recorded)) == current
 
 
 def confirm_interpreter(recorded, current):
@@ -4574,6 +4574,16 @@ def tool_uses(events):
             if isinstance(c, dict) and c.get("type") == "tool_use":
                 out.append((c.get("name"), c.get("input") or {}, e.get("parent_tool_use_id")))
     return out
+
+
+def expand_home(path):
+    """path with a leading ~ (an exported record writes the home that way)
+    replaced by the home flow finds, through user_home(): flow reads HOME in
+    one place only (tests/user-state-sources.test.sh). Any other path is
+    returned as it is."""
+    if path == "~" or path.startswith("~/"):
+        return user_home() + path[1:]
+    return path
 
 
 def user_home():

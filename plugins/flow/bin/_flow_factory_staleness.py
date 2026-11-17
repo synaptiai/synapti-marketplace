@@ -216,7 +216,10 @@ def _interpreter_check(record, keyed, deadline):
     named, want, want_v = record.get("interpreter"), keyed.get("interpreter"), keyed.get("interpreter_version")
     if not (isinstance(named, str) and named and isinstance(want, str) and want and isinstance(want_v, str)):
         return "interpreter"
-    named, want = os.path.expanduser(named), os.path.expanduser(want)
+    try:
+        named, want = ff.expand_home(named), ff.expand_home(want)
+    except Refused:
+        return "interpreter"
     if os.path.realpath(named) != os.path.realpath(want):
         return "interpreter"
     try:

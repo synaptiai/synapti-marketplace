@@ -443,7 +443,11 @@ LA_T0=$(la_now)
 la_launch
 LA_T1=$(la_now)
 e2e_expect_line "LAUNCHED directive=$LA_ID"
-e2e_expect_equal yes "$(awk -v a="$LA_T0" -v b="$LA_T1" 'BEGIN { print (b - a < 2) ? "yes" : "no (" b - a " s)" }')" "launch returned in under 2 s"
+# A launch that waited for its worker would return only after the 2 s timeout
+# and the worker's 10 s TERM handling, 12 s or more; 8 s leaves room for a
+# loaded machine (the full suite runs 8 files at once) and still tells the two
+# apart.
+e2e_expect_equal yes "$(awk -v a="$LA_T0" -v b="$LA_T1" 'BEGIN { print (b - a < 8) ? "yes" : "no (" b - a " s)" }')" "launch returned in under 8 s"
 la_wait "$LA_ID" 45
 LA_TA=$(sed -n 's/^term-at //p' "$E2E_BIN/claude-script.out")
 LA_TE=$(sed -n 's/^term-exit //p' "$E2E_BIN/claude-script.out")
