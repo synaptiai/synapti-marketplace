@@ -56,7 +56,7 @@ se_grep() {
 se_verdict() {
   local n=0
   [ -n "$1" ] && n=$(printf '%s\n' "$1" | wc -l | tr -d ' ')
-  if [ "$n" = 1 ] && printf '%s\n' "$1" | grep -qE "^$2/bin/_flow_factory_table\.py:[0-9]+:def set_seam\("; then
+  if [ "$n" = 1 ] && grep -qE "^$2/bin/_flow_factory_table\.py:[0-9]+:def set_seam\(" <<<"$1"; then
     printf 'ok\n'
   else
     printf 'fail %s lines\n' "$n"

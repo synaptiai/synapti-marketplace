@@ -1093,7 +1093,10 @@ _fp_env_after() {
   e2e_expect_equal "$FP_HEAD_BEFORE" "$(cd "$E2E_REPO" && command git rev-parse HEAD)" "the scratch repository's HEAD"
   e2e_expect_equal "$FP_CONFIG_BEFORE" "$(cksum < "$E2E_REPO/.git/config")" "the scratch repository's git config"
   e2e_expect_equal "" "$(grep -rlF "$FP_KEYCHAIN_VALUE" "$E2E_REPO/.flow" 2>/dev/null)" "files under .flow holding the token"
-  e2e_expect_equal "no" "$(printf '%s\n%s' "$E2E_OUT" "$E2E_ERR" | grep -qF "$FP_KEYCHAIN_VALUE" && echo yes || echo no)" "the token in stdout or stderr"
+  # A match in the shell, not printf | grep -q: under pipefail a printf that
+# grep -q has stopped reading from fails, and the leak would read as "no".
+e2e_expect_equal "no" "$([[ "$E2E_OUT
+$E2E_ERR" == *"$FP_KEYCHAIN_VALUE"* ]] && echo yes || echo no)" "the token in stdout or stderr"
 }
 
 # _fp_stub_calls — "METHOD path" for each request the stub API received.
@@ -2614,7 +2617,9 @@ _fp_p16_no_secrets() {   # SB7: no fake token value in the record, evidence, pro
   local v hits=""
   for v in "$FP_P16_GH_VALUE" "$FP_P16_KEYCHAIN_VALUE" "$FP_P16_GIT_VALUE"; do
     hits="$hits$(grep -rlF "$v" "$E2E_REPO/.flow" "$E2E_DIR/state" 2>/dev/null)"
-    printf '%s\n%s' "$E2E_OUT" "$E2E_ERR" | grep -qF "$v" && hits="$hits stdout-or-stderr"
+    # A shell match: printf | grep -q can lose the hit to a broken pipe.
+    case "$E2E_OUT
+$E2E_ERR" in *"$v"*) hits="$hits stdout-or-stderr" ;; esac
   done
   e2e_expect_equal "" "$hits" "files or output holding a token value"
   e2e_expect_equal "" "$(grep -rl 'flow-factory-p16-canary' "$E2E_REPO/.flow" "$E2E_DIR/state" "$E2E_BIN"/claude-* 2>/dev/null)" "files holding the GH_TOKEN canary"

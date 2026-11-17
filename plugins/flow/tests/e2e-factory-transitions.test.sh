@@ -142,7 +142,11 @@ print("row 21f precedence 44 -> 99")
   e2e_expect_equal "1" "$E2E_RC" "checker exit status on the mutant"
   e2e_expect_no_line "PASS"
   e2e_expect_equal "FAIL: " "$(printf '%s\n' "$E2E_OUT" | tail -1 | cut -c1-6)" "start of the last line"
-  if printf '%s\n' "$E2E_OUT" | grep -qE "^ERROR \\[push_check\\] \\((open_pr|review|rework|resolve|sync), stage_succeeded\\): row '[0-9a-z]+' pushes, but when prepush_protected_failed is true row '[0-9a-z]+' wins"; then
+  # A here-string, not printf piped into grep -q: the checker prints about
+  # 49 KB and the line sits near byte 6000, so grep -q exits while printf is
+  # still writing, printf dies of SIGPIPE, and pipefail turns the match into
+  # status 141 (seen in 9 of 300 tries on an idle machine).
+  if grep -qE "^ERROR \\[push_check\\] \\((open_pr|review|rework|resolve|sync), stage_succeeded\\): row '[0-9a-z]+' pushes, but when prepush_protected_failed is true row '[0-9a-z]+' wins" <<<"$E2E_OUT"; then
     _e2e_result pass "an ERROR [push_check] line names a push row winning over the failed check"
   else
     _e2e_result fail "an ERROR [push_check] line names a push row winning over the failed check"
@@ -251,7 +255,7 @@ if [ -n "$TR_CHOSEN" ]; then
   e2e_expect_equal "0" "$E2E_RC" "path match exit status"
   for _tr_t in pull_request push; do
     for _tr_s in $TR_SAMPLES; do
-      if printf '%s\n' "$E2E_OUT" | grep -q "^MATCH $_tr_t $_tr_s "; then
+      if grep -q "^MATCH $_tr_t $_tr_s " <<<"$E2E_OUT"; then
         _e2e_result pass "$_tr_t paths match $_tr_s"
       else
         _e2e_result fail "$_tr_t paths match $_tr_s"
@@ -259,7 +263,7 @@ if [ -n "$TR_CHOSEN" ]; then
     done
   done
   _e2e_exec env HOME="$TR_REAL_HOME" "$TR_CHOSEN" -E "$REPO_ROOT/plugins/flow/tests/lib/flow-workflow-check.py" "$REPO_ROOT/.github/workflows/flow-tests.yml"
-  if printf '%s\n' "$E2E_OUT" | grep -q '^OK '; then
+  if grep -q '^OK ' <<<"$E2E_OUT"; then
     _e2e_result pass "flow-workflow-check.py accepts the workflow"
   else
     _e2e_result fail "flow-workflow-check.py accepts the workflow"

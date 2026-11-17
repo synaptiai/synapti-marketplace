@@ -247,15 +247,24 @@ _flow_test_begin "next: a hung gh call is cut at the budget and leaves no proces
 fe_new nx2-hung-gh
 # Source: execution_model L56; plan T11 Sync (timeout min(15, left - 2); a call
 # that times out leaves last_sync_at unchanged).
-e2e_describe "job 7 has PR 12; nextBudgetSeconds 4; the PR call hangs 30 s"
+# The plan's row uses nextBudgetSeconds 4 and a 5 s limit. gh() makes no call
+# when left - 2 < 1, so a budget of 4 leaves 1 s for the pass's work before
+# the PR call; on a loaded machine that work takes about 1 s, the call is
+# skipped and the hang is never exercised (the PR-call count below then reads
+# 0). Budget 7 leaves 4 s. The call is then cut at about deadline - 2, and
+# next returns at about the budget plus the interpreter's start. The limit,
+# 11 s, still fails the plausible wrong version, a fixed 15 s gh timeout that
+# ignores the time left (about 15 s or more), and a call with no timeout
+# (about 30 s).
+e2e_describe "job 7 has PR 12; nextBudgetSeconds 7; the PR call hangs 30 s"
 nx_seed "d['pr'] = 12; d['head_sha'] = 'a' * 40"
 nx_plugin 'RUN: true'
-nx_settings '.flow.factory.nextBudgetSeconds = 4'
+nx_settings '.flow.factory.nextBudgetSeconds = 7'
 fe_gh api_repos_flow-e2e_scratch_pulls_12 "hang 30"
 nx_next
 printf 'NX2 elapsed: %s s\n' "$NX_ELAPSED"
 e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
-e2e_expect_equal yes "$(nx_le "$NX_ELAPSED" 5)" "next returned within 5 s"
+e2e_expect_equal yes "$(nx_le "$NX_ELAPSED" 11)" "next returned within 11 s"
 e2e_expect_equal null "$(nx_jq "$NX_F/state.json" .last_sync_at)" "last_sync_at unchanged"
 NX_LEFT=""
 while IFS= read -r NX_P; do
@@ -957,11 +966,21 @@ if nx_run NX13; then
 _flow_test_begin "next: a probe holding the probe lock delays next by at most 2 s (NX13, R19)"
 fe_new nx13-probe-lock
 # Source: plan 2.12 environment_recheck (waits min(2, left - 1) s for probes.lock
-# only when gh or git moved; on a timeout it writes nothing); plan 2.5.
-e2e_describe "gh reports a new version, so the re-run must record it under probes.lock, which a probe holds for 30 s; syncIntervalSeconds 0; nextBudgetSeconds 5"
+# only when gh or git moved; on a timeout it writes nothing); plan 2.5; plan
+# T11 (before every step, compare the time left with 2 s).
+# The plan's row uses nextBudgetSeconds 5 and a 6 s limit. A launch needs 2 s
+# left after the lock wait of up to 2 s, so a budget of 5 leaves 1 s for the
+# pass's work before the wait; on a loaded machine that work takes about
+# 1.7 s, the wait shrinks to left - 1 and the pass ends without launching.
+# Budget 10 leaves 6 s. It stays small enough that a wait without the 2 s cap
+# (left - 1, or the 10 s lock timeout) leaves under 2 s and launches nothing,
+# so the rows check fails it. The probe still holding the lock when next
+# returns, and the 15 s limit, fail the plan's wrong version, an unbounded
+# wait that returns after the probe releases the lock at about 30 s.
+e2e_describe "gh reports a new version, so the re-run must record it under probes.lock, which a probe holds for 30 s; syncIntervalSeconds 0; nextBudgetSeconds 10"
 nx_seed
 nx_plugin 'RUN: true'
-nx_settings '.flow.factory.syncIntervalSeconds = 0 | .flow.factory.nextBudgetSeconds = 5'
+nx_settings '.flow.factory.syncIntervalSeconds = 0 | .flow.factory.nextBudgetSeconds = 10'
 fe_worker_says "worker-result=$NX_SUCCESS"
 fe_gh --version 'gh version 2.102.0 (2026-10-01)'
 fe_bg probe fe_py "import time, _flow_factory as ff, _flow_factory_jobs as j
@@ -972,11 +991,27 @@ with ff.factory_lock(p.fdir, timeout=5):
 fe_wait_for 10 'grep -qx locked "$E2E_DIR/bg-probe.out"'
 NX_REC0=$(jq -c .groups.environment "$NX_F/probes.json")
 nx_next
+NX_HELD=$([ -f "$E2E_DIR/bg-probe.rc" ] && echo "no, the probe had ended" || echo yes)
 printf 'NX13 elapsed: %s s\n' "$NX_ELAPSED"
 e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
-e2e_expect_equal yes "$(nx_le "$NX_ELAPSED" 6)" "next returned within 6 s"
+e2e_expect_equal yes "$NX_HELD" "the probe still held probes.lock when next returned"
+e2e_expect_equal yes "$(nx_le "$NX_ELAPSED" 15)" "next returned within 15 s"
 e2e_expect_equal 66b "$(nx_rows)" "rows (job 7 launched)"
 e2e_expect_equal null "$(nx_jq "$NX_F/state.json" .env_recheck_at)" "env_recheck_at unchanged"
 e2e_expect_equal "$NX_REC0" "$(jq -c .groups.environment "$NX_F/probes.json")" "the record's environment group"
+# The 2 s cap itself, measured inside one process so load does not move it:
+# the recheck's record step, given 100 s, must give up on the held lock after
+# about 2 s ("locked"). A cap of 3 s or more, or none (left - 1, 99 s), fails
+# the upper bound; a wait that does not try the lock at all fails the lower.
+fe_py "import time, _flow_factory_jobs as j, _flow_factory_staleness as s
+p = j.resolve(create=False)
+t = time.monotonic()
+r = s._record_versions(p.fdir, {'gh': 'gh version 2.102.0'}, time.time() + 100)
+w = time.monotonic() - t
+print('yes' if r == 'locked' and 1.9 <= w < 2.9 else 'no (%s %.2f s)' % (r, w))"
+NX_WAIT=$E2E_OUT
+e2e_expect_equal yes "$([ -f "$E2E_DIR/bg-probe.rc" ] && echo "no, the probe had ended" || echo yes)" "the probe still held probes.lock after the record step"
+e2e_expect_equal yes "$NX_WAIT" "the record step gave up on the held lock after 2 s (locked, 1.9-2.9 s)"
+e2e_expect_equal "$NX_REC0" "$(jq -c .groups.environment "$NX_F/probes.json")" "the record's environment group after the record step"
 nx_finish "$D1"
 fi

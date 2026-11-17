@@ -405,6 +405,7 @@ fi
 # ---------------------------------------------------------------- PS8
 if ps_run PS8; then
 _flow_test_begin "person: a waiting tty prompt holds no lock; next launches meanwhile (PS8, A+7)"
+# ps8_seed [budget s] — nextBudgetSeconds defaults to 4.
 ps8_seed() {
   ps_seed
   fe_enable
@@ -412,22 +413,33 @@ ps8_seed() {
   fe_job_clone 7
   e2e_plugin_copy templates/factory/build.prompt.md 'RUN: true'
   ps_w
-  ps_settings '.flow.factory.nextBudgetSeconds = 4'
+  ps_settings ".flow.factory.nextBudgetSeconds = ${1:-4}"
   fe_worker_says "worker-result=$PS_OK_RESULT"
 }
 fe_new ps8a-prompt-holds-no-lock
 # Source: amendment A+7 (next stays within its budget while a person subcommand
 # waits at the tty prompt); plan 2.7 (the confirmation holds no lock); T:66b.
-e2e_describe "job 7 in build with its clone; nextBudgetSeconds 4; cancel 7 waits 8 s at the prompt while next runs"
-ps8_seed
-( fe_person_terminal --delay 8 issue-7-j1 "$PS_W" cancel 7 >/dev/null 2>&1 ) &
+# Plan row PS8(a) names nextBudgetSeconds 4, a return within 5 s and an 8 s
+# wait. Here the budget is 12, the bound 13 s and the wait 16 s: next starts
+# nothing with under 2 s left, and on a loaded machine the steps before the
+# launch took over 3.5 s of a 4 s budget, so next printed idle. The wrong
+# version still fails: a cancel holding job 7's lock at the prompt for 16 s
+# outlasts next's lock waits (each at most the time left less 1 s), so next
+# gives up near 11 s with no directive; a next that waited on the lock without
+# a bound would return after 16 s. The wait outlasts the budget, and the check
+# below that the prompt is still open when next returns shows the launch
+# happened while it waited.
+e2e_describe "job 7 in build with its clone; nextBudgetSeconds 12; cancel 7 waits 16 s at the prompt while next runs"
+ps8_seed 12
+( fe_person_terminal --delay 16 issue-7-j1 "$PS_W" cancel 7 >/dev/null 2>&1 ) &
 PS_BG=$!
 fe_wait_for 10 "grep -q 'type the job key' '$E2E_DIR/terminal-1.out' 2>/dev/null"
 PS_T0N=$(ps_now)
 fe_e ordinary.json next --executor headless
 PS_T1N=$(ps_now)
+e2e_expect_equal no "$([ -f "$E2E_DIR/terminal-1.rc" ] && echo yes || echo no)" "cancel had ended when next returned"
 e2e_expect_equal 0 "$E2E_RC" "next exit status ($E2E_ERR)"
-e2e_expect_equal yes "$(ps_le "$PS_T0N" "$PS_T1N" 5)" "next returned within 5 s"
+e2e_expect_equal yes "$(ps_le "$PS_T0N" "$PS_T1N" 13)" "next returned within 13 s"
 e2e_expect_equal 66b "$(ps_rows)" "rows after next"
 e2e_expect_equal yes "$([ -f "$PS_J/directives/$D1.json" ] && echo yes || echo no)" "directive 1 exists"
 fe_wait_for 10 "[ -s '$E2E_BIN/claude-launches.log' ]"

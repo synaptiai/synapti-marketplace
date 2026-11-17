@@ -56,8 +56,6 @@ la_run() { [ -z "${LA_ONLY:-}" ] || [ "$LA_ONLY" = "$1" ]; }
 
 LA_ID=issue-7-j1-build-1
 
-la_now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
-
 # la_plugin [<build template text>] — run this scenario against a plugin copy
 # holding templates/factory/build.prompt.md with that text (none when the
 # argument is absent).
@@ -380,7 +378,7 @@ la_launch
 e2e_expect_line "LAUNCHED directive=$LA_ID"
 fe_wait_for 15 "[ -n \"\$(jq -r '.child_pgid // empty' '$LA_J/directives/$LA_ID.lease.json' 2>/dev/null)\" ]"
 LA_PG=$(la_jq "$LA_J/directives/$LA_ID.lease.json" .child_pgid)
-fe_wait_for 15 "/bin/ps -A -o pgid=,command= | awk -v g=$LA_PG '\$1 == g && /sleep 30/' | grep -q ."
+fe_wait_for 15 "/bin/ps -A -o pgid=,command= | awk -v g=$LA_PG '\$1 == g && /sleep 30/ { f = 1 } END { exit !f }'"
 kill -9 "$(cat "$E2E_BIN/claude-pid-1")"
 la_wait "$LA_ID" 45
 # A.10: min(1.00, 3.00) - 0.50 = 0.50, charged 0.50 + 0.50 = 1.00 (old rule:
@@ -439,15 +437,16 @@ echo '--- start'
 trap 'echo "term-at \$(t)"; sleep 10; echo "term-exit \$(t)"; exit 0' TERM
 while :; do sleep 0.2; done
 SH
-LA_T0=$(la_now)
 la_launch
-LA_T1=$(la_now)
+# Read before anything else once launch has returned. A launch that waited
+# for its worker returns only after the worker has handled TERM and written
+# term-exit, 12 s or more after it started; one that does not wait returns
+# while the worker still runs, so term-exit is not there yet. This holds on
+# a loaded machine, where a bound on launch's own time (the plan's "under
+# 2 s") does not: launch took 2.35 s and 2.60 s with 8 test files running.
+if grep -q '^term-exit ' "$E2E_BIN/claude-script.out" 2>/dev/null; then LA_X="no: the worker had already ended"; else LA_X=yes; fi
 e2e_expect_line "LAUNCHED directive=$LA_ID"
-# A launch that waited for its worker would return only after the 2 s timeout
-# and the worker's 10 s TERM handling, 12 s or more; 8 s leaves room for a
-# loaded machine (the full suite runs 8 files at once) and still tells the two
-# apart.
-e2e_expect_equal yes "$(awk -v a="$LA_T0" -v b="$LA_T1" 'BEGIN { print (b - a < 8) ? "yes" : "no (" b - a " s)" }')" "launch returned in under 8 s"
+e2e_expect_equal yes "$LA_X" "launch returned while its worker still ran"
 la_wait "$LA_ID" 45
 LA_TA=$(sed -n 's/^term-at //p' "$E2E_BIN/claude-script.out")
 LA_TE=$(sed -n 's/^term-exit //p' "$E2E_BIN/claude-script.out")
@@ -460,7 +459,7 @@ e2e_expect_equal 666 "$(la_cents "$LA_J/job.json" '.cost.runs[-1].charged_usd')"
 e2e_expect_equal limit_plus_turn "$(la_jq "$LA_J/job.json" '.cost.runs[-1].basis')" "basis"
 
 fe_new la11b-timeout-kill
-e2e_describe "timeout_seconds 2; the worker ignores TERM and keeps printing alive every 0.5 s"
+e2e_describe "timeout_seconds 2; the worker ignores TERM and keeps printing alive every 0.1 s"
 la_seed "" "d['timeout_seconds'] = 2"
 la_plugin 'RUN: true'
 fe_worker_says
@@ -468,16 +467,17 @@ cat > "$E2E_BIN/claude-script" <<SH
 $LA_T
 echo '--- start'
 trap 'echo "term-at \$(t)"' TERM
-while :; do echo "alive \$(t)"; sleep 0.5; done
+while :; do echo "alive \$(t)"; sleep 0.1; done
 SH
 la_launch
 la_wait "$LA_ID" 60
 LA_TA=$(sed -n 's/^term-at //p' "$E2E_BIN/claude-script.out" | head -n 1)
 LA_LAST=$(sed -n 's/^alive //p' "$E2E_BIN/claude-script.out" | tail -n 1)
-# The SIGKILL is due 30 s after SIGTERM. The worker prints alive at most
-# about 0.6 s apart (sleep 0.5 plus perl), so its last line lands within
-# 0.6 s before the kill: at 29.3 s or later when the kill comes at 30 s, and
-# before 29.3 s when it comes 1 s early.
+# The SIGKILL is due 30 s after SIGTERM. The worker prints alive every
+# 0.1 s plus one perl start (0.04 s measured at load average 64), so its last
+# line lands well within 0.7 s before the kill: at 29.3 s or later when the
+# kill comes at 30 s, and before 29.3 s when it comes 1 s early. A 0.5 s tick
+# left only about 0.15 s of that room on a loaded machine.
 e2e_expect_equal yes "$(awk -v a="$LA_TA" -v b="$LA_LAST" 'BEGIN { d = b - a; print (a != "" && d >= 29.3 && d <= 33) ? "yes" : "no (" d " s)" }')" "last alive 29.3-33 s after term-at"
 e2e_expect_equal 0 "$(sed -n 's/^alive //p' "$E2E_BIN/claude-script.out" | awk -v a="$LA_TA" '$1 - a > 33.5' | wc -l | tr -d ' ')" "alive lines later than 33.5 s after term-at"
 e2e_expect_equal timeout "$(la_jq "$LA_J/results/$LA_ID.json" .outcome)" "outcome"
