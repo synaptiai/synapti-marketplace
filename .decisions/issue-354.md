@@ -292,6 +292,27 @@ artifacts:
   outcome: Start building after the round-5 fixes; a remaining wrong expectation shows
     up as a RED test failing for the wrong reason and is fixed then
   question_id: q-20261116T201002Z-68886a
+- type: escalation-asked
+  captured_at: '2026-11-16T22:01:31Z'
+  question_id: q-20261116T220130Z-3fa5d2
+  blocking: soft
+  class: decision
+  command:
+  - /flow:start 354 (CODE
+  - T8 report)
+  situation:
+  - Before relaunching a failed stage the engine snapshots and resets the job clone
+    with git clean -fd; an untracked nested git repository survives clean -fd
+  - keeps the tree dirty
+  - and makes the snapshot
+- type: escalation-resolved
+  captured_at: '2026-11-16T22:01:31Z'
+  escalation_field: options
+  outcome:
+  - Park the job for a person
+  - with no snapshot and no reset
+  - naming the folder
+  question_id: q-20261116T220130Z-3fa5d2
 ---
 
 ## Design
