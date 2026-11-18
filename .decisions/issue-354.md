@@ -313,6 +313,22 @@ artifacts:
   - with no snapshot and no reset
   - naming the folder
   question_id: q-20261116T220130Z-3fa5d2
+- type: goal-evaluation
+  captured_at: '2026-11-17T22:00:24Z'
+  goal_id: issue-354
+  result: pass
+  evidence_bundle: .flow/runs/2026-11-16T144941Z-issue-354
+  failures: none
+  commit: 62b1261887c02eccda5adaa067d121afe1544131
+  note: G1 first sidecar's limitation was wrong (said P5 engine_charge was never re-run
+    live); superseded by evidence-g1-eval-62b12618-r2
+- type: goal-evaluation
+  captured_at: '2026-11-18T00:28:08Z'
+  goal_id: issue-354
+  result: achieved
+  trigger: user
+  evidence_bundle: .flow/runs/2026-11-16T144941Z-issue-354
+  failures: none
 ---
 
 ## Design
