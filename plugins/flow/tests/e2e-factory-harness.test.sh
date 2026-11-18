@@ -442,7 +442,7 @@ e2e_repo main
 _e2e_exec env -i PATH=/usr/bin:/bin "$E2E_BIN/gh" --version
 e2e_expect_equal "0" "$E2E_RC" "--version exit status, empty environment"
 e2e_expect_line "gh version 2.101.0 (2026-09-15)"
-_e2e_exec gh api 'repos/flow-e2e/scratch/issues?labels=flow:factory&state=open&per_page=100'
+_e2e_exec gh api --paginate --slurp 'repos/flow-e2e/scratch/issues?labels=flow:factory&state=open&per_page=100'
 e2e_expect_equal "[]" "$E2E_OUT" "the creation scan's default"
 fe_gh api_repos_flow-e2e_scratch_pulls_12 '{"number":12,"state":"open"}'
 _e2e_exec gh api repos/flow-e2e/scratch/pulls/12

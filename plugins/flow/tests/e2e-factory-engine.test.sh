@@ -283,8 +283,9 @@ fi
 if en_run EN1 || en_run EN9; then
 _flow_test_begin "creation row 1: created under E with the conditions, fenced in the shipped engine (EN9)"
 en_mark
-EN_ISSUES_KEY='api_repos_flow-e2e_scratch_issues?labels=flow:factory&state=open&per_page=100'
-EN_ISSUE9='[{"number": 9, "state": "open", "labels": [{"name": "flow:factory"}], "updated_at": "2026-11-16T10:00:00Z"}]'
+EN_ISSUES_KEY='api_--paginate_--slurp_repos_flow-e2e_scratch_issues?labels=flow:factory&state=open&per_page=100'
+# gh api --paginate --slurp prints a list of pages.
+EN_ISSUE9='[[{"number": 9, "state": "open", "labels": [{"name": "flow:factory"}], "updated_at": "2026-11-16T10:00:00Z"}]]'
 fe_new en9a-row-1-created
 # Source: amendment C.1 and plan T13 row 1 (job issue-9-j1 in queued,
 # vouch_at the issue's updated_at, a created event with row 1).
@@ -297,6 +298,26 @@ e2e_expect_equal 0 "$E2E_RC" "next exit status ($E2E_ERR)"
 e2e_expect_equal "issue-9-j1 queued 2026-11-16T10:00:00Z" "$(en_job 9 '"\(.key) \(.state) \(.vouch_at)"')" "job issue-9-j1 key, state, vouch_at"
 e2e_expect_equal "created 1 queued" "$(jq -r 'select(.type == "created") | "\(.type) \(.row) \(.to)"' "$EN_F/jobs/issue-9/events.jsonl" 2>/dev/null)" "the created event"
 fe_art_state 9
+
+fe_new en9s-sync-gh-fails
+# Source: plan 2.18 (a sync that cannot read GitHub says so); the issues call
+# fails as an expired token does.
+e2e_describe "the creation scan's gh call exits 1 with HTTP 401 Bad credentials"
+en_scenario_start
+fe_gh "$EN_ISSUES_KEY" 'fail 1 HTTP 401: Bad credentials (https://api.github.com/repos/flow-e2e/scratch/issues)'
+fe_e ordinary.json next --executor headless
+e2e_expect_equal 0 "$E2E_RC" "next exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c '^{"status":"PAUSED sync_failed gh exited 1: HTTP 401: Bad credentials')" "the sync_failed status line"
+e2e_expect_equal null "$(jq -r '.last_sync_at' "$EN_F/state.json" 2>/dev/null)" "state.json last_sync_at"
+
+fe_new en9l-sync-label-encoded
+# Source: RFC 3986 (a space is %20 and & is %26 in a query value); the label
+# setting goes into the issues query as one value.
+e2e_describe "flow.factory.label is 'my label&x'; the issues call names it encoded and is paged"
+en_scenario_start
+e2e_user_settings "$(jq -c '.flow.factory.label = "my label&x"' "$E2E_HOME/.claude/settings.flow.json")"
+fe_e ordinary.json next --executor headless
+e2e_expect_equal 1 "$(grep -cF 'api --paginate --slurp repos/flow-e2e/scratch/issues?labels=my%20label%26x&state=open&per_page=100' "$E2E_BIN/fe-gh-calls.log" 2>/dev/null)" "the issues call with the label encoded"
 
 fe_new en9b-row-1-not-allowed
 # Source: plan T13 row 1 (with creation_allowed false there is no job).

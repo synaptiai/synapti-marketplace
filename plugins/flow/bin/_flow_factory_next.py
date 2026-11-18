@@ -79,6 +79,7 @@ import subprocess
 import time
 import uuid
 from datetime import UTC, datetime
+from urllib.parse import quote
 
 _BIN_DIR = os.path.dirname(os.path.realpath(__file__))
 if _BIN_DIR not in sys.path:
@@ -273,6 +274,7 @@ class Pass:
         self.pass_id = None
         self.state = None
         self.scanned = []
+        self.sync_error = None
         self.moved = set()
         self.skipped = set()
         self.fresh_changes = {}
@@ -341,19 +343,27 @@ class Pass:
 
     # sync ------------------------------------------------------------------
     def gh(self, args):
-        """(ok, parsed JSON) of one gh call within the time left."""
+        """(ok, parsed JSON) of one gh call within the time left. The first
+        call that fails for a reason other than the time left is kept in
+        sync_error, for the sync_failed status line."""
         gh = ff.which_real("gh")
         timeout = min(15, self.left() - 2)
-        if not gh or timeout < 1:
+        if timeout < 1:
+            return False, None
+        if not gh:
+            self.sync_error = self.sync_error or "gh not found on PATH"
             return False, None
         env = {k: v for k, v in os.environ.items() if k not in ("FLOW_TIER_DIR", "FLOW_TIER_CALL")}
         env["GH_PROMPT_DISABLED"] = "1"
-        rc, out, _ = ff.run_cmd([gh] + args, self.paths.main, env, timeout=timeout)
+        rc, out, err = ff.run_cmd([gh] + args, self.paths.main, env, timeout=timeout)
         if rc != 0:
+            first = next((x.strip() for x in (err or "").splitlines() if x.strip()), "")
+            self.sync_error = self.sync_error or " ".join(f"gh exited {rc}: {first}".split())[:300]
             return False, None
         try:
             return True, json.loads(out)
         except ValueError:
+            self.sync_error = self.sync_error or "gh printed output that is not JSON"
             return False, None
 
     def sync(self):
@@ -365,6 +375,7 @@ class Pass:
             self.status("sync", f"PAUSED sync_repo_unknown next: run gh repo set-default in {self.paths.main}")
             return
         complete = True
+        self.sync_error = None
         for n, job in self.scanned:
             if not isinstance(job, dict) or self.table.kind(job.get("state")) == "terminal":
                 continue
@@ -386,14 +397,21 @@ class Pass:
             self.fresh_changes[n] = [f for f, v in (("pr_merged_by_person", merged), ("pr_closed_by_person", closed),
                                                     ("foreign_head_change", foreign)) if v]
         if complete and self.enough():
-            label = self.setting("flow.factory.label", "flow:factory")
-            ok, issues = self.gh(["api", f"repos/{repo}/issues?labels={label}&state=open&per_page=100"])
-            if ok and isinstance(issues, list):
-                self.create_jobs(issues)
+            label = quote(str(self.setting("flow.factory.label", "flow:factory")), safe=":")
+            # --paginate --slurp: every page, as a list of pages.
+            ok, pages = self.gh(["api", "--paginate", "--slurp",
+                                 f"repos/{repo}/issues?labels={label}&state=open&per_page=100"])
+            if ok and isinstance(pages, list) and all(isinstance(pg, list) for pg in pages):
+                self.create_jobs([i for pg in pages for i in pg])
             else:
                 complete = False
         else:
             complete = False
+        if not complete and self.sync_error:
+            # A sync that ran out of time says nothing; one that GitHub
+            # refused says why, every pass, until it completes.
+            self.status("sync", f"PAUSED sync_failed {self.sync_error} next: check gh auth status in "
+                                f"{self.paths.main}")
         if complete:
             with jobs.global_lock(self.paths, timeout=self.lock_wait()):
                 state = jobs.read_state(self.paths)

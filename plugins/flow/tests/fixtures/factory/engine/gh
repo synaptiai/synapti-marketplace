@@ -48,7 +48,7 @@ case "$key" in
   --version)
     printf '%s\n' "gh version 2.101.0 (2026-09-15)"
     exit 0 ;;
-  "api_repos_flow-e2e_scratch_issues?labels=flow:factory&state=open&per_page=100")
+  "api_--paginate_--slurp_repos_flow-e2e_scratch_issues?labels=flow:factory&state=open&per_page=100")
     printf '%s\n' "[]"
     exit 0 ;;
 esac
