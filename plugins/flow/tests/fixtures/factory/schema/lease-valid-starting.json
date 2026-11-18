@@ -1,0 +1,13 @@
+{
+  "directive": "issue-12-j2-build-2",
+  "kind": "worker",
+  "host": "build-mac.local",
+  "launcher_pid": 51200,
+  "launcher_start": "Mon Nov 16 11:40:05 2026",
+  "started_at": "2026-11-16T11:40:05Z",
+  "heartbeat_at": "2026-11-16T11:40:05Z",
+  "child_pid": null,
+  "child_pgid": null,
+  "child_start": null,
+  "revoked_at": null
+}

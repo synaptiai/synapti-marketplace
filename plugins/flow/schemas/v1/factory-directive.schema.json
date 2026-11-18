@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapti.ai/schemas/flow/v1/factory-directive.schema.json",
+  "title": "FlowFactoryDirective",
+  "description": "One launch the factory engine asked for: a worker, judge or directive run of a job's stage, at <factory dir>/jobs/issue-<N>/directives/<id>.json. The $defs hold the lease, the launcher's result, a stored event and a line the shell report appends. A field that only some kinds fill is nullable here, and the code that needs it checks it. The engine checks these with bin/_flow_factory_schema.py, which supports only the keywords this file uses.",
+  "type": "object",
+  "required": [
+    "id", "job", "issue", "kind", "stage", "start_mode", "cause_row", "created_in_pass", "created_at",
+    "session_id", "prompt_template", "model", "timeout_seconds", "allowed_tools", "max_budget_usd",
+    "snapshot_ref", "started_at", "not_started_reason"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "$ref": "#/$defs/directive_id" },
+    "job": { "$ref": "#/$defs/job_key" },
+    "issue": { "type": "integer", "minimum": 1 },
+    "kind": { "$ref": "#/$defs/kind" },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "intake", "prepare", "spec", "build", "open_pr", "gate", "review", "rework", "sync", "resolve",
+        "approve", "merging"
+      ]
+    },
+    "start_mode": {
+      "description": "Always fresh for judge and directive kinds.",
+      "type": "string",
+      "enum": ["fresh", "resume"]
+    },
+    "cause_row": {
+      "description": "The id of the state table row that asked for this launch, or first.",
+      "type": "string",
+      "pattern": "^([0-9]+[a-z]*|first)$"
+    },
+    "created_in_pass": { "type": "string", "pattern": "^p[0-9]+$" },
+    "created_at": { "$ref": "#/$defs/utc" },
+    "session_id": {
+      "description": "A new uuid for a fresh launch, the recorded session for a resume; null for judge and directive kinds.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "prompt_template": {
+      "type": ["string", "null"],
+      "pattern": "^templates/factory/[a-z_]+\\.prompt\\.md$"
+    },
+    "model": {
+      "description": "Null for directive kinds; the launcher fills it for a worker when it claims the directive.",
+      "type": ["string", "null"]
+    },
+    "timeout_seconds": { "type": ["integer", "null"], "minimum": 1 },
+    "allowed_tools": { "type": ["array", "null"], "items": { "type": "string" } },
+    "max_budget_usd": {
+      "description": "Null until launch claims a worker directive.",
+      "type": ["number", "null"],
+      "minimum": 0.01
+    },
+    "snapshot_ref": {
+      "description": "Null unless the fresh launch's reset made a snapshot.",
+      "type": ["string", "null"],
+      "pattern": "^refs/flow-factory/issue-[1-9][0-9]*/snapshot-[1-9][0-9]*$"
+    },
+    "started_at": { "$ref": "#/$defs/utc_or_null" },
+    "not_started_reason": {
+      "type": ["string", "null"],
+      "enum": ["probes_stale", "stage_budget_exhausted", "prompt_missing", "kind_not_built", null]
+    }
+  },
+  "$defs": {
+    "utc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "utc_or_null": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "job_key": {
+      "type": "string",
+      "pattern": "^issue-[1-9][0-9]*-j[1-9][0-9]*$"
+    },
+    "directive_id": {
+      "type": "string",
+      "pattern": "^issue-[1-9][0-9]*-j[1-9][0-9]*-(intake|prepare|spec|build|open_pr|gate|review|rework|sync|resolve|approve|merging)-[1-9][0-9]*$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["worker", "judge", "directive"]
+    },
+    "lease": {
+      "description": "<id>.lease.json: the launcher's claim on a directive. Live while revoked_at is null and launcher_pid is alive with launcher_start.",
+      "type": "object",
+      "required": [
+        "directive", "kind", "host", "launcher_pid", "launcher_start", "started_at", "heartbeat_at",
+        "child_pid", "child_pgid", "child_start", "revoked_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "directive": { "$ref": "#/$defs/directive_id" },
+        "kind": { "$ref": "#/$defs/kind" },
+        "host": { "type": "string" },
+        "launcher_pid": { "type": "integer", "minimum": 1 },
+        "launcher_start": {
+          "description": "LC_ALL=C ps -o lstart= output, outer white space removed.",
+          "type": "string"
+        },
+        "started_at": { "$ref": "#/$defs/utc" },
+        "heartbeat_at": { "$ref": "#/$defs/utc" },
+        "child_pid": { "type": ["integer", "null"], "minimum": 1 },
+        "child_pgid": { "type": ["integer", "null"], "minimum": 1 },
+        "child_start": { "type": ["string", "null"] },
+        "revoked_at": { "$ref": "#/$defs/utc_or_null" }
+      }
+    },
+    "result": {
+      "description": "results/<id>.json: what the launcher found when the run ended.",
+      "type": "object",
+      "required": [
+        "directive", "outcome", "written_at", "event", "session_id", "num_turns", "api_error_status",
+        "is_error", "permission_denials", "terminal_reason", "charged_usd", "charge_basis",
+        "total_cost_usd", "since_last_usd"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "directive": { "$ref": "#/$defs/directive_id" },
+        "outcome": {
+          "type": "string",
+          "enum": ["completed", "error", "api_error", "usage_limit", "no_result", "timeout", "killed", "not_started"]
+        },
+        "written_at": { "$ref": "#/$defs/utc" },
+        "event": {
+          "description": "Null for usage_limit and not_started, which raise no event.",
+          "type": ["string", "null"],
+          "enum": ["stage_succeeded", "stage_failed", null]
+        },
+        "session_id": { "type": ["string", "null"] },
+        "num_turns": { "type": ["integer", "null"], "minimum": 0 },
+        "api_error_status": { "type": ["integer", "null"] },
+        "is_error": { "type": ["boolean", "null"] },
+        "permission_denials": { "type": ["array", "null"] },
+        "terminal_reason": { "type": ["string", "null"] },
+        "charged_usd": {
+          "description": "Null when no process ran.",
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "charge_basis": {
+          "type": ["string", "null"],
+          "enum": ["since_last", "session_increase", "first_total", "limit_plus_turn", null]
+        },
+        "total_cost_usd": { "type": ["number", "null"], "minimum": 0 },
+        "since_last_usd": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "pending_event": {
+      "description": "pending/<seq>-<event>.json: an event stored for the next pass to apply.",
+      "type": "object",
+      "required": ["event", "args", "channel", "caller", "facts", "raised_at"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "args": {
+          "description": "The event's arguments; their keys depend on the event.",
+          "type": "object"
+        },
+        "channel": {
+          "type": "string",
+          "pattern": "^(terminal|launcher|session:.+)$"
+        },
+        "caller": {
+          "type": "object",
+          "required": ["pid", "start", "ancestry"],
+          "additionalProperties": false,
+          "properties": {
+            "pid": { "type": "integer", "minimum": 1 },
+            "start": { "type": "string" },
+            "ancestry": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        "facts": {
+          "description": "The facts the raising process computed, by name.",
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "raised_at": { "$ref": "#/$defs/utc" }
+      }
+    },
+    "pending_report": {
+      "description": "One line of directives/<id>.pending-report.jsonl, appended by the shell report when the recorded interpreter is gone.",
+      "type": "object",
+      "required": ["directive", "caller_pid", "caller_start", "at", "report"],
+      "additionalProperties": false,
+      "properties": {
+        "directive": { "$ref": "#/$defs/directive_id" },
+        "caller_pid": { "type": "integer", "minimum": 1 },
+        "caller_start": { "type": "string" },
+        "at": { "$ref": "#/$defs/utc" },
+        "report": {
+          "description": "The JSON object the shell read from stdin: the launcher's result. The shell checks only that it is an object; the pass that applies the line checks it against $defs/result.",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

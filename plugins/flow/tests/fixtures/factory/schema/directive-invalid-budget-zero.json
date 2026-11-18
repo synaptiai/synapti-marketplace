@@ -1,0 +1,24 @@
+{
+  "id": "issue-12-j2-build-2",
+  "job": "issue-12-j2",
+  "issue": 12,
+  "kind": "worker",
+  "stage": "build",
+  "start_mode": "resume",
+  "cause_row": "39",
+  "created_in_pass": "p41",
+  "created_at": "2026-11-16T10:00:00Z",
+  "session_id": "9a1d3c55-0e4f-4b8a-8c71-6d2e0f9b4c13",
+  "prompt_template": "templates/factory/resume.prompt.md",
+  "model": "claude-opus-5-5",
+  "timeout_seconds": 1800,
+  "allowed_tools": [
+    "Read",
+    "Edit",
+    "Bash(git status:*)"
+  ],
+  "max_budget_usd": 0,
+  "snapshot_ref": "refs/flow-factory/issue-12/snapshot-1",
+  "started_at": "2026-11-16T11:40:05Z",
+  "not_started_reason": null
+}

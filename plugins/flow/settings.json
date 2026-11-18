@@ -162,6 +162,28 @@
       "allowTriggerCreationFromTriggeredRun": false,
       "defaultConcurrency": "skip_if_running",
       "maxActiveTriggers": 5
+    },
+    "factory": {
+      "enabled": false,
+      "label": "flow:factory",
+      "concurrency": 1,
+      "maxOpenJobs": 5,
+      "leaseSeconds": 180,
+      "heartbeatSeconds": 60,
+      "nextBudgetSeconds": 60,
+      "syncIntervalSeconds": 60,
+      "maxRounds": 3,
+      "worker": {
+        "extraEnv": [],
+        "stages": {
+          "spec": {"maxBudgetUsd": 5, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
+          "build": {"maxBudgetUsd": 20, "timeoutSeconds": 3600, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
+          "open_pr": {"maxBudgetUsd": 5, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
+          "review": {"maxBudgetUsd": 10, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
+          "rework": {"maxBudgetUsd": 10, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
+          "resolve": {"maxBudgetUsd": 5, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]}
+        }
+      }
     }
   }
 }

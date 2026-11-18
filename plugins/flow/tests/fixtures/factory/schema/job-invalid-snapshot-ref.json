@@ -1,0 +1,94 @@
+{
+  "apiVersion": "flow.synapti.ai/v1",
+  "kind": "FlowFactoryJob",
+  "key": "issue-12-j2",
+  "issue": 12,
+  "state": "build",
+  "attempt": 1,
+  "stage_launches": {
+    "intake": 1,
+    "prepare": 1,
+    "spec": 1,
+    "build": 2
+  },
+  "sessions": {
+    "intake": "0b6c1f0e-3a2d-4c5e-9f10-2b3c4d5e6f70",
+    "spec": "5f2e8a41-77c0-4d1b-a3e9-c0d4b6f81a22",
+    "build": "9a1d3c55-0e4f-4b8a-8c71-6d2e0f9b4c13"
+  },
+  "holds_slot": true,
+  "directive": "issue-12-j2-build-2",
+  "cost": {
+    "usd_total": 2.35,
+    "runs": [
+      {
+        "directive": "issue-12-j2-intake-1",
+        "session_id": "0b6c1f0e-3a2d-4c5e-9f10-2b3c4d5e6f70",
+        "charged_usd": 0.4,
+        "basis": "first_total",
+        "total_cost_usd": 0.4,
+        "since_last_usd": null
+      },
+      {
+        "directive": "issue-12-j2-build-1",
+        "session_id": "9a1d3c55-0e4f-4b8a-8c71-6d2e0f9b4c13",
+        "charged_usd": 1.0,
+        "basis": "limit_plus_turn",
+        "total_cost_usd": null,
+        "since_last_usd": null
+      },
+      {
+        "directive": "issue-12-j2-build-2",
+        "session_id": "9a1d3c55-0e4f-4b8a-8c71-6d2e0f9b4c13",
+        "charged_usd": 0.95,
+        "basis": "since_last",
+        "total_cost_usd": 2.15,
+        "since_last_usd": 0.95
+      }
+    ],
+    "stage_usd": {
+      "intake": 0.4,
+      "build": 1.95
+    },
+    "dearest_turn_usd": 0.31
+  },
+  "created_at": "2026-11-16T10:00:00Z",
+  "updated_at": "2026-11-16T11:42:10Z",
+  "vouch_at": "2026-11-16T10:00:00Z",
+  "branch": "feature/issue-12-add-export",
+  "goal_id": "issue-12",
+  "worktree": "/Users/someone/factory/clones/issue-12",
+  "io_dir": "/Users/someone/factory/io/issue-12",
+  "pr": null,
+  "head_sha": null,
+  "resume_state": null,
+  "blocked_stage": null,
+  "reason": null,
+  "paused_reason": null,
+  "round": 0,
+  "round_limit": null,
+  "intake_round": 1,
+  "spec_round": 1,
+  "baseline_digest": "sha256:4f0c2e",
+  "baseline_pending": false,
+  "issue_digest": "sha256:4f0c2e",
+  "build_started": true,
+  "pending_changes": [],
+  "orphan_groups": [],
+  "snapshots": [
+    {
+      "ref": "refs/heads/snapshot-1",
+      "k": 1,
+      "reason": "dirty tree before a fresh launch",
+      "at": "2026-11-16T11:40:00Z"
+    }
+  ],
+  "last_session_total": {
+    "9a1d3c55-0e4f-4b8a-8c71-6d2e0f9b4c13": 2.15
+  },
+  "relaunch": {
+    "cause_row": "39d",
+    "mode": "fresh"
+  },
+  "lease_grace": null
+}

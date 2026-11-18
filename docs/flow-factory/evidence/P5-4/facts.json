@@ -1,0 +1,66 @@
+{
+  "block_runs": 1,
+  "cost_first": 0.17031979999999997,
+  "cost_resume": 0.17721779999999995,
+  "cost_resume_reply": "echo p5-cost-4",
+  "cost_tokens": {
+    "first_reported": [
+      10,
+      339,
+      133979,
+      17088
+    ],
+    "resume_own": [
+      2,
+      11,
+      30470,
+      72
+    ],
+    "resume_reported": [
+      12,
+      350,
+      164449,
+      17160
+    ]
+  },
+  "costs": {
+    "cost-first": {
+      "charged_usd": 0.17032,
+      "since_last_result_usd": 0.17031979999999997,
+      "total_cost_usd": 0.17031979999999997
+    },
+    "cost-resume": {
+      "charged_usd": 0.006898,
+      "since_last_result_usd": 0.0068980000000000005,
+      "total_cost_usd": 0.17721779999999995
+    },
+    "first": {
+      "charged_usd": 0.5,
+      "since_last_result_usd": null,
+      "total_cost_usd": null
+    },
+    "resume-budget": {
+      "charged_usd": 0.031346,
+      "since_last_result_usd": 0.031346,
+      "total_cost_usd": 0.18282419999999996
+    },
+    "resume-turns": {
+      "charged_usd": 0.024449,
+      "since_last_result_usd": 0.0244492,
+      "total_cost_usd": 0.17592739999999996
+    }
+  },
+  "outcomes": {
+    "cost-first": "completed",
+    "cost-resume": "completed",
+    "first": "killed",
+    "resume-budget": "error",
+    "resume-turns": "error"
+  },
+  "reported": {
+    "first": "b0530dfa-9bc2-4875-95b3-aa4d86cd6a4c",
+    "resume-budget": "2a7e310a-797c-483b-81be-4ef6d0edda59",
+    "resume-turns": "82fe0f52-ab33-4688-9c0f-0d1f19fdf67b"
+  },
+  "session_id": "b0530dfa-9bc2-4875-95b3-aa4d86cd6a4c"
+}

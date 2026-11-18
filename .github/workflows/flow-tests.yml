@@ -9,6 +9,11 @@ on:
       - 'plugins/flow/references/**'
       - 'plugins/flow/skills/**'
       - 'plugins/flow/tests/**'
+      - 'plugins/flow/schemas/**'
+      - 'plugins/flow/templates/**'
+      - 'plugins/flow/settings.json'
+      - 'plugins/flow/schema.json'
+      - 'docs/flow-factory/**'
       - 'tests/**'
       - '.github/workflows/flow-tests.yml'
   push:
@@ -21,6 +26,11 @@ on:
       - 'plugins/flow/references/**'
       - 'plugins/flow/skills/**'
       - 'plugins/flow/tests/**'
+      - 'plugins/flow/schemas/**'
+      - 'plugins/flow/templates/**'
+      - 'plugins/flow/settings.json'
+      - 'plugins/flow/schema.json'
+      - 'docs/flow-factory/**'
       - 'tests/**'
       - '.github/workflows/flow-tests.yml'
 
@@ -43,8 +53,18 @@ jobs:
     # times from run 41145324569 (2026-10-30) put the parts at about 9, 4, 12
     # and 21 minutes of tests, plus a minute or two of setup per job; a part
     # is every fourth file, so adding a file can move time between parts.
-    # macOS skips the System One suites and took 15 to 24 minutes in one job
-    # in the same runs.
+    #
+    # macOS skips the System One suites and runs in three parts, the same
+    # way, over the files it keeps. In one job it took 28 to 34 minutes in
+    # the passing runs of 2026-11-16 (run 43880304255: 123 files, 5487 s of
+    # tests on three CPUs) against a 45-minute limit, before the factory
+    # engine's fifteen suites. Estimated from local runs, those add about 19
+    # minutes of tests that share the CPUs, and 29 minutes in the two files
+    # marked `# flow-test: alone` (about 18 for e2e-factory-engine.test.sh
+    # and 12 for e2e-factory-engine-next.test.sh), which run one at a time
+    # after the rest of their part. In two parts both of those files fall in
+    # the same part, about 49 minutes; in three they fall in different parts,
+    # and the longest part comes to about 29 minutes of tests.
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +73,9 @@ jobs:
           - { os: ubuntu-latest, shard: 2, shards: 4, timeout: 30 }
           - { os: ubuntu-latest, shard: 3, shards: 4, timeout: 30 }
           - { os: ubuntu-latest, shard: 4, shards: 4, timeout: 30 }
-          - { os: macos-latest, shard: 1, shards: 1, timeout: 45 }
+          - { os: macos-latest, shard: 1, shards: 3, timeout: 45 }
+          - { os: macos-latest, shard: 2, shards: 3, timeout: 45 }
+          - { os: macos-latest, shard: 3, shards: 3, timeout: 45 }
     name: test (${{ matrix.os }}, ${{ matrix.shard }} of ${{ matrix.shards }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.timeout }}

@@ -1,0 +1,17 @@
+{
+  "event": "stage_failed",
+  "args": {
+    "directive": "issue-12-j2-build-2"
+  },
+  "channel": "launcher",
+  "caller": {
+    "pid": 51200,
+    "start": "Mon Nov 16 11:40:05 2026",
+    "ancestry": [
+      51200,
+      1
+    ]
+  },
+  "facts": {},
+  "raised_at": "2026-11-16T11:52:41Z"
+}

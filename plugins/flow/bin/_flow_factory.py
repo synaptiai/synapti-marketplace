@@ -1,7 +1,7 @@
 """[flow] The factory engine, run by bin/flow-factory.sh with the interpreter it
 resolved (Python 3.14 or later, -E).
 
-Only the `probe` subcommand exists so far.
+`probe` runs here; main() hands the other engine subcommands to their modules.
 
 The probes record results for this repository's factory epic: the phase
 issues a deferred check names (ISSUE_1B to ISSUE_1F) are issues of
@@ -126,7 +126,7 @@ decide:
   prompt is empty, the record cannot be read, locked or written valid, or
   the run's process cannot be started (launch_failed, nothing charged).
 
-`probe --environment --sandbox <owner/repo> [--only P11,P3,P7,P15]
+`probe --environment [--sandbox <owner/repo>] [--only P11,P3,P7,P15]
        [--github-api URL] [--plant-python-version V] [--plant-pyenv-version V]
        [--cap-usd <usd>] [--call-timeout-seconds S]` runs the environment group and records each probe
 with its parts; a probe's result is computed from its parts (no-go, then
@@ -137,10 +137,20 @@ not_run, then deferred, else go):
     worktree holding a planted .python-version with PYENV_VERSION set, must
     choose the interpreter this module runs on; the realpath is recorded, with
     every candidate turned down and why.
-  Before anything runs, --sandbox must be the sandbox the decision journal
-  approves, as for --github-write (sandbox_not_approved). --github-api takes
-  https://api.github.com, a GitHub Enterprise https://<host>/api/v3, or http
-  on this machine, since the worker token is sent there.
+  Before anything runs, --sandbox, when given, must be the sandbox the
+  decision journal approves, as for --github-write (sandbox_not_approved).
+  Without it P3's worker token check, which reads the sandbox and sends it
+  writes built to be refused, is not_run, and no sandbox is keyed. --github-api takes https://api.github.com, a GitHub
+  Enterprise https://<host>/api/v3, or http on this machine, since the worker
+  token is sent there.
+  The group records the interpreter this module runs on. Replacing another
+  recorded interpreter needs a person at a controlling terminal who types
+  probe at the prompt; with no terminal it is refused
+  (interpreter_rerecord_needs_terminal) and the record is left as it is. A
+  first recording needs no one. The record also keeps factory_path, the
+  factory directory, which is written to <git common dir>/flow-factory-path
+  as well. Probes hold the probe lock, F/probes.lock, never the engine's
+  F/.lock.
 
   - P3, without the sandbox writes, in the engine's cleaned environment: gh
     auth status, gh api user, git ls-remote, a shallow git fetch and git push
@@ -280,7 +290,11 @@ leave and their stream-json events:
     and the budget fork's own spend is what is compared with its
     --max-budget-usd; the facts keep each run's total_cost_usd and its
     since-last figure. A ```! block in the first launch must not run again
-    on resume.
+    on resume. engine_charge: the engine's own per-run charge
+    (_flow_factory_jobs.charge_run) of the four-step session and of its
+    fork must add up to the session total the fork reports, with the fork
+    charged less than that total; judged on the same runs as the cost check,
+    else not_run.
   - P10: --disallowedTools Bash(touch:*), Edit(denied/**) and
     Write(denied/**), tried by the worker and by a subagent. A call that
     went through is no-go; one refused by a permission rule (its tool_use_id
@@ -510,6 +524,18 @@ try:
 except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
+# The early worker check (plan 1a T9; design person_channels L19): a worker
+# is refused with exit 4 before any other import or check. It comes before the
+# imports below, which need Python 3.11, so the direct form under an older
+# Python still refuses. bin/ is added here because the guard above removes it
+# when it is the working directory, and -I or -P never adds it. It does not
+# run when another module imports this one.
+if __name__ == "__main__":
+    _flow_bin = os.path.dirname(os.path.realpath(__file__))
+    if _flow_bin not in sys.path:
+        sys.path.append(_flow_bin)
+    import _flow_factory_caller
+    _flow_factory_caller.early_exit(sys.argv[1:])
 
 import argparse
 import contextlib
@@ -3260,10 +3286,19 @@ def api_status(base, method, path, token, body=None):
         return None
 
 
+# The reason P3's token check is not run by `probe --environment` without
+# --sandbox: its GET and its three writes, built to be refused, go to the
+# sandbox, which the run was not given.
+NO_SANDBOX_REASON = ("the token check reads the sandbox and sends it three writes built to be refused, and this run "
+                     "was given no sandbox (flow-factory.sh probe --environment --sandbox <owner/repo>)")
+
+
 def worker_token_part(args, facts, writes):
     """The worker token check: the token reads the sandbox, and each of the
     three writes, built to be refused even with the permission, answers 403.
     A 2xx or 422 means the token had the permission."""
+    if not args.sandbox:
+        return part("not_run", NO_SANDBOX_REASON)
     token, why = read_keychain_token()
     if token is None:
         return part("not_run", why)
@@ -4020,7 +4055,9 @@ def launch_context_texts(args, main_top, fdir):
     """(plist, cron line): each runs this probe again, from the main checkout,
     with the context named in FLOW_FACTORY_LAUNCH_CONTEXT and this PATH."""
     wrapper = os.path.join(BIN_DIR, "flow-factory.sh")
-    tail = ["probe", "--environment", "--launch-context", "--sandbox", args.sandbox]
+    tail = ["probe", "--environment", "--launch-context"]
+    if args.sandbox:
+        tail += ["--sandbox", args.sandbox]
     if args.github_api != DEFAULT_GITHUB_API:
         tail += ["--github-api", args.github_api]
     # Only when given, so a context loaded without --model keeps its hash.
@@ -4168,6 +4205,65 @@ def env_p3(args, git, tools, scratch, fdir, main_top, existing, blocked):
         return p3_not_run(existing, stopped_reason("P3", e), ev_rel, evidence_writes(os.path.join(fdir, ev_rel)))
 
 
+RERECORD_NEEDS_TERMINAL = ("interpreter_rerecord_needs_terminal next: run flow-factory.sh probe --environment in "
+                           "a terminal")
+
+
+def same_interpreter(recorded, current):
+    """Whether a recorded interpreter (a path, ~ for the home in an exported
+    copy) is the one at the realpath current."""
+    return os.path.realpath(expand_home(recorded)) == current
+
+
+def confirm_interpreter(recorded, current):
+    """The recorded interpreter the person agreed to replace, or None when
+    there is nothing to replace: no interpreter is recorded (a first
+    recording needs no one), or the recorded one is current. Replacing one
+    needs a person at a controlling terminal who types probe (person_channels
+    L19); otherwise Refused, and the record is left as it is."""
+    if not recorded or same_interpreter(recorded, current):
+        return None
+    if not has_terminal():
+        raise Refused(RERECORD_NEEDS_TERMINAL)
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        raise Refused(RERECORD_NEEDS_TERMINAL)
+    try:
+        os.write(fd, f"type probe to re-record the interpreter {recorded} -> {current}: ".encode())
+        typed = b""
+        while not typed.endswith(b"\n"):
+            chunk = os.read(fd, 1)
+            if not chunk:
+                break
+            typed += chunk
+    except OSError:
+        raise Refused(RERECORD_NEEDS_TERMINAL)
+    finally:
+        os.close(fd)
+    word = typed.decode("utf-8", "replace").strip()
+    if word != "probe":
+        raise Refused("interpreter_rerecord_not_confirmed next: run flow-factory.sh probe --environment in a "
+                      "terminal and type probe")
+    return recorded
+
+
+def write_factory_pointer(main_top, fdir):
+    """<git common dir>/flow-factory-path, holding the factory directory and
+    one newline: the engine compares it with the directory it resolves and
+    refuses when they differ (factory_path_changed)."""
+    try:
+        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True, check=True, cwd=main_top, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        raise Refused("not_in_repository")
+    from _journal_atomic import JournalAtomicError, _atomic_write
+    try:
+        _atomic_write(os.path.join(common, "flow-factory-path"), fdir + "\n")
+    except JournalAtomicError as e:
+        raise Refused(f"factory_pointer_unwritable {e.summary}")
+
+
 def environment_probes(args):
     """probe --environment: P11, P3, P7 and P15 (or those --only names), or
     with --launch-context, P13. Holds the factory lock throughout."""
@@ -4184,16 +4280,26 @@ def environment_probes(args):
                           "a controlling terminal)")
         tools = None
     else:
-        require_approved_sandbox(main_checkout(), args.sandbox)
+        # Without --sandbox the token check, whose writes go to the sandbox,
+        # is not run, and no sandbox is approved or keyed.
+        if args.sandbox:
+            require_approved_sandbox(main_checkout(), args.sandbox)
         tools = find_tools()
     fdir = factory_dir()
     main_top = os.getcwd()
+    interpreter = os.path.realpath(sys.executable)
+    # Asked before the lock is taken, so a person reading the prompt holds
+    # up no other probe; checked again under the lock.
+    confirmed = confirm_interpreter(read_record(os.path.join(fdir, "probes.json")).get("interpreter"), interpreter)
     with factory_lock(fdir):
         scratch = os.path.realpath(tempfile.mkdtemp(prefix="flow-factory-probe-"))
         try:
             record_path = os.path.join(fdir, "probes.json")
             record = read_record(record_path)
             check_schema(record)
+            recorded = record.get("interpreter")
+            if recorded and not same_interpreter(recorded, interpreter) and recorded != confirmed:
+                raise Refused(RERECORD_NEEDS_TERMINAL)
             bind_cap(args, record)
             entries = {}
             current = []
@@ -4238,7 +4344,8 @@ def environment_probes(args):
                 keyed.update(wanted)
             else:
                 keyed = tool_versions(tools)
-                keyed["sandbox"] = args.sandbox
+                if args.sandbox:
+                    keyed["sandbox"] = args.sandbox
                 keyed.update({k: v for k, v in old.items() if k.startswith("launch_context")})
                 git = tools["git"]
                 only = args.only or ENV_PROBES
@@ -4265,7 +4372,9 @@ def environment_probes(args):
                     else:
                         entries[pid] = env_probe(pid, runs[pid])
             if entries:
+                record["factory_path"] = fdir
                 entries.update(record_probes(record, record_path, "environment", keyed, entries, cost, args.cap_usd))
+                write_factory_pointer(main_top, fdir)
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
     print("PROBE_ENV=" + json.dumps({
@@ -4355,6 +4464,8 @@ P5_FALLBACKS = {
                   "resumed run reports the whole session's cost.",
     "no_block_rerun": "every relaunch is fresh: a new --session-id and the first-launch prompt, after the "
                       "engine snapshots and resets a dirty tree",
+    "engine_charge": "The engine charges each resumed run the increase in the session's total_cost_usd since "
+                     "the run before, never the total itself.",
     "run": RUN_FALLBACK,
 }
 P10_FALLBACK = "The read-only token and the protected check."
@@ -4463,6 +4574,16 @@ def tool_uses(events):
             if isinstance(c, dict) and c.get("type") == "tool_use":
                 out.append((c.get("name"), c.get("input") or {}, e.get("parent_tool_use_id")))
     return out
+
+
+def expand_home(path):
+    """path with a leading ~ (an exported record writes the home that way)
+    replaced by the home flow finds, through user_home(): flow reads HOME in
+    one place only (tests/user-state-sources.test.sh). Any other path is
+    returned as it is."""
+    if path == "~" or path.startswith("~/"):
+        return user_home() + path[1:]
+    return path
 
 
 def user_home():
@@ -5219,6 +5340,7 @@ def probe_p5(ctx, ev_rel):
     c1 = number((cost_first["result_event"] or {}).get("total_cost_usd"))
     c2 = number((cost_resume["result_event"] or {}).get("total_cost_usd"))
     parts["cost_scope"], tokens = cost_scope_part(cost_first, cost_resume, c1, c2, steps)
+    parts["engine_charge"] = engine_charge_part(cost_first, cost_resume, steps)
     runs_of_block = len([ln for ln in read_lines(marker) if ln.strip()])
     if not (ids["resume-turns"] or ids["resume-budget"]):
         parts["no_block_rerun"] = part("not_run", "no resumed run started, so a re-run of the block could not show")
@@ -5329,6 +5451,46 @@ def cost_scope_part(first, resume, c1, c2, steps):
                           f"run ({c1}): each run reports its own cost"), None
     return part("no-go", f"a one-turn resume of a four-step session reported {c2}, not less than the session's "
                          f"first run ({c1}): it reports the whole session's cost"), None
+
+
+def engine_charge_part(first, resume, steps):
+    """Whether the engine's own per-run charge (_flow_factory_jobs.charge_run)
+    charges each run of a session its own cost (issue #354 go item G1): a,
+    the four-step session charged as a fresh run, plus b, its one-turn resume
+    charged as a resumed run after a, must equal the session total t the
+    resume reports, with b below t. A charge that counts the session twice
+    (b = t) or not at all (b = 0) fails it. Judged only when both runs
+    completed with a cost and the resume carried the session, as for
+    cost_scope; otherwise not_run."""
+    import _flow_factory_jobs as jobs
+    r1, r2 = first.get("result_event"), resume.get("result_event")
+    if not r1 or not r2:
+        return part("not_run", "a run of the cost check printed no result, so the engine's charge of each run "
+                               "cannot be compared with the session's total")
+    if first["outcome"] != "completed" or resume["outcome"] != "completed":
+        return part("not_run", f"a run of the cost check did not complete (the four-step session "
+                               f"{first['outcome']}, the resume {resume['outcome']}), so the engine's charge "
+                               "cannot be compared with the session's total")
+    if steps[-1] not in reply_text(resume.get("events") or []):
+        return part("not_run", "the one-turn resume did not carry the four-step session, so its total is not the "
+                               "session's and the engine's charge cannot be compared with it")
+    _, t1, s1 = run_costs(r1)
+    _, t, s2 = run_costs(r2)
+    if (t1 is None and s1 is None) or (s2 is None and t is None) or t is None:
+        return part("not_run", "a run of the cost check reported no cost (total_cost_usd or "
+                               "model_usage_since_last_result), so the engine's charge cannot be compared with the "
+                               "session's total")
+    zero = Decimal(0)
+    a = jobs.charge_run(r1, "fresh", None, zero, zero)
+    b = jobs.charge_run(r2, "resume", t1, zero, zero)
+    a_usd, b_usd, t = a["charged_usd"], b["charged_usd"], money(t)
+    said = (f"the engine charged the four-step session {as_number(a_usd)} ({a['basis']}) and its resume "
+            f"{as_number(b_usd)} ({b['basis']}); the resume reported the session's total {as_number(t)}")
+    if abs(a_usd + b_usd - t) <= Decimal("0.000001") and b_usd < t:
+        return part("go", f"{said}: the two charges add up to the total, so each run is charged its own cost "
+                          "and the session's spend is counted once")
+    return part("no-go", f"{said}: the two charges do not add up to the total with the resume charged less than "
+                         "it, so the engine counts the session's spend twice or not at all")
 
 
 # P10
@@ -6912,11 +7074,12 @@ def interactive_wait_question(args):
 
 @contextlib.contextmanager
 def factory_lock(fdir, timeout=10):
-    """The factory lock, or Refused when another probe holds it longer than
-    timeout seconds."""
+    """The probe lock, F/probes.lock, or Refused when another probe holds it
+    longer than timeout seconds. It is not the engine's lock (F/.lock), so a
+    probe never holds up a `next` pass (plan 2.5)."""
     from _journal_atomic import JournalAtomicError, acquire_lock
     try:
-        lock = acquire_lock(os.path.join(fdir, ".lock"), timeout=timeout)
+        lock = acquire_lock(os.path.join(fdir, "probes.lock"), timeout=timeout)
     except JournalAtomicError:
         raise Refused("record_locked")
     try:
@@ -7627,6 +7790,32 @@ def publish_export(tmp, target):
             print(f"PROBE_EXPORT_EARLIER_EVIDENCE={earlier}", file=sys.stderr)
 
 
+def export_checkout_top(real_target, main_top):
+    """The top of the checkout (the main checkout or a linked worktree of it)
+    that holds real_target, or None when real_target is in no checkout of
+    the repository whose main checkout is main_top. The target need not
+    exist yet: its nearest existing folder is asked."""
+    d = real_target
+    while not os.path.isdir(d):
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+    try:
+        out = subprocess.run(["git", "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"],
+                             capture_output=True, text=True, check=True, cwd=d).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    if len(out) != 2:
+        return None
+    top, common = os.path.realpath(out[0]), os.path.realpath(out[1])
+    if os.path.dirname(common) != main_top:
+        return None
+    if not real_target.startswith(top + os.sep):
+        return None
+    return top
+
+
 def export_probes(args):
     """probe --export <dir>: <dir>/probes.json and <dir>/evidence/, built in a
     temporary directory and put in place (publish_export) only when nothing
@@ -7636,8 +7825,14 @@ def export_probes(args):
     target = os.path.abspath(args.export)
     main_top = os.path.realpath(main_checkout())
     real_target = os.path.realpath(target)
-    if not real_target.startswith(main_top + os.sep):
-        raise Refused(f"export_outside_repository ({target} is not inside {main_top})")
+    # The copy's paths are written from the top of the checkout that holds
+    # it, which for a linked worktree is the worktree, not the main checkout:
+    # measured from the main checkout they would name .worktrees/<name>/...
+    # and be wrong once the worktree's branch is merged. The checkout must
+    # belong to this repository.
+    top = export_checkout_top(real_target, main_top)
+    if top is None:
+        raise Refused(f"export_outside_repository ({target} is not inside a checkout of {main_top})")
     fdir = os.path.realpath(factory_dir())
     if real_target == fdir or real_target.startswith(fdir + os.sep):
         raise Refused("export_inside_runtime (the copy must be outside the runtime directory)")
@@ -7648,7 +7843,7 @@ def export_probes(args):
     check_schema(record)
     refuse_unrelated_target(target)
     scrub = ExportScrub(record_public_names(record))
-    rel_dir = os.path.relpath(real_target, main_top).replace(os.sep, "/")
+    rel_dir = os.path.relpath(real_target, top).replace(os.sep, "/")
     tmp = os.path.realpath(tempfile.mkdtemp(prefix="flow-factory-export-"))
     try:
         out = json.loads(json.dumps(record))
@@ -7846,6 +8041,48 @@ def main(argv):
         ch.add_argument("--log", required=True)
         return capture_hook(ch.parse_args(argv[1:]).log)
 
+    # The engine subcommands (plan 2.7): each module is imported only when its
+    # subcommand runs, so a module not there yet fails only its own
+    # subcommands. The checks run in this order, before the module parses
+    # its arguments: the subcommands that are not built, the enabled gate
+    # (next and the acting person subcommands), the factory path check
+    # (every one but context).
+    person = ("answer", "approve-spec", "confirm", "feedback", "rework", "retry", "reject", "cancel")
+    engine = {"next": ("_flow_factory_next", "cmd_next"), "status": ("_flow_factory_person", "cmd_status"),
+              "context": ("_flow_factory_person", "cmd_context"), "rebuild": ("_flow_factory_person", "cmd_rebuild"),
+              "launch": ("_flow_factory_launch", "cmd_launch"), "report": ("_flow_factory_launch", "cmd_report")}
+    engine.update({p: ("_flow_factory_person", "cmd_person") for p in person})
+    if argv[:1] and argv[0] in ("wait", "run", "question", "runner", "await"):
+        print("FACTORY_REFUSED=not_built")
+        return 5
+    if argv[:1] and argv[0] in engine:
+        sub = argv[0]
+        name, fn = engine[sub]
+        try:
+            import importlib
+            import _flow_factory_jobs
+            if sub in person + ("next",) and _flow_factory_jobs.setting("flow.factory.enabled") is not True:
+                print("FACTORY_REFUSED=disabled next: set flow.factory.enabled")
+                return 5
+            if sub != "context":
+                line = _flow_factory_jobs.factory_path_check(_flow_factory_jobs.resolve(create=False))
+                if line:
+                    print(line)
+                    return 5
+            try:
+                module = importlib.import_module(name)
+            except ModuleNotFoundError as e:
+                if e.name != name:
+                    raise
+                print("FACTORY_REFUSED=not_built")
+                return 5
+            if fn == "cmd_person":
+                return getattr(module, fn)(sub, argv[1:])
+            return getattr(module, fn)(argv[1:])
+        except Refused as r:
+            print(f"FACTORY_REFUSED={r}")
+            return 5
+
     parser = argparse.ArgumentParser(prog="flow-factory.sh")
     sub = parser.add_subparsers(dest="command", required=True)
     probe = sub.add_parser("probe", description=PROBE_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -7945,9 +8182,6 @@ def main(argv):
         if bad:
             print(bad, file=sys.stderr)
             return 2
-        if not args.sandbox:
-            print("flow-factory.sh: probe --environment needs --sandbox <owner/repo>", file=sys.stderr)
-            return 2
         try:
             return environment_probes(args)
         except Refused as r:
@@ -7966,4 +8200,8 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    # The engine modules import shared names from _flow_factory. Run as a
+    # script this file is __main__, and importing it by name would load a
+    # second copy whose Refused main() does not catch (plan 2.7).
+    sys.modules["_flow_factory"] = sys.modules["__main__"]
     sys.exit(main(sys.argv[1:]))

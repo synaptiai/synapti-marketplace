@@ -203,6 +203,21 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `flow.triggers.allowAutonomousMerge` | `false` | `trigger-policy` skill step 2 (`bin/flow-trigger-tier3-check.sh`), from the user settings only: `true` accepts a trigger that does not forbid merge or release; the tier hook still asks |
 | `flow.triggers.allowTriggerCreationFromTriggeredRun` | `false` | `trigger-policy` skill (step 3, `bin/flow-trigger-recursion-check.sh`) |
 | `flow.triggers.defaultConcurrency` | `skip_if_running` | `/flow:run trigger`, `/flow:trigger run` (`bin/flow-trigger-concurrency.sh`), `trigger-policy` skill (step 6) |
+| `flow.factory.enabled` | `false` | `bin/_flow_factory.py` (the engine, run by `bin/flow-factory.sh`): unless `true`, `next` and the person subcommands that act on a job (answer, approve-spec, confirm, feedback, rework, retry, reject, cancel) refuse with `FACTORY_REFUSED=disabled`; `status`, `rebuild`, `probe` and `context --mode` always work. Every `flow.factory.*` key is read from the user settings or this plugin's defaults only (`cascade-resolve.sh --no-repo-settings`), so a repository's own settings cannot set it |
+| `flow.factory.label` | `flow:factory` | `bin/_flow_factory_next.py`: the label that makes an open issue a factory job |
+| `flow.factory.concurrency` | `1` | `bin/_flow_factory_next.py`: jobs holding a worker slot at once, 1 to 4 |
+| `flow.factory.maxOpenJobs` | `5` | `bin/_flow_factory_next.py`: open jobs at once |
+| `flow.factory.leaseSeconds` | `180` | `bin/_flow_factory_next.py`: a lease with no heartbeat for this long has expired |
+| `flow.factory.heartbeatSeconds` | `60` | `bin/_flow_factory_launch.py`: how often a launcher renews its lease |
+| `flow.factory.nextBudgetSeconds` | `60` | `bin/_flow_factory_next.py`: the time one `next` pass may take |
+| `flow.factory.syncIntervalSeconds` | `60` | `bin/_flow_factory_next.py`: the least time between two GitHub syncs; `0` syncs every pass |
+| `flow.factory.maxRounds` | `3` | `bin/_flow_factory_table.py`: review rounds before a job parks (`round_limit = round + maxRounds`) |
+| `flow.factory.worker.model` | not set | `bin/_flow_factory_launch.py`: the model every worker runs; when not set, the model the platform probe recorded |
+| `flow.factory.worker.mcpConfig` | not set | `bin/_flow_factory_launch.py`: JSON text passed to each worker as its MCP configuration |
+| `flow.factory.worker.extraEnv` | `[]` | `bin/_flow_factory_launch.py`: names of further environment variables passed to each worker |
+| `flow.factory.worker.stages.<stage>.maxBudgetUsd` | spec `5`, build `20`, open_pr `5`, review `10`, rework `10`, resolve `5` | `bin/_flow_factory_launch.py`: the stage's budget for all its runs; each run's `--max-budget-usd` is the smaller of a third of it (rounded down to the cent) and what is left, less the overshoot allowance (twice the job's dearest turn, at least $0.50); no run starts when that is $0 or less |
+| `flow.factory.worker.stages.<stage>.timeoutSeconds` | `1800`, build `3600` | `bin/_flow_factory_launch.py`: how long one run of the stage may take |
+| `flow.factory.worker.stages.<stage>.allowedTools` | `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Agent`, `Task`, `Skill`, `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet` | `bin/_flow_factory_launch.py`: the worker's `--allowedTools` in that stage |
 | `replyStyle.enabled`, `constructions`, `extraPatterns` | `false`, not set, not set | `hooks/scripts/reply-style-check.sh` |
 
 ## Quality Gates

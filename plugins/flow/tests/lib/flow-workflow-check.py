@@ -28,6 +28,11 @@ PATHS = [
     "plugins/flow/references/**",
     "plugins/flow/skills/**",
     "plugins/flow/tests/**",
+    "plugins/flow/schemas/**",
+    "plugins/flow/templates/**",
+    "plugins/flow/settings.json",
+    "plugins/flow/schema.json",
+    "docs/flow-factory/**",
     "tests/**",
     ".github/workflows/flow-tests.yml",
 ]
@@ -39,7 +44,9 @@ INSTALL = {"name": "Install Python prerequisites",
 # Each step with its command lines ("run"): stripped, without blank lines and
 # comments. On Linux the flow step runs the whole list, of which run.sh takes
 # the part FLOW_TEST_SHARD names; macOS leaves out the suites that start the
-# System One stub, chosen by content.
+# System One stub, chosen by content, and run.sh takes the part of the files
+# left. Both OSes run in parts (three on macOS since the factory engine's
+# suites), and the matrix check below holds either to parts 1 to N.
 STEPS = {
     "test": [
         CHECKOUT,

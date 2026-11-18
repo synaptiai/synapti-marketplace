@@ -1,0 +1,20 @@
+{
+  "id": "issue-7-j1-intake-1",
+  "job": "issue-7-j1",
+  "issue": 7,
+  "kind": "judge",
+  "stage": "intake",
+  "start_mode": "fresh",
+  "cause_row": "first",
+  "created_in_pass": "p3",
+  "created_at": "2026-11-16T10:00:00Z",
+  "session_id": null,
+  "prompt_template": null,
+  "model": "claude-sonnet-5",
+  "timeout_seconds": null,
+  "allowed_tools": null,
+  "max_budget_usd": null,
+  "snapshot_ref": null,
+  "started_at": null,
+  "not_started_reason": null
+}

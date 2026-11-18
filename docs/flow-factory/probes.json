@@ -49,7 +49,7 @@
     },
     "platform": {
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.326 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "jq_version": "jq-1.7.1-apple",
@@ -59,7 +59,7 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-16T09:55:49Z"
+      "ran_at": "2026-11-17T00:23:57Z"
     }
   },
   "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
@@ -68,14 +68,34 @@
     "P1": {
       "group": "platform",
       "result": "no-go",
-      "reason": "factory_mode: context --mode giving on from a ! block and from Bash needs factory-mode detection, built in phase 1d; gh_log: GitHub writes in the gh call log, refused by the gh stand-in: gh pr create",
+      "reason": "factory_mode: context --mode giving on from a ! block and from Bash needs factory-mode detection, built in phase 1d; gh_log: GitHub writes in the gh call log, refused by the gh stand-in: gh pr create, git fetch --upload-pack=git-upload-pack --depth 1 origin cbf893b954222276bf1af57e5f23379231e0efb9, git fetch --upload-pack=git-upload-pack --depth 1 origin 49dd158d1076134a641b33efb035946536778336, git fetch --upload-pack=git-upload-pack --unshallow",
       "stand_in": true,
-      "evidence": "docs/flow-factory/evidence/P1-3",
-      "cost_usd": 2.457623,
+      "evidence": "docs/flow-factory/evidence/P1-4",
+      "cost_usd": 2.481213,
       "github_writes": [
         {
           "repo": "unresolved/unresolved",
           "call": "gh pr create",
+          "refused": true
+        },
+        {
+          "repo": "unresolved/unresolved",
+          "call": "git fetch --upload-pack=git-upload-pack --depth 1 origin cbf893b954222276bf1af57e5f23379231e0efb9",
+          "refused": true
+        },
+        {
+          "repo": "unresolved/unresolved",
+          "call": "git fetch --upload-pack=git-upload-pack --depth 1 origin 49dd158d1076134a641b33efb035946536778336",
+          "refused": true
+        },
+        {
+          "repo": "unresolved/unresolved",
+          "call": "git fetch --upload-pack=git-upload-pack --unshallow",
+          "refused": true
+        },
+        {
+          "repo": "unresolved/unresolved",
+          "call": "git fetch --upload-pack=git-upload-pack --unshallow",
           "refused": true
         }
       ],
@@ -84,7 +104,7 @@
           "result": "go",
           "reason": "the ! block ran and its output reached the first turn",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -94,14 +114,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "bang_first_turn_pr": {
           "result": "go",
           "reason": "the ! block ran and its output reached the first turn",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -111,14 +131,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "bang_first_turn_review": {
           "result": "go",
           "reason": "the ! block ran and its output reached the first turn",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -128,14 +148,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "bang_first_turn_address": {
           "result": "go",
           "reason": "the ! block ran and its output reached the first turn",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -145,14 +165,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "runs": {
           "result": "go",
           "reason": "all five runs completed",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -162,14 +182,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "worktree_write": {
           "result": "go",
           "reason": "a Write into the worktree succeeded",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -179,14 +199,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "worktree_edit": {
           "result": "go",
           "reason": "an Edit in the worktree succeeded",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -196,14 +216,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "io_write": {
           "result": "go",
           "reason": "a Write into the --add-dir io directory succeeded",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -213,14 +233,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "gh_log": {
           "result": "no-go",
-          "reason": "GitHub writes in the gh call log, refused by the gh stand-in: gh pr create",
+          "reason": "GitHub writes in the gh call log, refused by the gh stand-in: gh pr create, git fetch --upload-pack=git-upload-pack --depth 1 origin cbf893b954222276bf1af57e5f23379231e0efb9, git fetch --upload-pack=git-upload-pack --depth 1 origin 49dd158d1076134a641b33efb035946536778336, git fetch --upload-pack=git-upload-pack --unshallow",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -230,14 +250,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "leftover_paths": {
           "result": "go",
           "reason": "the runs left no untracked or ignored path",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -247,15 +267,15 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         },
         "factory_mode": {
           "result": "deferred",
           "reason": "context --mode giving on from a ! block and from Bash needs factory-mode detection, built in phase 1d",
           "deferred_to": "synaptiai/synapti-marketplace#357",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -265,13 +285,13 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:50:20Z",
-          "evidence": "docs/flow-factory/evidence/P1-3"
+          "ran_at": "2026-11-17T00:20:06Z",
+          "evidence": "docs/flow-factory/evidence/P1-4"
         }
       },
       "fallback": "the write is refused by the workers' gh stand-in, and the factory-mode path that leaves it to the engine is built in phase 1d",
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.326 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "jq_version": "jq-1.7.1-apple",
@@ -281,22 +301,22 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-16T09:50:20Z"
+      "ran_at": "2026-11-17T00:20:06Z"
     },
     "P10": {
       "group": "platform",
       "result": "go",
       "reason": "every part passed",
       "stand_in": false,
-      "evidence": "docs/flow-factory/evidence/P10-3",
-      "cost_usd": 0.251346,
+      "evidence": "docs/flow-factory/evidence/P10-4",
+      "cost_usd": 0.258036,
       "github_writes": [],
       "parts": {
         "main_bash": {
           "result": "go",
           "reason": "the main's Bash call was refused by --disallowedTools",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -306,14 +326,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:21Z",
-          "evidence": "docs/flow-factory/evidence/P10-3"
+          "ran_at": "2026-11-17T00:23:29Z",
+          "evidence": "docs/flow-factory/evidence/P10-4"
         },
         "main_write": {
           "result": "go",
           "reason": "the main's Write call was refused by --disallowedTools",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -323,14 +343,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:21Z",
-          "evidence": "docs/flow-factory/evidence/P10-3"
+          "ran_at": "2026-11-17T00:23:29Z",
+          "evidence": "docs/flow-factory/evidence/P10-4"
         },
         "main_edit": {
           "result": "go",
           "reason": "the main's Edit call was refused by --disallowedTools",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -340,14 +360,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:21Z",
-          "evidence": "docs/flow-factory/evidence/P10-3"
+          "ran_at": "2026-11-17T00:23:29Z",
+          "evidence": "docs/flow-factory/evidence/P10-4"
         },
         "subagent_bash": {
           "result": "go",
           "reason": "the subagent's Bash call was refused by --disallowedTools",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -357,14 +377,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:21Z",
-          "evidence": "docs/flow-factory/evidence/P10-3"
+          "ran_at": "2026-11-17T00:23:29Z",
+          "evidence": "docs/flow-factory/evidence/P10-4"
         },
         "subagent_write": {
           "result": "go",
           "reason": "the subagent's Write call was refused by --disallowedTools",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -374,14 +394,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:21Z",
-          "evidence": "docs/flow-factory/evidence/P10-3"
+          "ran_at": "2026-11-17T00:23:29Z",
+          "evidence": "docs/flow-factory/evidence/P10-4"
         },
         "subagent_edit": {
           "result": "go",
           "reason": "the subagent's Edit call was refused by --disallowedTools",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -391,12 +411,12 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:21Z",
-          "evidence": "docs/flow-factory/evidence/P10-3"
+          "ran_at": "2026-11-17T00:23:29Z",
+          "evidence": "docs/flow-factory/evidence/P10-4"
         }
       },
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.326 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "jq_version": "jq-1.7.1-apple",
@@ -406,7 +426,7 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-16T09:55:21Z"
+      "ran_at": "2026-11-17T00:23:29Z"
     },
     "P11": {
       "group": "environment",
@@ -925,15 +945,15 @@
       "result": "deferred",
       "reason": "unavailable_refused: a worker that refuses to start when the sandbox cannot start is the launcher's behaviour, built in phase 1c",
       "stand_in": false,
-      "evidence": "docs/flow-factory/evidence/P16-4",
-      "cost_usd": 0.216051,
+      "evidence": "docs/flow-factory/evidence/P16-5",
+      "cost_usd": 0.219034,
       "github_writes": [],
       "parts": {
         "gh_token": {
           "result": "go",
           "reason": "gh auth token returned nothing inside the sandbox (41 bytes outside)",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -943,14 +963,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "keychain_token": {
           "result": "go",
           "reason": "the Keychain read of gh:github.com returned nothing inside the sandbox (75 bytes outside)",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -960,14 +980,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "git_credential": {
           "result": "go",
           "reason": "git credential fill returned nothing inside the sandbox (1 password lines outside)",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -977,14 +997,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "env_token": {
           "result": "go",
           "reason": "GH_TOKEN, set to a 36-character canary, was empty in the worker",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -994,14 +1014,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "write_outside": {
           "result": "go",
           "reason": "the write outside the clone was refused and the marker is not on disk",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1011,14 +1031,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "commit_inside": {
           "result": "go",
           "reason": "a commit inside the clone worked and is in the clone",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1028,14 +1048,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "offlist_curl": {
           "result": "go",
           "reason": "example.com from curl was refused by the sandbox",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1045,14 +1065,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "offlist_python": {
           "result": "go",
           "reason": "example.com from Python was refused by the sandbox",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1062,14 +1082,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "allowed_host": {
           "result": "go",
           "reason": "api.github.com answered 200 inside the sandbox",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1079,14 +1099,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "repo_settings_widen": {
           "result": "go",
           "reason": "the clone's .claude/settings.json widened nothing: example.com stayed refused and the write outside stayed blocked",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1096,15 +1116,15 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         },
         "unavailable_refused": {
           "result": "deferred",
           "reason": "a worker that refuses to start when the sandbox cannot start is the launcher's behaviour, built in phase 1c",
           "deferred_to": "synaptiai/synapti-marketplace#356",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1114,13 +1134,13 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:55:49Z",
-          "evidence": "docs/flow-factory/evidence/P16-4"
+          "ran_at": "2026-11-17T00:23:57Z",
+          "evidence": "docs/flow-factory/evidence/P16-5"
         }
       },
       "deferred_to": "synaptiai/synapti-marketplace#356",
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.326 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "jq_version": "jq-1.7.1-apple",
@@ -1130,22 +1150,22 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-16T09:55:49Z"
+      "ran_at": "2026-11-17T00:23:57Z"
     },
     "P2": {
       "group": "platform",
       "result": "deferred",
       "reason": "person_forms_denied: the stand-in deny refused 72 of 72 person forms and none ran; tier-gate's own deny rule is built in phase 1b; session_end_writes: SessionEnd writing only to the per-job state dir needs that dir, which phase 0 does not have; stop_caps: Stop ending within its caps needs the factory-mode Stop hook, which phase 0 does not have; task_completed_refusals: TaskCompleted refusing at most 3 times per stage needs the factory's stages, which phase 0 does not have",
       "stand_in": true,
-      "evidence": "docs/flow-factory/evidence/P2-3",
-      "cost_usd": 1.270331,
+      "evidence": "docs/flow-factory/evidence/P2-4",
+      "cost_usd": 0.677245,
       "github_writes": [],
       "parts": {
         "coverage": {
           "result": "go",
           "reason": "the worker ran all 75 commands",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1155,14 +1175,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "tier_gate_fires": {
           "result": "go",
           "reason": "tier-gate fired on all 75 commands the worker ran",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1172,15 +1192,15 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "person_forms_denied": {
           "result": "deferred",
           "reason": "the stand-in deny refused 72 of 72 person forms and none ran; tier-gate's own deny rule is built in phase 1b",
           "deferred_to": "synaptiai/synapti-marketplace#355",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1190,14 +1210,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "worker_forms_allowed": {
           "result": "go",
           "reason": "allowed and ran: context --mode, question get p2-question, await p2-await --max-seconds 100",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1207,14 +1227,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "stop_hook": {
           "result": "go",
           "reason": "the Stop hook fired in -p",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1224,14 +1244,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "session_end_hook": {
           "result": "go",
           "reason": "the SessionEnd hook fired in -p",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1241,14 +1261,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "task_completed_hook": {
           "result": "go",
           "reason": "the TaskCompleted hook fired in -p",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1258,14 +1278,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "ask_user_question_absent": {
           "result": "go",
           "reason": "AskUserQuestion is not among the worker's 28 tools",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1275,14 +1295,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "claude_files_allowlist": {
           "result": "go",
           "reason": "the worker created no .claude file",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1292,15 +1312,15 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "stop_caps": {
           "result": "deferred",
           "reason": "Stop ending within its caps needs the factory-mode Stop hook, which phase 0 does not have",
           "deferred_to": "synaptiai/synapti-marketplace#355",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1310,15 +1330,15 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "session_end_writes": {
           "result": "deferred",
           "reason": "SessionEnd writing only to the per-job state dir needs that dir, which phase 0 does not have",
           "deferred_to": "synaptiai/synapti-marketplace#356",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1328,15 +1348,15 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         },
         "task_completed_refusals": {
           "result": "deferred",
           "reason": "TaskCompleted refusing at most 3 times per stage needs the factory's stages, which phase 0 does not have",
           "deferred_to": "synaptiai/synapti-marketplace#355",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1346,13 +1366,13 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:45Z",
-          "evidence": "docs/flow-factory/evidence/P2-3"
+          "ran_at": "2026-11-17T00:21:55Z",
+          "evidence": "docs/flow-factory/evidence/P2-4"
         }
       },
       "deferred_to": "synaptiai/synapti-marketplace#355",
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.326 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "jq_version": "jq-1.7.1-apple",
@@ -1362,7 +1382,7 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-16T09:53:45Z"
+      "ran_at": "2026-11-17T00:21:55Z"
     },
     "P3": {
       "group": "environment",
@@ -1577,15 +1597,15 @@
       "result": "go",
       "reason": "every part passed",
       "stand_in": false,
-      "evidence": "docs/flow-factory/evidence/P4-3",
-      "cost_usd": 0.154202,
+      "evidence": "docs/flow-factory/evidence/P4-4",
+      "cost_usd": 0.154251,
       "github_writes": [],
       "parts": {
         "project_flow": {
           "result": "go",
-          "reason": "without --plugin-dir the project's own flow loads: ~/.claude/plugins/cache/synapti-marketplace/flow/3.16.0",
+          "reason": "without --plugin-dir the project's own flow loads: ~/.claude-work/plugins/cache/synapti-marketplace/flow/3.17.0",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1595,14 +1615,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:57Z",
-          "evidence": "docs/flow-factory/evidence/P4-3"
+          "ran_at": "2026-11-17T00:22:09Z",
+          "evidence": "docs/flow-factory/evidence/P4-4"
         },
         "flow_once": {
           "result": "go",
           "reason": "flow loaded once, from the --plugin-dir copy",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1612,12 +1632,12 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:53:57Z",
-          "evidence": "docs/flow-factory/evidence/P4-3"
+          "ran_at": "2026-11-17T00:22:09Z",
+          "evidence": "docs/flow-factory/evidence/P4-4"
         }
       },
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.326 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "jq_version": "jq-1.7.1-apple",
@@ -1627,22 +1647,22 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-16T09:53:57Z"
+      "ran_at": "2026-11-17T00:22:09Z"
     },
     "P5": {
       "group": "platform",
       "result": "no-go",
-      "reason": "cost_scope: a one-turn resume of a four-step session reported tokens [12, 346, 164070, 17153], the first run's [10, 335, 133670, 17081] plus its own [2, 11, 30400, 72]: it reports the whole session",
+      "reason": "cost_scope: a one-turn resume of a four-step session reported tokens [12, 350, 164449, 17160], the first run's [10, 339, 133979, 17088] plus its own [2, 11, 30470, 72]: it reports the whole session",
       "stand_in": false,
-      "evidence": "docs/flow-factory/evidence/P5-3",
-      "cost_usd": 0.7336,
+      "evidence": "docs/flow-factory/evidence/P5-4",
+      "cost_usd": 0.733013,
       "github_writes": [],
       "parts": {
         "session_id": {
           "result": "go",
           "reason": "the first launch reported its --session-id and each fork a new one",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1652,14 +1672,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:54:51Z",
-          "evidence": "docs/flow-factory/evidence/P5-3"
+          "ran_at": "2026-11-17T00:23:00Z",
+          "evidence": "docs/flow-factory/evidence/P5-4"
         },
         "kill": {
           "result": "go",
           "reason": "the first launch was killed during its first tool call and charged its $0.5 limit, since it reported no cost",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1669,14 +1689,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:54:51Z",
-          "evidence": "docs/flow-factory/evidence/P5-3"
+          "ran_at": "2026-11-17T00:23:00Z",
+          "evidence": "docs/flow-factory/evidence/P5-4"
         },
         "turn_limit": {
           "result": "go",
           "reason": "the resumed run stopped at its --max-turns 2",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1686,14 +1706,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:54:51Z",
-          "evidence": "docs/flow-factory/evidence/P5-3"
+          "ran_at": "2026-11-17T00:23:00Z",
+          "evidence": "docs/flow-factory/evidence/P5-4"
         },
         "budget_limit": {
           "result": "go",
           "reason": "the resumed run stopped at its --max-budget-usd 0.02",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1703,14 +1723,14 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:54:51Z",
-          "evidence": "docs/flow-factory/evidence/P5-3"
+          "ran_at": "2026-11-17T00:23:00Z",
+          "evidence": "docs/flow-factory/evidence/P5-4"
         },
         "cost_scope": {
           "result": "no-go",
-          "reason": "a one-turn resume of a four-step session reported tokens [12, 346, 164070, 17153], the first run's [10, 335, 133670, 17081] plus its own [2, 11, 30400, 72]: it reports the whole session",
+          "reason": "a one-turn resume of a four-step session reported tokens [12, 350, 164449, 17160], the first run's [10, 339, 133979, 17088] plus its own [2, 11, 30470, 72]: it reports the whole session",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1720,14 +1740,31 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:54:51Z",
-          "evidence": "docs/flow-factory/evidence/P5-3"
+          "ran_at": "2026-11-17T00:23:00Z",
+          "evidence": "docs/flow-factory/evidence/P5-4"
+        },
+        "engine_charge": {
+          "result": "go",
+          "reason": "the engine charged the four-step session 0.17032 (since_last) and its resume 0.006898 (since_last); the resume reported the session's total 0.177218: the two charges add up to the total, so each run is charged its own cost and the session's spend is counted once",
+          "keyed_on": {
+            "claude_version": "2.1.326 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "model": "claude-opus-5-5"
+          },
+          "ran_at": "2026-11-17T00:23:00Z",
+          "evidence": "docs/flow-factory/evidence/P5-4"
         },
         "no_block_rerun": {
           "result": "go",
           "reason": "the command's ! block ran once, in the first launch, and not on resume",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "jq_version": "jq-1.7.1-apple",
@@ -1737,13 +1774,13 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-16T09:54:51Z",
-          "evidence": "docs/flow-factory/evidence/P5-3"
+          "ran_at": "2026-11-17T00:23:00Z",
+          "evidence": "docs/flow-factory/evidence/P5-4"
         }
       },
       "fallback": "The engine records the increase in a session's reported cost between its runs, since a resumed run reports the whole session's cost.",
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.326 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "jq_version": "jq-1.7.1-apple",
@@ -1753,7 +1790,7 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-16T09:54:51Z"
+      "ran_at": "2026-11-17T00:23:00Z"
     },
     "P6": {
       "group": "github_write",
@@ -2111,6 +2148,6 @@
   },
   "spend": {
     "cap_usd": 25,
-    "spent_usd": 16.582269
+    "spent_usd": 21.10506
   }
 }
