@@ -208,11 +208,15 @@ def kill_group(pgid, start, wait):
     (os.killpg(pgid, 0) gives ESRCH). A process group id is not given to a
     new process while any member of the group lives, so a group whose number
     now belongs to a leader with another start time is a new group, and the
-    recorded one is gone: it is left alone (amendment A+8)."""
+    recorded one is gone: it is left alone (amendment A+8). With no recorded
+    start (the launcher's ps failed) a live group cannot be told apart from
+    a new one: it is not signalled and not taken as gone."""
     if not isinstance(pgid, int) or isinstance(pgid, bool) or pgid <= 1:
         return True
     if not _group_exists(pgid):
         return True
+    if not isinstance(start, str):
+        return False
     leader = fcaller.lstart(pgid)
     if leader is not None and leader != start:
         return True
@@ -899,6 +903,10 @@ class JobPass:
                 pass
         pgid, cstart = lease.get("child_pgid"), lease.get("child_start")
         gone = kill_group(pgid, cstart, min(2.0, max(0.0, self.p.left())))
+        if not gone and isinstance(pgid, int) and not isinstance(cstart, str):
+            # No start was recorded: the group is recorded with its leader's
+            # start now, so orphan_alive follows it from here on.
+            cstart = fcaller.lstart(pgid)
         if not gone and isinstance(pgid, int) and isinstance(cstart, str):
             directive = _read_json(_directive_path(self.paths, self.n, did)) or {}
             entry = {"pgid": pgid, "start": cstart, "stage": directive.get("stage") or self.job["state"],

@@ -665,6 +665,35 @@ e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_equal 43o "$(nx_rows)" "rows"
 e2e_expect_equal "needs_human orphan_worker false" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason) \(.holds_slot)"')" "state, reason, holds_slot"
 e2e_expect_equal yes "$([ -n "$(nx_lease "$D1" revoked_at)" ] && echo yes || echo no)" "lease revoked"
+
+fe_new nx8b-child-start-unknown
+# Source: A+8 (a group is killed only when its leader's start time is the
+# recorded one); a lease whose child_start could not be read gives no start
+# to compare, so the group is neither signalled nor taken as gone: it is
+# recorded with its leader's start time now, and T:43o parks the job.
+e2e_describe "an expired lease naming a live sleep 60 in its own session as claude's group, with child_start null; the ordinary seam; leaseSeconds 3"
+nx_seed "d['directive'] = '$D1'; d['stage_launches'] = {'build': 1}; d['holds_slot'] = True"
+nx_plugin 'RUN: true'
+nx_settings '.flow.factory.leaseSeconds = 3'
+fe_directive "$D1" "d['max_budget_usd'] = 0.5; d['started_at'] = '2026-11-16T00:00:00Z'; d['model'] = 'claude-opus-5-5'"
+NX_DEAD=$(_fe_in_scratch sh -c 'echo $$')
+NX_S=$(_fe_in_scratch "$(fe_python)" -I -c 'import subprocess; print(subprocess.Popen(["sleep", "60"], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)')
+_fe_register "$NX_S"
+e2e_expect_equal yes "$(kill -0 "$NX_S" 2>/dev/null && echo yes || echo no)" "the sleeper started"
+fe_mask_pid "$NX_S" sleeper
+cat > "$NX_J/directives/$D1.lease.json" <<JSON
+{"directive": "$D1", "kind": "worker", "host": "h", "launcher_pid": $NX_DEAD, "launcher_start": "Mon Nov 16 00:00:00 2026",
+ "started_at": "2026-11-16T00:00:00Z", "heartbeat_at": "2026-11-16T00:00:00Z", "child_pid": $NX_S, "child_pgid": $NX_S,
+ "child_start": null, "revoked_at": null}
+JSON
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 43o "$(nx_rows)" "rows"
+e2e_expect_equal "needs_human orphan_worker" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state, reason"
+e2e_expect_equal alive "$(kill -0 "$NX_S" 2>/dev/null && echo alive || echo gone)" "the group with no recorded start (not signalled)"
+e2e_expect_equal "$NX_S" "$(nx_jq "$NX_J/job.json" '.orphan_groups[0].pgid')" "orphan_groups pgid"
+e2e_expect_equal "$(_fe_lstart "$NX_S")" "$(nx_jq "$NX_J/job.json" '.orphan_groups[0].start')" "orphan_groups start (the leader's, read now)"
+kill "$NX_S" 2>/dev/null
 fi
 
 # ---------------------------------------------------------------- NX9, NX15

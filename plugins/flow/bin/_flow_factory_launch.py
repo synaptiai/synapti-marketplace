@@ -695,8 +695,16 @@ class Launcher:
             self.proc = subprocess.Popen(cmd, stdin=pin, stdout=sout, stderr=serr, cwd=job["worktree"], env=env,
                                          start_new_session=True)
         self.pgid = self.proc.pid
+        # A null child_start leaves the engine unable to tell this group from
+        # a new one, so it never kills it: ps is asked again before that.
+        child_start = None
+        for _ in range(3):
+            child_start = lstart(self.proc.pid)
+            if child_start or self.proc.poll() is not None:
+                break
+            time.sleep(0.2)
         with jobs.job_lock(self.paths, self.n):
-            self.write_lease(child_pid=self.proc.pid, child_pgid=self.pgid, child_start=lstart(self.proc.pid),
+            self.write_lease(child_pid=self.proc.pid, child_pgid=self.pgid, child_start=child_start,
                              heartbeat_at=_utc())
         timed_out = self.watch(timeout, heartbeat, stage)
         self.finish(timed_out)
