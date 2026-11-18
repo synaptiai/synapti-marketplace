@@ -339,6 +339,12 @@ artifacts:
   note: All 15 checks re-run after the review fixes; sidecars evidence-*-eval-031190b0
     supersede the 62b12618 ones. The goal file's evidence_ref values still name the
     62b12618 sidecars, because flow-goal-record.sh refuses to update an achieved goal.
+- type: review-cycle
+  captured_at: '2026-11-18T05:14:28Z'
+  cycle: 1
+  path: B
+  findings_count: 3
+  pr: 382
 ---
 
 ## Design
