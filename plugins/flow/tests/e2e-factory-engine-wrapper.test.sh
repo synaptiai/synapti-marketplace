@@ -19,6 +19,8 @@
 #   WR7  the shell `report` writes outside the job folder, or through a
 #        symlinked pending-report file or directives folder
 #   WR8  jq is missing and the wrapper crashes or runs on
+#   WR16 a worker's person-only subcommand gets a shell refusal (exit 5) for a
+#        missing record, jq or interpreter, not PERSON_ONLY_REFUSED (exit 4)
 #   WR9  under a launcher, the record is found from the working directory, so a
 #        worker in its clone or in /tmp gets no_probe_record or
 #        not_in_repository (RM1 lookup half, R3, A+5)
@@ -213,6 +215,13 @@ fw_wr2() {
   e2e_expect_equal "$FW_NO_RECORD" "$E2E_OUT" "stdout of $*"
 }
 fw_each_sub fw_wr2
+# A worker's person-only (and engine-guarded) subcommand is refused with exit
+# 4 before the shell's own refusals, as the engine refuses it first.
+for FW_SUB in answer approve-spec confirm feedback rework retry reject cancel rebuild run next probe; do
+  e2e_run_bin PATH="$FW_FAKE:$E2E_BIN:$PATH" FLOW_FACTORY_JOB=x bin/flow-factory.sh "$FW_SUB" < /dev/null
+  e2e_expect_equal 4 "$E2E_RC" "exit status of $FW_SUB from a worker"
+  e2e_expect_equal "PERSON_ONLY_REFUSED=worker_env" "$E2E_OUT" "stdout of $FW_SUB from a worker"
+done
 fw_expect_no_python
 fi
 

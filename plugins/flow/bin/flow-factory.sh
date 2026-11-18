@@ -33,6 +33,13 @@
 # No variable chooses F. So a worker run by a launcher finds the launcher's
 # record from its own clone, or from outside any repository.
 #
+# First, a person-only subcommand (answer, approve-spec, confirm, feedback,
+# rework, retry, reject, cancel, rebuild) or run, next or probe, from a worker,
+# exits 4 with one line, before anything else is checked:
+#   PERSON_ONLY_REFUSED=worker_env       (FLOW_FACTORY_JOB, _DIRECTIVE or _IO set)
+#   PERSON_ONLY_REFUSED=lease_ancestor   (a launcher with a live lease is an
+#                                         ancestor; probe leaves this to the engine)
+#
 # Before the exec the wrapper refuses, with exit 5 and one line:
 #   FACTORY_REFUSED=jq_missing next: install jq
 #   FACTORY_REFUSED=no_probe_record next: run the phase 0 probes
@@ -56,6 +63,7 @@
 # Exits:
 #   0 — answered
 #   2 — usage error; one stderr line, nothing on stdout
+#   4 — refused for a worker; stdout holds one PERSON_ONLY_REFUSED=<reason> line
 #   5 — refused; stdout holds one FACTORY_REFUSED=<reason> line
 #   other — the engine's or `probe`'s own exit status (see bin/_flow_factory.py)
 
@@ -68,6 +76,19 @@ refuse() {
   printf 'FACTORY_REFUSED=%s\n' "$1"
   exit 5
 }
+
+# The worker check comes before every other refusal (the engine's
+# _flow_factory_caller.check, which repeats it in full once Python starts):
+# a person-only or engine-guarded subcommand from a worker exits 4 with
+# PERSON_ONLY_REFUSED, not 5 for a missing record, jq or interpreter.
+ff_guarded=""
+case "${1:-}" in
+  answer|approve-spec|confirm|feedback|rework|retry|reject|cancel|rebuild|run|next|probe) ff_guarded=1 ;;
+esac
+if [ -n "$ff_guarded" ] && [ -n "${FLOW_FACTORY_JOB:-}${FLOW_FACTORY_DIRECTIVE:-}${FLOW_FACTORY_IO:-}" ]; then
+  printf '%s\n' "PERSON_ONLY_REFUSED=worker_env"
+  exit 4
+fi
 
 if [ "${1:-}" = context ] && [ "${2:-}" = --mode ] && [ "$#" -eq 2 ] \
    && [ -z "${FLOW_FACTORY_JOB:-}" ] && [ -z "${FLOW_FACTORY_DIRECTIVE:-}" ]; then
@@ -348,11 +369,16 @@ ff_report() {
   exit 0
 }
 
-command -v jq >/dev/null 2>&1 || refuse "jq_missing next: install jq"
-
+# A worker under a launcher with a live lease: the same refusal, by ancestry
+# (the variables were checked at the top).
 main_top=""
 common=""
 F=$(ff_launcher_dir)
+if [ -n "$ff_guarded" ] && [ -n "$F" ]; then
+  printf '%s\n' "PERSON_ONLY_REFUSED=lease_ancestor"
+  exit 4
+fi
+command -v jq >/dev/null 2>&1 || refuse "jq_missing next: install jq"
 if [ -n "$F" ]; then
   # F lies inside the main checkout (ignored by its .gitignore), so git run
   # there names the main checkout whatever the working directory is.

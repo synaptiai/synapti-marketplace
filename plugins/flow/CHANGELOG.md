@@ -18,13 +18,15 @@ settings cannot turn it on.
   Only the engine writes job state, under a lock. `launch` starts a worker
   with the job's key, issue, branch and goal id in its environment and names
   its model; before a fresh launch it saves a dirty job clone to
-  `refs/flow-factory/issue-<N>/snapshot-<k>` and resets it. `report` takes a
-  worker's result and charges the run its own cost, not the session total.
-  `status` lists every job and status line, and `rebuild` restores a job's
-  state from its event log. Inside a worker, `context --mode` prints
-  `FACTORY_MODE=on`, or `FACTORY_MODE=invalid` when the worker's job does not
-  check out; outside one it still prints `FACTORY_MODE=off` without starting
-  Python.
+  `refs/flow-factory/issue-<N>/snapshot-<k>` and resets it. The launcher
+  charges each run its own cost, not the session total; `report` is only its
+  fallback while the recorded Python is missing. `next` and `status` say why
+  a job waits, for example a GitHub sync that fails or a stage budget that is
+  unset or spent. `status` lists every job and status line, and `rebuild`
+  restores a job's state from its event log. Inside a worker,
+  `context --mode` prints `FACTORY_MODE=on`, or `FACTORY_MODE=invalid` when
+  the worker's job does not check out; outside one it still prints
+  `FACTORY_MODE=off` without starting Python.
 - The person subcommands `answer`, `approve-spec`, `confirm`, `feedback`,
   `rework`, `retry`, `reject` and `cancel`. Run from a worker, each of them
   and `rebuild` exits 4 with `PERSON_ONLY_REFUSED`.
