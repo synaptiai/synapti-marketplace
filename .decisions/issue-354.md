@@ -345,6 +345,11 @@ artifacts:
   path: B
   findings_count: 3
   pr: 382
+- type: workflow-run
+  captured_at: '2026-11-18T06:26:31Z'
+  workflow: start-issue
+  run_id: 2026-11-16T144941Z-issue-354
+  status: completed
 ---
 
 ## Design
