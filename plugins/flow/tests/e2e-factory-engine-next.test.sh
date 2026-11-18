@@ -779,6 +779,31 @@ e2e_expect_equal 0 "$(nx_ev_count 7 '.type == "transition"')" "transition lines"
 e2e_expect_equal build "$(nx_jq "$NX_J/job.json" .state)" "state"
 e2e_expect_equal absent "$([ -e "$NX_J/results/$D1.json" ] && echo present || echo absent)" "results file"
 
+fe_new nxac8d-shell-report-fact-fails
+# Source: plan 2.4 (a stage event whose facts cannot be computed is kept, as
+# apply_pending keeps a launcher's pending file on failed); T:39 reads
+# tree_dirty, whose git status --untracked-files=all fails here (FactFailed)
+# while the nested-repository scan (--untracked-files=normal) succeeds.
+e2e_describe "the launcher's shell pending-report line for a run that ended in a 529 API error (stage_failed), applied by a pass whose git fails only for status --untracked-files=all; then next runs again with the real git"
+nxac8_setup "" "" '{"type":"result","subtype":"success","is_error":true,"num_turns":1,"total_cost_usd":0.05,"api_error_status":529,"api_error":"overloaded_error","terminal_reason":"api_error"}'
+NX_REAL_GIT=$(command -v git)
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = --untracked-files=all ] && { echo "fatal: injected" >&2; exit 128; }; done\nexec "%s" "$@"\n' "$NX_REAL_GIT" > "$E2E_BIN/git"
+chmod +x "$E2E_BIN/git"
+nx_next
+rm -f "$E2E_BIN/git"
+e2e_expect_equal 0 "$E2E_RC" "first pass exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "result_applied" and .directive == "'"$D1"'"')" "result_applied events after the first pass"
+e2e_expect_equal 0 "$(nx_ev_count 7 '.type == "transition"')" "transitions after the first pass"
+e2e_expect_equal 1 "$(find "$NX_J/pending" -name '*-stage_failed.json' 2>/dev/null | wc -l | tr -d ' ')" "pending stage_failed kept after the first pass"
+e2e_expect_equal "$D1" "$(nx_jq "$NX_J/job.json" .directive)" "current directive after the first pass (no fresh launch)"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "second pass exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "transition" and .event == "stage_failed"')" "stage_failed transitions after the second pass"
+e2e_expect_equal 0 "$(find "$NX_J/pending" -name '*-stage_failed.json' 2>/dev/null | wc -l | tr -d ' ')" "pending stage_failed after the second pass"
+e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "charge" and .directive == "'"$D1"'"')" "charge events"
+e2e_expect_equal 5 "$(nx_cents "$NX_J/job.json" .cost.usd_total)" "cost.usd_total in cents (charged once)"
+fe_art_state 7
+
 fe_new nxac8c-shell-report-resume-charge
 # Source: journal RM4; plan 2.14 charge_run since_last: 0.20 + 0.03 = 0.23, so
 # usd_total 0.97 + 0.23 = 1.20 (the session total would give 2.17).

@@ -1124,7 +1124,7 @@ class JobPass:
                 if why is not None:
                     self.report_refused(did, why, "pending-report")
                     continue
-                if self.apply_report(did, line["report"]) == "keep":
+                if self.apply_report(did, line["report"], line) == "keep":
                     keep = True
             if not keep:
                 try:
@@ -1132,10 +1132,14 @@ class JobPass:
                 except FileNotFoundError:
                     pass
 
-    def apply_report(self, did, report):
+    def apply_report(self, did, report, line):
         """In the engine, what the launcher's in-process report does: the
         result file, the charge from the run's own stream, the charge and
-        result_applied events, then the stage event."""
+        result_applied events, then the stage event. A stage event that cannot
+        be decided now (a fact failed, or one is unbuilt) is stored as the
+        launcher's pending event, as the launcher's own report stores it, so
+        apply_pending keeps it until it can be; dropped with the line, the
+        next pass would launch the stage afresh."""
         directive = _read_json(_directive_path(self.paths, self.n, did)) or {}
         stage = directive.get("stage") or self.job["state"]
         mode = directive.get("start_mode") or "fresh"
@@ -1172,7 +1176,10 @@ class JobPass:
         event = record.get("event")
         if event in STAGE_EVENTS:
             self.unvouched = True
-            self.decide(event, "launcher", None)
+            if self.decide(event, "launcher", None) in ("failed", "blocked"):
+                caller = {"pid": line["caller_pid"], "start": line["caller_start"], "ancestry": []}
+                jobs.store_pending(self.paths, self.n, event, {"directive": did, "outcome": record.get("outcome")},
+                                   "launcher", caller, {})
         elif record.get("outcome") == "usage_limit":
             self.pause_usage()
         return "drop"
