@@ -329,6 +329,16 @@ artifacts:
   trigger: user
   evidence_bundle: .flow/runs/2026-11-16T144941Z-issue-354
   failures: none
+- type: goal-evaluation
+  captured_at: '2026-11-18T05:10:45Z'
+  goal_id: issue-354
+  result: pass
+  evidence_bundle: .flow/runs/2026-11-16T144941Z-issue-354
+  failures: none
+  commit: 031190b09548b6b51d25db4182c2833152959d66
+  note: All 15 checks re-run after the review fixes; sidecars evidence-*-eval-031190b0
+    supersede the 62b12618 ones. The goal file's evidence_ref values still name the
+    62b12618 sidecars, because flow-goal-record.sh refuses to update an achieved goal.
 ---
 
 ## Design
