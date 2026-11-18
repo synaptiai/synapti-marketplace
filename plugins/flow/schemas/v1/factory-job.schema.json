@@ -72,6 +72,7 @@
     "created_at": { "$ref": "#/$defs/utc" },
     "updated_at": { "$ref": "#/$defs/utc" },
     "vouch_at": { "$ref": "#/$defs/utc_or_null" },
+    "base": { "type": ["string", "null"] },
     "branch": {
       "type": ["string", "null"],
       "pattern": "^feature/issue-[1-9][0-9]*-"

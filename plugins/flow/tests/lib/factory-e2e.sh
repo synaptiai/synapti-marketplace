@@ -74,7 +74,10 @@ _fe_scratch_env() {
   _fe_has_repo || return 97
   _e2e_git_env
   cd "$E2E_REPO" || return 97
-  unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE
+  # XDG_STATE_HOME too: probe_area makes its folders under it, so one
+  # exported in the test's shell would reach outside the scratch HOME. A
+  # scenario that wants its own state folder sets it in the command it runs.
+  unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE XDG_STATE_HOME
   unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
   unset TYPESAFE_API_KEY
   export CLAUDE_PLUGIN_ROOT="$E2E_ACTIVE_PLUGIN" PATH="$E2E_BIN:$PATH"
@@ -214,14 +217,18 @@ fe_user_site() {
 }
 
 # fe_new <name> — start a scenario: kill what the previous one left running,
-# e2e_new, unset the worker variables, link the user site, and install the
-# factory gh stub and the worker claude stand-in (no knobs) over e2e.sh's.
+# e2e_new, unset the worker variables and the last scenario's world
+# (FE_WORLD), link the user site, and install the factory gh stub (with
+# gh_world.py and the interpreter it runs under, fe-gh-python) and the worker
+# claude stand-in (no knobs) over e2e.sh's.
 fe_new() {
   _fe_cleanup
   e2e_new "$1"
-  unset FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN GH_REPO
+  unset FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN GH_REPO FE_WORLD
   fe_user_site
   cp "$FE_FIXTURES/engine/gh" "$E2E_BIN/gh"
+  cp "$FE_FIXTURES/engine/gh_world.py" "$E2E_BIN/gh_world.py"
+  printf '%s\n' "$FE_PYTHON" > "$E2E_BIN/fe-gh-python"
   mkdir -p "$E2E_BIN/fe-gh"
   cp "$FE_FIXTURES/worker/claude" "$E2E_BIN/claude"
   cp "$FE_FIXTURES/platform/claude_platform.py" "$E2E_BIN/claude_platform.py"
@@ -374,8 +381,9 @@ fe_factory_dir() {
 # stub's version, the real git's version and fe_python's realpath and
 # version; every result is go except P8, which never ran. The probes and
 # their parts are those of docs/flow-factory/probes.json. The statements edit
-# the dict d before it is written. Also gives the scratch repository an
-# origin of https://github.com/flow-e2e/scratch.git when it has none.
+# the dict d before it is written. Also gives the scratch repository its local
+# origin (fe_origin_local) when it has no origin or already has that one; an
+# origin a scenario set itself is kept.
 fe_record() { _fe_record "$(fe_python)" "${1:-}"; }
 
 # fe_record_link [python statements] — fe_record, but the record names
@@ -393,8 +401,9 @@ _fe_record() {
   mkdir -p "$fdir"
   [ -f "$fdir/.gitignore" ] || printf '*\n' > "$fdir/.gitignore"
   gitv=$(_fe_in_scratch git --version | sed -n 1p)
-  _fe_in_scratch git remote get-url origin >/dev/null 2>&1 \
-    || _fe_in_scratch git remote add origin https://github.com/flow-e2e/scratch.git
+  case "$(_fe_in_scratch git remote get-url origin 2>/dev/null)" in
+    ''|"$E2E_DIR/origin.git") fe_origin_local || return 1 ;;
+  esac
   common=$(_fe_in_scratch git rev-parse --path-format=absolute --git-common-dir) || return 1
   printf '%s\n' "$fdir" > "$common/flow-factory-path"
   if ! _fe_in_scratch "$(fe_python)" -I - "$REPO_ROOT/docs/flow-factory/probes.json" "$fdir/probes.json" \
@@ -438,6 +447,194 @@ PY
   printf 'probe record: fe_record naming %s%s\n' "$named" "${edits:+, edited by: $edits}" | _e2e_art
 }
 
+# fe_origin_local [<branch>] — make $E2E_DIR/origin.git a bare repository and
+# the scratch repository's origin, so nothing a scenario runs can fetch from
+# or push to the network. When the scratch repository has a commit, set
+# <branch> (default main) there to its HEAD, fetch it, and point origin/HEAD
+# at it. Set remote.origin.gh-resolved to the world's repo when FE_WORLD names
+# a world, else flow-e2e/scratch: the engine names the repository from it,
+# and a local URL names none. A second call is harmless, and after a new
+# commit it moves origin/<branch> to it, whatever was there before.
+fe_origin_local() {
+  local branch="${1:-main}" origin="$E2E_DIR/origin.git" repo=""
+  _fe_need_repo || return 97
+  [ -n "${FE_WORLD:-}" ] && [ -f "$FE_WORLD" ] && repo=$(jq -r '.repo // empty' "$FE_WORLD" 2>/dev/null)
+  [ -n "$repo" ] || repo=flow-e2e/scratch
+  if ! { [ -d "$origin" ] || _fe_in_scratch git init -q --bare "$origin"; } \
+      || ! { _fe_in_scratch git remote set-url origin "$origin" 2>/dev/null \
+             || _fe_in_scratch git remote add origin "$origin"; } \
+      || ! _fe_in_scratch git config remote.origin.gh-resolved "$repo"; then
+    _e2e_result fail "fe_origin_local made $origin the scratch repository's origin"
+    return 1
+  fi
+  if _fe_in_scratch git rev-parse -q --verify HEAD >/dev/null; then
+    # The bare repository fetches the scratch HEAD and its branch is set to
+    # it: a push would refuse a branch whose history the scenario rewrote.
+    if ! _fe_in_scratch git --git-dir="$origin" fetch -q "$E2E_REPO" HEAD \
+        || ! _fe_in_scratch git --git-dir="$origin" update-ref "refs/heads/$branch" FETCH_HEAD \
+        || ! _fe_in_scratch git fetch -q origin \
+        || ! _fe_in_scratch git remote set-head origin "$branch" >/dev/null; then
+      _e2e_result fail "fe_origin_local set origin/$branch to the scratch HEAD"
+      return 1
+    fi
+  fi
+  printf 'origin: the local bare repository origin.git, branch %s, gh-resolved %s\n' "$branch" "$repo" | _e2e_art
+}
+
+# The world of the factory gh stub (engine/gh_world.py has its layout). Each
+# fe_world_* helper but fe_world_posts edits $FE_WORLD with jq, prints
+# nothing, and writes one line to the artifact. A <role> is a role_name
+# (none, read, triage, write, maintain, admin), status:<http code>, or - for
+# no permission entry; an <actor> of - is a deleted account (null).
+_FE_WORLD_DEFS='
+def actor($a): if $a == "-" then null else {login: $a, type: "User"} end;
+def perm($l; $r):
+  if $l == "-" or $r == "-" then .
+  elif ($r | startswith("status:")) then .permissions[$l] = {status: ($r[7:] | tonumber)}
+  else .permissions[$l] = {role_name: $r, permission: (({admin: "admin", maintain: "write", write: "write",
+                           triage: "read", read: "read", none: "none"})[$r] // $r)} end;
+def next_event: ([.events[]?[]?.id] | max // 0) + 1;
+'
+_fe_world() {
+  local what="$1"
+  shift
+  if [ -z "${FE_WORLD:-}" ] || [ ! -f "$FE_WORLD" ]; then
+    _e2e_result fail "$what: no world file; call fe_world_new first"
+    return 1
+  fi
+  if ! jq "$@" "$FE_WORLD" > "$FE_WORLD.t"; then
+    rm -f "$FE_WORLD.t"
+    _e2e_result fail "$what edited the world file"
+    return 1
+  fi
+  mv "$FE_WORLD.t" "$FE_WORLD"
+  printf 'world: %s\n' "$what" | _e2e_art
+}
+
+# fe_world_new <engine_login> <owner/name> — write an empty world at
+# $E2E_DIR/world.json, export FE_WORLD, and set remote.origin.gh-resolved to
+# <owner/name> in the scratch repository, so the sync names the world's
+# repository whether fe_record ran before or after. Not inside $(...): the
+# export must reach the scenario's shell.
+fe_world_new() {
+  _fe_need_repo || return 97
+  FE_WORLD="$E2E_DIR/world.json"
+  export FE_WORLD
+  jq -n --arg l "$1" --arg r "$2" '{engine_login: $l, actor_types: {}, repo: $r, default_branch: "main",
+    issues: {}, events: {}, comments: {}, edits: {}, permissions: {}, pulls: [], next_id: 1,
+    knobs: {die_after_post: false, list_fails: [], permission_fails: [], post_fails: false}, posts: []}' > "$FE_WORLD"
+  _fe_in_scratch git config remote.origin.gh-resolved "$2" \
+    || { _e2e_result fail "fe_world_new set remote.origin.gh-resolved"; return 1; }
+  printf 'world: fe_world_new %s %s\n' "$1" "$2" | _e2e_art
+}
+
+# fe_world_issue <n> <title> <body> [state] — issue n (open unless a state is
+# given), by issue-author, with no labels or assignees; replaces an issue n.
+fe_world_issue() {
+  _fe_world "fe_world_issue $1 $2 ${4:-open}" --arg n "$1" --arg t "$2" --arg b "$3" --arg s "${4:-open}" '
+    .issues[$n] = {state: $s, state_reason: (if $s == "closed" then "completed" else null end), title: $t,
+                   body: $b, labels: [], assignees: [], author: "issue-author", created_at: "2026-11-16T00:00:00Z",
+                   updated_at: "2026-11-16T00:00:00Z", closed_by: null}
+    | .events[$n] //= [] | .comments[$n] //= []'
+}
+
+# fe_world_label <n> <label> <actor> <role> <time> [unlabeled] — a labeled (or
+# unlabeled) event by the actor, the label added to (removed from) the issue,
+# and the actor's permission.
+fe_world_label() {
+  _fe_world "fe_world_label $*" --arg n "$1" --arg l "$2" --arg a "$3" --arg r "$4" --arg t "$5" \
+    --arg u "${6:-}" "$_FE_WORLD_DEFS"'
+    (if $u == "unlabeled" then "unlabeled" else "labeled" end) as $ev
+    | next_event as $id
+    | .issues[$n].labels |= (if $ev == "unlabeled" then map(select(. != $l))
+                             elif index([$l]) then . else . + [$l] end)
+    | .events[$n] = ((.events[$n] // []) + [{id: $id, event: $ev, label: $l, actor: actor($a), created_at: $t}])
+    | perm($a; $r)'
+}
+
+# fe_world_comment <n> <id> <author> <role> <time> <body> — a comment (one
+# with the same id is replaced), kept in id order, and the author's
+# permission.
+fe_world_comment() {
+  _fe_world "fe_world_comment $1 $2 $3 $4 $5" --arg n "$1" --argjson id "$2" --arg a "$3" --arg r "$4" \
+    --arg t "$5" --arg b "$6" "$_FE_WORLD_DEFS"'
+    .comments[$n] = (((.comments[$n] // []) | map(select(.id != $id)))
+                     + [{id: $id, author: actor($a), created_at: $t, updated_at: $t, body: $b}] | sort_by(.id))
+    | perm($a; $r)'
+}
+
+# fe_world_edit <issue:<n>|comment:<id>> <editor or -> <time> — an edit of
+# the issue body or a comment, for the GraphQL edit fields (newest first).
+fe_world_edit() {
+  _fe_world "fe_world_edit $*" --arg k "$1" --arg e "$2" --arg t "$3" '
+    .edits[$k] = ((.edits[$k] // []) + [{editor: (if $e == "-" then null else $e end), edited_at: $t, diff: ""}]
+                  | sort_by(.edited_at) | reverse)'
+}
+
+# fe_world_rename <n> <actor or -> <role> <time> <new title> — a renamed event
+# from the current title to the new one, the new title set, and the actor's
+# permission.
+fe_world_rename() {
+  _fe_world "fe_world_rename $1 $2 $3 $4" --arg n "$1" --arg a "$2" --arg r "$3" --arg t "$4" --arg to "$5" \
+    "$_FE_WORLD_DEFS"'
+    next_event as $id
+    | .events[$n] = ((.events[$n] // []) + [{id: $id, event: "renamed", actor: actor($a), created_at: $t,
+                                              rename: {from: .issues[$n].title, to: $to}}])
+    | .issues[$n].title = $to
+    | perm($a; $r)'
+}
+
+# fe_world_perm <login> <role_name | status:<code>> — the login's answer from
+# the permission endpoint; a role_name also sets GitHub's legacy permission
+# field (triage as read, maintain as write).
+fe_world_perm() {
+  _fe_world "fe_world_perm $*" --arg l "$1" --arg r "$2" "$_FE_WORLD_DEFS"'perm($l; $r)'
+}
+
+# fe_world_actor_type <login> <User|Bot> — the type every actor and author of
+# that login is given.
+fe_world_actor_type() {
+  _fe_world "fe_world_actor_type $*" --arg l "$1" --arg t "$2" '.actor_types[$l] = $t'
+}
+
+# fe_world_close <n> <actor or -> <role> <time> [reason] — the issue closed by
+# the actor (reason completed unless given), a closed event, and the actor's
+# permission.
+fe_world_close() {
+  _fe_world "fe_world_close $*" --arg n "$1" --arg a "$2" --arg r "$3" --arg t "$4" \
+    --arg why "${5:-completed}" "$_FE_WORLD_DEFS"'
+    next_event as $id
+    | .issues[$n] += {state: "closed", state_reason: $why, closed_by: actor($a), updated_at: $t}
+    | .events[$n] = ((.events[$n] // []) + [{id: $id, event: "closed", actor: actor($a), created_at: $t}])
+    | perm($a; $r)'
+}
+
+# fe_world_pull <number> <head ref> <author> <role> <body> [cross] — an open
+# pull request (one with the same number is replaced; from a fork when the
+# last argument is cross), and the author's permission.
+fe_world_pull() {
+  _fe_world "fe_world_pull $1 $2 $3 $4 ${6:-}" --argjson num "$1" --arg h "$2" --arg a "$3" --arg r "$4" \
+    --arg b "$5" --arg c "${6:-}" "$_FE_WORLD_DEFS"'
+    .pulls = (((.pulls // []) | map(select(.number != $num)))
+              + [{number: $num, head_ref: $h, body: $b, state: "open", author: $a,
+                  isCrossRepository: ($c == "cross")}])
+    | perm($a; $r)'
+}
+
+# fe_world_knob <name> <json value> — one of the knobs of engine/gh_world.py.
+fe_world_knob() {
+  _fe_world "fe_world_knob $*" --arg k "$1" --argjson v "$2" '.knobs[$k] = $v'
+}
+
+# fe_world_posts — print every write the stub received, one JSON line each.
+fe_world_posts() {
+  if [ -z "${FE_WORLD:-}" ] || [ ! -f "$FE_WORLD" ]; then
+    _e2e_result fail "fe_world_posts: no world file; call fe_world_new first"
+    return 1
+  fi
+  jq -c '.posts[]' "$FE_WORLD"
+}
+
 # fe_settings <json> — the scratch user settings (e2e_user_settings).
 fe_settings() { e2e_user_settings "$1"; }
 
@@ -450,7 +647,7 @@ fe_enable() {
 }
 
 # fe_job <n> <state> [python statements] — write J/job.json, valid per plan
-# 2.3: key issue-<n>-j1, branch feature/issue-<n>-x-2, goal_id issue-<n>-f2,
+# 2.3: key issue-<n>-j1, base main, branch feature/issue-<n>-x-2, goal_id issue-<n>-f2,
 # worktree $E2E_DIR/area/worktrees/issue-<n> and io_dir
 # $E2E_DIR/area/jobs/issue-<n>/io (with in/ and out/), as physical paths. The
 # statements edit the dict d before it is written.
@@ -468,7 +665,7 @@ at = "2026-11-16T00:00:00Z"
 d = {"apiVersion": "flow.synapti.ai/v1", "kind": "FlowFactoryJob", "key": "issue-%d-j1" % n, "issue": n,
      "state": state, "attempt": 0, "stage_launches": {}, "sessions": {}, "holds_slot": False, "directive": None,
      "cost": {"usd_total": 0, "runs": [], "stage_usd": {}, "dearest_turn_usd": 0},
-     "created_at": at, "updated_at": at, "vouch_at": None,
+     "created_at": at, "updated_at": at, "vouch_at": None, "base": "main",
      "branch": "feature/issue-%d-x-2" % n, "goal_id": "issue-%d-f2" % n,
      "worktree": os.path.join(area, "worktrees", "issue-%d" % n),
      "io_dir": os.path.join(area, "jobs", "issue-%d" % n, "io")}

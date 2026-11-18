@@ -31,6 +31,28 @@
 #      or fe_job_clone leaves the clone off the job's branch
 #   H11 fe_wait_for waits for ever, or past its limit, instead of failing the
 #      scenario at its limit
+#   H12 the stub with a world file (engine/gh_world.py) loses what it posts,
+#      so a lookup after a post finds nothing; cuts a post's first line (the
+#      engine marker); stores a post it answered with a failure; or keeps the
+#      world it was given after a die_after_post kill instead of the write
+#   H13 a list read gives one page only: no page parameter, no Link header,
+#      or --paginate --slurp printing one flat list instead of the pages, so
+#      an earlier post on page 2 is never found (plan R35)
+#   H14 die_after_post kills the wrong process: the stub itself, so the
+#      write's caller lives on, or the scenario's own shell
+#   H15 the stub reports every actor as a User whatever actor_types says, so
+#      a bot with no [bot] suffix looks like a person (plan R90); a list_fails
+#      prefix misses `user`; a renamed event loses its from and to, or its
+#      null actor; a permission entry answers a role the test did not set
+#   H16 a factory scenario still has an https origin (a fetch would reach the
+#      network), no origin/<base> or origin/HEAD ref, no gh-resolved naming
+#      the repository, or a job.json with no base; or a second call of
+#      fe_origin_local after a new commit leaves the old ref
+#   H17 a world from one scenario answers the next one (fe_new keeps
+#      FE_WORLD); or the stub with no world loses the defaults the engine's
+#      new reads need (api user, api repos/O/R)
+#   H18 _fe_scratch_env passes the test's own XDG_STATE_HOME on, so a probe
+#      started through it makes folders outside the scratch HOME
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -120,7 +142,7 @@ e2e_expect_line "gh=gh version 2.101.0 (2026-09-15)"
 e2e_expect_line "p5=go"
 e2e_expect_line "unstamped=none"
 e2e_expect_equal "$FH_F" "$(cat "$E2E_REPO/.git/flow-factory-path" 2>/dev/null)" "the pointer file's content"
-e2e_expect_equal "https://github.com/flow-e2e/scratch.git" "$(git -C "$E2E_REPO" config --local remote.origin.url)" "the scratch repository's origin"
+e2e_expect_equal "$E2E_DIR/origin.git" "$(git -C "$E2E_REPO" config --local remote.origin.url)" "the scratch repository's origin (local, H16)"
 # phase 0's own record check agrees.
 e2e_run_bin bin/flow-factory.sh probe --verify-record "$FH_F/probes.json"
 e2e_expect_line "PROBES_RECORD=ok"
@@ -516,6 +538,222 @@ e2e_expect_equal "0" "$?" "fe_wait_for 5 true's status"
 FH_T1=$(date +%s)
 if [ $((FH_T1 - FH_T0)) -le 1 ]; then e2e_expect_equal "at once" "at once" "fe_wait_for 5 true"
 else e2e_expect_equal "at once" "$((FH_T1 - FH_T0)) s" "fe_wait_for 5 true"; fi
+fi
+
+# fh_q <jq filter> — the filter over the last command's stdout, compact.
+fh_q() { printf '%s' "$E2E_OUT" | jq -c "$1" 2>&1; }
+# fh_w <jq filter> — the filter over the scenario's world file, compact.
+fh_w() { jq -c "$1" "$FE_WORLD" 2>&1; }
+FH_R=repos/flow-e2e/scratch
+
+if fh_run h12; then
+_flow_test_begin "factory helpers: the world stub lists back what it was sent, first line intact (H12)"
+fe_new fh-world-post
+e2e_describe "fe_world_new and an issue; a comment posted with -F body=@file whose first line is an engine marker; the comment list then holds it under the engine login, and fe_world_posts shows the write"
+e2e_repo main
+fe_world_new flow-e2e-engine flow-e2e/scratch
+fe_world_issue 7 "Add a port setting" "The server needs a port."
+e2e_expect_equal "$E2E_DIR/world.json" "${FE_WORLD:-}" "FE_WORLD after fe_world_new"
+e2e_expect_equal "flow-e2e/scratch" "$(git -C "$E2E_REPO" config remote.origin.gh-resolved)" "gh-resolved after fe_world_new"
+printf '%s\n%s\n' '<!-- FLOW_FACTORY job=issue-7-j1 event=issue-7-j1-4-1 -->' 'Which port?' > "$E2E_DIR/body.md"
+_e2e_exec gh api --method POST "$FH_R/issues/7/comments" -F "body=@$E2E_DIR/body.md"
+e2e_expect_equal "0" "$E2E_RC" "the POST's exit status ($E2E_ERR)"
+FH_ID=$(fh_q .id)
+_e2e_exec gh api "$FH_R/issues/7/comments?per_page=100"
+e2e_expect_equal "0" "$E2E_RC" "the list's exit status ($E2E_ERR)"
+e2e_expect_equal "1 $FH_ID flow-e2e-engine User" "$(fh_q '"\(length) \(.[0].id) \(.[0].user.login) \(.[0].user.type)"' | tr -d '"')" "the comment listed back"
+e2e_expect_equal "$(cat "$E2E_DIR/body.md")" "$(printf '%s' "$E2E_OUT" | jq -r '.[0].body')" "the listed body, first line intact"
+FH_POSTS=$(fe_world_posts)
+e2e_expect_equal "1" "$(printf '%s\n' "$FH_POSTS" | grep -c .)" "posts lines"
+e2e_expect_equal "\"POST $FH_R/issues/7/comments @$E2E_DIR/body.md\"" "$(printf '%s' "$FH_POSTS" | jq -c '"\(.method) \(.path) \(.fields.body)"')" "the post's method, path and field"
+e2e_expect_equal "$(cat "$E2E_DIR/body.md")" "$(printf '%s' "$FH_POSTS" | jq -r .body)" "the post's body"
+
+_flow_test_begin "factory helpers: a list read is paged, and --paginate --slurp gives every page (H13, R35)"
+e2e_describe "150 comments 1001-1150 on issue 8: page 2 of 100 holds 1101-1150, page 1 under --include has a Link header naming page 2 as next, and --paginate --slurp prints two pages holding all 150 in id order"
+fe_world_issue 8 "Many comments" "Body"
+FH_I=1001
+while [ "$FH_I" -le 1150 ]; do
+  fe_world_comment 8 "$FH_I" alice write 2026-11-16T01:00:00Z "comment $FH_I"
+  FH_I=$((FH_I + 1))
+done
+_e2e_exec gh api "$FH_R/issues/8/comments?per_page=100&page=2"
+e2e_expect_equal "50 1101 1150" "$(fh_q '"\(length) \(.[0].id) \(.[-1].id)"' | tr -d '"')" "page 2"
+_e2e_exec gh api --include "$FH_R/issues/8/comments?per_page=100"
+e2e_expect_out "rel=\"next\""
+e2e_expect_out "page=2>; rel=\"next\""
+_e2e_exec gh api --paginate --slurp "$FH_R/issues/8/comments?per_page=100"
+e2e_expect_equal "0" "$E2E_RC" "the --paginate --slurp exit status ($E2E_ERR)"
+e2e_expect_equal "[100,50]" "$(fh_q '[.[] | length]')" "the pages"
+e2e_expect_equal "true" "$(fh_q '[.[][] | .id] == [range(1001; 1151)]')" "every comment, in id order"
+
+_flow_test_begin "factory helpers: post_fails stores nothing (H12)"
+e2e_describe "with post_fails, a POST exits non-zero and leaves the comments and posts as they were"
+fe_world_knob post_fails true
+FH_BEFORE=$(fh_w '[(.comments["7"] | length), (.posts | length)]')
+e2e_expect_equal "[1,1]" "$FH_BEFORE" "comments and posts before (the one comment posted above)"
+_e2e_exec gh api --method POST "$FH_R/issues/7/comments" -f body=lost
+e2e_expect_equal "1" "$E2E_RC" "the POST's exit status"
+e2e_expect_err "HTTP 502"
+e2e_expect_equal "$FH_BEFORE" "$(fh_w '[(.comments["7"] | length), (.posts | length)]')" "comments and posts"
+fe_world_knob post_fails false
+
+_flow_test_begin "factory helpers: die_after_post stores the write, then kills the stub's parent (H12, H14)"
+e2e_describe "with die_after_post, gh run under a disposable bash parent that echoes after it: the comment is stored, the parent ends by SIGKILL so it never echoes, and this shell goes on"
+fe_world_knob die_after_post true
+_e2e_exec bash -c '"$0" api --method POST repos/flow-e2e/scratch/issues/7/comments -f body=last-words; echo survived' "$E2E_BIN/gh"
+e2e_expect_equal "137" "$E2E_RC" "the disposable parent's exit status"
+e2e_expect_no_out "survived"
+e2e_expect_equal '"last-words"' "$(fh_w '.comments["7"][-1].body')" "the comment stored before the kill"
+e2e_expect_equal '"last-words"' "$(fh_w '.posts[-1].body')" "the post recorded before the kill"
+e2e_expect_equal "the scenario shell" "the scenario shell" "this shell is still running"
+fi
+
+if fh_run h15; then
+_flow_test_begin "factory helpers: actor types, list_fails and the renamed event (H15)"
+fe_new fh-world-actors
+e2e_describe "deploy-app set to Bot: its comment and label event say Bot, alice's comment says User; list_fails [user] makes gh api user fail; a rename by outsider and one with no actor"
+e2e_repo main
+fe_world_new flow-e2e-engine flow-e2e/scratch
+fe_world_issue 7 "Old title" "Body"
+fe_world_actor_type deploy-app Bot
+fe_world_comment 7 11 deploy-app write 2026-11-16T01:00:00Z "from the app"
+fe_world_comment 7 12 alice write 2026-11-16T01:01:00Z "from a person"
+fe_world_label 7 flow:factory deploy-app write 2026-11-16T01:02:00Z
+_e2e_exec gh api "$FH_R/issues/7/comments"
+e2e_expect_equal '["deploy-app Bot","alice User"]' "$(fh_q '[.[] | "\(.user.login) \(.user.type)"]')" "the comment authors"
+_e2e_exec gh api "$FH_R/issues/7/events"
+e2e_expect_equal '["labeled flow:factory deploy-app Bot"]' "$(fh_q '[.[] | "\(.event) \(.label.name) \(.actor.login) \(.actor.type)"]')" "the label event"
+_e2e_exec gh api "$FH_R/issues?labels=flow:factory&state=open&per_page=100"
+e2e_expect_equal '[7]' "$(fh_q '[.[].number]')" "the labelled open issues"
+_e2e_exec gh api "$FH_R/collaborators/deploy-app/permission"
+e2e_expect_equal '"write write"' "$(fh_q '"\(.role_name) \(.permission)"')" "the actor's permission from fe_world_label"
+_e2e_exec gh api user
+e2e_expect_equal '"flow-e2e-engine User"' "$(fh_q '"\(.login) \(.type)"')" "gh api user"
+fe_world_knob list_fails '["user"]'
+_e2e_exec gh api user
+e2e_expect_equal "1" "$E2E_RC" "gh api user under list_fails [user]"
+fe_world_knob list_fails '[]'
+fe_world_rename 7 outsider read 2026-11-17T01:00:00Z "New title"
+_e2e_exec gh api "$FH_R/issues/7"
+e2e_expect_equal '"New title"' "$(fh_q .title)" "the title after fe_world_rename"
+_e2e_exec gh api "$FH_R/issues/7/events"
+e2e_expect_equal '[{"from":"Old title","to":"New title","actor":"outsider"}]' "$(fh_q '[.[] | select(.event == "renamed") | {from: .rename.from, to: .rename.to, actor: .actor.login}]')" "the renamed event"
+_e2e_exec gh api "$FH_R/collaborators/outsider/permission"
+e2e_expect_equal '"read"' "$(fh_q .role_name)" "the renamer's role"
+fe_world_rename 7 - read 2026-11-17T02:00:00Z "Third title"
+_e2e_exec gh api "$FH_R/issues/7/events"
+e2e_expect_equal '[{"from":"New title","to":"Third title","actor":null}]' "$(fh_q '[.[] | select(.event == "renamed")][1:] | map({from: .rename.from, to: .rename.to, actor: .actor})')" "a rename with no actor"
+
+_flow_test_begin "factory helpers: permissions, edits, labels, assignees, issue edit, pulls and closing through the world stub (H12, H15)"
+e2e_describe "each read and write form B4 and B6 use, against values this scenario set"
+fe_world_perm triager triage
+fe_world_perm ghost status:404
+fe_world_knob permission_fails '["flaky"]'
+fe_world_perm flaky write
+_e2e_exec gh api "$FH_R/collaborators/triager/permission"
+e2e_expect_equal '"triage read"' "$(fh_q '"\(.role_name) \(.permission)"')" "triage: role_name triage, legacy permission read"
+_e2e_exec gh api "$FH_R/collaborators/ghost/permission"
+e2e_expect_equal "1" "$E2E_RC" "a status:404 entry"
+e2e_expect_err "HTTP 404"
+_e2e_exec gh api "$FH_R/collaborators/flaky/permission"
+e2e_expect_err "HTTP 502"
+_e2e_exec gh api "$FH_R/collaborators/nobody/permission"
+e2e_expect_equal "1" "$E2E_RC" "a login with no entry"
+fe_world_edit issue:7 outsider 2026-11-17T03:00:00Z
+fe_world_edit issue:7 alice 2026-11-17T04:00:00Z
+fe_world_edit comment:12 - 2026-11-17T05:00:00Z
+_e2e_exec gh api graphql -f 'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){lastEditedAt}}}' -f owner=flow-e2e -f name=scratch -F number=7
+e2e_expect_equal "0" "$E2E_RC" "the graphql read ($E2E_ERR)"
+e2e_expect_equal '{"last":"2026-11-17T04:00:00Z","editor":"alice","edits":["alice","outsider"]}' "$(fh_q '.data.repository.issue | {last: .lastEditedAt, editor: .editor.login, edits: [.userContentEdits.nodes[].editor.login]}')" "the issue body's edits, newest first"
+e2e_expect_equal '[{"id":11,"editor":null},{"id":12,"editor":null,"at":"2026-11-17T05:00:00Z"}]' "$(fh_q '[.data.repository.issue.comments.nodes[] | {id: .databaseId, editor: .editor} + (if .lastEditedAt then {at: .lastEditedAt} else {} end)]')" "the comments' edits, a null editor kept"
+_e2e_exec gh api --method POST "$FH_R/issues/7/labels" -f 'labels[]=flow:in-progress'
+e2e_expect_equal '["flow:factory","flow:in-progress"]' "$(fh_w '.issues["7"].labels')" "after the label POST"
+_e2e_exec gh api --method DELETE "$FH_R/issues/7/labels/flow%3Ain-progress"
+e2e_expect_equal '["flow:factory"]' "$(fh_w '.issues["7"].labels')" "after the label DELETE"
+_e2e_exec gh api --method POST "$FH_R/issues/7/assignees" -f 'assignees[]=alice'
+e2e_expect_equal '["alice"]' "$(fh_w '.issues["7"].assignees')" "after the assignees POST"
+_e2e_exec gh issue edit 7 --repo flow-e2e/scratch --add-assignee flow-e2e-engine --add-label flow:in-progress
+e2e_expect_equal "0" "$E2E_RC" "gh issue edit ($E2E_ERR)"
+e2e_expect_equal '{"a":["alice","flow-e2e-engine"],"l":["flow:factory","flow:in-progress"]}' "$(fh_w '.issues["7"] | {a: .assignees, l: .labels}')" "after gh issue edit"
+_e2e_exec gh api --method PATCH "$FH_R/issues/comments/12" -f body=edited
+e2e_expect_equal '"edited"' "$(fh_w '.comments["7"][] | select(.id == 12) | .body')" "after the comment PATCH"
+fe_world_pull 31 feature/issue-7-x-2 alice write "Closes #7"
+_e2e_exec gh api "$FH_R/pulls?state=open"
+e2e_expect_equal '[{"n":31,"ref":"feature/issue-7-x-2","body":"Closes #7","by":"alice","head":"flow-e2e/scratch"}]' "$(fh_q '[.[] | {n: .number, ref: .head.ref, body, by: .user.login, head: .head.repo.full_name}]')" "the open pulls"
+_e2e_exec gh api --method PATCH "$FH_R/pulls/31" -f state=closed
+_e2e_exec gh api "$FH_R/pulls?state=open"
+e2e_expect_equal '[]' "$(fh_q '.')" "no open pull after the PATCH"
+e2e_expect_equal '["POST","DELETE","POST","issue edit","PATCH","PATCH"]' "$(fh_w '[.posts[].method]')" "every write in posts, in order"
+fe_world_close 7 alice write 2026-11-17T06:00:00Z not_planned
+_e2e_exec gh api "$FH_R/issues/7"
+e2e_expect_equal '"closed not_planned alice"' "$(fh_q '"\(.state) \(.state_reason) \(.closed_by.login)"')" "the issue after fe_world_close"
+_e2e_exec gh api "$FH_R/issues?labels=flow:factory&state=open&per_page=100"
+e2e_expect_equal '[]' "$(fh_q '.')" "a closed issue is not listed as open"
+_e2e_exec gh api "repos/someone/else/issues/7"
+e2e_expect_equal "1" "$E2E_RC" "a repository the world does not name"
+_e2e_exec gh pr list
+e2e_expect_equal "99" "$E2E_RC" "an unhandled call under a world"
+fi
+
+if fh_run h16; then
+_flow_test_begin "factory helpers: every factory scenario has a local origin, origin/HEAD and a base (H16)"
+fe_new fh-origin-local
+e2e_describe "fe_record gives the scratch repository a local bare origin with origin/main and origin/HEAD, gh-resolved flow-e2e/scratch; fe_job writes base main; a second fe_origin_local after a new commit moves origin/main"
+e2e_repo main
+fe_record
+e2e_expect_equal "$E2E_DIR/origin.git" "$(git -C "$E2E_REPO" remote get-url origin)" "origin, a local path"
+e2e_expect_equal "true" "$(git --git-dir="$E2E_DIR/origin.git" rev-parse --is-bare-repository 2>&1)" "origin is a bare repository"
+e2e_expect_equal "$(git -C "$E2E_REPO" rev-parse HEAD)" "$(git -C "$E2E_REPO" rev-parse refs/remotes/origin/main 2>&1)" "origin/main"
+e2e_expect_equal "refs/remotes/origin/main" "$(git -C "$E2E_REPO" symbolic-ref refs/remotes/origin/HEAD 2>&1)" "origin/HEAD"
+e2e_expect_equal "flow-e2e/scratch" "$(git -C "$E2E_REPO" config remote.origin.gh-resolved)" "gh-resolved"
+_e2e_exec git fetch -q origin main
+e2e_expect_equal "0" "$E2E_RC" "a fetch from the local origin ($E2E_ERR)"
+e2e_expect_equal "0" "$(grep -c 'https://' "$REPO_ROOT/plugins/flow/tests/lib/factory-e2e.sh")" "lines of factory-e2e.sh naming an https address"
+fe_job 7 queued
+e2e_expect_equal '"main"' "$(jq -c .base "$(fe_factory_dir)/jobs/issue-7/job.json")" "job.json base"
+printf 'more\n' > "$E2E_REPO/more.txt"
+_fe_in_scratch git add more.txt
+_fe_in_scratch git commit -q -m more
+fe_origin_local
+e2e_expect_equal "$(git -C "$E2E_REPO" rev-parse HEAD)" "$(git -C "$E2E_REPO" rev-parse refs/remotes/origin/main 2>&1)" "origin/main after a second fe_origin_local"
+fe_record_link
+e2e_expect_equal "$E2E_DIR/origin.git" "$(git -C "$E2E_REPO" remote get-url origin)" "origin after fe_record_link"
+_fe_in_scratch git remote set-url origin "$E2E_DIR/missing.git"
+fe_record
+e2e_expect_equal "$E2E_DIR/missing.git" "$(git -C "$E2E_REPO" remote get-url origin)" "an origin the scenario set is kept by fe_record"
+fe_origin_local
+fe_world_new flow-e2e-engine acme/widgets
+e2e_expect_equal "acme/widgets" "$(git -C "$E2E_REPO" config remote.origin.gh-resolved)" "gh-resolved after fe_world_new"
+fe_origin_local
+e2e_expect_equal "acme/widgets" "$(git -C "$E2E_REPO" config remote.origin.gh-resolved)" "gh-resolved after fe_origin_local under a world"
+fi
+
+if fh_run h17; then
+_flow_test_begin "factory helpers: fe_new drops the last world, and the stub with no world answers the new reads (H17)"
+fe_new fh-world-gone
+e2e_describe "a world in one scenario; fe_new; then FE_WORLD is unset and the stub answers api user and api repos/O/R from its defaults"
+e2e_repo main
+fe_world_new someone-else flow-e2e/scratch
+fe_new fh-world-gone-next
+e2e_repo main
+e2e_expect_equal "" "${FE_WORLD:-}" "FE_WORLD after fe_new"
+_e2e_exec gh api user
+e2e_expect_equal '"flow-e2e-engine User"' "$(fh_q '"\(.login) \(.type)"')" "gh api user with no world"
+_e2e_exec gh api repos/flow-e2e/scratch
+e2e_expect_equal '"flow-e2e/scratch main"' "$(fh_q '"\(.full_name) \(.default_branch)"')" "gh api repos/O/R with no world"
+fi
+
+if fh_run h18; then
+_flow_test_begin "factory helpers: _fe_scratch_env drops the test's XDG_STATE_HOME (H18)"
+fe_new fh-xdg-state
+e2e_describe "XDG_STATE_HOME exported in the test's shell; probe_area run through a helper that uses _fe_scratch_env makes its folder under the scratch HOME's .local/state"
+e2e_repo main
+FH_XDG_KEEP=${XDG_STATE_HOME-__unset__}
+export XDG_STATE_HOME="$E2E_DIR/outer-state"
+FH_AREA=$(_fe_in_scratch "$(fe_python)" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import _flow_factory as ff; print(ff.probe_area("P9"))' "$E2E_ACTIVE_PLUGIN/bin")
+if [ "$FH_XDG_KEEP" = __unset__ ]; then unset XDG_STATE_HOME; else export XDG_STATE_HOME="$FH_XDG_KEEP"; fi
+e2e_expect_equal "$(cd "$E2E_HOME" && pwd -P)/.local/state/flow-factory/probe/P9-1" "$FH_AREA" "the probe folder"
+e2e_expect_equal "absent" "$([ -e "$E2E_DIR/outer-state" ] && echo present || echo absent)" "the exported state folder"
 fi
 
 if fh_run h8; then
