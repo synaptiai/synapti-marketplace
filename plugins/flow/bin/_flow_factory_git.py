@@ -55,6 +55,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 
 import _flow_factory as p0
 from _journal_atomic import JournalAtomicError, _atomic_write
@@ -89,6 +90,23 @@ class CloneConfigChanged(Exception):
 class GitFailed(Exception):
     """A git step exited non-zero or got no answer; the message names the
     step and git's first line on stderr."""
+
+
+class GitTimedOut(GitFailed):
+    """A git step stopped at its timeout, or was not started because the
+    deadline set by set_deadline had passed: no answer, not a refusal."""
+
+
+# The wall-clock time (time.time()) after which no git command runs and by
+# which every one ends: the next pass sets its own deadline, so its git work
+# cannot run past nextBudgetSeconds (AC4). None: only each call's timeout.
+_DEADLINE = [None]
+
+
+def set_deadline(at):
+    """Bound every later git command to end by at (time.time()), or clear
+    the bound with None."""
+    _DEADLINE[0] = at
 
 
 def real_git():
@@ -203,6 +221,11 @@ def _run(argv, cwd, env, timeout):
     """(rc, stdout, stderr) like p0.run_cmd, but decoding bytes that are not
     UTF-8 (a file name a worker chose) without failing."""
     timeout = p0.CALL_TIMEOUT["seconds"] or timeout
+    if _DEADLINE[0] is not None:
+        left = _DEADLINE[0] - time.time()
+        if left < 1:
+            return None, "", f"{p0.TIMED_OUT} 0 s (the deadline had passed; not started)"
+        timeout = min(timeout, left)
     try:
         proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, encoding="utf-8", errors="surrogateescape",
@@ -246,7 +269,8 @@ def _must(fdir, args, clone, copy_dir, extra_env=None, cwd=None):
     """git() in the clone (or cwd), raising GitFailed unless it exits 0."""
     rc, out, err = git(fdir, args, cwd or clone, clone=clone, copy_dir=copy_dir, extra_env=extra_env)
     if rc != 0:
-        raise GitFailed(f"git {args[0]} {p0.exit_text(rc, p0.first_text(err))}")
+        cls = GitTimedOut if rc is None and str(err).startswith(p0.TIMED_OUT) else GitFailed
+        raise cls(f"git {args[0]} {p0.exit_text(rc, p0.first_text(err))}")
     return out
 
 

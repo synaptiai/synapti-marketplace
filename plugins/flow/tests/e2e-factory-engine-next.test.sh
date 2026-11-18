@@ -694,6 +694,31 @@ e2e_expect_equal alive "$(kill -0 "$NX_S" 2>/dev/null && echo alive || echo gone
 e2e_expect_equal "$NX_S" "$(nx_jq "$NX_J/job.json" '.orphan_groups[0].pgid')" "orphan_groups pgid"
 e2e_expect_equal "$(_fe_lstart "$NX_S")" "$(nx_jq "$NX_J/job.json" '.orphan_groups[0].start')" "orphan_groups start (the leader's, read now)"
 kill "$NX_S" 2>/dev/null
+
+fe_new nx8c-git-bounded-by-pass
+# Source: AC4 (next returns within its time budget); plan 2.18 (every call
+# bounded by the time left). A git call that runs out of the pass's time is
+# not read as a failed scan: the job is not parked, and the event waits.
+e2e_describe "nextBudgetSeconds 5; an expired lease (seam group_gone true); every git status in the clone sleeps 20 s"
+nx_seed "d['directive'] = '$D1'; d['stage_launches'] = {'build': 1}; d['holds_slot'] = True"
+nx_plugin 'RUN: true'
+nx_settings '.flow.factory.leaseSeconds = 3 | .flow.factory.nextBudgetSeconds = 5'
+fe_directive "$D1" "d['max_budget_usd'] = 0.5; d['started_at'] = '2026-11-16T00:00:00Z'; d['model'] = 'claude-opus-5-5'"
+NX_DEAD=$(_fe_in_scratch sh -c 'echo $$')
+cat > "$NX_J/directives/$D1.lease.json" <<JSON
+{"directive": "$D1", "kind": "worker", "host": "h", "launcher_pid": $NX_DEAD, "launcher_start": "Mon Nov 16 00:00:00 2026",
+ "started_at": "2026-11-16T00:00:00Z", "heartbeat_at": "2026-11-16T00:00:00Z", "child_pid": null, "child_pgid": null,
+ "child_start": null, "revoked_at": null}
+JSON
+jq '.built_inputs = {"group_gone": true}' "$FE_FIXTURES/seam/ordinary.json" > "$E2E_DIR/nx8c.json"
+NX_REAL_GIT=$(command -v git)
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = status ] && exec sleep 20; done\nexec "%s" "$@"\n' "$NX_REAL_GIT" > "$E2E_BIN/git"
+chmod +x "$E2E_BIN/git"
+nx_next "$E2E_DIR/nx8c.json"
+rm -f "$E2E_BIN/git"
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal yes "$(awk -v e="$NX_ELAPSED" 'BEGIN { print (e < 9) ? "yes" : "no (" e " s)" }')" "next returned within its 5 s budget and a 4 s margin"
+e2e_expect_equal "build null" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state, reason (not parked)"
 fi
 
 # ---------------------------------------------------------------- NX9, NX15

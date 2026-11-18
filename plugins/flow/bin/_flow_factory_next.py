@@ -711,6 +711,11 @@ class JobPass:
                     found = ("nested", nested[0])
         except fgit.CloneConfigChanged as e:
             found = ("config", e.file, e.key)
+        except fgit.GitTimedOut as e:
+            # Out of the pass's time: not an answer either way, and no reason
+            # to park; the event waits for the next pass.
+            self.p.status("other", f"GIT_TIMED_OUT job={self.key} {e}")
+            raise FactFailed(str(e)) from e
         except fgit.GitFailed as e:
             # Never read a failed scan as "no nested repository": park.
             found = ("failed", str(e))
@@ -1461,6 +1466,8 @@ def cmd_next(argv):
     started = time.time()
     paths = jobs.resolve()
     p = Pass(paths, executor, started)
+    # Every engine git command of this pass ends by the pass's deadline.
+    fgit.set_deadline(p.deadline)
     p.phase_a()
     # The platform check runs once per pass; an unreadable record refuses
     # here, before any job is touched.
