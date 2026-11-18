@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+Each entry below describes the change against 3.17.0.
+
 The flow factory is off by default and is not yet usable: it has a job engine
-but no runner, no GitHub writes and no worker sandbox. Nothing changes for a
-repository that does not set `flow.factory.enabled`.
+but no runner, no GitHub writes and no worker sandbox. It stays off unless
+`flow.factory.enabled` is `true` in your user settings; a repository's own
+settings cannot turn it on.
 
 ### Added
 
