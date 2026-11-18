@@ -133,17 +133,7 @@ class FactFailed(Exception):
 
 # ---------------------------------------------------------------- small helpers
 
-def _epoch(text):
-    """Seconds since the epoch of a UTC text (2026-11-16T00:00:00Z, with or
-    without fractions), or None."""
-    if not isinstance(text, str):
-        return None
-    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ"):
-        try:
-            return datetime.strptime(text, fmt).replace(tzinfo=UTC).timestamp()
-        except ValueError:
-            continue
-    return None
+_epoch = jobs.epoch
 
 
 def _utc_at(epoch):
@@ -632,20 +622,10 @@ class Pass:
         return 3 if self.refused else 0
 
 
-def _directive_path(paths, n, did):
-    return os.path.join(jobs.job_dir(paths, n), "directives", did + ".json")
-
-
-def _lease_path(paths, n, did):
-    return os.path.join(jobs.job_dir(paths, n), "directives", did + ".lease.json")
-
-
-def _result_path(paths, n, did):
-    return os.path.join(jobs.job_dir(paths, n), "results", did + ".json")
-
-
-def _report_path(paths, n, did):
-    return os.path.join(jobs.job_dir(paths, n), "directives", did + ".pending-report.jsonl")
+_directive_path = jobs.directive_path
+_lease_path = jobs.lease_path
+_result_path = jobs.result_path
+_report_path = jobs.report_path
 
 
 def directive_open(paths, n, did):

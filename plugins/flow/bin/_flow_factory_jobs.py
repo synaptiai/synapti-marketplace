@@ -50,6 +50,7 @@ import json
 import re
 import subprocess
 import time
+from datetime import UTC, datetime
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
 
 _BIN_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -163,6 +164,45 @@ def _issue(n):
 
 def job_dir(paths, n):
     return os.path.join(paths.fdir, "jobs", f"issue-{_issue(n)}")
+
+
+def directive_path(paths, n, did):
+    """J/directives/<did>.json."""
+    return os.path.join(job_dir(paths, n), "directives", did + ".json")
+
+
+def lease_path(paths, n, did):
+    """J/directives/<did>.lease.json."""
+    return os.path.join(job_dir(paths, n), "directives", did + ".lease.json")
+
+
+def report_path(paths, n, did):
+    """J/directives/<did>.pending-report.jsonl (the shell report's lines)."""
+    return os.path.join(job_dir(paths, n), "directives", did + ".pending-report.jsonl")
+
+
+def results_dir(paths, n):
+    """J/results."""
+    return os.path.join(job_dir(paths, n), "results")
+
+
+def result_path(paths, n, did):
+    """J/results/<did>.json."""
+    return os.path.join(results_dir(paths, n), did + ".json")
+
+
+def epoch(text):
+    """Seconds since the epoch of a UTC text as utc_now writes it
+    (2026-11-16T00:00:00Z), with or without fractions of a second; None for
+    anything else."""
+    if not isinstance(text, str):
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=UTC).timestamp()
+        except ValueError:
+            continue
+    return None
 
 
 def _acquire(path, timeout, name):

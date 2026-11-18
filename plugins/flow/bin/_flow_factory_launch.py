@@ -82,6 +82,8 @@ from _flow_factory import Refused
 import _flow_factory_jobs as jobs
 import _flow_factory_git as fgit
 import _flow_factory_schema as schema
+# The one start-time form every reader and writer of a lease compares.
+from _flow_factory_caller import lstart
 import _flow_stream  # noqa: F401  (ff.result_event and ff.stream_events import it lazily)
 from _journal_atomic import JournalAtomicError, _atomic_write, _read_with_no_follow
 
@@ -128,17 +130,6 @@ def _utc(dt=None):
     return (dt or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def lstart(pid):
-    """The pid's start time in the plan 2.4 form (LC_ALL=C `ps -o lstart=`,
-    outer white space removed), or None when ps prints nothing for it."""
-    try:
-        out = subprocess.run(["/bin/ps", "-o", "lstart=", "-p", str(pid)], env={"LC_ALL": "C"},
-                             capture_output=True, text=True, check=False, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return out.strip() or None
-
-
 def ancestry_pids(pid):
     """[pid, its parent, ..., 1], read with /bin/ps one process at a time;
     the walk stops where ps prints nothing."""
@@ -164,7 +155,7 @@ def _num(value):
     return None if value is None else ff.as_number(jobs.usd(value))
 
 
-def _read_json(path):
+def _read_json_or_raise(path):
     """The JSON value of a regular file read without following a symlink, or
     None when there is no such file. Raises ValueError for a file that
     cannot be read or parsed."""
@@ -204,20 +195,10 @@ def _real_dir(path):
         os.mkdir(path, 0o700)
 
 
-def _job_dir(paths, n):
-    return jobs.job_dir(paths, n)
-
-
-def _directive_path(paths, n, did):
-    return os.path.join(_job_dir(paths, n), "directives", did + ".json")
-
-
-def _lease_path(paths, n, did):
-    return os.path.join(_job_dir(paths, n), "directives", did + ".lease.json")
-
-
-def _results_dir(paths, n):
-    return os.path.join(_job_dir(paths, n), "results")
+_job_dir = jobs.job_dir
+_directive_path = jobs.directive_path
+_lease_path = jobs.lease_path
+_results_dir = jobs.results_dir
 
 
 def _record(paths):
@@ -413,7 +394,7 @@ def cmd_launch(argv):
         raise Refused("interpreter_missing recorded=none next: flow-factory.sh probe --environment")
     with jobs.job_lock(paths, n):
         try:
-            directive = _read_json(_directive_path(paths, n, did))
+            directive = _read_json_or_raise(_directive_path(paths, n, did))
         except ValueError:
             directive = None
         if not isinstance(directive, dict) or schema.validate(directive, jobs.DIRECTIVE_SCHEMA):
@@ -627,7 +608,7 @@ class Launcher:
             # Keep what the engine wrote (revoked_at) and change only these
             # fields.
             try:
-                on_disk = _read_json(path)
+                on_disk = _read_json_or_raise(path)
             except ValueError:
                 on_disk = None
             if isinstance(on_disk, dict):
@@ -660,7 +641,7 @@ class Launcher:
 
     def run(self):
         with jobs.job_lock(self.paths, self.n):
-            directive = _read_json(_directive_path(self.paths, self.n, self.did))
+            directive = _read_json_or_raise(_directive_path(self.paths, self.n, self.did))
             job = jobs.read_job(self.paths, self.n)
             if not isinstance(directive, dict) or not isinstance(job, dict) or not directive.get("started_at"):
                 raise Refused(f"directive_unknown directive={self.did}")

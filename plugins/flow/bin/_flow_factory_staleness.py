@@ -38,7 +38,6 @@ except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
-import calendar
 import json
 import re
 import shutil
@@ -184,15 +183,7 @@ def resume_allowed(record):
     return bool(group_v) and ff.recorded_under("P5", p5, {"claude_version": group_v})
 
 
-def _epoch(text):
-    """A UTC time written as utc_now writes it, as seconds since the epoch, or
-    None."""
-    if not isinstance(text, str):
-        return None
-    try:
-        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
-    except ValueError:
-        return None
+_epoch = jobs.epoch
 
 
 def environment_due(state, settings, now):
