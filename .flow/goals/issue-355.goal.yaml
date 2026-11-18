@@ -1,0 +1,289 @@
+apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: issue-355
+  created_at: '2026-11-18T21:13:23Z'
+  created_by: /flow:start
+  owner: '@me'
+scope:
+  repo: synaptiai/synapti-marketplace
+  branch: feature/issue-355-factory-trusted-text-intake
+  issue: 355
+  journal: .decisions/issue-355.md
+objective:
+  outcome: 'Issue #355 is implemented and verified.'
+  source:
+    issue_title: 'flow factory: only trusted issue text reaches agents, intake triages
+      each issue, and GitHub writes are Tier 2'
+  acceptance_criteria:
+  - id: AC1
+    text: An issue labelled by someone below triage access is not queued.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-text.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC2
+    text: Issue text given to stages holds the body and trusted comments only, fenced;
+      untrusted comments are absent; an edit by an untrusted or unknown account fails
+      closed.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-text.test.sh
+      plugins/flow/tests/e2e-factory-intake.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC3
+    text: A trusted plain comment does not change the issue digest; a trusted `/flow-factory
+      spec` comment does.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-text.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC4
+    text: Intake posts one notice for ACCEPT, NEEDS_INFO or REJECT; a malformed result
+      is retried within the stage run limit (three runs), then the job goes to needs_human.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-intake.test.sh
+      plugins/flow/tests/e2e-factory-transitions.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC5
+    text: In needs-info, a trusted reply naming the question id sends the job back
+      to intake; the same reply from an author without write access counts only after
+      a retry by triage access or higher.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-text.test.sh
+      plugins/flow/tests/e2e-factory-intake.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC6
+    text: A trusted `/flow-factory` comment raises its action; an untrusted one does
+      nothing; an engine comment is never a command.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-commands.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC7
+    text: '`tiers.issueUpdate` takes autonomous, journal and confirm like the other
+      Tier 2 keys, in tier-gate, the settings schema and the docs.'
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-tier-gate.test.sh
+      plugins/flow/tests/e2e-tier-runtime.test.sh plugins/flow/tests/e2e-tier-docs.test.sh
+      plugins/flow/tests/flow-schemas.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC8
+    text: With a confirm key on the job path, the job parks in waiting_operator before
+      it spends anything, and leaves when the key changes or a person confirms.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-github.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC9
+    text: A confirm by intent id shows the exact stored command, and refuses with
+      INTENT_CHANGED when it differs from the one recorded.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-github.test.sh
+      plugins/flow/tests/e2e-factory-engine-person.test.sh plugins/flow/tests/e2e-tier-factory.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC10
+    text: A repeated engine write is skipped because the earlier post is found.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-github.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC11
+    text: In a default-mode session tier-gate asks before person-only commands; in
+      auto mode it denies them.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-tier-factory.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC12
+    text: Every change ships with E2E tests through the harness, each scenario keeps
+      a repeatable artifact, and the full suite passes before the push.
+    verification_command: plugins/flow/tests/run.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: AC13
+    text: Merges to main without a release; the flow version is unchanged.
+    verification_command: git diff --quiet origin/main -- plugins/flow/.claude-plugin/plugin.json
+      .claude-plugin/marketplace.json
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: G1
+    text: 'P2 person_forms_denied is go: tier-gate refuses all person forms in a worker
+      (paid run only after the user go-ahead).'
+    verification_command: jq -e '.probes.P2.parts.person_forms_denied.result == "go"'
+      docs/flow-factory/probes.json
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: G2
+    text: 'P2 stop_caps is go: the factory-mode Stop hook ends a worker within its
+      caps (B16 fallback only on a no-go).'
+    verification_command: jq -e '.probes.P2.parts.stop_caps.result == "go"' docs/flow-factory/probes.json
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: G3
+    text: 'P2 task_completed_refusals is go: TaskCompleted refuses at most 3 times
+      per stage (B16 fallback only on a no-go).'
+    verification_command: jq -e '.probes.P2.parts.task_completed_refusals.result ==
+      "go"' docs/flow-factory/probes.json
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: G4
+    text: 'P9 tier_gate_by_mode is go: asks in default mode, denies in auto mode (the
+      user runs the two sessions before merge).'
+    verification_command: jq -e '.probes.P9.parts.tier_gate_by_mode.result == "go"'
+      docs/flow-factory/probes.json
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: PW1
+    text: Setup and probe warn when issueUpdate is confirm (probe half in 1b).
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-probe.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: C1
+    text: head_sha after rebuild comes from the engine push events line, never the
+      clone.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-person.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+  - id: C2
+    text: Kill fields are kept when a later effect fails.
+    verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-engine-next.test.sh
+    must_pass: true
+    status: pending
+    evidence_ref: null
+specification:
+  non_goals:
+  - No change to `/flow:start` or any other command's issue read (1d).
+  - 'No in-session confirm past tier-gate: in-session always-ask subcommands are still
+    refused with `PERSON_CONFIRM_REQUIRED` until 1c''s heartbeat; no `executor_can_confirm`
+    and no `confirm <intent>` items from `next` (1c).'
+  - No push, `gh pr create`, PR body edit, PR adoption or PR record by the engine
+    (1e, Q11). 1b only makes `rebuild` take head_sha from a `pushed` or `pr_recorded`
+    events line.
+  - No re-vouch by re-adding the queue label (Q3).
+  - 'No P8 run: the triage role is shown with recorded permission fixtures only (Q2).'
+  - No read guard on a worker's own `gh issue view` (design trust_and_untrusted_text
+    L40).
+  - 'No claim that comment commands are person-only: a comment posted with the person''s
+    token counts as the person (design person_channels L59-L65).'
+  - No change to flow behaviour outside a factory except the new `tiers.issueUpdate`
+    key.
+  - No fault-injection key in a shipped module.
+  - No release and no version change (AC13).
+  failure_modes:
+  - '**Timeouts** — the intake judge''s run is ended by flow-judge.sh''s own `timeout`
+    at the intake timeout (exit 124, no reply → stage_failed, one of the three runs);
+    a judge that hangs past the launcher''s limit falls to the lease-expiry rows;
+    a sync over its budget leaves later jobs waiting with no partial facts.'
+  - '**Partial failures** — a POST that fails leaves the intent `recorded` and the
+    next drain looks for its marker first, then retries; a POST that succeeds but
+    whose record is lost is found by its marker; an effect that fails after `kill_current`
+    keeps the kill fields (carry item 2); the process dying after a command''s `store_pending`
+    or after rows 41/41e/41k is recovered on the next pass with one event applied.'
+  - '**Invalid input** — an unparsable or schema-invalid judge reply is stage_failed;
+    an edited outbox body, argv or hash refuses with `INTENT_CHANGED` (exit 3) and
+    nothing runs; a command from an untrusted login raises no event (`UNTRUSTED_COMMAND`);
+    a seam that supplies a built fact refuses with `SEAM_REFUSED`.'
+  - '**Missing context** — a failed permission read counts that login untrusted for
+    the sync; a failed GraphQL edit read, dependency read or `gh api user` makes the
+    sync incomplete, so issue facts raise `FactFailed` and the row waits; an unresolvable
+    base ref or failed fetch counts as confirm (fail closed); no jq where tier-factory
+    applies denies person subcommands; a missing `in/sync/issue-set.json` at row 66i
+    is `issue_set_stale`, nothing launched.'
+  interface_contracts:
+  - '`bin/_flow_factory_text.py`: `spec_input_set(snapshot, needs_info, revouched)
+    -> list`, `render_issue_md(items, others) -> str`, `digest(items) -> str` (sha256
+    over the canonical JSON form of plan 5.3), `command_of(body) -> (name, rest) |
+    None`, `is_command_line(body)`, `is_engine_marker(line)`; untrusted text fenced
+    as `<<<UNTRUSTED_ISSUE_*>>>` with runs of three `<` or `>` neutralised to ‹‹‹
+    / ›››.'
+  - 'Outbox item schema `schemas/v1/factory-outbox.schema.json` (kind `FlowFactoryOutboxItem`):
+    `id`, `job`, `row`, `state_at_write`, `ref`, `kind` (comment, label_add, label_remove,
+    assign_label, pr_close), `blocking`, `key[]`, `argv[]`, `body_file`, `sha256`,
+    `status` (recorded, pending_confirm, confirmed, sent, dropped), `effect`.'
+  - job.json gains optional nullable fields (`base`, `write_seq`, `pending_intent`,
+    `confirmed_intent`, `held_result`, `vouch_at`, `issue_digest`, `baseline_digest`,
+    `needs_info`, `revouched_replies`, `priority_high`, ...); a pending event's `channel`
+    widens to `^(terminal|launcher|session:.+|comment:[0-9]+)$`.
+  - '`tiers.issueUpdate` (autonomous | journal | confirm) in settings.json, schema.json,
+    tier-gate.sh and tier-runtime.sh; covers issue comment, label edit, close, reopen
+    and the REST and GraphQL issue edit forms (Q9).'
+  - 'Comment commands: line 1 `/flow-factory (answer|approve-spec|rework|reject|cancel|spec|retry)
+    ...` from a login with triage access or higher; `/flow-factory answer NI-<k> <text>`
+    for needs-info (Q17).'
+  - Terminal `confirm <intent>` prints the literal, body and sha256 and exits 3 with
+    `INTENT_CHANGED=<id> recorded=<hex> current=<hex>` or `INTENT_NOT_PENDING=<id>
+    pending=<id>`; a `pending_confirm` notice becomes `confirmed` (Q16).
+  - 'Intake judge reply: `{decision: ACCEPT|NEEDS_INFO|REJECT, risk, surfaces, scope,
+    criteria, questions}`, charged from `total_cost_usd`.'
+  risk_map:
+  - area: untrusted_edit window
+    plausible_wrong_version: counts edits before vouch_at, or reads only the last
+      editor
+    discriminating_check: 'edit history [outsider t2, trusted t3] after vouch_at t1
+      → right: untrusted_edit true, row 51b; wrong (last editor only): false, job
+      stays'
+  - area: vouch_at source
+    plausible_wrong_version: takes the first label event or `updated_at`
+    discriminating_check: 'queue label added at t0 and again at t1 by write logins,
+      outsider edit at t2 → right: vouch_at t1 and the edit counts (51b); wrong (first
+      event t0 or updated_at t3): differs'
+  - area: digest input
+    plausible_wrong_version: hashes rendered issue.md or every trusted comment
+    discriminating_check: 'a trusted "thanks" comment added → right: issue_digest
+      unchanged; wrong: changed'
+  - area: command comment in the spec-input set
+    plausible_wrong_version: an `/flow-factory answer NI-1 x` comment counted as a
+      reply and as an answer
+    discriminating_check: 'that comment plus its answers-file entry → right: the set
+      holds `["answer","NI-1","x"]` once, no comment item; wrong: two fenced copies
+      and a different digest'
+  - area: first-line matching
+    plausible_wrong_version: marker or command matched anywhere in the body
+    discriminating_check: 'an engine notice with `/flow-factory reject` on line 2
+      → right: no event; wrong: a reject event'
+  - area: notice dedupe
+    plausible_wrong_version: the T:8u notice posted on every pass that re-applies
+      the stay row
+    discriminating_check: 'two passes with one untrusted reply and an unrelated comment
+      in pass 2 → right: one post; wrong: two'
+constraints:
+  tdd_required: true
+  require_all_pass: true
+  no_calendar_estimates: true
+  no_tier3_without_confirmation: true
+evaluator:
+  type: deterministic
+  command: /flow:goal evaluate
+  judge_agent: goal-evaluator-judge
+  evidence_bundle_format: plugins/flow/references/evidence-bundle-format.md
+  denied_context:
+  - implementation_rationale
+  - self_review_findings
+continuation:
+  mode: flow_managed
+  on_incomplete: continue_next_activity
+  on_blocked: six_field_escalation
+  on_complete: mark_achieved
+  max_iterations: 20
+lifecycle:
+  status: active
+  current_phase: plan
+  current_activity: plan passed the stranger test; build next
+  turns_evaluated: 0
+  last_evaluation:
+    result: incomplete
+    reason: specification captured and plan passed the stranger test
+    at: '2026-11-18T21:13:36Z'
