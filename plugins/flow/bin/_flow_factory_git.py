@@ -164,7 +164,18 @@ def _read_copy(git, copy_dir):
 def _compare(clone, copy_dir):
     """None when the clone's config files equal the prepare copy; else
     (file, key) of the first difference. Runs no git in the clone: each file
-    is read with `git config --file`, cwd the copy's folder."""
+    is read with `git config --file`, cwd the copy's folder.
+
+    Before the config files: the clone's .git must be a real folder (not a
+    symlink or a gitdir file) and must hold no commondir file. Git takes its
+    repository config from the folder a commondir file names, so with one
+    the clone's own .git/config can stay byte-identical while git reads a
+    config the worker wrote (a filter it then runs)."""
+    gitdir = os.path.join(clone, ".git")
+    if os.path.islink(gitdir) or not os.path.isdir(gitdir):
+        return (".git", "<not a directory>")
+    if os.path.lexists(os.path.join(gitdir, "commondir")):
+        return ("commondir", "<present>")
     git = real_git()
     try:
         before = _read_copy(git, copy_dir)
@@ -220,6 +231,12 @@ def git(fdir, args, cwd, clone=None, copy_dir=None, timeout=60, extra_env=None):
         if changed is not None:
             raise CloneConfigChanged(*changed)
     env = git_env(fdir)
+    if clone is not None and os.path.realpath(cwd) == os.path.realpath(clone):
+        # Pin the repository to the clone's own .git, so nothing in the clone
+        # (a commondir or gitdir file written after the check above) can send
+        # git to another folder's config.
+        gitdir = os.path.join(os.path.abspath(clone), ".git")
+        env.update(GIT_DIR=gitdir, GIT_COMMON_DIR=gitdir, GIT_WORK_TREE=os.path.abspath(clone))
     if extra_env:
         env.update(extra_env)
     return _run(git_argv(fdir, args), cwd, env, timeout)

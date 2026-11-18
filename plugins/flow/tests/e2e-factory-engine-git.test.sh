@@ -21,6 +21,9 @@
 #      or on any other git command in the clone (status, reset, clean, the
 #      fetch of its refs)
 #   G6 a missing prepare copy lets git run
+#   G13 the clone's .git redirects git elsewhere while .git/config stays the
+#      same: a .git/commondir naming another git folder (whose config git
+#      then reads), or a .git that is a symlink
 #   G7 the person's global config, or FLOW_TIER_DIR and FLOW_TIER_CALL, reach
 #      git
 #   G8 a flow wrapper git (hooks/shims beside scripts/lib/tier-runtime.sh) is
@@ -274,6 +277,51 @@ e2e_expect_equal "$FG_HEAD" "$E2E_OUT" "the clone's HEAD"
 _e2e_exec git -C "$FG_MAIN" for-each-ref refs/flow-factory
 e2e_expect_equal "" "$E2E_OUT" "refs/flow-factory in the main checkout"
 fg_expect_absent filter-ran
+
+_flow_test_begin "factory git: a .git/commondir naming another git folder stops every git command in the clone, though .git/config is unchanged (G13)"
+fg_setup fg-commondir
+e2e_describe "the clone's .git/config untouched; a copy of its .git with filter.pwn.clean set (a script touching filter-ran), named by .git/commondir; .gitattributes '* filter=pwn'; the raw runner's add -A runs it; then every engine git step refuses"
+cp -R "$FG_C/.git" "$E2E_DIR/other-gitdir"
+fg_marker "$E2E_DIR/filter.sh" filter-ran
+_e2e_exec git config --file "$E2E_DIR/other-gitdir/config" filter.pwn.clean "$E2E_DIR/filter.sh"
+printf '%s\n' "$E2E_DIR/other-gitdir" > "$FG_C/.git/commondir"
+printf '* filter=pwn\n' > "$FG_C/.gitattributes"
+printf 'two\n' > "$FG_C/a.txt"
+fg_py "e = dict(g.git_env(F))
+e['GIT_INDEX_FILE'] = os.path.join(tempfile.mkdtemp(), 'index')
+print('control read-tree rc=%s' % run_cmd(g.git_argv(F, ['read-tree', 'HEAD']), C, e)[0])
+print('control add rc=%s' % run_cmd(g.git_argv(F, ['add', '-A']), C, e)[0])"
+fg_expect_present filter-ran
+printf 'control: the raw runner ran the filter named through commondir (filter-ran written)\n' | _e2e_art
+rm -f "$E2E_DIR/filter-ran"
+fg_py "print('config_changed=%r' % (g.config_changed(C, CD),))
+print('tree_dirty: ' + refused(g.tree_dirty, F, C, CD, 7, 'issue-7-f2'))
+print('snapshot: ' + refused(g.snapshot, F, C, CD, 7, 'stage_failed'))
+print('reset_and_clean: ' + refused(g.reset_and_clean, F, C, CD))
+print('copy_refs_to_main: ' + refused(g.copy_refs_to_main, F, C, MAIN, 7))
+print('git: ' + refused(g.git, F, ['status'], C, C, CD))"
+e2e_expect_equal 0 "$E2E_RC" "the driver's exit status"
+e2e_expect_line "config_changed=('commondir', '<present>')"
+e2e_expect_line "tree_dirty: refused commondir <present>"
+e2e_expect_line "snapshot: refused commondir <present>"
+e2e_expect_line "reset_and_clean: refused commondir <present>"
+e2e_expect_line "copy_refs_to_main: refused commondir <present>"
+e2e_expect_line "git: refused commondir <present>"
+fg_expect_absent filter-ran
+e2e_expect_equal two "$(cat "$FG_C/a.txt")" "a.txt on disk (no reset ran)"
+_e2e_exec git -C "$FG_MAIN" for-each-ref refs/flow-factory
+e2e_expect_equal "" "$E2E_OUT" "refs/flow-factory in the main checkout"
+
+_flow_test_begin "factory git: a clone whose .git is a symlink to a git folder runs no git (G13)"
+fg_setup fg-git-symlink
+e2e_describe "the clone's .git moved aside and replaced by a symlink to it; config_changed and git status"
+mv "$FG_C/.git" "$E2E_DIR/moved-gitdir"
+ln -s "$E2E_DIR/moved-gitdir" "$FG_C/.git"
+fg_py "print('config_changed=%r' % (g.config_changed(C, CD),))
+print('git: ' + refused(g.git, F, ['status'], C, C, CD))"
+e2e_expect_equal 0 "$E2E_RC" "the driver's exit status"
+e2e_expect_line "config_changed=('.git', '<not a directory>')"
+e2e_expect_line "git: refused .git <not a directory>"
 
 _flow_test_begin "factory git: with no prepare copy of the clone's config, no git runs (G6)"
 fg_setup fg-no-copy
@@ -533,7 +581,9 @@ e2e_expect_line "nested=['deep', 'deep2', 'lib.git', 'nocommit', 'src/vendored',
 e2e_plugin_copy bin/_flow_factory_git.py "${FG_GIT_SRC/"$FG_LINE"/        if git(fdir, ['-C', os.path.join(clone, rel), 'rev-parse', '--show-toplevel'], clone, clone, copy_dir)[1].strip() != os.path.realpath(os.path.join(clone, rel)):}"
 fg_nested_driver
 e2e_expect_equal 0 "$E2E_RC" "the driver's exit status (mutant: git rev-parse in the nested folder)"
-e2e_expect_line "nested=['deep/inner/r2', 'nocommit', 'src/vendored', 'withcommit']"
+# What this mutant lists is not checked: git() pins GIT_DIR to the clone's own
+# .git (G13), so its rev-parse answers for the clone. The git call it makes
+# inside a nested folder is what catches it.
 e2e_expect_no_line "git calls in or naming a nested folder: 0"
 FG_WALK='            found.extend(_walk_untracked(clone, rel))'
 case "$FG_GIT_SRC" in *"$FG_WALK"*) e2e_expect_equal found found "the line the walk mutant changes" ;;
