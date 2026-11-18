@@ -586,6 +586,10 @@ class Launcher:
         self.directive = self.job = None
         self.stream = None
         self.interpreter = ""
+        # True once the run's report is applied under the job lock: from then
+        # on a failure (a pause that cannot be written) does not finish the
+        # run again, which charged it a second time.
+        self.applied = False
         self.paths = jobs.resolve(create=False)
         if os.path.realpath(self.paths.fdir) != os.path.realpath(fdir):
             raise Refused(f"factory_dir_mismatch marker={fdir} current={self.paths.fdir}")
@@ -770,6 +774,7 @@ class Launcher:
             self.shell_report(record)
             return
         self.apply(record, charge, dearest, sid, event, outcome)
+        self.applied = True
         if outcome == "usage_limit":
             self.pause()
 
@@ -792,8 +797,15 @@ class Launcher:
         job = jobs.read_job(self.paths, self.n)
         if not isinstance(job, dict):
             raise Refused(f"job_unreadable job=issue-{self.n}")
-        _write_checked(os.path.join(self.rdir, self.did + ".json"), record, "result")
+        result_path = os.path.join(self.rdir, self.did + ".json")
+        if not os.path.lexists(result_path):
+            _write_checked(result_path, record, "result")
         cost = job["cost"]
+        if any(isinstance(r, dict) and r.get("directive") == self.did for r in cost.get("runs") or []):
+            # Applied by an earlier try that failed after writing job.json:
+            # the run is charged once (as the engine's charged() check does).
+            self.log(f"report already applied to job.json for {self.did}; not charged again")
+            return
         charged = charge["charged_usd"]
         cost["usd_total"] = jobs.usd(cost.get("usd_total", 0)) + charged
         cost.setdefault("stage_usd", {})
@@ -825,12 +837,20 @@ class Launcher:
         field gives a reset time; amendments A.8), never earlier than a pause
         already set. The global lock, after the job lock is released."""
         until = _utc(datetime.now(UTC) + timedelta(seconds=USAGE_LIMIT_PAUSE_SECONDS))
-        with jobs.global_lock(self.paths):
-            state = jobs.read_state(self.paths)
-            old = state.get("paused_until")
-            if not (isinstance(old, str) and old > until):
-                state["paused_until"] = until
-            jobs.write_state(self.paths, state)
+        deadline = time.monotonic() + 300
+        while True:
+            try:
+                with jobs.global_lock(self.paths):
+                    state = jobs.read_state(self.paths)
+                    old = state.get("paused_until")
+                    if not (isinstance(old, str) and old > until):
+                        state["paused_until"] = until
+                    jobs.write_state(self.paths, state)
+                return
+            except Refused as r:
+                if not str(r).startswith("lock_timeout") or time.monotonic() > deadline:
+                    raise
+                self.log(f"pause waiting for the global lock: {r}")
 
     def shell_report(self, record):
         """The recorded interpreter is gone: `flow-factory.sh report <id>` as
@@ -862,7 +882,7 @@ class Launcher:
                 if self.proc is not None:
                     self.proc.poll()
                 time.sleep(POLL_SECONDS)
-            if self.directive is not None and self.stream is not None:
+            if self.directive is not None and self.stream is not None and not self.applied:
                 try:
                     self.finish(False)
                     return

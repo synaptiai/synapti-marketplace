@@ -419,6 +419,24 @@ LA_PUS=$(jq -rn --arg t "$LA_PU" '$t | fromdateiso8601' 2>/dev/null)
 if [ -n "$LA_PUS" ] && [ "$LA_PUS" -ge $((LA_T0 + 3600)) ] && [ "$LA_PUS" -le $((LA_T0 + 3660)) ]; then LA_X=yes; else LA_X="no ($LA_PU)"; fi
 e2e_expect_equal yes "$LA_X" "state.json paused_until is 3600 s after the launch"
 
+fe_new la10c-pause-fails-after-charge
+e2e_describe "the run ends with a usage limit and cost 0.30, and state.json cannot be read when the launcher pauses, so the pause fails after the charge was applied"
+la_seed
+la_plugin 'RUN: true'
+fe_worker_says 'worker-result={"type":"result","subtype":"success","is_error":true,"num_turns":1,"total_cost_usd":0.30,"api_error_status":429,"api_error":"usage_limit_reached","terminal_reason":"api_error"}' worker-sleep=3
+la_launch
+e2e_expect_line "LAUNCHED directive=$LA_ID"
+fe_wait_for 15 "[ -f '$E2E_BIN/claude-pid-1' ]"
+printf '{' > "$LA_F/state.json"
+la_wait
+e2e_expect_equal usage_limit "$(la_jq "$LA_J/results/$LA_ID.json" .outcome)" "outcome (the first one, not rewritten)"
+e2e_expect_equal 1 "$(la_jq "$LA_J/job.json" '.cost.runs | length')" "runs charged in job.json"
+e2e_expect_equal 30 "$(la_cents "$LA_J/job.json" .cost.usd_total)" "job cost in cents"
+e2e_expect_equal 30 "$(la_cents "$LA_J/job.json" .cost.stage_usd.build)" "build stage cost in cents"
+e2e_expect_equal 1 "$(grep -c '"type": *"charge"' "$LA_J/events.jsonl" 2>/dev/null)" "charge events"
+if grep -q 'state_unreadable' "$LA_J/results/$LA_ID.launcher.log" 2>/dev/null; then LA_X=yes; else LA_X=no; fi
+e2e_expect_equal yes "$LA_X" "launcher log names the failed pause"
+
 fe_new la10b-api-error
 e2e_describe "the run ends with an overloaded API error (529)"
 la_seed
