@@ -654,12 +654,10 @@ def _engine_lines(paths, table, found, state):
         key, st = job["key"], job["state"]
         jdir = jobs.job_dir(paths, n)
         if table.states.get(st, {}).get("run_by") == "worker" and not fnext.directive_open(paths, n, job.get("directive")):
-            budget = jobs.setting(f"flow.factory.worker.stages.{st}.maxBudgetUsd")
-            if not isinstance(budget, bool) and isinstance(budget, (int, float)) and budget > 0:
-                spent = (job.get("cost") or {}).get("stage_usd", {}).get(st, 0)
-                if jobs.launch_limit(budget, spent, jobs.turn_allowance(job)) is None:
-                    groups["budget"].append(f"PAUSED stage_budget_exhausted job={key} stage={st} next: raise "
-                                            f"flow.factory.worker.stages.{st}.maxBudgetUsd or cancel the job")
+            line = jobs.worker_budget_paused(key, st, jobs.setting(f"flow.factory.worker.stages.{st}.maxBudgetUsd"),
+                                             job)
+            if line:
+                groups["budget"].append(line)
         for entry in job.get("orphan_groups") or []:
             if fnext.orphan_alive(entry):
                 groups["orphan"].append(f"ORPHAN_GROUP job={key} pgid={entry['pgid']} stage={entry['stage']}")

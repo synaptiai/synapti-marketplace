@@ -38,6 +38,9 @@
 #        anyway, or claims the directive
 #   LA23 a launcher that fails leaves no result, so the engine waits on the
 #        directive for ever, or a run that started is not charged
+#   LA24 a launch refused after its directive was read (claude missing, the
+#        io directory or clone gone) leaves no event naming why, so the job
+#        later parks as attempts_exhausted with no reason anywhere
 #
 # Amounts are compared in whole cents (or tenths of a cent) through jq, so
 # 1.2 and 1.20 compare equal and a float's last digit does not matter.
@@ -775,6 +778,8 @@ LA_NOCLAUDE=$(e2e_path_without claude)
 e2e_run_bin PATH="$LA_NOCLAUDE" bin/flow-factory.sh launch "$LA_ID"
 e2e_expect_line "FACTORY_REFUSED=claude_missing directive=$LA_ID"
 e2e_expect_equal 5 "$E2E_RC" "launch exit status"
+e2e_expect_equal 1 "$(jq -c 'select(.type == "launch_not_started" and .reason == "claude_missing" and .directive == "'"$LA_ID"'")' "$LA_J/events.jsonl" 2>/dev/null | wc -l | tr -d ' ')" "launch_not_started claude_missing events"
+e2e_expect_equal null "$(la_jq "$LA_J/directives/$LA_ID.json" .not_started_reason)" "not_started_reason (the directive stays open; its lease expiry counts the attempt)"
 e2e_expect_equal null "$(la_jq "$LA_J/directives/$LA_ID.json" .started_at)" "started_at"
 if [ -e "$LA_J/directives/$LA_ID.lease.json" ]; then LA_X=present; else LA_X=absent; fi
 e2e_expect_equal absent "$LA_X" "lease"
@@ -793,6 +798,7 @@ ln -s "$LA_IO.real" "$LA_IO"
 la_launch
 e2e_expect_line "FACTORY_REFUSED=io_dir_missing directive=$LA_ID"
 e2e_expect_equal 5 "$E2E_RC" "symlinked io_dir exit status"
+e2e_expect_equal 2 "$(jq -c 'select(.type == "launch_not_started" and .reason == "io_dir_missing")' "$LA_J/events.jsonl" 2>/dev/null | wc -l | tr -d ' ')" "launch_not_started io_dir_missing events"
 e2e_expect_equal null "$(la_jq "$LA_J/directives/$LA_ID.json" .started_at)" "started_at"
 e2e_expect_equal 0 "$(la_launches)" "claude launches"
 fi
@@ -817,6 +823,20 @@ e2e_expect_equal null "$(la_jq "$LA_J/results/$LA_ID.json" .event)" "result even
 e2e_expect_equal null "$(la_jq "$LA_J/results/$LA_ID.json" .charged_usd)" "charged"
 e2e_expect_equal 0 "$(find "$LA_J/pending" -type f 2>/dev/null | wc -l | tr -d ' ')" "pending events"
 e2e_expect_equal 1 "$(grep -c 'launcher failed' "$LA_J/results/$LA_ID.launcher.log" 2>/dev/null)" "launcher log records the failure"
+e2e_expect_equal 0 "$(la_launches)" "claude launches"
+e2e_expect_equal 1 "$(jq -c 'select(.type == "launch_not_started" and .reason == "launcher_failed" and .directive == "'"$LA_ID"'")' "$LA_J/events.jsonl" 2>/dev/null | wc -l | tr -d ' ')" "launch_not_started launcher_failed events"
+
+fe_new la23c-launcher-fails-in-constructor
+e2e_describe "the launcher marker run directly with a factory directory that is not the one it resolves (factory_dir_mismatch), whose jobs/issue-7/results folder exists"
+la_seed
+la_plugin 'RUN: true'
+fe_worker_says "worker-result=$LA_SUCCESS"
+LA_OTHER="$E2E_DIR/other-factory"
+mkdir -p "$LA_OTHER/jobs/issue-7/results"
+_e2e_exec "$(fe_python)" -E "$E2E_ACTIVE_PLUGIN/bin/_flow_factory_launch.py" --factory-dir "$LA_OTHER" "$LA_ID"
+e2e_expect_equal 1 "$E2E_RC" "launcher exit status"
+if grep -q 'factory_dir_mismatch' "$LA_OTHER/jobs/issue-7/results/$LA_ID.launcher.log" 2>/dev/null; then LA_X=yes; else LA_X=no; fi
+e2e_expect_equal yes "$LA_X" "the marker's launcher log names factory_dir_mismatch"
 e2e_expect_equal 0 "$(la_launches)" "claude launches"
 
 fe_new la23b-launcher-fails-after-claude

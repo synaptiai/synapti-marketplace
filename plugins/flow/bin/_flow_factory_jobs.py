@@ -508,6 +508,22 @@ def stage_budget_line(stage, stage_budget_usd, stage_spent_usd, allowance_usd):
     return f"FACTORY_REFUSED=stage_budget_exhausted stage={stage} remaining={remaining} needed={needed}"
 
 
+def worker_budget_paused(key, stage, budget, job):
+    """The PAUSED status line when a worker launch of stage would only be
+    refused for its budget, or None: stage_budget_unset when budget (the
+    stage's maxBudgetUsd setting) is missing or not positive, which launch
+    refuses; stage_budget_exhausted when launch_limit leaves no room. The
+    one rule next's worker_precheck and status both print."""
+    if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
+        return (f"PAUSED stage_budget_unset job={key} stage={stage} next: set "
+                f"flow.factory.worker.stages.{stage}.maxBudgetUsd to a positive amount")
+    spent = (job.get("cost") or {}).get("stage_usd", {}).get(stage, 0)
+    if launch_limit(budget, spent, turn_allowance(job)) is None:
+        return (f"PAUSED stage_budget_exhausted job={key} stage={stage} next: raise "
+                f"flow.factory.worker.stages.{stage}.maxBudgetUsd or cancel the job")
+    return None
+
+
 def usd_arg(limit):
     """A limit as the --max-budget-usd argument: 0.50 -> 0.5, 6.16 -> 6.16."""
     return format(usd(limit).normalize(), "f")

@@ -1315,16 +1315,14 @@ class JobPass:
 
     def worker_precheck(self, stage):
         """A status line when a worker launch would only be refused: the stage
-        budget has no room for another run, or the prompt template is
-        missing. None when the launch may go ahead."""
+        budget is unset (missing or not positive) or has no room for another
+        run, or the prompt template is missing. None when the launch may go
+        ahead."""
         budget = self.p.setting(f"flow.factory.worker.stages.{stage}.maxBudgetUsd")
-        if not isinstance(budget, bool) and isinstance(budget, (int, float)) and budget > 0:
-            spent = (self.job.get("cost") or {}).get("stage_usd", {}).get(stage, 0)
-            if jobs.launch_limit(budget, spent, jobs.turn_allowance(self.job)) is None:
-                line = (f"PAUSED stage_budget_exhausted job={self.key} stage={stage} next: raise "
-                        f"flow.factory.worker.stages.{stage}.maxBudgetUsd or cancel the job")
-                self.p.status("budget", line)
-                return line
+        line = jobs.worker_budget_paused(self.key, stage, budget, self.job)
+        if line:
+            self.p.status("budget", line)
+            return line
         template = "resume" if self.start_mode(stage) == "resume" else stage
         if not os.path.isfile(os.path.join(ff.PLUGIN_ROOT, "templates", "factory", f"{template}.prompt.md")):
             line = (f"PAUSED prompt_missing job={self.key} stage={stage} next: add templates/factory/"

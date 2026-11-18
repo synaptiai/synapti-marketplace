@@ -561,6 +561,18 @@ _fe_in_scratch git remote remove origin
 e2e_run_bin bin/flow-factory.sh status
 e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c '^PAUSED sync_repo_unknown next: run gh repo set-default in /')" "the sync_repo_unknown line"
+
+fe_new ps9d-status-budget-unset
+# Source: launch refuses a stage budget that is missing or not positive
+# (stage_budget_unset); worker_precheck says so instead of letting next start
+# a launch that is only refused.
+e2e_describe "job 11 in build with flow.factory.worker.stages.build.maxBudgetUsd set to 0"
+ps_seed
+ps_settings '.flow.factory.worker.stages.build.maxBudgetUsd = 0'
+fe_job 11 build
+e2e_run_bin bin/flow-factory.sh status
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_line "PAUSED stage_budget_unset job=issue-11-j1 stage=build next: set flow.factory.worker.stages.build.maxBudgetUsd to a positive amount"
 fi
 
 # ---------------------------------------------------------------- PS10, PS12

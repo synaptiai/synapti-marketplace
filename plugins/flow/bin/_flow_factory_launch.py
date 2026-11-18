@@ -36,7 +36,10 @@ revokes a lease.
 Refusals print one line and exit 5 (plan 1a, 2.6), or exit 4 for report.
 Refusals from the probe gate, a missing prompt template, the stage budget
 and a judge or directive kind also set the directive's not_started_reason
-and append a launch_not_started event; no attempt is counted.
+and append a launch_not_started event; no attempt is counted. Every other
+refusal after the directive is read appends a launch_not_started event
+naming its reason and leaves the directive open, so its lease expiry
+counts the attempt as before.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -421,71 +424,78 @@ def cmd_launch(argv):
             raise Refused(f"directive_unknown directive={did}")
         if directive.get("started_at") is not None:
             raise Refused(f"directive_started directive={did}")
-        kind = directive["kind"]
-        if kind != "worker":
-            return _not_started(paths, n, job_key, directive, "kind_not_built",
-                                f"FACTORY_REFUSED=kind_not_built directive={did} kind={kind}")
-        if not directive.get("session_id"):
-            raise Refused(f"directive_unknown directive={did}")
-        # The probe gate (T10, plan 2.12). A missing module refuses: an
-        # unchecked record never launches.
+        # A refusal from here on is also an event, so the reason is on
+        # record: next starts launch with its output on /dev/null.
         try:
-            import _flow_factory_staleness as staleness
-        except ModuleNotFoundError as e:
-            if e.name != "_flow_factory_staleness":
-                raise
-            raise Refused("probes_unchecked (the staleness module is missing)")
-        # claude is looked up before the gate, which runs `claude --version`
-        # and would report a missing claude as a stale platform.
-        claude = shutil.which("claude")
-        if not claude:
-            raise Refused(f"claude_missing directive={did}")
-        line = staleness.launch_gate(paths.fdir, kind, jobs.setting)
-        if line:
-            return _not_started(paths, n, job_key, directive, "probes_stale", line)
-        plugin = ff.PLUGIN_ROOT
-        if not os.path.isfile(template_path(plugin, directive)):
-            return _not_started(paths, n, job_key, directive, "prompt_missing",
-                                f"FACTORY_REFUSED=prompt_missing stage={stage}")
-        if _inside(plugin, paths.main) or _inside(plugin, job.get("worktree")):
-            raise Refused("plugin_inside_repository")
-        io_dir = job.get("io_dir")
-        if not isinstance(io_dir, str) or not os.path.isabs(io_dir) or os.path.islink(io_dir) \
-                or not os.path.isdir(io_dir):
-            raise Refused(f"io_dir_missing directive={did}")
-        worktree = job.get("worktree")
-        if not isinstance(worktree, str) or not os.path.isabs(worktree) or os.path.islink(worktree) \
-                or not os.path.isdir(worktree):
-            raise Refused(f"worktree_missing directive={did}")
-        if directive["start_mode"] == "resume" and not (job.get("sessions") or {}).get(stage):
-            raise Refused(f"resume_session_missing directive={did} stage={stage}")
-        budget = jobs.setting(f"flow.factory.worker.stages.{stage}.maxBudgetUsd")
-        if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
-            raise Refused(f"stage_budget_unset stage={stage}")
-        spent = (job.get("cost") or {}).get("stage_usd", {}).get(stage, 0)
-        allowance = jobs.turn_allowance(job)
-        limit = jobs.launch_limit(budget, spent, allowance)
-        if limit is None:
-            return _not_started(paths, n, job_key, directive, "stage_budget_exhausted",
-                                jobs.stage_budget_line(stage, budget, spent, allowance))
-        model = _model(directive, record)
-        if not model:
-            raise Refused(f"model_unknown directive={did} next: set flow.factory.worker.model or "
-                          "run flow-factory.sh probe --platform")
-        # in/ first: a refusal there leaves the tree as it was, so a retry
-        # still finds the dirty tree and snapshots it.
-        try:
-            rewrite_in(paths, n, job)
-        except (OSError, JournalAtomicError) as e:
-            raise Refused(f"io_dir_unwritable directive={did} {getattr(e, 'strerror', None) or e}")
-        if directive["start_mode"] == "fresh":
-            snap = _fresh_tree(paths, n, job, did)
-            if snap:
-                directive["snapshot_ref"] = snap
-        directive["started_at"] = _utc()
-        directive["max_budget_usd"] = _num(limit)
-        directive["model"] = model
-        _write_checked(_directive_path(paths, n, did), directive, None)
+            kind = directive["kind"]
+            if kind != "worker":
+                return _not_started(paths, n, job_key, directive, "kind_not_built",
+                                    f"FACTORY_REFUSED=kind_not_built directive={did} kind={kind}")
+            if not directive.get("session_id"):
+                raise Refused(f"directive_unknown directive={did}")
+            # The probe gate (T10, plan 2.12). A missing module refuses: an
+            # unchecked record never launches.
+            try:
+                import _flow_factory_staleness as staleness
+            except ModuleNotFoundError as e:
+                if e.name != "_flow_factory_staleness":
+                    raise
+                raise Refused("probes_unchecked (the staleness module is missing)")
+            # claude is looked up before the gate, which runs `claude --version`
+            # and would report a missing claude as a stale platform.
+            claude = shutil.which("claude")
+            if not claude:
+                raise Refused(f"claude_missing directive={did}")
+            line = staleness.launch_gate(paths.fdir, kind, jobs.setting)
+            if line:
+                return _not_started(paths, n, job_key, directive, "probes_stale", line)
+            plugin = ff.PLUGIN_ROOT
+            if not os.path.isfile(template_path(plugin, directive)):
+                return _not_started(paths, n, job_key, directive, "prompt_missing",
+                                    f"FACTORY_REFUSED=prompt_missing stage={stage}")
+            if _inside(plugin, paths.main) or _inside(plugin, job.get("worktree")):
+                raise Refused("plugin_inside_repository")
+            io_dir = job.get("io_dir")
+            if not isinstance(io_dir, str) or not os.path.isabs(io_dir) or os.path.islink(io_dir) \
+                    or not os.path.isdir(io_dir):
+                raise Refused(f"io_dir_missing directive={did}")
+            worktree = job.get("worktree")
+            if not isinstance(worktree, str) or not os.path.isabs(worktree) or os.path.islink(worktree) \
+                    or not os.path.isdir(worktree):
+                raise Refused(f"worktree_missing directive={did}")
+            if directive["start_mode"] == "resume" and not (job.get("sessions") or {}).get(stage):
+                raise Refused(f"resume_session_missing directive={did} stage={stage}")
+            budget = jobs.setting(f"flow.factory.worker.stages.{stage}.maxBudgetUsd")
+            if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
+                raise Refused(f"stage_budget_unset stage={stage}")
+            spent = (job.get("cost") or {}).get("stage_usd", {}).get(stage, 0)
+            allowance = jobs.turn_allowance(job)
+            limit = jobs.launch_limit(budget, spent, allowance)
+            if limit is None:
+                return _not_started(paths, n, job_key, directive, "stage_budget_exhausted",
+                                    jobs.stage_budget_line(stage, budget, spent, allowance))
+            model = _model(directive, record)
+            if not model:
+                raise Refused(f"model_unknown directive={did} next: set flow.factory.worker.model or "
+                              "run flow-factory.sh probe --platform")
+            # in/ first: a refusal there leaves the tree as it was, so a retry
+            # still finds the dirty tree and snapshots it.
+            try:
+                rewrite_in(paths, n, job)
+            except (OSError, JournalAtomicError) as e:
+                raise Refused(f"io_dir_unwritable directive={did} {getattr(e, 'strerror', None) or e}")
+            if directive["start_mode"] == "fresh":
+                snap = _fresh_tree(paths, n, job, did)
+                if snap:
+                    directive["snapshot_ref"] = snap
+            directive["started_at"] = _utc()
+            directive["max_budget_usd"] = _num(limit)
+            directive["model"] = model
+            _write_checked(_directive_path(paths, n, did), directive, None)
+        except Refused as r:
+            jobs.append_event(paths, n, {"type": "launch_not_started", "job": job_key, "directive": did,
+                                         "reason": str(r).split()[0], "detail": str(r)})
+            raise
     _spawn(interpreter, paths.fdir, did)
     _print(f"LAUNCHED directive={did}")
     return 0
@@ -573,9 +583,10 @@ class Launcher:
         if not m:
             raise Refused("directive_id_invalid")
         self.did = did
+        self.job_key = m.group(1)
         self.n = int(m.group(2))
-        # The marker's F names where the log goes, so a failure before the
-        # paths are resolved is still recorded.
+        # The marker's F names where the log goes until the paths are
+        # resolved; a failure before then is logged by launcher_main.
         self.rdir = os.path.join(os.path.abspath(fdir), "jobs", f"issue-{self.n}", "results")
         self.pid = os.getpid()
         self.start = lstart(self.pid)
@@ -917,6 +928,27 @@ class Launcher:
                 caller = {"pid": self.pid, "start": self.start or "", "ancestry": ancestry_pids(self.pid)}
                 jobs.store_pending(self.paths, self.n, "stage_failed",
                                    {"directive": self.did, "outcome": "no_result"}, "launcher", caller, {})
+            else:
+                # Nothing reads a not_started result; the event says why the
+                # directive closed with no run (the launcher log has the rest).
+                jobs.append_event(self.paths, self.n, {"type": "launch_not_started", "job": self.job_key,
+                                                       "directive": self.did, "reason": "launcher_failed"})
+
+
+def _marker_log(fdir, did, text):
+    """A launcher that failed before it resolved its paths: append text to
+    the launcher log under the marker's F, only when that results folder is
+    already a real directory (nothing is created or replaced for a folder
+    the launcher could not confirm)."""
+    m = DIRECTIVE_ID.match(did)
+    rdir = os.path.join(os.path.abspath(fdir), "jobs", f"issue-{int(m.group(2))}", "results")
+    try:
+        if not stat.S_ISDIR(os.lstat(rdir).st_mode):
+            return
+        with open(os.path.join(rdir, did + ".launcher.log"), "a", encoding="utf-8") as f:
+            f.write(f"{_utc()} {text}\n")
+    except OSError:
+        pass
 
 
 def launcher_main(argv):
@@ -930,6 +962,9 @@ def launcher_main(argv):
     except BaseException as e:  # noqa: BLE001 - nothing reads this process's output
         if launcher is not None:
             launcher.fail_closed(e)
+        else:
+            _marker_log(argv[1], argv[2], "launcher failed before its paths were resolved:\n"
+                        + "".join(traceback.format_exception(e)))
         return 1
 
 
