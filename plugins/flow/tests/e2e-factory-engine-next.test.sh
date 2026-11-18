@@ -54,6 +54,9 @@ source "$REPO_ROOT/plugins/flow/tests/lib/factory-e2e.sh"
 nx_run() { [ -z "${NX_ONLY:-}" ] || [ "$NX_ONLY" = "$1" ]; }
 nx_now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
 nx_secs() { perl -e 'printf "%.2f", $ARGV[1] - $ARGV[0]' "$1" "$2"; }
+# A file's modification time in seconds since the epoch. Not stat: macOS takes
+# -f %m, and GNU stat reads -f as "the file system", whose %m is not a time.
+nx_mtime() { perl -MTime::HiRes=stat -e 'printf "%.3f", (stat $ARGV[0])[9]' "$1"; }
 nx_le() { perl -e 'exit(($ARGV[0] <= $ARGV[1]) ? 0 : 1)' "$1" "$2" && echo yes || echo "no ($1 s)"; }
 
 D1=issue-7-j1-build-1
@@ -218,8 +221,8 @@ fe_bg n1 fe_e ordinary.json next --executor headless
 fe_bg n2 fe_e ordinary.json next --executor headless
 fe_bg_wait n1 15
 fe_bg_wait n2 15
-NX_E1=$(nx_secs "$NX_T0" "$(stat -f %m "$E2E_DIR/bg-n1.rc")")
-NX_E2=$(nx_secs "$NX_T0" "$(stat -f %m "$E2E_DIR/bg-n2.rc")")
+NX_E1=$(nx_secs "$NX_T0" "$(nx_mtime "$E2E_DIR/bg-n1.rc")")
+NX_E2=$(nx_secs "$NX_T0" "$(nx_mtime "$E2E_DIR/bg-n2.rc")")
 printf 'NX1 elapsed: n1 %s s, n2 %s s\n' "$NX_E1" "$NX_E2"
 fe_wait_for 15 "[ -f '$NX_J/directives/$D1.lease.json' ]"
 nx_finish "$D1" 30

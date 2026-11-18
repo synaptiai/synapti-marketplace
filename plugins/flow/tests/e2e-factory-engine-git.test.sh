@@ -607,7 +607,11 @@ fg_nested_driver
 e2e_expect_equal 0 "$E2E_RC" "the driver's exit status (mutant: every untracked folder)"
 e2e_expect_no_line "nested=['deep/inner/r2', 'nocommit', 'src/vendored', 'withcommit']"
 e2e_expect_line "nested=['deep', 'deep2', 'lib.git', 'nocommit', 'src/vendored', 'withcommit']"
-e2e_plugin_copy bin/_flow_factory_git.py "${FG_GIT_SRC/"$FG_LINE"/        if git(fdir, ['-C', os.path.join(clone, rel), 'rev-parse', '--show-toplevel'], clone, clone, copy_dir)[1].strip() != os.path.realpath(os.path.join(clone, rel)):}"
+# The replacement is expanded from a variable: bash 5.2 removes the quotes in
+# a literal replacement word, which turned '-C' into -C (a NameError, not the
+# mutant); bash 3.2 keeps them. The text holds no '&', which 5.2 would expand.
+FG_REVPARSE="        if git(fdir, ['-C', os.path.join(clone, rel), 'rev-parse', '--show-toplevel'], clone, clone, copy_dir)[1].strip() != os.path.realpath(os.path.join(clone, rel)):"
+e2e_plugin_copy bin/_flow_factory_git.py "${FG_GIT_SRC/"$FG_LINE"/$FG_REVPARSE}"
 fg_nested_driver
 e2e_expect_equal 0 "$E2E_RC" "the driver's exit status (mutant: git rev-parse in the nested folder)"
 # What this mutant lists is not checked: git() pins GIT_DIR to the clone's own
