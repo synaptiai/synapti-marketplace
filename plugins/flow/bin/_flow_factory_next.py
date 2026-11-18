@@ -199,15 +199,17 @@ def kill_group(pgid, start, wait):
     new process while any member of the group lives, so a group whose number
     now belongs to a leader with another start time is a new group, and the
     recorded one is gone: it is left alone (amendment A+8). With no recorded
-    start (the launcher's ps failed) a live group cannot be told apart from
-    a new one: it is not signalled and not taken as gone."""
+    start (the launcher's ps failed), a live group whose leader still runs
+    cannot be told apart from a new one: it is not signalled and not taken as
+    gone. A live group with no leader can only be the recorded one (its
+    number is not reused while a member lives), so it is signalled."""
     if not isinstance(pgid, int) or isinstance(pgid, bool) or pgid <= 1:
         return True
     if not _group_exists(pgid):
         return True
-    if not isinstance(start, str):
-        return False
     leader = fcaller.lstart(pgid)
+    if not isinstance(start, str) and leader is not None:
+        return False
     if leader is not None and leader != start:
         return True
     try:
@@ -716,8 +718,7 @@ class JobPass:
     def clone_changed_line(self, wt, found):
         if found[0] == "config":
             _, f, k = found
-            self.p.status("clone", f"CLONE_CONFIG_CHANGED job={self.key} file={f} key={k} next: restore "
-                                   f"{wt}/.git/{f} from {self.jdir}/clone-config/{f}")
+            self.p.status("clone", jobs.clone_changed_line(self.key, wt, self.jdir, f, k))
             ev = {"file": f, "key": k}
         elif found[0] == "nested":
             self.p.status("clone", f"NESTED_REPOSITORY job={self.key} path={found[1]}")
@@ -1446,7 +1447,8 @@ def cmd_next(argv):
     started = time.time()
     paths = jobs.resolve()
     p = Pass(paths, executor, started)
-    # Every engine git command of this pass ends by the pass's deadline.
+    # The read-only git commands that compute this pass's facts end by the
+    # pass's deadline; commands that change a clone are not cut off.
     fgit.set_deadline(p.deadline)
     p.phase_a()
     # The platform check runs once per pass; an unreadable record refuses

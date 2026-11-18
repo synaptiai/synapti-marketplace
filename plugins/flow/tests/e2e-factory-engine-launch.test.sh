@@ -38,6 +38,9 @@
 #        anyway, or claims the directive
 #   LA23 a launcher that fails leaves no result, so the engine waits on the
 #        directive for ever, or a run that started is not charged
+#   LA25 a launcher report retried after a failure part way (store_pending
+#        failing after job.json was charged) charges again, or drops the
+#        stage event, so the stage runs again
 #   LA24 a launch refused after its directive was read (claude missing, the
 #        io directory or clone gone) leaves no event naming why, so the job
 #        later parks as attempts_exhausted with no reason anywhere
@@ -45,7 +48,7 @@
 # Amounts are compared in whole cents (or tenths of a cent) through jq, so
 # 1.2 and 1.20 compare equal and a float's last digit does not matter.
 #
-# LA_ONLY=<id> (LA1 ... LA23, or e.g. LA9vi) runs only that scenario.
+# LA_ONLY=<id> (LA1 ... LA25, or e.g. LA9vi) runs only that scenario.
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -856,6 +859,52 @@ e2e_expect_equal stage_failed "$(la_jq "$LA_J/results/$LA_ID.json" .event)" "res
 e2e_expect_equal 666 "$(la_cents "$LA_J/results/$LA_ID.json" .charged_usd)" "charged in cents"
 e2e_expect_equal limit_plus_turn "$(la_jq "$LA_J/results/$LA_ID.json" .charge_basis)" "basis"
 e2e_expect_equal 1 "$(find "$LA_J/pending" -name '*-stage_failed.json' | wc -l | tr -d ' ')" "pending stage_failed events"
+fi
+
+# ---------------------------------------------------------------- LA25
+if la_run LA25; then
+fe_new la25-apply-retried-after-pending-fails
+# Source: plan 2.4 (the launcher's report: result, charge, charge event and
+# the pending stage event, each once). A retry after a failure part way
+# finishes the steps not done and repeats none.
+e2e_describe "the launcher's apply, run twice in one process, with store_pending failing on the first try only (after job.json was charged)"
+la_seed
+la_plugin 'RUN: true'
+fe_py "import json
+from decimal import Decimal
+import _flow_factory_jobs as jobs
+import _flow_factory_launch as L
+ln = L.Launcher('$LA_F', '$LA_ID')
+ln.directive = json.load(open(L._directive_path(ln.paths, 7, '$LA_ID')))
+ln.job = jobs.read_job(ln.paths, 7)
+L._real_dir(ln.rdir)
+record = {'directive': '$LA_ID', 'outcome': 'completed', 'written_at': '2026-11-18T00:00:00Z',
+          'event': 'stage_succeeded', 'session_id': None, 'num_turns': 1, 'api_error_status': None,
+          'is_error': False, 'permission_denials': None, 'terminal_reason': None, 'charged_usd': 0.05,
+          'charge_basis': 'first_total', 'total_cost_usd': 0.05, 'since_last_usd': None}
+charge = {'charged_usd': Decimal('0.05'), 'basis': 'first_total', 'total_cost_usd': Decimal('0.05'),
+          'since_last_usd': None}
+real, calls = jobs.store_pending, [0]
+def flaky(*a, **k):
+    calls[0] += 1
+    if calls[0] == 1:
+        raise jobs.Refused('pending_unwritable injected')
+    return real(*a, **k)
+jobs.store_pending = flaky
+try:
+    ln.apply(record, charge, None, None, 'stage_succeeded', 'completed')
+    print('first try: applied')
+except jobs.Refused as e:
+    print('first try: refused %s' % e)
+ln.apply(record, charge, None, None, 'stage_succeeded', 'completed')
+print('second try: applied')"
+e2e_expect_equal 0 "$E2E_RC" "the driver's exit status ($E2E_ERR)"
+e2e_expect_line "first try: refused pending_unwritable injected"
+e2e_expect_line "second try: applied"
+e2e_expect_equal 1 "$(find "$LA_J/pending" -name '*-stage_succeeded.json' 2>/dev/null | wc -l | tr -d ' ')" "pending stage_succeeded events"
+e2e_expect_equal 1 "$(la_jq "$LA_J/job.json" '.cost.runs | length')" "runs charged in job.json"
+e2e_expect_equal 5 "$(la_cents "$LA_J/job.json" .cost.usd_total)" "job cost in cents"
+e2e_expect_equal 1 "$(grep -c '"type": *"charge"' "$LA_J/events.jsonl" 2>/dev/null)" "charge events"
 fi
 
 # ---------------------------------------------------------------- reaping

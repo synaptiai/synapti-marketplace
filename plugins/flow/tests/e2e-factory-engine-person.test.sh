@@ -562,6 +562,20 @@ e2e_run_bin bin/flow-factory.sh status
 e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c '^PAUSED sync_repo_unknown next: run gh repo set-default in /')" "the sync_repo_unknown line"
 
+fe_new ps9e-status-commondir
+# Source: G13 (a .git/commondir refuses every git command in the clone); the
+# step that undoes it is removing the file, not restoring it from the
+# prepare copy, which holds none.
+e2e_describe "job 14 parked protected after a clone_config_changed event naming commondir"
+ps_seed
+fe_job 14 needs_human "d['reason'] = 'protected'; d['blocked_stage'] = 'build'"
+ps_ev '{"type":"clone_config_changed","job":"issue-14-j1","time":"2026-11-16T00:20:00Z","pass":"p4","file":"commondir","key":"<present>"}' 14
+ps_ev "$(ps_trans p4 stage_failed build 43x needs_human '[]' '[]' 14)" 14
+PS_WT14=$(ps_jq "$PS_F/jobs/issue-14/job.json" .worktree)
+e2e_run_bin bin/flow-factory.sh status
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_line "CLONE_CONFIG_CHANGED job=issue-14-j1 file=commondir key=<present> next: remove $PS_WT14/.git/commondir"
+
 fe_new ps9d-status-budget-unset
 # Source: launch refuses a stage budget that is missing or not positive
 # (stage_budget_unset); worker_precheck says so instead of letting next start

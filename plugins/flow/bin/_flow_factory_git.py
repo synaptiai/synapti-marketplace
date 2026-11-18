@@ -97,15 +97,19 @@ class GitTimedOut(GitFailed):
     deadline set by set_deadline had passed: no answer, not a refusal."""
 
 
-# The wall-clock time (time.time()) after which no git command runs and by
-# which every one ends: the next pass sets its own deadline, so its git work
-# cannot run past nextBudgetSeconds (AC4). None: only each call's timeout.
+# The wall-clock time (time.time()) after which no bounded git command runs
+# and by which every one ends: the next pass sets its own deadline, so the
+# read-only commands that compute its facts (tree_dirty, nested_repositories)
+# cannot run past nextBudgetSeconds (AC4). Commands that change the clone or
+# the main checkout (snapshot, reset, clean, fetch) are never bounded by it:
+# cut off part way they would leave a lock file or a half-applied effect.
+# None: only each call's timeout.
 _DEADLINE = [None]
 
 
 def set_deadline(at):
-    """Bound every later git command to end by at (time.time()), or clear
-    the bound with None."""
+    """Bound every later read-only fact command to end by at (time.time()),
+    or clear the bound with None."""
     _DEADLINE[0] = at
 
 
@@ -217,11 +221,12 @@ def config_changed(clone, copy_dir):
     return _compare(clone, copy_dir)
 
 
-def _run(argv, cwd, env, timeout):
+def _run(argv, cwd, env, timeout, bounded=False):
     """(rc, stdout, stderr) like p0.run_cmd, but decoding bytes that are not
-    UTF-8 (a file name a worker chose) without failing."""
+    UTF-8 (a file name a worker chose) without failing. bounded: also end by
+    the deadline set_deadline set (read-only fact commands only)."""
     timeout = p0.CALL_TIMEOUT["seconds"] or timeout
-    if _DEADLINE[0] is not None:
+    if bounded and _DEADLINE[0] is not None:
         left = _DEADLINE[0] - time.time()
         if left < 1:
             return None, "", f"{p0.TIMED_OUT} 0 s (the deadline had passed; not started)"
@@ -244,7 +249,7 @@ def _run(argv, cwd, env, timeout):
     return proc.returncode, out, err
 
 
-def git(fdir, args, cwd, clone=None, copy_dir=None, timeout=60, extra_env=None):
+def git(fdir, args, cwd, clone=None, copy_dir=None, timeout=60, extra_env=None, bounded=False):
     """Run the real git with the engine's flags and environment. With clone,
     compare its config with copy_dir first and raise CloneConfigChanged on
     any difference, running nothing. extra_env is added after git_env (the
@@ -262,12 +267,13 @@ def git(fdir, args, cwd, clone=None, copy_dir=None, timeout=60, extra_env=None):
         env.update(GIT_DIR=gitdir, GIT_COMMON_DIR=gitdir, GIT_WORK_TREE=os.path.abspath(clone))
     if extra_env:
         env.update(extra_env)
-    return _run(git_argv(fdir, args), cwd, env, timeout)
+    return _run(git_argv(fdir, args), cwd, env, timeout, bounded)
 
 
-def _must(fdir, args, clone, copy_dir, extra_env=None, cwd=None):
+def _must(fdir, args, clone, copy_dir, extra_env=None, cwd=None, bounded=False):
     """git() in the clone (or cwd), raising GitFailed unless it exits 0."""
-    rc, out, err = git(fdir, args, cwd or clone, clone=clone, copy_dir=copy_dir, extra_env=extra_env)
+    rc, out, err = git(fdir, args, cwd or clone, clone=clone, copy_dir=copy_dir, extra_env=extra_env,
+                       bounded=bounded)
     if rc != 0:
         cls = GitTimedOut if rc is None and str(err).startswith(p0.TIMED_OUT) else GitFailed
         raise cls(f"git {args[0]} {p0.exit_text(rc, p0.first_text(err))}")
@@ -346,7 +352,7 @@ def tree_dirty(fdir, clone, copy_dir, n, goal_id):
     """Whether the clone has any change, untracked files included, other
     than the paths _excludes leaves out."""
     out = _must(fdir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                       "--", "."] + _excludes(fdir, n, goal_id), clone, copy_dir)
+                       "--", "."] + _excludes(fdir, n, goal_id), clone, copy_dir, bounded=True)
     return out != ""
 
 
@@ -441,7 +447,7 @@ def nested_repositories(fdir, clone):
     if copy_dir is None:
         raise CloneConfigChanged("config", NO_COPY)
     out = _must(fdir, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=normal"],
-                clone, copy_dir)
+                clone, copy_dir, bounded=True)
     fields = out.split("\0")
     found = []
     i = 0

@@ -582,6 +582,9 @@ class Launcher:
         # on a failure (a pause that cannot be written) does not finish the
         # run again, which charged it a second time.
         self.applied = False
+        # The steps of _apply_locked done so far in this process, so a retry
+        # after a failure part way does the rest and repeats none.
+        self.apply_done = set()
         self.paths = jobs.resolve(create=False)
         if os.path.realpath(self.paths.fdir) != os.path.realpath(fdir):
             raise Refused(f"factory_dir_mismatch marker={fdir} current={self.paths.fdir}")
@@ -801,36 +804,45 @@ class Launcher:
         if not os.path.lexists(result_path):
             _write_checked(result_path, record, "result")
         cost = job["cost"]
-        if any(isinstance(r, dict) and r.get("directive") == self.did for r in cost.get("runs") or []):
-            # Applied by an earlier try that failed after writing job.json:
-            # the run is charged once (as the engine's charged() check does).
-            self.log(f"report already applied to job.json for {self.did}; not charged again")
-            return
-        charged = charge["charged_usd"]
-        cost["usd_total"] = jobs.usd(cost.get("usd_total", 0)) + charged
-        cost.setdefault("stage_usd", {})
-        cost["stage_usd"][stage] = jobs.usd(cost["stage_usd"].get(stage, 0)) + charged
-        cost.setdefault("runs", []).append({"directive": self.did, "session_id": sid, "charged_usd": charged,
-                                            "basis": charge["basis"], "total_cost_usd": charge["total_cost_usd"],
-                                            "since_last_usd": charge["since_last_usd"]})
-        if dearest is not None:
-            cost["dearest_turn_usd"] = max(jobs.usd(cost.get("dearest_turn_usd", 0)), dearest)
-        if sid and charge["total_cost_usd"] is not None:
-            totals = job.get("last_session_total") or {}
-            totals[sid] = charge["total_cost_usd"]
-            job["last_session_total"] = totals
-        if sid:
-            job.setdefault("sessions", {})[stage] = sid
-        job["updated_at"] = _utc()
-        jobs.write_job(self.paths, job)
-        jobs.append_event(self.paths, self.n, {
-            "type": "charge", "job": job["key"], "directive": self.did, "stage": stage, "session_id": sid,
-            "charged_usd": charged, "basis": charge["basis"], "total_cost_usd": charge["total_cost_usd"],
-            "since_last_usd": charge["since_last_usd"], "dearest_turn_usd": cost["dearest_turn_usd"]})
-        if event:
+        charged = cost.get("runs") or []
+        if "job" not in self.apply_done and any(isinstance(r, dict) and r.get("directive") == self.did
+                                                for r in charged):
+            # job.json already holds this run's charge (as the engine's
+            # charged() check reads it): it is not charged again.
+            self.log(f"report already charged in job.json for {self.did}; not charged again")
+            self.apply_done.add("job")
+        if "job" not in self.apply_done:
+            charged_usd = charge["charged_usd"]
+            cost["usd_total"] = jobs.usd(cost.get("usd_total", 0)) + charged_usd
+            cost.setdefault("stage_usd", {})
+            cost["stage_usd"][stage] = jobs.usd(cost["stage_usd"].get(stage, 0)) + charged_usd
+            cost.setdefault("runs", []).append({"directive": self.did, "session_id": sid,
+                                                "charged_usd": charged_usd, "basis": charge["basis"],
+                                                "total_cost_usd": charge["total_cost_usd"],
+                                                "since_last_usd": charge["since_last_usd"]})
+            if dearest is not None:
+                cost["dearest_turn_usd"] = max(jobs.usd(cost.get("dearest_turn_usd", 0)), dearest)
+            if sid and charge["total_cost_usd"] is not None:
+                totals = job.get("last_session_total") or {}
+                totals[sid] = charge["total_cost_usd"]
+                job["last_session_total"] = totals
+            if sid:
+                job.setdefault("sessions", {})[stage] = sid
+            job["updated_at"] = _utc()
+            jobs.write_job(self.paths, job)
+            self.apply_done.add("job")
+        if "charge_event" not in self.apply_done:
+            jobs.append_event(self.paths, self.n, {
+                "type": "charge", "job": job["key"], "directive": self.did, "stage": stage, "session_id": sid,
+                "charged_usd": charge["charged_usd"], "basis": charge["basis"],
+                "total_cost_usd": charge["total_cost_usd"], "since_last_usd": charge["since_last_usd"],
+                "dearest_turn_usd": cost.get("dearest_turn_usd", 0)})
+            self.apply_done.add("charge_event")
+        if event and "pending" not in self.apply_done:
             caller = {"pid": self.pid, "start": self.start or "", "ancestry": ancestry_pids(self.pid)}
             jobs.store_pending(self.paths, self.n, event, {"directive": self.did, "outcome": outcome},
                                "launcher", caller, {})
+            self.apply_done.add("pending")
 
     def pause(self):
         """A usage limit: state.json paused_until, now + 3600 s (no result

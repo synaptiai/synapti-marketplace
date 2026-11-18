@@ -548,6 +548,20 @@ def stage_budget_line(stage, stage_budget_usd, stage_spent_usd, allowance_usd):
     return f"FACTORY_REFUSED=stage_budget_exhausted stage={stage} remaining={remaining} needed={needed}"
 
 
+def clone_changed_line(key, worktree, jdir, f, k):
+    """The CLONE_CONFIG_CHANGED status line, with the step that undoes the
+    change: a config file is restored from the prepare copy; a commondir
+    file is removed; a .git that is not a real folder is replaced by one. The
+    one line next and status both print."""
+    if f == "commondir":
+        step = f"remove {worktree}/.git/commondir"
+    elif f == ".git":
+        step = f"make {worktree}/.git a real folder again (it is a symlink or a file)"
+    else:
+        step = f"restore {worktree}/.git/{f} from {jdir}/clone-config/{f}"
+    return f"CLONE_CONFIG_CHANGED job={key} file={f} key={k} next: {step}"
+
+
 def worker_budget_paused(key, stage, budget, job):
     """The PAUSED status line when a worker launch of stage would only be
     refused for its budget, or None: stage_budget_unset when budget (the

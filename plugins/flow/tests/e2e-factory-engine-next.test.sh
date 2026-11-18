@@ -695,6 +695,32 @@ e2e_expect_equal "$NX_S" "$(nx_jq "$NX_J/job.json" '.orphan_groups[0].pgid')" "o
 e2e_expect_equal "$(_fe_lstart "$NX_S")" "$(nx_jq "$NX_J/job.json" '.orphan_groups[0].start')" "orphan_groups start (the leader's, read now)"
 kill "$NX_S" 2>/dev/null
 
+fe_new nx8d-leaderless-group-killed
+# Source: A+8 (a process group id is not given to a new group while any
+# member lives); a group whose leader has exited, with no recorded start, can
+# only be the recorded group, so it is killed, not left running untracked.
+e2e_describe "an expired lease, child_start null, naming a group whose leader (sh) has exited while its sleep 60 still runs; the ordinary seam; leaseSeconds 3"
+nx_seed "d['directive'] = '$D1'; d['stage_launches'] = {'build': 1}; d['holds_slot'] = True"
+nx_plugin 'RUN: true'
+nx_settings '.flow.factory.leaseSeconds = 3'
+fe_directive "$D1" "d['max_budget_usd'] = 0.5; d['started_at'] = '2026-11-16T00:00:00Z'; d['model'] = 'claude-opus-5-5'"
+NX_DEAD=$(_fe_in_scratch sh -c 'echo $$')
+NX_PAIR=$(_fe_in_scratch "$(fe_python)" -I -c 'import subprocess; p = subprocess.Popen(["sh", "-c", "sleep 60 >/dev/null 2>&1 & echo $!"], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL); child = p.stdout.readline().strip().decode(); p.wait(); print(p.pid, child)')
+NX_PG=${NX_PAIR% *}; NX_KID=${NX_PAIR#* }
+_fe_register "$NX_KID"
+e2e_expect_equal "gone alive" "$(kill -0 "$NX_PG" 2>/dev/null && echo alive || echo gone) $(kill -0 "$NX_KID" 2>/dev/null && echo alive || echo gone)" "the leader has exited, its child runs"
+fe_mask_pid "$NX_PG" group
+fe_mask_pid "$NX_KID" member
+cat > "$NX_J/directives/$D1.lease.json" <<JSON
+{"directive": "$D1", "kind": "worker", "host": "h", "launcher_pid": $NX_DEAD, "launcher_start": "Mon Nov 16 00:00:00 2026",
+ "started_at": "2026-11-16T00:00:00Z", "heartbeat_at": "2026-11-16T00:00:00Z", "child_pid": $NX_PG, "child_pgid": $NX_PG,
+ "child_start": null, "revoked_at": null}
+JSON
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal gone "$(kill -0 "$NX_KID" 2>/dev/null && echo alive || echo gone)" "the group's remaining member"
+kill "$NX_KID" 2>/dev/null
+
 fe_new nx8c-git-bounded-by-pass
 # Source: AC4 (next returns within its time budget); plan 2.18 (every call
 # bounded by the time left). A git call that runs out of the pass's time is

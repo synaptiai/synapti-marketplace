@@ -21,6 +21,9 @@
 #      or on any other git command in the clone (status, reset, clean, the
 #      fetch of its refs)
 #   G6 a missing prepare copy lets git run
+#   G14 the next pass's deadline cuts off a command that changes the clone
+#      (snapshot, reset, clean), leaving a lock file or half an effect; or
+#      does not stop the read-only fact commands
 #   G13 the clone's .git redirects git elsewhere while .git/config stays the
 #      same: a .git/commondir naming another git folder (whose config git
 #      then reads), or a .git that is a symlink
@@ -322,6 +325,32 @@ print('git: ' + refused(g.git, F, ['status'], C, C, CD))"
 e2e_expect_equal 0 "$E2E_RC" "the driver's exit status"
 e2e_expect_line "config_changed=('.git', '<not a directory>')"
 e2e_expect_line "git: refused .git <not a directory>"
+
+_flow_test_begin "factory git: the pass deadline stops only the read-only fact commands, never a command that changes the clone (G14)"
+fg_setup fg-deadline
+e2e_describe "a dirty clone; set_deadline 10 s in the past; tree_dirty and nested_repositories, then snapshot and reset_and_clean"
+printf 'two\n' > "$FG_C/a.txt"
+fg_py "import time
+g.set_deadline(time.time() - 10)
+def kind(fn, *a):
+    try:
+        return 'ran %r' % (fn(*a),)
+    except g.GitTimedOut as e:
+        return 'timed out'
+    except g.GitFailed as e:
+        return 'failed %s' % e
+print('tree_dirty: ' + kind(g.tree_dirty, F, C, CD, 7, 'issue-7-f2'))
+print('nested_repositories: ' + kind(g.nested_repositories, F, C))
+print('snapshot: ' + kind(g.snapshot, F, C, CD, 7, 'deadline'))
+print('reset_and_clean: ' + kind(g.reset_and_clean, F, C, CD))
+g.set_deadline(None)
+print('tree_dirty after: ' + kind(g.tree_dirty, F, C, CD, 7, 'issue-7-f2'))"
+e2e_expect_equal 0 "$E2E_RC" "the driver's exit status"
+e2e_expect_line "tree_dirty: timed out"
+e2e_expect_line "nested_repositories: timed out"
+e2e_expect_line "snapshot: ran 'refs/flow-factory/issue-7/snapshot-1'"
+e2e_expect_line "reset_and_clean: ran None"
+e2e_expect_line "tree_dirty after: ran False"
 
 _flow_test_begin "factory git: with no prepare copy of the clone's config, no git runs (G6)"
 fg_setup fg-no-copy

@@ -683,8 +683,7 @@ def _engine_lines(paths, table, found, state):
                         groups["clone"].append(f"GIT_FAILED job={key} {msg}")
                 elif c.get("file"):
                     f = c["file"]
-                    groups["clone"].append(f"CLONE_CONFIG_CHANGED job={key} file={f} key={c.get('key')} next: "
-                                           f"restore {job.get('worktree')}/.git/{f} from {jdir}/clone-config/{f}")
+                    groups["clone"].append(jobs.clone_changed_line(key, job.get("worktree"), jdir, f, c.get("key")))
         try:
             items = [x for x in os.listdir(os.path.join(jdir, "outbox")) if x.endswith(".json")]
         except OSError:
