@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+The flow factory is off by default and is not yet usable: it has a job engine
+but no runner, no GitHub writes and no worker sandbox. Nothing changes for a
+repository that does not set `flow.factory.enabled`.
+
+### Added
+
+- The factory's job engine (#354). `bin/flow-factory.sh next` moves each job
+  through the state table in `references/factory-transitions.json`, refuses
+  any move the table does not list (exit 3, `TRANSITION_REFUSED` or
+  `EVENT_REFUSED`), and starts at most `flow.factory.concurrency` workers.
+  Only the engine writes job state, under a lock. `launch` starts a worker
+  with the job's key, issue, branch and goal id in its environment and names
+  its model; before a fresh launch it saves a dirty job clone to
+  `refs/flow-factory/issue-<N>/snapshot-<k>` and resets it. `report` takes a
+  worker's result and charges the run its own cost, not the session total.
+  `status` lists every job and status line, and `rebuild` restores a job's
+  state from its event log. Inside a worker, `context --mode` prints
+  `FACTORY_MODE=on`, or `FACTORY_MODE=invalid` when the worker's job does not
+  check out; outside one it still prints `FACTORY_MODE=off` without starting
+  Python.
+- The person subcommands `answer`, `approve-spec`, `confirm`, `feedback`,
+  `rework`, `retry`, `reject` and `cancel`. Run from a worker, each of them
+  and `rebuild` exits 4 with `PERSON_ONLY_REFUSED`.
+- The `flow.factory.*` settings: `enabled`, `label`, `concurrency`,
+  `maxOpenJobs`, `leaseSeconds`, `heartbeatSeconds`, `nextBudgetSeconds`,
+  `syncIntervalSeconds`, `maxRounds`, and under `worker` the `model`,
+  `extraEnv`, `mcpConfig` and each stage's `maxBudgetUsd`, `timeoutSeconds`
+  and `allowedTools`.
+- `schemas/v1/factory-job.schema.json` and
+  `schemas/v1/factory-directive.schema.json` for job and directive files.
+- The engine checks the phase 0 probe record before it acts. With no record,
+  or with the recorded Python missing, it refuses and names the next step.
+  With an out-of-date platform record, `next` still moves jobs but starts no
+  worker and prints the probe command to run.
+
+### Changed
+
+- `flow-factory.sh` subcommands other than `wait`, `run`, `question`,
+  `runner` and `await` no longer exit 5 with `FACTORY_REFUSED=not_built`.
+  With no probe record the wrapper prints
+  `FACTORY_REFUSED=no_probe_record next: run the phase 0 probes`.
+
 ## 3.17.0 (2026-11-16)
 
 Each entry below describes the change against 3.16.0.
