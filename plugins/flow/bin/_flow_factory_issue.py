@@ -13,11 +13,15 @@ a failed issue read: it makes that login untrusted (person_channels L54).
       .of(login) -> "none"|"read"|"triage"|"write"|"maintain"|"admin"
       .trusted(login, type) -> bool   write or higher, raised by
                                       trustedPermission, never lowered
+      .write(login, type) -> bool     write or higher, whatever
+                                      trustedPermission says
       .triage(login, type) -> bool    triage or higher
-      A login ending in [bot], or of type Bot, is neither trusted nor triage
-      unless trustedBots lists it; for a listed bot its role decides. One
-      read per login per object, a failed read included (it counts as
-      none); the sync makes one object per pass.
+      .open_pulls() -> [pull] or None the repository's open pulls
+      A login ending in [bot], or of type Bot, is none of trusted, write or
+      triage unless trustedBots lists it; for a listed bot its role decides.
+      One read per login per object, and one read of the open pulls, a
+      failed read included (a role counts as none, the pulls as None); the
+      sync makes one object per pass.
   read_issue(gh, repo, n, job, perms) -> snapshot or None
   read_unjobbed(gh, repo, n, perms, settings=None) -> dict or None
   latest_label_event(events, label) -> event or None
@@ -106,6 +110,7 @@ class Permissions:
         bar = setting("flow.factory.trustedPermission", "write")
         self.bar = max(RANK["write"], RANK.get(bar, RANK["write"]) if isinstance(bar, str) else RANK["write"])
         self._roles = {}
+        self._pulls = False
 
     def of(self, login):
         if not isinstance(login, str) or not login:
@@ -119,9 +124,11 @@ class Permissions:
         if not ok or not isinstance(data, dict):
             return "none"
         role = data.get("role_name")
-        if isinstance(role, str) and role in RANK:
-            return role
-        # No role_name, or a custom role: the legacy field's base permission.
+        if isinstance(role, str):
+            # A custom role, or any name not in ROLES, is none: the design
+            # reads role_name only (person_channels item 5).
+            return role if role in RANK else "none"
+        # No role_name: the legacy field, whose triage shows as read (R55).
         legacy = data.get("permission")
         return LEGACY.get(legacy, "none") if isinstance(legacy, str) else "none"
 
@@ -133,8 +140,18 @@ class Permissions:
     def trusted(self, login, typ):
         return self._counts(login, typ) and RANK[self.of(login)] >= self.bar
 
+    def write(self, login, typ):
+        return self._counts(login, typ) and RANK[self.of(login)] >= RANK["write"]
+
     def triage(self, login, typ):
         return self._counts(login, typ) and RANK[self.of(login)] >= RANK["triage"]
+
+    def open_pulls(self):
+        """The open pulls of the repository, all pages, read once for this
+        object; None when that read failed."""
+        if self._pulls is False:
+            self._pulls = _pages(self.gh, f"repos/{self.repo}/pulls?state=open&per_page=100")
+        return self._pulls
 
 
 # reads ---------------------------------------------------------------------
@@ -174,8 +191,10 @@ def _events(raw, perms):
 
 def _edit_list(node, perms):
     """The edits of one GraphQL node, newest first. A history with a next
-    page adds an unknown editor at the oldest time seen, since the edits not
-    read may be as late as that."""
+    page adds an unknown editor at the node's last edit time (lastEditedAt,
+    or a later edit read), since the edits not read may be as late as that
+    whatever order GitHub lists them in; with no readable last edit time
+    its time is None, which counts as after any vouch_at."""
     out = []
 
     def add(editor, at):
@@ -193,9 +212,14 @@ def _edit_list(node, perms):
         add(e.get("editor"), e.get("editedAt"))
     if node.get("lastEditedAt") is not None:
         add(node.get("editor"), node.get("lastEditedAt"))
-    if (hist.get("pageInfo") or {}).get("hasNextPage") is not False:
-        seen = [x["edited_at"] for x in out if isinstance(x["edited_at"], str)]
-        add(None, min(seen) if seen else None)
+    info = hist.get("pageInfo")
+    if not (isinstance(info, dict) and info.get("hasNextPage") is False):
+        last = node.get("lastEditedAt")
+        if jobs.epoch(last) is None:
+            add(None, None)
+        else:
+            seen = [x["edited_at"] for x in out if jobs.epoch(x["edited_at"]) is not None]
+            add(None, max(seen, key=jobs.epoch))
     out.sort(key=lambda x: x["edited_at"] if isinstance(x["edited_at"], str) else "~", reverse=True)
     return out
 
@@ -219,16 +243,21 @@ def _edits(gh, repo, n, perms):
             if edits["issue"] is None:
                 return None
         page = issue["comments"]
-        for node in page.get("nodes") or []:
+        if not isinstance(page.get("nodes"), list):
+            return None
+        for node in page["nodes"]:
             if not isinstance(node, dict) or type(node.get("databaseId")) is not int:
                 return None
             got = _edit_list(node, perms)
             if got is None:
                 return None
             edits[f"comment:{node['databaseId']}"] = got
-        info = page.get("pageInfo") or {}
-        if info.get("hasNextPage") is not True:
+        info = page.get("pageInfo")
+        more = info.get("hasNextPage") if isinstance(info, dict) else None
+        if more is False:
             return edits
+        if more is not True:
+            return None
         after = info.get("endCursor")
         if not isinstance(after, str):
             return None
@@ -267,6 +296,10 @@ def read_issue(gh, repo, n, job, perms):
     edits = _edits(gh, repo, n, perms)
     if edits is None:
         return None
+    # A comment the GraphQL read did not list has edits that cannot be shown;
+    # its editor is unknown, so the read fails (trust_and_untrusted_text L5).
+    if any(f"comment:{c['id']}" not in edits for c in comments):
+        return None
     closer = issue.get("closed_by")
     login, typ = _who(closer)
     snap = {"title": issue.get("title") if isinstance(issue.get("title"), str) else "",
@@ -304,7 +337,10 @@ def latest_label_event(events, label):
 
 
 def read_unjobbed(gh, repo, n, perms, settings=None):
-    """What creation row 1 reads for issue n with no open job, or None."""
+    """What creation row 1 reads for issue n with no open job, or None. The
+    open pulls come from perms, read once per sync. Each closing PR carries
+    write: whether its author has write access or higher (row 1 condition
+    5), which trustedPermission does not raise."""
     setting = _setting(settings)
     issue = _api(gh, f"repos/{repo}/issues/{n}")
     if issue is None:
@@ -312,7 +348,7 @@ def read_unjobbed(gh, repo, n, perms, settings=None):
     raw_events = _pages(gh, f"repos/{repo}/issues/{n}/events?per_page=100")
     if raw_events is None:
         return None
-    pulls = _pages(gh, f"repos/{repo}/pulls?state=open&per_page=100")
+    pulls = perms.open_pulls()
     if pulls is None:
         return None
     ev = latest_label_event(_events(raw_events, perms), setting("flow.factory.label", "flow:factory"))
@@ -332,7 +368,7 @@ def read_unjobbed(gh, repo, n, perms, settings=None):
         login, typ = _who(p.get("user"))
         closing.append({"number": p.get("number"), "head_ref": head.get("ref"),
                         "cross": not isinstance(head_repo, str) or head_repo.lower() != repo.lower(),
-                        "author": login, "author_type": typ, "trusted": perms.trusted(login, typ)})
+                        "author": login, "author_type": typ, "write": perms.write(login, typ)})
     return {"number": n, "state": issue.get("state"),
             "labels": [x.get("name") if isinstance(x, dict) else x for x in issue.get("labels") or []],
             "label_event": label_event, "closing_prs": closing}
@@ -356,13 +392,14 @@ def creation_conditions(unjobbed, local, settings=None):
     terminal = local.get("terminal_vouch_at") or []
     for v in terminal:
         t = jobs.epoch(v)
-        if t is not None and t >= at:
+        # A vouch_at that cannot be read may be at or after the label event.
+        if t is None or t >= at:
             return False
     n = unjobbed.get("number")
     for p in unjobbed.get("closing_prs") or []:
         ref = p.get("head_ref")
         factory = p.get("cross") is False and isinstance(ref, str) and ref.startswith(f"feature/issue-{n}-")
-        if not factory and p.get("trusted") is True:
+        if not factory and p.get("write") is not False:
             return False
     in_progress = setting("flow.factory.labels.inProgress", "flow:in-progress")
     if in_progress in labels and not (local.get("open_job") or terminal):

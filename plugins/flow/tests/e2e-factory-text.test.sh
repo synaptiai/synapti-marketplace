@@ -543,13 +543,17 @@ e2e_expect_line "done"
 #        without reading its role; trustedPermission lowering the bar below
 #        write; triage taken from the legacy permission field; a failed read
 #        cached as a role, or reused by the next sync's reader; one login read
-#        twice in one sync
+#        twice in one sync; a custom repository role trusted through the
+#        legacy permission field, when the design reads role_name only
 #   IS2  (R3, T:creation row 1) vouch taken from the first label event or
 #        from updated_at; a read-only or bot label actor vouching; a terminal
 #        job's vouch_at at the label time not refusing; "Closes #70" blocking
 #        issue 7; a factory branch, or an outsider's fork PR, blocking; a fork
 #        PR with a factory branch name not blocking; a stale in-progress label
-#        ignored with no local job
+#        ignored with no local job; a terminal job whose vouch_at cannot be
+#        read skipped instead of blocking; the closing PR's author held to
+#        the raised trustedPermission bar instead of write; the open pulls
+#        read once per issue instead of once per sync
 #   IS3  (R4, R64, R86, R99) untrusted_edit reads only editor and lastEditedAt,
 #        counts edits made before vouch_at, ignores renamed events or their
 #        null actors, ignores spec-input comment edits, counts edits to
@@ -572,7 +576,14 @@ e2e_expect_line "done"
 #   IS7  a failed read of the issue, its events, its comments or its edit
 #        fields gives a snapshot (the caller must compute nothing); a failed
 #        permission read fails the whole snapshot instead of counting as
-#        untrusted; an event on the second page is missed
+#        untrusted; an event on the second page is missed; a failed read
+#        of the issue, its events or the open pulls in read_unjobbed taken
+#        as empty, so a write author's PR saying Closes #N no longer blocks
+#   IS8  a spec-input comment missing from the GraphQL answer, or a comment
+#        page with no pageInfo or no node list, taken as unedited; an answer
+#        with both data and errors used; a history with more edits than one
+#        page placing the edits not read at the oldest time read, which is
+#        safe only if GitHub lists edits newest first
 #
 # Every expected value is written out by hand from the design line or risk
 # row named in the scenario, never from the module's output.
@@ -671,7 +682,7 @@ fe_world_actor_type deploy-app Bot
 # repository role whose base permission is write.
 _fe_world "legacy and custom permission entries" \
   '.permissions.legacy = {permission: "triage"} | .permissions.custom = {role_name: "docs-writer", permission: "write"}'
-e2e_describe "the permission endpoint per login, with the type the read that named it gives. Expected (design person_channels L54; trust_and_untrusted_text L4; R5, R53, R54, R55, R90): of() is the role_name; a login with no entry (gone) or a 500 is none; with no role_name the legacy field counts, its triage as read (R55); a custom role takes its legacy base permission (Inferred). trusted() is write or higher, triage() is triage or higher (Inferred: the vouch bar of T:creation row 1 and B5's retry bar); a [bot] login or a Bot type is neither unless trustedBots lists it, and then its role decides. trustedPermission admin raises the bar (write is then triage only), triage cannot lower it (R54). One read per login per Permissions object, a failure included; a new object reads again (R5)"
+e2e_describe "the permission endpoint per login, with the type the read that named it gives. Expected (design person_channels L54; trust_and_untrusted_text L4; R5, R53, R54, R55, R90): of() is the role_name; a login with no entry (gone) or a 500 is none; with no role_name the legacy field counts, its triage as read (R55); a custom role is none, because the design reads role_name only (design person_channels item 5 names role_name as the field read; plan B4 outline 2 says role_name only; the legacy field is read only when role_name is absent, R55). trusted() is write or higher, triage() is triage or higher (Inferred: the vouch bar of T:creation row 1 and B5's retry bar); a [bot] login or a Bot type is neither unless trustedBots lists it, and then its role decides. trustedPermission admin raises the bar (write is then triage only), triage cannot lower it (R54). One read per login per Permissions object, a failure included; a new object reads again (R5)"
 read -r -d '' IS_CODE <<'PY' || true
 P = I.Permissions(gh, REPO, setting)
 for login, typ in (('adm', 'User'), ('mnt', 'User'), ('wrt', 'User'), ('tri', 'User'), ('rdr', 'User'),
@@ -715,7 +726,7 @@ e2e_expect_line "p non User of=none trusted=False triage=False"
 e2e_expect_line "p gone User of=none trusted=False triage=False"
 e2e_expect_line "p err User of=none trusted=False triage=False"
 e2e_expect_line "p legacy User of=read trusted=False triage=False"
-e2e_expect_line "p custom User of=write trusted=True triage=True"
+e2e_expect_line "p custom User of=none trusted=False triage=False"
 e2e_expect_line "p ci[bot] User of=write trusted=False triage=False"
 e2e_expect_line "p deploy-app Bot of=write trusted=False triage=False"
 e2e_expect_line "p wrt Bot of=write trusted=False triage=False"
@@ -802,11 +813,15 @@ fe_world_label 19 flow:factory 'ci[bot]' write 2026-11-18T10:00:00Z
 fe_world_issue 20 "Issue 20" "body"
 fe_world_label 20 flow:factory legacy - 2026-11-18T10:00:00Z
 _fe_world "legacy: no role_name, the legacy field says triage" '.permissions.legacy = {permission: "triage"}'
-e2e_describe "T:creation row 1, all six conditions, from read_unjobbed's reads: 7 two write label events at T0 and T1 → label event at T1 by wrt2 (R3), allowed; 8 triage actor → allowed (design trust_and_untrusted_text L2: triage or higher); 9 read actor, 10 a Bot-type actor with write (R90), 11 a read actor after an earlier write one → refused; 12 closed, 18 label removed → refused; 13 an open PR from fix-13 by write saying Closes #13 → refused; 14 a PR saying Closes #140 and a factory-branch PR saying fixes #14 → allowed; 15 a fork PR by a read-only author → allowed; 16 a fork PR with the factory branch name by write → refused; 17 the in-progress label with no local job → refused, with a terminal local job → allowed; 19 ci[bot] with write, not listed → refused (R53); 20 an actor with only the legacy permission triage → refused (R55); 10 again with trustedBots [deploy-app] → allowed (R90). 7 with an open job, or a terminal job vouched at or after T1 → refused; vouched at T0 → allowed. A missing issue → None"
+fe_world_issue 21 "Issue 21" "body"
+fe_world_label 21 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_pull 37 bump-deps 'ci[bot]' write "Closes #21"
+e2e_describe "T:creation row 1, all six conditions, from read_unjobbed's reads: 7 two write label events at T0 and T1 → label event at T1 by wrt2 (R3), allowed; 8 triage actor → allowed (design trust_and_untrusted_text L2: triage or higher); 9 read actor, 10 a Bot-type actor with write (R90), 11 a read actor after an earlier write one → refused; 12 closed, 18 label removed → refused; 13 an open PR from fix-13 by write saying Closes #13 → refused; 14 a PR saying Closes #140 and a factory-branch PR saying fixes #14 → allowed; 15 a fork PR by a read-only author → allowed; 16 a fork PR with the factory branch name by write → refused; 17 the in-progress label with no local job → refused, with a terminal local job → allowed; 19 ci[bot] with write, not listed → refused (R53); 20 an actor with only the legacy permission triage → refused (R55); 10 again with trustedBots [deploy-app] → allowed (R90). 7 with an open job, or a terminal job vouched at or after T1 → refused; vouched at T0 → allowed; a terminal job whose vouch_at is null or not a time → refused (row 1 condition 4 cannot be shown to hold, so creation fails closed: plan 3.1). A missing issue → None. The open pulls are read once per Permissions object, so once per sync however many issues it reads (plan 3.2 budget), and again by a new object. 21 an open PR saying Closes #21 by ci[bot] with write, not in trustedBots → allowed (Inferred: the bot rule of design person_channels item 5 applies to the PR author too, so an unlisted bot's role does not count); 13 with trustedPermission admin → still refused: row 1 condition 5 says write access or higher for the PR author, not the trust bar (design trust_and_untrusted_text L4 lets the setting raise only the trust bar)"
 read -r -d '' IS_CODE <<'PY' || true
 P = I.Permissions(gh, REPO, setting)
 NONE = {'open_job': False, 'terminal_vouch_at': []}
-for n in range(7, 21):
+del CALLS[:]
+for n in range(7, 22):
     u = I.read_unjobbed(gh, REPO, n, P, setting)
     print('c %d %s' % (n, I.creation_conditions(u, NONE, setting)))
 u = I.read_unjobbed(gh, REPO, 7, P, setting)
@@ -815,19 +830,30 @@ print('c 7 event at=%s actor=%s' % (ev['created_at'], ev['actor']))
 print('c 7 open-job %s' % I.creation_conditions(u, {'open_job': True, 'terminal_vouch_at': []}, setting))
 for tag, at in (('at', T1), ('after', T2), ('before', T0)):
     print('c 7 terminal-%s %s' % (tag, I.creation_conditions(u, {'open_job': False, 'terminal_vouch_at': [at]}, setting)))
+for tag, at in (('null', None), ('garbage', 'not a time'), ('null-and-before', T0)):
+    vs = [None, T0] if tag == 'null-and-before' else [at]
+    print('c 7 terminal-%s %s' % (tag, I.creation_conditions(u, {'open_job': False, 'terminal_vouch_at': vs}, setting)))
 u = I.read_unjobbed(gh, REPO, 17, P, setting)
 print('c 17 local %s' % I.creation_conditions(u, {'open_job': False, 'terminal_vouch_at': [T0]}, setting))
 print('c 999 %s' % I.read_unjobbed(gh, REPO, 999, P, setting))
+print('c pulls reads one object=%d' % reads('repos/flow-e2e/scratch/pulls'))
 SET['flow.factory.trustedBots'] = ['deploy-app']
 P = I.Permissions(gh, REPO, setting)
 print('c 10 listed %s' % I.creation_conditions(I.read_unjobbed(gh, REPO, 10, P, setting), NONE, setting))
+print('c pulls reads two objects=%d' % reads('repos/flow-e2e/scratch/pulls'))
+SET['flow.factory.trustedPermission'] = 'admin'
+P = I.Permissions(gh, REPO, setting)
+print('c 13 bar-admin %s' % I.creation_conditions(I.read_unjobbed(gh, REPO, 13, P, setting), NONE, setting))
+print('c 7 bar-admin %s' % I.creation_conditions(I.read_unjobbed(gh, REPO, 7, P, setting), NONE, setting))
 print('done')
 PY
 is_py "$IS_CODE"
 e2e_expect_equal "0" "$E2E_RC" "exit status"
 for IS_L in "7 True" "8 True" "9 False" "10 False" "11 False" "12 False" "13 False" "14 True" "15 True" \
-            "16 False" "17 False" "18 False" "19 False" "20 False" "10 listed True" "7 event at=2026-11-18T10:00:00Z actor=wrt2" "7 open-job False" \
-            "7 terminal-at False" "7 terminal-after False" "7 terminal-before True" "17 local True" "999 None"; do
+            "16 False" "17 False" "18 False" "19 False" "20 False" "21 True" "10 listed True" "7 event at=2026-11-18T10:00:00Z actor=wrt2" "7 open-job False" \
+            "7 terminal-at False" "7 terminal-after False" "7 terminal-before True" "17 local True" "999 None" \
+            "7 terminal-null False" "7 terminal-garbage False" "7 terminal-null-and-before False" \
+            "pulls reads one object=1" "pulls reads two objects=2" "13 bar-admin False" "7 bar-admin True"; do
   e2e_expect_line "c $IS_L"
 done
 e2e_expect_line "done"
@@ -1073,17 +1099,64 @@ e2e_expect_line "no answers key=True"
 e2e_expect_line "done"
 is_no_unhandled
 
+_flow_test_begin "factory issue: read_unjobbed gives no result when its issue, events or open pulls read fails (IS7)"
+fe_new is7-unjobbed-reads
+e2e_repo main
+is_world
+is_issue 85 "body 85"
+fe_world_pull 36 fix-85 wrt write "Closes #85"
+e2e_describe "issue 85 labelled by wrt (write) at T1, with an open PR from fix-85 by wrt saying Closes #85, so creation row 1 condition 5 refuses it. Each read fails in turn through a gh that fails that one path only, with a new Permissions each time. Expected from plan B4 outline 1 and 3.1 (a read that fails gives None and the caller computes nothing): the issue read, the events read and the open pulls read each → None; with none failing → a result whose creation_conditions is False (the PR blocks). A failed pulls read is kept for the sync like a permission read: a second issue read with the same object is also None, with one pulls read"
+read -r -d '' IS_CODE <<'PY2' || true
+def path_of(args):
+    rest = [a for a in args[1:] if not a.startswith('--')]
+    return rest[0].split('?')[0] if rest else None
+def failing(path):
+    def g(args):
+        if path_of(args) == path:
+            CALLS.append(list(args))
+            return False, None
+        return gh(args)
+    return g
+NONE = {'open_job': False, 'terminal_vouch_at': []}
+for tag, path in (('issue', 'repos/flow-e2e/scratch/issues/85'), ('events', 'repos/flow-e2e/scratch/issues/85/events'),
+                  ('pulls', 'repos/flow-e2e/scratch/pulls')):
+    g = failing(path)
+    u = I.read_unjobbed(g, REPO, 85, I.Permissions(g, REPO, setting), setting)
+    print('u %s-fails %s' % (tag, 'none' if u is None else 'result'))
+g = failing('repos/flow-e2e/scratch/pulls')
+P = I.Permissions(g, REPO, setting)
+del CALLS[:]
+first, second = I.read_unjobbed(g, REPO, 85, P, setting), I.read_unjobbed(g, REPO, 85, P, setting)
+print('u pulls-fails twice %s %s reads=%d' % (first, second, reads('repos/flow-e2e/scratch/pulls')))
+u = I.read_unjobbed(gh, REPO, 85, I.Permissions(gh, REPO, setting), setting)
+print('u none-fails %s' % I.creation_conditions(u, NONE, setting))
+print('done')
+PY2
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+e2e_expect_line "u issue-fails none"
+e2e_expect_line "u events-fails none"
+e2e_expect_line "u pulls-fails none"
+e2e_expect_line "u pulls-fails twice None None reads=1"
+e2e_expect_line "u none-fails False"
+e2e_expect_line "done"
+is_no_unhandled
+
 _flow_test_begin "factory issue: the GraphQL edit read follows the comment pages and fails closed on an edit history it cannot finish (IS8)"
 fe_new is8-graphql-pages
 e2e_repo main
 is_world
 fe_world_perm rdr read
-for IS_N in 90 91 92 93; do is_issue "$IS_N" "body $IS_N"; done
+for IS_N in 90 91 92 93 94 95 96 97 98 99; do is_issue "$IS_N" "body $IS_N"; done
 fe_world_edit issue:90 wrt 2026-11-18T11:00:00Z
 fe_world_edit issue:91 wrt 2026-11-18T09:00:00Z
 fe_world_comment 92 9201 wrt write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
 fe_world_comment 93 9301 wrt write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
-e2e_describe "the stand-in never pages GraphQL, so the scenario's gh rewrites its answers. vouch_at T1 (10:00). Expected from design trust_and_untrusted_text L5 (an unknown editor counts as untrusted) and plan B4 outline 1 (a read that fails computes nothing): 90 a body history with a next page whose oldest edit read is 11:00 → untrusted_edit true (the edits not read may be after vouch_at); 91 the same with the oldest read at 09:00 → false (every edit not read is older); 92 the spec comment's node only on the second comment page, edited there by rdr at 11:00 → untrusted_edit true, with two GraphQL calls, the second with after=c2; 93 a next comment page with no cursor → None"
+fe_world_comment 95 9501 wrt write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
+fe_world_edit comment:9501 rdr 2026-11-18T11:00:00Z
+fe_world_comment 96 9601 wrt write 2026-11-18T09:00:00Z "a thought"
+fe_world_comment 98 9801 wrt write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
+e2e_describe "the stand-in never pages GraphQL, so the scenario's gh rewrites its answers. vouch_at T1 (10:00). Expected from design trust_and_untrusted_text L5 (an unknown editor counts as untrusted) and plan B4 outline 1 (a read that fails computes nothing): 90 a body history with a next page whose oldest edit read is 11:00 → untrusted_edit true (the edits not read may be after vouch_at); 91 the same with every edit read, and lastEditedAt, at 09:00 → false (no edit is later than the last one, so none not read is after vouch_at); 94 a history with a next page whose read edits are rdr at 09:00 and whose last edit is wrt at 11:00 → true (the edits not read may lie anywhere up to the last edit at 11:00, whatever order GitHub lists them in, so an unknown editor counts at 11:00); 92 the spec comment's node only on the second comment page, edited there by rdr at 11:00 → untrusted_edit true, with two GraphQL calls, the second with after=c2; 93 a next comment page with no cursor → None; 95 the spec comment 9501, edited by rdr at 11:00, missing from the GraphQL answer → None (the plain read gives true: its edits cannot be shown, and an unknown editor counts as untrusted); 96 a comment page with no pageInfo → None (whether more pages follow is unknown); 97 a comment page whose nodes is null → None; 98 a complete answer that also carries errors → None (a partial answer); 99 a history with a next page whose read edit is rdr at 09:00 and whose lastEditedAt is null → untrusted_edit true (the edits not read have no known time, and an unknown editor counts as untrusted); 90 again with an edit history whose pageInfo is not an object → untrusted_edit true (more edits may exist, up to the last one by wrt at 11:00, which is after vouch_at)"
 read -r -d '' IS_CODE <<'PY' || true
 def issue_of(data):
     return data['data']['repository']['issue']
@@ -1103,6 +1176,33 @@ def two_pages(args, data):
 def no_cursor(args, data):
     issue_of(data)['comments']['pageInfo'] = {'hasNextPage': True, 'endCursor': None}
     return data
+def last_edit_later(args, data):
+    issue = issue_of(data)
+    issue['lastEditedAt'], issue['editor'] = T2, {'login': 'wrt', '__typename': 'User'}
+    issue['userContentEdits'] = {'nodes': [{'editedAt': T0, 'editor': {'login': 'rdr', '__typename': 'User'}}],
+                                 'pageInfo': {'hasNextPage': True, 'endCursor': 'e2'}}
+    return data
+def no_last_edit(args, data):
+    issue = issue_of(data)
+    issue['lastEditedAt'], issue['editor'] = None, None
+    issue['userContentEdits'] = {'nodes': [{'editedAt': T0, 'editor': {'login': 'rdr', '__typename': 'User'}}],
+                                 'pageInfo': {'hasNextPage': True, 'endCursor': 'e2'}}
+    return data
+def bad_edit_page_info(args, data):
+    issue_of(data)['userContentEdits']['pageInfo'] = 'not an object'
+    return data
+def drop_nodes(args, data):
+    issue_of(data)['comments']['nodes'] = []
+    return data
+def drop_page_info(args, data):
+    del issue_of(data)['comments']['pageInfo']
+    return data
+def null_nodes(args, data):
+    issue_of(data)['comments']['nodes'] = None
+    return data
+def with_errors(args, data):
+    data['errors'] = [{'type': 'PARTIAL', 'message': 'some fields could not be read'}]
+    return data
 def with_rewrite(rewrite):
     def g(args):
         ok, data = gh(args)
@@ -1110,13 +1210,18 @@ def with_rewrite(rewrite):
             data = rewrite(args, data)
         return ok, data
     return g
-for n, rw in ((90, more_edits), (91, more_edits), (92, two_pages), (93, no_cursor)):
+for n, rw in ((90, more_edits), (91, more_edits), (92, two_pages), (93, no_cursor), (94, last_edit_later),
+              (95, drop_nodes), (95, lambda a, d: d), (96, drop_page_info), (96, lambda a, d: d), (97, null_nodes),
+              (98, with_errors), (98, lambda a, d: d), (99, no_last_edit)):
     del CALLS[:]
     j = job(n)
     s = I.read_issue(with_rewrite(rw), REPO, n, j, I.Permissions(gh, REPO, setting))
     q = [a for a in CALLS if a[:2] == ['api', 'graphql']]
     got = 'none' if s is None else 'untrusted_edit=%s' % I.facts(s, j, setting)['untrusted_edit']
     print('g %d %s graphql=%d after=%s' % (n, got, len(q), [x for a in q for x in a if x.startswith('after=')]))
+j = job(90)
+s = I.read_issue(with_rewrite(bad_edit_page_info), REPO, 90, j, I.Permissions(gh, REPO, setting))
+print('g 90-bad-page-info %s' % ('none' if s is None else 'untrusted_edit=%s' % I.facts(s, j, setting)['untrusted_edit']))
 print('done')
 PY
 is_py "$IS_CODE"
@@ -1125,5 +1230,16 @@ e2e_expect_line "g 90 untrusted_edit=True graphql=1 after=[]"
 e2e_expect_line "g 91 untrusted_edit=False graphql=1 after=[]"
 e2e_expect_line "g 92 untrusted_edit=True graphql=2 after=['after=c2']"
 e2e_expect_line "g 93 none graphql=1 after=[]"
+e2e_expect_line "g 94 untrusted_edit=True graphql=1 after=[]"
+# 95, 96 and 98 twice: rewritten first, then as the stand-in answers.
+e2e_expect_line "g 95 none graphql=1 after=[]"
+e2e_expect_line "g 95 untrusted_edit=True graphql=1 after=[]"
+e2e_expect_line "g 96 none graphql=1 after=[]"
+e2e_expect_line "g 96 untrusted_edit=False graphql=1 after=[]"
+e2e_expect_line "g 97 none graphql=1 after=[]"
+e2e_expect_line "g 98 none graphql=1 after=[]"
+e2e_expect_line "g 98 untrusted_edit=False graphql=1 after=[]"
+e2e_expect_line "g 99 untrusted_edit=True graphql=1 after=[]"
+e2e_expect_line "g 90-bad-page-info untrusted_edit=True"
 e2e_expect_line "done"
 is_no_unhandled
