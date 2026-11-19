@@ -3110,6 +3110,14 @@ if _want tg-fac-sourcing; then
   _expect_ask "(tiers.issueUpdate)"
   _tg_fac_traced "$(TG_FAC_PAYLOAD 'gh issue comment 5 --body hi')"
   e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced for a command without factory text, factory directory present"
+  # The factory text in any case: a volume that ignores case reaches the
+  # factory directory and the engine's files by any case of their names.
+  # Each command here is one the rules leave to the rest of the hook, so its
+  # trace reaches the hook's own read of the command.
+  for C in 'ls docs/Factory' 'ls docs/FACTORY/x' 'FLOW-FACTORY.SH status' 'python3 bin/_FLOW_FACTORY.py status'; do
+    _tg_fac_traced "$(TG_FAC_PAYLOAD "$C")"
+    e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced for factory text in another case: $C"
+  done
   # A linked worktree: its main checkout has the factory directory.
   ( _e2e_git_env; cd "$E2E_REPO" && git worktree add -q -b wt-branch "$E2E_DIR/linked" ) \
     || _flow_assert_fail "tg-fac-sourcing: could not add the worktree"

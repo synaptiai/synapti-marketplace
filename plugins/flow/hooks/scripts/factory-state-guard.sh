@@ -29,10 +29,15 @@
 # Without jq the path cannot be read: the write is denied when the payload
 # text names the factory directory, absolutely or relative to the
 # repository top (`<runtime dir>/factory` followed by `/` or the end of the
-# string), and allowed otherwise. That text match does not see a path
-# relative to a folder inside the runtime directory (`factory/x` from
-# `.flow`), another case of the name, or a JSON escape in the path, and it
-# also denies a write naming another repository's `<runtime dir>/factory`.
+# string), and allowed otherwise. The text is read in one case, with `\/`
+# read as `/` and `//` and `/./` collapsed, so `.flow//factory`,
+# `.flow/./factory`, `.FLOW/Factory` and `.flow\/factory` are denied. These
+# still pass without jq: a path relative to a folder inside the runtime
+# directory (`factory/x` from `.flow`); a `..` that enters the folder from
+# another one (`.flow/x/../factory/y`); a link to the factory, or to a
+# folder above it, under another name; and a JSON \u escape in the path.
+# The match also denies a write naming another repository's
+# `<runtime dir>/factory`, or another case of it on a volume that keeps case.
 #
 # Output: nothing (allow), or one PreToolUse deny. Exit 0 always.
 
@@ -84,11 +89,25 @@ FDIR_ALT=""
 case "$FDIR_P" in /private/*) FDIR_ALT="${FDIR_P#/private}" ;; /var/*|/tmp/*|/etc/*) FDIR_ALT="/private$FDIR_P" ;; esac
 
 if [ "$HAVE_JQ" = 0 ]; then
-  for S in "$FDIR" "$FDIR_P" ${FDIR_ALT:+"$FDIR_ALT"}; do
-    case "$INPUT" in *"$S"*) deny "This write names a path that $REASON_TAIL" ;; esac
+  # The text and the names in one case, with JSON's \/ read as /, and //
+  # and /./ collapsed until none is left.
+  lower() { printf '%s' "$1" | LC_ALL=C tr 'A-Z' 'a-z'; }
+  TEXT=$(lower "$INPUT") || TEXT="$INPUT"
+  TEXT=${TEXT//'\/'/\/}
+  while :; do
+    case "$TEXT" in
+      *//*) TEXT=${TEXT//\/\//\/} ;;
+      */./*) TEXT=${TEXT//\/.\//\/} ;;
+      *) break ;;
+    esac
   done
-  case "$INPUT" in
-    *"$RT/factory/"*|*"$RT/factory\""*) deny "This write names a path that $REASON_TAIL" ;;
+  for S in "$FDIR" "$FDIR_P" ${FDIR_ALT:+"$FDIR_ALT"}; do
+    SL=$(lower "$S") || SL="$S"
+    case "$TEXT" in *"$SL"*) deny "This write names a path that $REASON_TAIL" ;; esac
+  done
+  RTL=$(lower "$RT") || RTL="$RT"
+  case "$TEXT" in
+    *"$RTL/factory/"*|*"$RTL/factory\""*) deny "This write names a path that $REASON_TAIL" ;;
   esac
   exit 0
 fi

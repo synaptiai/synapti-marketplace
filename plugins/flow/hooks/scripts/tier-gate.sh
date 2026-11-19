@@ -577,8 +577,9 @@ INPUT=$(cat 2>/dev/null) || INPUT=""
 # <main checkout>/<runtime dir>/factory exists for the repository the command
 # runs in (the main checkout is the parent of the common git directory, so a
 # linked worktree finds it). First the payload must name flow-factory,
-# _flow_factory or /factory at all, so an ordinary command costs one text
-# match and nothing is resolved for it.
+# _flow_factory or /factory at all, in any case, so an ordinary command costs
+# one text match and nothing is resolved for it. A link to the factory
+# directory under another name has no such text and is not seen here.
 #
 # The rules file is sourced and _tg_factory_rules is called with INPUT (the
 # raw payload), SCRIPT_DIR and PLUGIN_ROOT set; COMMAND is not read yet, and
@@ -621,8 +622,10 @@ _tg_in_factory() {
   [ -n "$rt" ] && [ -d "$top/$rt/factory" ]
 }
 
+# The names are matched in any case: a volume that ignores case reaches the
+# factory directory and the engine's files by any case of their names.
 case "$INPUT" in
-  *flow-factory*|*_flow_factory*|*/factory*)
+  *[Ff][Ll][Oo][Ww]-[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*|*_[Ff][Ll][Oo][Ww]_[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*|*/[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*)
     if _tg_in_factory; then
       # shellcheck source=lib/tier-factory.sh
       if ! . "$SCRIPT_DIR/lib/tier-factory.sh" 2>/dev/null || ! declare -F _tg_factory_rules >/dev/null; then

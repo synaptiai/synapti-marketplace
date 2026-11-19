@@ -261,6 +261,68 @@ for C in "bash -o pipefail $TF_BIN/flow-factory.sh cancel 7" "bash -O extglob $T
 done
 tf_run FLOW_FACTORY_JOB=issue-7-j1 default "python3 -m _flow_factory cancel 7"
 tf_expect deny "worker: the engine run as a module"
+# Plan 2.4 rule 2 finds a call by program words wherever the shell runs one:
+# eval runs its words as a command; source and `.` run the script word with
+# the words after it; find -exec, -execdir, -ok and -okdir run the program
+# after them (and `{}` is the file find found); a shell or python given its
+# script on its input (-s, -, /dev/stdin, or no script word) runs whatever
+# that input holds (for python, in a command naming _flow_factory.py);
+# xargs adds words from its input; a -c word that is an expansion, or a
+# program word that names the script and expands, may split into several
+# words; a language's -c or -e script that names the engine is not shell
+# this reading can follow. A subcommand word that
+# bash expands ({a,b}, *, ?, [..]), and for answer any later word that bash
+# expands, cannot be read. On a volume that ignores case, FLOW-FACTORY.SH
+# runs the script. Each of these is denied in every mode but default, and in
+# default mode too unless the call is the whole command (Inferred: what an
+# ask would show must be what runs; decision of 2026-11-19).
+TF_SHAPES=('eval flow-factory.sh cancel 7' 'builtin eval flow-factory.sh cancel 7' "eval 'flow-factory.sh cancel 7'" \
+           'find . -maxdepth 0 -exec flow-factory.sh cancel 7 \;' 'find . -maxdepth 0 -execdir flow-factory.sh cancel 7 \;' \
+           'find . -maxdepth 0 -ok flow-factory.sh cancel 7 \;' 'find . -maxdepth 0 -okdir flow-factory.sh cancel 7 \;' \
+           'timeout 5 find . -maxdepth 0 -exec flow-factory.sh cancel 7 \;' "find $TF_BIN -name flow-factory.sh -exec {} cancel 7 \\;" \
+           'flow-factory.sh {cancel,} 7' 'flow-factory.sh c[a]ncel 7' 'flow-factory.sh can*l 7' 'flow-factory.sh cance? 7' \
+           'flow-factory.sh answer NI-1 --te{x,}t yes' 'flow-factory.sh answer NI-1 $OPT yes' \
+           "bash -s cancel 7 < $TF_BIN/flow-factory.sh" "cat $TF_BIN/flow-factory.sh | bash -s cancel 7" \
+           "bash /dev/stdin cancel 7 < $TF_BIN/flow-factory.sh" "bash - cancel 7 < $TF_BIN/flow-factory.sh" "sh < $TF_BIN/flow-factory.sh" \
+           "cat $TF_BIN/_flow_factory.py | python3 - cancel 7" "python3 < $TF_BIN/_flow_factory.py" \
+           'echo cancel 7 | xargs flow-factory.sh' 'xargs -I{} flow-factory.sh {} 7 < subs.txt' \
+           'flow-factory.sh${IFS}cancel${IFS}7' "bash -c 'flow-factory.sh\${IFS}cancel\${IFS}7'" \
+           "X='flow-factory.sh cancel 7'; bash -c \"\$X\"" 'eval eval eval eval eval flow-factory.sh cancel 7' \
+           "source -- $TF_BIN/flow-factory.sh\$X cancel 7" \
+           "python3 -c \"import subprocess; subprocess.run(['flow-factory.sh', 'cancel', '7'])\"" \
+           "node -e \"require('child_process').execSync('flow-factory.sh cancel 7')\"" 'perl -le "system q{flow-factory.sh cancel 7}"' \
+           "node -p \"require('child_process').execSync('flow-factory.sh cancel 7')\"")
+# bash -c five levels deep: deeper than the hook reads, so it is unread.
+TF_DEEP='flow-factory.sh cancel 7'
+for TF_I in 1 2 3 4 5; do TF_DEEP="bash -c $(printf %q "$TF_DEEP")"; done
+TF_SHAPES+=("$TF_DEEP")
+for M in auto default; do
+  for C in "${TF_SHAPES[@]}"; do
+    tf_run "$M" "$C"
+    tf_expect deny "$M mode, a call the shell runs another way: $C"
+    e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "the deny text for: $C"
+  done
+done
+for C in "source $TF_BIN/flow-factory.sh cancel 7" ". $TF_BIN/flow-factory.sh cancel 7" "builtin source $TF_BIN/flow-factory.sh cancel 7" \
+         "bash -c \"bash -c 'flow-factory.sh cancel 7'\"" "$TF_BIN/FLOW-FACTORY.SH cancel 7" \
+         "source -- $TF_BIN/flow-factory.sh cancel 7" "source -p $TF_BIN flow-factory.sh cancel 7" '$FF cancel 7 # flow-factory.sh'; do
+  tf_run auto "$C"
+  tf_expect deny "auto mode, a call the shell runs another way: $C"
+done
+# The same programs with an untiered subcommand or no call are not decided.
+for M in auto default; do
+  for C in 'eval flow-factory.sh status' "source $TF_BIN/flow-factory.sh status" 'find . -name flow-factory.sh' \
+           'find . -name flow-factory.sh -exec ls -l {} \;' 'flow-factory.sh status --json | jq .' 'bash --version && flow-factory.sh status' \
+           "bash $TF_BIN/flow-factory.sh status" 'flow-factory.sh question "q*" --prompt' \
+           '[ -x bin/flow-factory.sh ] && flow-factory.sh status' 'if [[ -d .flow ]]; then flow-factory.sh status; fi' \
+           'flow-factory.sh status | python3 -c "import json,sys; print(json.load(sys.stdin)[\"jobs\"][0])"' \
+           'timeout 5 flow-factory.sh question q1 --prompt "[y/n] ok?"' 'flow-factory.sh status && $EDITOR notes.txt' \
+           $'python3 - <<\'PY\'\nprint("see flow-factory.sh")\nPY' 'perl -p -e "s/a/b/" flow-factory.sh' \
+           "cat $TF_BIN/flow-factory.sh | python3 -"; do
+    tf_run "$M" "$C"
+    tf_expect none "$M mode, no person call: $C"
+  done
+done
 # Plan 2.4: what cannot be read is not asked about. A subcommand word that is
 # a variable, and a command whose quote never closes, are denied in default
 # mode too (Inferred: no ask can show what would run).
@@ -281,7 +343,10 @@ for C in 'true && flow-factory.sh cancel 7' 'cd /tmp && flow-factory.sh confirm 
          'flow-factory.sh retry 7 && gh pr merge 5 --repo o/r --squash' "bash -c 'cd /tmp; flow-factory.sh retry 7'" \
          'flow-factory.sh retry 7 | tee out.txt' 'echo $(flow-factory.sh retry 7)' "FF=$TF_BIN/flow-factory.sh; \"\$FF\" retry 7" \
          'GIT_DIR=/tmp/x.git flow-factory.sh retry 7' 'env FLOW_FACTORY_MAIN=/tmp flow-factory.sh retry 7' 'cd /tmp && flow-factory.sh retry 7' \
-         'sudo -D /tmp flow-factory.sh retry 7' 'bash -c "$X"; flow-factory.sh retry 7' "sh -c ''; flow-factory.sh retry 7"; do
+         'sudo -D /tmp flow-factory.sh retry 7' 'bash -c "$X"; flow-factory.sh retry 7' "sh -c ''; flow-factory.sh retry 7" \
+         'bash -c "$X" flow-factory.sh; flow-factory.sh retry 7' 'bash -c flow-factory.sh; flow-factory.sh retry 7' \
+         "env -C /tmp bash -c 'flow-factory.sh retry 7'" "GIT_DIR=/tmp/x.git bash -c 'flow-factory.sh retry 7'" \
+         'flow-factory.sh retry 7 $(' 'eval flow-factory.sh retry 7'; do
   tf_run default "$C"
   tf_expect deny "default mode, not the whole command: $C"
   e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "the deny text for: $C"
@@ -289,7 +354,9 @@ done
 for C in 'flow-factory.sh retry 7' "bash $TF_BIN/flow-factory.sh retry 7" 'env -u FLOW_FACTORY_JOB flow-factory.sh retry 7' \
          'timeout 5 flow-factory.sh retry 7' 'nohup flow-factory.sh retry 7' "python3 $TF_BIN/_flow_factory.py retry 7" \
          "bash -c 'flow-factory.sh retry 7'" "sh -c 'flow-factory.sh retry 7'" 'flow-factory.sh retry 7 > out.txt' \
-         "bash -o pipefail $TF_BIN/flow-factory.sh retry 7" "python3 -m _flow_factory retry 7"; do
+         "bash -o pipefail $TF_BIN/flow-factory.sh retry 7" "python3 -m _flow_factory retry 7" \
+         "source $TF_BIN/flow-factory.sh retry 7" ". $TF_BIN/flow-factory.sh retry 7" "bash -c \"bash -c 'flow-factory.sh retry 7'\"" \
+         "$TF_BIN/FLOW-FACTORY.SH retry 7"; do
   tf_run default "$C"
   tf_expect ask "default mode, the whole command: $C"
 done
@@ -385,6 +452,18 @@ done
 printf 'x' >> "$(fe_factory_dir)/jobs/issue-7/outbox/$TF_ID.body.md"
 tf_run default "flow-factory.sh confirm $TF_ID"
 tf_expect deny "default mode, the body file changed (INTENT_CHANGED)"
+# A status --intent that exits 0 but whose first line is not the INTENT line
+# of this id (another id, or no INTENT line) shows no literal of this intent,
+# so the call is denied (plan 2.3: the first line is `INTENT id=<id> ...`).
+# A copy of the plugin whose flow-factory.sh is a stand-in; last in this
+# scenario, since the copy stays in use.
+for TF_OUT in "INTENT id=issue-7-j1-4-2 job=issue-7-j1 key=issueUpdate sha256=0" "status: ok"; do
+  e2e_plugin_copy bin/flow-factory.sh "#!/bin/sh
+echo '$TF_OUT'"
+  tf_run default "flow-factory.sh confirm $TF_ID"
+  tf_expect deny "default mode, status --intent exits 0 with the first line: $TF_OUT"
+  e2e_expect_equal "$(tf_terminal "flow-factory.sh confirm $TF_ID")" "$(tf_reason)" "the deny text when the first line is: $TF_OUT"
+done
 e2e_expect_clean_edges
 fi
 
@@ -459,6 +538,17 @@ for C in "flow-factory.sh con''firm x" 'flow-factory.sh "con"firm x' 'flow-facto
   tf_run "PATH=$TF_NOJQ" default "$C"
   tf_expect deny "no jq, not a plain untiered command: $C"
 done
+# The deny shows the command as written: a value with an escaped quote is
+# not cut at that quote (plan 2.4: the terminal text names the command).
+tf_run "PATH=$TF_NOJQ" default 'flow-factory.sh question q1 --prompt "cancel it" --x'
+case "$(tf_reason)" in
+  *'--prompt \"cancel it\" --x'*) _e2e_result pass "no jq: the deny shows the whole command, past an escaped quote" ;;
+  *) _e2e_result fail "no jq: the deny shows the whole command, past an escaped quote (got: $(tf_reason))" ;;
+esac
+# A payload with two command keys: jq reads the last one, so the first one
+# (here an untiered command) cannot be taken for the command.
+e2e_run_hook "PATH=$TF_NOJQ" "$TF_HOOK" "{\"session_id\":\"s-1\",\"cwd\":\"$E2E_REPO\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"flow-factory.sh status\",\"command\":\"flow-factory.sh cancel 7\"}}"
+tf_expect deny "no jq: a payload with two command keys"
 tf_run "PATH=$TF_NOJQ" FLOW_FACTORY_JOB=issue-7-j1 default 'flow-factory.sh context --mode'
 tf_expect none "no jq, worker: context --mode"
 tf_run "PATH=$TF_NOJQ" FLOW_FACTORY_JOB=issue-7-j1 default 'flow-factory.sh status'
@@ -509,13 +599,21 @@ tf_run default "cat $E2E_DIR/links/factory/jobs/issue-5/job.json"
 tf_expect deny "ordinary session, a link to the folder"
 tf_run default "cat --file=$E2E_DIR/links/factory/jobs/issue-5/job.json"
 tf_expect deny "ordinary session, a link to the folder after ="
-if [ "$E2E_REPO/.FLOW/factory" -ef "$TF_F" ]; then
-  tf_run default "cat $E2E_REPO/.FLOW/factory/jobs/issue-5/job.json"
-  tf_expect deny "ordinary session, the folder in another case (this volume ignores case)"
-else
-  tf_run default "cat $E2E_REPO/.FLOW/factory/jobs/issue-5/job.json"
-  tf_expect none "ordinary session, another folder in another case (this volume keeps case)"
-fi
+# A link to a folder inside the factory, then `..`: only the path as written
+# reaches the factory (the text with `..` applied names the link's parent).
+ln -s "$TF_F/jobs" "$E2E_DIR/links/jobs"
+tf_run default "cat $E2E_DIR/links/jobs/../x/factory"
+tf_expect deny "ordinary session, a link into the folder followed by .."
+# tier-gate.sh reaches these rules for /factory in any case.
+for TF_P in "$E2E_REPO/.FLOW/factory" "$E2E_REPO/.flow/Factory" "$E2E_REPO/.flow/FACTORY"; do
+  if [ "$TF_P" -ef "$TF_F" ]; then
+    tf_run default "cat $TF_P/jobs/issue-5/job.json"
+    tf_expect deny "ordinary session, the folder in another case (this volume ignores case): $TF_P"
+  else
+    tf_run default "cat $TF_P/jobs/issue-5/job.json"
+    tf_expect none "ordinary session, another folder in another case (this volume keeps case): $TF_P"
+  fi
+done
 tf_run default "flow-factory.sh cancel 7; cat $TF_F/jobs/issue-5/job.json"
 tf_expect deny "an ask and a deny in one command: the deny"
 tf_run FLOW_FACTORY_JOB=issue-5-j1 "FLOW_FACTORY_MAIN=$E2E_REPO" default "cat $TF_F/jobs/issue-5/job.json" "$TF_OTHER"
@@ -615,11 +713,16 @@ tf_guard "PATH=$TF_NOJQ" Write file_path "$E2E_REPO/src/b.txt"
 tf_expect none "no jq: a write outside the factory"
 # Without jq the payload text is also matched for the factory directory
 # relative to the repository top (decision of 2026-11-19 on the B9 review).
-for P in .flow/factory/jobs/issue-5/job.json .flow/factory ../repo/.flow/factory/x.json; do
+for P in .flow/factory/jobs/issue-5/job.json .flow/factory ../repo/.flow/factory/x.json \
+         ./.flow//factory/x.json .flow/./factory/x.json .flow/.//./factory/x.json .FLOW/factory/x.json .flow/Factory \
+         "$E2E_REPO//.flow/factory/x.json" "$E2E_REPO/.flow/./FACTORY/x.json"; do
   tf_guard "PATH=$TF_NOJQ" Write file_path "$P"
-  tf_expect deny "no jq: a relative path naming the factory: $P"
+  tf_expect deny "no jq: a path naming the factory: $P"
 done
-for P in .flow/factory2/x.json src/factory/x.json; do
+# A JSON escape of / (a payload jq would read as .flow/factory/x.json).
+e2e_run_hook "PATH=$TF_NOJQ" "$TF_GUARD" "{\"cwd\":\"$E2E_REPO\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\".flow\\/factory\\/x.json\",\"content\":\"x\"}}"
+tf_expect deny "no jq: a path naming the factory with \\/ escapes"
+for P in .flow/factory2/x.json src/factory/x.json .flow//factory2/x.json; do
   tf_guard "PATH=$TF_NOJQ" Write file_path "$P"
   tf_expect none "no jq: a relative path naming another folder: $P"
 done
