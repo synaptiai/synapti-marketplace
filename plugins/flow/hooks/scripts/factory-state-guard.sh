@@ -21,8 +21,18 @@
 # its physical path and a symbolic link at the end is followed, so /var and
 # /private/var, a `..` and a link into the factory all reach the same place.
 #
+# The comparison is by spelling (the built and the physical path) and by
+# identity: when the target, or a folder above it, is the factory directory
+# itself (the same device and inode), the write is denied, so another case
+# of a name on a volume that ignores case reaches it too.
+#
 # Without jq the path cannot be read: the write is denied when the payload
-# text names the factory directory, and allowed otherwise.
+# text names the factory directory, absolutely or relative to the
+# repository top (`<runtime dir>/factory` followed by `/` or the end of the
+# string), and allowed otherwise. That text match does not see a path
+# relative to a folder inside the runtime directory (`factory/x` from
+# `.flow`), another case of the name, or a JSON escape in the path, and it
+# also denies a write naming another repository's `<runtime dir>/factory`.
 #
 # Output: nothing (allow), or one PreToolUse deny. Exit 0 always.
 
@@ -77,6 +87,9 @@ if [ "$HAVE_JQ" = 0 ]; then
   for S in "$FDIR" "$FDIR_P" ${FDIR_ALT:+"$FDIR_ALT"}; do
     case "$INPUT" in *"$S"*) deny "This write names a path that $REASON_TAIL" ;; esac
   done
+  case "$INPUT" in
+    *"$RT/factory/"*|*"$RT/factory\""*) deny "This write names a path that $REASON_TAIL" ;;
+  esac
   exit 0
 fi
 
@@ -121,6 +134,17 @@ physical() {
   printf '%s%s' "$head" "$rest"
 }
 
+# in_fdir <path> — the path, or a folder above it, is the factory directory
+# itself: the same device and inode (bash's -ef).
+in_fdir() {
+  local p="$1"
+  while [ -n "$p" ] && [ "$p" != / ]; do
+    if [ -e "$p" ] && [ "$p" -ef "$FDIR" ]; then return 0; fi
+    p="${p%/*}"
+  done
+  return 1
+}
+
 T_NORM=$(norm "$TARGET")
 T_PHYS=$(physical "$T_NORM")
 for T in "$T_NORM" "$T_PHYS"; do
@@ -130,5 +154,6 @@ for T in "$T_NORM" "$T_PHYS"; do
   if [ -n "$FDIR_ALT" ]; then
     case "$T" in "$FDIR_ALT"|"$FDIR_ALT"/*) deny "$SHOWN $REASON_TAIL" ;; esac
   fi
+  in_fdir "$T" && deny "$SHOWN $REASON_TAIL"
 done
 exit 0

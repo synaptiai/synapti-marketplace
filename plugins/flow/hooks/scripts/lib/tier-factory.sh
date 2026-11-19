@@ -32,7 +32,9 @@
 #      variable is set, else <main checkout of the payload's cwd>/<runtime
 #      dir>/factory; it counts only when it exists. Both its spelling and its
 #      physical path are matched, and the name must end there (a folder named
-#      factory2 is another folder).
+#      factory2 is another folder). An absolute path in the command that is
+#      in that folder by identity (device and inode: a link, a `..`, another
+#      case on a volume that ignores case) counts too.
 #   3. Any session, with flow.factory.enabled true (user and plugin settings
 #      only): `gh issue comment`, `gh pr comment` and `gh api` to a comments or
 #      reviews endpoint, in a command that names /flow-factory, are denied, so
@@ -41,8 +43,14 @@
 #      `flow-factory.sh usage`; answer only with --text or --text=) is found
 #      by program words, after env, nohup, timeout and the other wrappers,
 #      inside bash -c and sh -c, as `python3 <path>/_flow_factory.py`, and
-#      through a variable naming the script, in every command of a chain.
-#      With permission_mode "default" it asks, showing the whole command:
+#      through a variable naming the script, in every command of a chain;
+#      an interpreter's options are read as it reads them (bash -o pipefail,
+#      python3 -W ignore, python3 -m _flow_factory). A person call that is
+#      not the whole command (in a chain, beside another command, in a
+#      substitution, or after an assignment or a wrapper's -C, -D or --chdir)
+#      is denied with the terminal text below in every mode: what an ask
+#      would show could differ from what runs.
+#      Otherwise, with permission_mode "default" it asks, showing the whole command:
 #      for confirm, the stored literal from the read-only `status --intent`
 #      of this plugin's own bin/flow-factory.sh (never the path the command
 #      names); for approve-spec, the spec hash, the head and the spec file;
@@ -51,9 +59,11 @@
 #      confirm whose lookup fails, and a subcommand word that is a variable.
 #   Without jq, or with a payload jq cannot parse, the command is judged by
 #   its text: in a worker as in rule 1; elsewhere a text naming either file
-#   together with a person subcommand word (answer only with --text) is
-#   denied, since no permission mode can be read. Rule 3 then counts the
-#   factory as enabled, since the setting cannot be read either.
+#   is denied with the terminal text unless the whole text is
+#   `[<plain path>/]flow-factory.sh` and an untiered subcommand (status,
+#   next, wait, question, probe, answer with no word starting --t) followed
+#   by plain words, with no quote, backslash or $ anywhere. Rule 3 then
+#   counts the factory as enabled, since the setting cannot be read either.
 
 # The person subcommands, in the order `flow-factory.sh usage` prints its
 # Person group. answer is asked about only with --text.
@@ -63,9 +73,13 @@ _TF_PERSON="answer approve-spec confirm feedback rework retry reject cancel rebu
 # person_channels L31).
 _tf_terminal() { printf 'run it in a terminal outside Claude Code: %s' "$1"; }
 
+# _tf_names_file <text> — the text names flow-factory.sh or _flow_factory.py,
+# or runs the engine as a module (python3 -m _flow_factory, -m_flow_factory,
+# -Bm _flow_factory).
 _tf_names_file() {
   case "$1" in *flow-factory.sh*|*_flow_factory.py*) return 0 ;; esac
-  return 1
+  local re='(^|[^A-Za-z0-9_-])-[A-Za-z]*m[[:space:]]*_flow_factory([^A-Za-z0-9_.]|$)'
+  [[ $1 =~ $re ]]
 }
 
 # _tf_read — the command (TF_CMD), the permission mode (TF_MODE, empty when
@@ -107,11 +121,27 @@ _tf_worker_form() {
   [[ $1 =~ $re ]]
 }
 
+# _tf_untiered_form <text> — the jq-free allow form outside a worker: the
+# whole text is `[<plain path>/]flow-factory.sh <status|next|wait|question|
+# probe|answer>` and plain words, with no quote, backslash or $ anywhere, and
+# for answer no word starting --t (--text, or a prefix of it).
+_tf_untiered_form() {
+  local nl=$'\n' tab=$'\t' cr=$'\r'
+  local bad="][ ${tab}${nl}${cr};&|\$'\"\`<>(){}\\\\*?#~!"
+  local re="^[ ${tab}]*([^${bad}]*/)?flow-factory\\.sh[ ${tab}]+(status|next|wait|question|probe|answer)(([ ${tab}]+[^${bad}]+)*)[ ${tab}]*\$"
+  [[ $1 =~ $re ]] || return 1
+  if [ "${BASH_REMATCH[2]}" = answer ]; then
+    local args=" ${BASH_REMATCH[3]//$tab/ }"
+    case "$args" in *" --t"*) return 1 ;; esac
+  fi
+  return 0
+}
+
 # _tf_factory_dir — TF_FDIRS: the factory directory's spellings, one per
 # line; 1 when it cannot be resolved or does not exist.
 _tf_factory_dir() {
   local main cwd common rt d p
-  TF_FDIRS=""
+  TF_FDIRS=""; TF_FDIR=""
   if [ -n "${FLOW_FACTORY_MAIN:-}" ]; then
     main="$FLOW_FACTORY_MAIN"
   else
@@ -128,6 +158,7 @@ _tf_factory_dir() {
   d="$main/$rt/factory"
   [ -d "$d" ] || return 1
   p=$(cd -P "$d" 2>/dev/null && pwd -P) || p="$d"
+  TF_FDIR="$d"
   TF_FDIRS="$d
 $p"
   # macOS reaches /var, /tmp and /etc both as themselves and under /private.
@@ -138,10 +169,45 @@ ${p#/private}" ;; esac
   return 0
 }
 
+# _tf_norm <path> — the absolute path with `.`, `..` and repeated slashes
+# applied to the text (as factory-state-guard.sh's norm does).
+_tf_norm() {
+  local IFS=/ part out=() r="" parts f=0
+  case "$-" in *f*) f=1 ;; esac
+  set -f
+  parts=($1)
+  [ "$f" = 1 ] || set +f
+  for part in ${parts[@]+"${parts[@]}"}; do
+    case "$part" in
+      ''|.) ;;
+      ..) [ "${#out[@]}" -gt 0 ] && unset 'out[${#out[@]}-1]' ;;
+      *) out+=("$part") ;;
+    esac
+  done
+  for part in ${out[@]+"${out[@]}"}; do r="$r/$part"; done
+  TF_NORMED="${r:-/}"
+}
+
+# _tf_is_fdir <path> — the path, or a folder above it, is the factory
+# directory itself: the same device and inode (bash's -ef), so another
+# spelling (a link, a `..`, another case on a volume that ignores case)
+# counts.
+_tf_is_fdir() {
+  local p="$1"
+  while [ -n "$p" ] && [ "$p" != / ]; do
+    if [ -e "$p" ] && [ "$p" -ef "$TF_FDIR" ]; then return 0; fi
+    p="${p%/*}"
+  done
+  return 1
+}
+
 # _tf_names_dir <text> — the text names a spelling of the factory directory
-# whose name ends there.
+# whose name ends there, or an absolute path (a word of the text, split at
+# blanks, quotes, `=`, `:` and the shell's operators) that is in the factory
+# directory by identity.
 _tf_names_dir() {
-  local s t after
+  local s t after w TF_SETF=0
+  case "$-" in *f*) TF_SETF=1 ;; esac
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     t="$1"
@@ -156,11 +222,27 @@ _tf_names_dir() {
   done <<TF_DIRS_EOF
 $TF_FDIRS
 TF_DIRS_EOF
+  [ -n "$TF_FDIR" ] || return 1
+  local IFS=$' \t\n\r;&|<>()`\'"=:{},' words
+  # The words without pathname expansion.
+  set -f
+  words=($1)
+  case "$TF_SETF" in 1) ;; *) set +f ;; esac
+  for w in ${words[@]+"${words[@]}"}; do
+    case "$w" in /*) ;; *) continue ;; esac
+    # Longer than PATH_MAX, it cannot be opened.
+    [ "${#w}" -le 4096 ] || continue
+    _tf_norm "$w"
+    if _tf_is_fdir "$w" || _tf_is_fdir "$TF_NORMED"; then
+      TF_DIR_HIT="$TF_FDIR"
+      return 0
+    fi
+  done
   return 1
 }
 
-# _tf_text_person <text> — the jq-free reading: a person subcommand word, and
-# for answer also --text.
+# _tf_text_person <text> — the reading of a command the parser could not
+# split: a person subcommand word, and for answer also --text.
 _tf_text_person() {
   local w re words=""
   for w in $_TF_PERSON; do [ "$w" = answer ] || words="$words${words:+|}$w"; done
@@ -201,6 +283,12 @@ _tf_load_parser() {
   done
 }
 
+# _tf_is_python <name> — python followed by a version (python3.12), which
+# command-parse.sh's list of languages does not name.
+_tf_is_python() {
+  [[ $1 =~ ^python[0-9][0-9.]*$ ]]
+}
+
 # The words _bd_command_word may stop at after a wrapper (env, nohup,
 # timeout, ...): the factory's scripts, gh, an interpreter, a variable.
 _tf_target() {
@@ -209,6 +297,7 @@ _tf_target() {
   case "$1" in *'$'*) return 0 ;; esac
   _bd_is_language "$b" && return 0
   _bd_is_shell "$b" && return 0
+  _tf_is_python "$b" && return 0
   return 1
 }
 
@@ -226,8 +315,17 @@ _tf_opt() {
 }
 
 # _tf_call <index> — TOK[index] is the subcommand word of a factory call;
-# a person call is added to TF_CALLS as "<subcommand>\t<detail>".
+# a person call is added to TF_CALLS as "<subcommand>\t<detail>". A person
+# call in a segment that changes the directory or the environment first
+# (TF_SEGPRE) sets TF_SHIFTED.
 _tf_call() {
+  local before=${#TF_CALLS[@]}
+  _tf_call_add "$1"
+  if [ "${#TF_CALLS[@]}" -gt "$before" ] && [ "$TF_SEGPRE" = 1 ]; then TF_SHIFTED=1; fi
+  return 0
+}
+
+_tf_call_add() {
   local j="$1" s="${TOK[$1]:-}" first
   [ -n "$s" ] || return 0
   if [ "${TOKE[j]:-0}" = 1 ] || [[ "$s" == *'$'* ]]; then
@@ -268,10 +366,67 @@ _tf_gh_post() {
   return 1
 }
 
+# _tf_interp <index> — TOK[index] is a shell or a language. Its options are
+# read as it reads them, so that an option's value is not taken for the
+# script: for a shell as _bd_shell_reads_stdin does (-o, -O, +o, +O, also at
+# the end of a bundle, --rcfile and --init-file take the next word); for
+# python as block-secrets.sh's _inline_scripts does (-W, -X and -Q take the
+# next word unless the value is attached, --check-hash-based-pycs takes the
+# next word, -m ends the options with the module). TF_IK is then carrier
+# (a -c script, read as segments of its own), call (TF_IJ is the index of
+# the subcommand word: a script named flow-factory.sh or _flow_factory.py,
+# or the module _flow_factory), or none.
+_tf_interp() {
+  local k=$(($1 + 1)) n=${#TOK[@]} w rest c py=0
+  TF_IK=none; TF_IJ=0
+  case "$2" in python|python[0-9]*) py=1 ;; esac
+  while [ "$k" -lt "$n" ]; do
+    w="${TOK[k]}"
+    case "$w" in
+      --) k=$((k + 1)); break ;;
+      -|''|[!-+]*) break ;;
+    esac
+    if [ "$py" = 1 ]; then
+      case "$w" in
+        +*) break ;;
+        --check-hash-based-pycs) k=$((k + 2)); continue ;;
+        --*) k=$((k + 1)); continue ;;
+      esac
+      rest="${w#-}"
+      while [ -n "$rest" ]; do
+        c="${rest:0:1}"; rest="${rest:1}"
+        case "$c" in
+          c) TF_IK=carrier; return 0 ;;
+          m)
+            if [ -z "$rest" ]; then k=$((k + 1)); rest="${TOK[k]:-}"; fi
+            if [ "$rest" = _flow_factory ]; then TF_IK=call; TF_IJ=$((k + 1)); fi
+            return 0 ;;
+          [WXQ]) [ -n "$rest" ] || k=$((k + 1)); rest="" ;;
+        esac
+      done
+      k=$((k + 1))
+      continue
+    fi
+    case "$w" in
+      --rcfile|--init-file) k=$((k + 2)) ;;
+      --*) k=$((k + 1)) ;;
+      [-+]*c*) TF_IK=carrier; return 0 ;;
+      [-+]*[oO]*) k=$((k + 2)) ;;
+      *) k=$((k + 1)) ;;
+    esac
+  done
+  [ "$k" -lt "$n" ] || return 0
+  case "${TOK[k]##*/}" in flow-factory.sh|_flow_factory.py) TF_IK=call; TF_IJ=$((k + 1)) ;; esac
+  return 0
+}
+
 # _tf_scan — read TF_CMD by program words: TF_CALLS (person calls), TF_POST=1
-# for a comment post, TF_SCAN_FAIL=1 when a part could not be read.
+# for a comment post, TF_SCAN_FAIL=1 when a part could not be read, TF_NSEG
+# the number of commands (a shell's -c that only carries its script is not
+# counted; its script's commands are), and TF_SHIFTED=1 when a person call
+# has an assignment, or a wrapper's -C, -D or --chdir, before it.
 _tf_scan() {
-  TF_CALLS=(); TF_POST=0; TF_SCAN_FAIL=0
+  TF_CALLS=(); TF_POST=0; TF_SCAN_FAIL=0; TF_NSEG=0; TF_SHIFTED=0; TF_SEGPRE=0
   local BD_LANG_DATA=0 BD_BLANK_BODIES=0 BD_SEG_ALT=0 BD_SEG_MARK=0 BD_SPLIT_EXP=0
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=()
   local BD_RIN=0 BD_CMDI=0 BD_CODE="" BD_KEPT_BODY=0 BD_UNBALANCED=0
@@ -286,10 +441,22 @@ _tf_scan() {
     esac
     case "$seg" in __BD_ALT__*) seg="${seg:10}" ;; esac
     case "$seg" in __BD_PIPE__*) seg="${seg:11}" ;; esac
+    TF_NSEG=$((TF_NSEG + 1))
     _bd_words "$seg" || { TF_SCAN_FAIL=1; continue; }
     n=${#TOK[@]}
     _bd_command_word _tf_target 0
     i=$BD_CMDI
+    TF_SEGPRE=0
+    for ((k = 0; k < i && k < n; k++)); do
+      case "${TOK[k]}" in
+        [A-Za-z_]*=*|--chdir|--chdir=*) TF_SEGPRE=1 ;;
+        --*) ;;
+        -*[CD]*) TF_SEGPRE=1 ;;
+      esac
+      # A wrapper's option that carries the script (env --split-string=...)
+      # is a call this reading cannot split.
+      case "${TOK[k]}" in -*) _tf_names_file "${TOK[k]}" && TF_CALLS+=("unread	") ;; esac
+    done
     [ "$i" -lt "$n" ] || continue
     w="${TOK[i]}"; b="${w##*/}"
     case "$b" in
@@ -303,18 +470,16 @@ _tf_scan() {
       _tf_call "$j"
       continue
     fi
-    if _bd_is_language "$b" || _bd_is_shell "$b"; then
-      # python3 <path>/_flow_factory.py <sub>, or a shell given the script.
-      k=$((i + 1))
-      while [ "$k" -lt "$n" ]; do
-        case "${TOK[k]}" in
-          -c|-[A-Za-z]*c) k=$n ;;
-          -*) k=$((k + 1)) ;;
-          *) break ;;
-        esac
-      done
-      [ "$k" -lt "$n" ] || continue
-      case "${TOK[k]##*/}" in flow-factory.sh|_flow_factory.py) _tf_call "$((k + 1))" ;; esac
+    if _bd_is_language "$b" || _bd_is_shell "$b" || _tf_is_python "$b"; then
+      # python3 <path>/_flow_factory.py <sub>, python3 -m _flow_factory
+      # <sub>, or a shell given the script.
+      _tf_interp "$i" "$b"
+      case "$TF_IK" in
+        # A -c that carries the script's call is not a command of its own;
+        # one that does not name the script (bash -c "$X") is.
+        carrier) _tf_names_file "$seg" && TF_NSEG=$((TF_NSEG - 1)) ;;
+        call) _tf_call "$TF_IJ" ;;
+      esac
     fi
   done <<TF_SEGS_EOF
 $segs
@@ -375,12 +540,11 @@ _tg_factory_rules() {
   local parsed=0
   TF_CALLS=(); TF_POST=0; TF_SCAN_FAIL=0
   if [ "$TF_JQ" = 1 ]; then
-    case "$text" in
-      *flow-factory.sh*|*_flow_factory.py*|*/flow-factory*)
-        _tf_load_parser || _tg_deny "Flow factory: the command parser (hooks/scripts/lib/command-parse.sh) could not be loaded, so this command, which names the factory, was not run. Reinstall the flow plugin."
-        _tf_scan
-        parsed=1 ;;
-    esac
+    if _tf_names_file "$text" || case "$text" in */flow-factory*) true ;; *) false ;; esac; then
+      _tf_load_parser || _tg_deny "Flow factory: the command parser (hooks/scripts/lib/command-parse.sh) could not be loaded, so this command, which names the factory, was not run. Reinstall the flow plugin."
+      _tf_scan
+      parsed=1
+    fi
   fi
 
   # 3. A comment post naming /flow-factory.
@@ -399,17 +563,22 @@ _tg_factory_rules() {
   [ -z "$worker" ] || return 0
   _tf_names_file "$text" || return 0
   if [ "$parsed" = 0 ]; then
-    if _tf_text_person "$text"; then
-      local shown="$text"
-      _tf_raw_value && shown="$TF_VAL"
-      _tg_deny "$(_tf_terminal "$shown")"
+    # Without jq the text cannot be read by program words: only an untiered
+    # subcommand as the whole command, in plain words, runs.
+    if _tf_raw_value; then
+      _tf_untiered_form "$TF_VAL" && return 0
+      _tg_deny "$(_tf_terminal "$TF_VAL")"
     fi
-    return 0
+    _tg_deny "$(_tf_terminal "$text")"
   fi
   if [ "$TF_SCAN_FAIL" = 1 ] && _tf_text_person "$TF_CMD"; then
     _tg_deny "$(_tf_terminal "$TF_CMD")"
   fi
   [ "${#TF_CALLS[@]}" -gt 0 ] || return 0
+  # Asked about only as the whole command: in a chain, beside another
+  # command, or after a change of directory or environment, what the ask
+  # shows could differ from what runs.
+  if [ "$TF_NSEG" -ne 1 ] || [ "$TF_SHIFTED" = 1 ]; then _tg_deny "$(_tf_terminal "$TF_CMD")"; fi
   [ "$TF_MODE" = default ] || _tg_deny "$(_tf_terminal "$TF_CMD")"
   _tf_ask_reason || _tg_deny "$(_tf_terminal "$TF_CMD")"
   jq -cn --arg r "$TF_REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:$r}}'

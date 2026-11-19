@@ -14,7 +14,9 @@
 #        instead of denied
 #   TF3  (R42, R45, R60, R72) outside a worker, an always-ask subcommand in a
 #        mode other than default, or with no mode, is allowed or asked about;
-#        a wrapped form or a later command of a chain is not seen
+#        a wrapped form, an interpreter option's value or a later command of
+#        a chain is not seen; a call that is not the whole command is asked
+#        about
 #   TF4  (R43, R85) a command that only mentions a subcommand (grep), or an
 #        untiered subcommand (answer --choice, next, wait, question, status,
 #        status --intent, probe), is asked about or denied
@@ -24,17 +26,20 @@
 #   TF6  approve-spec asks without the hash, the head or the spec file line
 #   TF7  (design L41) the always-ask list differs from the Person group that
 #        flow-factory.sh usage prints, or answer is asked about without --text
-#   TF8  (R61) without jq, a person subcommand passes outside a worker; an
-#        untiered one is refused
+#   TF8  (R61) without jq, a person subcommand passes outside a worker (also
+#        with a quoted or escaped subcommand word); an untiered one in plain
+#        words is refused
 #   TF9  (R49, R80) the directory deny misses a session kind, takes the
-#        directory from the cwd in a worker, or matches another directory
+#        directory from the cwd in a worker, matches another directory, or
+#        compares spellings only (a .. path, a link, another case)
 #   TF10 (R79) the comment-post deny is missing, or applies with the factory
 #        disabled or in a repository with no factory
 #   TF11 (design e2e_tests L118) lib/tier-factory.sh is sourced in a
 #        repository with no factory directory and no FLOW_FACTORY_* variable
 #   TF12 (R84, person_channels L48) the state guard resolves the factory
 #        directory from the cwd in a worker, reads only file_path, misses a
-#        relative or `..` path, or denies a write outside the factory
+#        relative or `..` path or another case of a name, misses a relative
+#        path without jq, or denies a write outside the factory
 #   TF13 (design e2e_tests L118) hooks.json has no PreToolUse entry for the
 #        state guard whose matcher matches Write, Edit and NotebookEdit and not
 #        Bash
@@ -214,7 +219,7 @@ tf_factory tf3-modes
 # answer without --text, next, wait, question, status and probe untiered);
 # plan 2.4 rule 2 (program words after the wrapped forms; split at ;, &&, ||,
 # | and line ends); R43 (a grep that only mentions a subcommand is no call).
-e2e_describe "factory directory present, no FLOW_FACTORY_*: each person subcommand in each of the eight forms in auto mode; cancel in plan, acceptEdits, bypassPermissions and with no mode; chains; a grep naming a subcommand; the untiered subcommands in default and auto mode; answer --choice --text"
+e2e_describe "factory directory present, no FLOW_FACTORY_*: each person subcommand in each of the eight forms in auto mode; cancel in plan, acceptEdits, bypassPermissions and with no mode; chains; interpreter options that take a value, python3 -m _flow_factory and env --split-string; in default mode a person call that is not the whole command (chain, cd, pushd, env -C, an assignment, a pipe, a substitution) and one that is; a grep naming a subcommand; the untiered subcommands in default and auto mode; answer --choice --text"
 for S in $TF_SUBS; do
   for FORM in $TF_FORMS; do
     C=$(tf_form "$FORM" "$(tf_args "$S")" "$TF_BIN")
@@ -237,6 +242,25 @@ for C in 'ls | flow-factory.sh reject 7' 'false || flow-factory.sh retry 7' $'ec
   tf_run auto "$C"
   tf_expect deny "auto mode, chain or nested: $C"
 done
+# Plan 2.4 rule 2 reads the wrapped forms by program words, so an interpreter
+# option that takes the next word as its value (bash and sh -o, -O, +o,
+# --rcfile, --init-file, also at the end of a bundle; python -W, -X, attached
+# or not, --check-hash-based-pycs) is stepped over, and python -m runs the
+# engine as a module.
+for C in "bash -o pipefail $TF_BIN/flow-factory.sh cancel 7" "bash -O extglob $TF_BIN/flow-factory.sh cancel 7" \
+         "bash --rcfile /dev/null $TF_BIN/flow-factory.sh cancel 7" "bash --init-file /dev/null $TF_BIN/flow-factory.sh cancel 7" \
+         "sh -o errexit $TF_BIN/flow-factory.sh cancel 7" "bash -eo pipefail $TF_BIN/flow-factory.sh cancel 7" \
+         "bash +o posix $TF_BIN/flow-factory.sh cancel 7" "bash -- $TF_BIN/flow-factory.sh cancel 7" \
+         "python3 -W ignore $TF_BIN/_flow_factory.py cancel 7" "python3 -X dev $TF_BIN/_flow_factory.py cancel 7" \
+         "python3 -Wignore -X dev -B $TF_BIN/_flow_factory.py cancel 7" "python3 -BW ignore $TF_BIN/_flow_factory.py cancel 7" \
+         "python3 --check-hash-based-pycs never $TF_BIN/_flow_factory.py cancel 7" \
+         "env PYTHONPATH=$TF_BIN python3 -m _flow_factory cancel 7" "python3 -m_flow_factory cancel 7" "python3 -Bm _flow_factory cancel 7" \
+         "env --split-string='flow-factory.sh cancel 7'" "python3.12 $TF_BIN/_flow_factory.py cancel 7"; do
+  tf_run auto "$C"
+  tf_expect deny "auto mode, an interpreter option with a value: $C"
+done
+tf_run FLOW_FACTORY_JOB=issue-7-j1 default "python3 -m _flow_factory cancel 7"
+tf_expect deny "worker: the engine run as a module"
 # Plan 2.4: what cannot be read is not asked about. A subcommand word that is
 # a variable, and a command whose quote never closes, are denied in default
 # mode too (Inferred: no ask can show what would run).
@@ -245,8 +269,30 @@ for C in 'flow-factory.sh $SUB 7' 'flow-factory.sh cancel 7 "oops'; do
   tf_expect deny "default mode, unreadable: $C"
   e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "the deny text for: $C"
 done
-tf_run default 'true && flow-factory.sh cancel 7'
-tf_expect ask "default mode: the second command of a chain (R72)"
+# A person subcommand is asked about only when it is the whole command,
+# wrappers and bash -c aside: in a chain, after cd, pushd or env -C, with
+# an assignment before it, or beside any other command, the ask could show
+# one thing and the command do another (a confirm looked up in the payload's
+# cwd, a merge's own ask not shown), so it is denied with the terminal text
+# (decision of 2026-11-19 on the B9 review; it replaces R72's "default mode
+# → ask").
+for C in 'true && flow-factory.sh cancel 7' 'cd /tmp && flow-factory.sh confirm issue-7-j1-4-1' 'pushd /tmp; flow-factory.sh retry 7' \
+         "env -C $E2E_DIR flow-factory.sh retry 7" 'env --chdir=/tmp flow-factory.sh retry 7' "env -iC $E2E_DIR flow-factory.sh retry 7" \
+         'flow-factory.sh retry 7 && gh pr merge 5 --repo o/r --squash' "bash -c 'cd /tmp; flow-factory.sh retry 7'" \
+         'flow-factory.sh retry 7 | tee out.txt' 'echo $(flow-factory.sh retry 7)' "FF=$TF_BIN/flow-factory.sh; \"\$FF\" retry 7" \
+         'GIT_DIR=/tmp/x.git flow-factory.sh retry 7' 'env FLOW_FACTORY_MAIN=/tmp flow-factory.sh retry 7' 'cd /tmp && flow-factory.sh retry 7' \
+         'sudo -D /tmp flow-factory.sh retry 7' 'bash -c "$X"; flow-factory.sh retry 7' "sh -c ''; flow-factory.sh retry 7"; do
+  tf_run default "$C"
+  tf_expect deny "default mode, not the whole command: $C"
+  e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "the deny text for: $C"
+done
+for C in 'flow-factory.sh retry 7' "bash $TF_BIN/flow-factory.sh retry 7" 'env -u FLOW_FACTORY_JOB flow-factory.sh retry 7' \
+         'timeout 5 flow-factory.sh retry 7' 'nohup flow-factory.sh retry 7' "python3 $TF_BIN/_flow_factory.py retry 7" \
+         "bash -c 'flow-factory.sh retry 7'" "sh -c 'flow-factory.sh retry 7'" 'flow-factory.sh retry 7 > out.txt' \
+         "bash -o pipefail $TF_BIN/flow-factory.sh retry 7" "python3 -m _flow_factory retry 7"; do
+  tf_run default "$C"
+  tf_expect ask "default mode, the whole command: $C"
+done
 for M in default auto; do
   for C in 'grep -n "flow-factory.sh reject" docs/' 'flow-factory.sh answer NI-1 --choice 1' \
            'flow-factory.sh next --executor interactive' 'flow-factory.sh wait --max-seconds 5' \
@@ -309,12 +355,27 @@ cat > "$E2E_DIR/rewrite.sh" <<'SH'
 #!/bin/sh
 jq -c '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"allow",updatedInput:{command:(.tool_input.command | gsub("(?<a>^|[ |;&])grep "; "\(.a)rtk grep "))}}}'
 SH
-TF_ORIG="flow-factory.sh confirm $TF_ID 2>&1 | grep -v DEBUG"
-TF_NEW=$(tf_payload Bash default "$E2E_REPO" "$(jq -cn --arg c "$TF_ORIG" '{command:$c}')" | sh "$E2E_DIR/rewrite.sh" | jq -r .hookSpecificOutput.updatedInput.command)
-e2e_expect_equal "flow-factory.sh confirm $TF_ID 2>&1 | rtk grep -v DEBUG" "$TF_NEW" "the stand-in hook's rewrite"
+# A confirm is asked about only as the whole command, so the stand-in hook is
+# first shown to rewrite a command that holds grep, then run on the confirm
+# itself; the ask's literal keeps the body's own grep (Inferred: design
+# e2e_tests L109 with the whole-command rule of 2026-11-19).
+TF_GREP=$(tf_payload Bash default "$E2E_REPO" "$(jq -cn '{command:"grep -v DEBUG log.txt"}')" | sh "$E2E_DIR/rewrite.sh" | jq -r .hookSpecificOutput.updatedInput.command)
+e2e_expect_equal "rtk grep -v DEBUG log.txt" "$TF_GREP" "the stand-in hook's rewrite"
+TF_NEW=$(tf_payload Bash default "$E2E_REPO" "$(jq -cn --arg c "flow-factory.sh confirm $TF_ID" '{command:$c}')" | sh "$E2E_DIR/rewrite.sh" | jq -r .hookSpecificOutput.updatedInput.command)
 tf_run default "$TF_NEW"
-tf_expect ask "default mode, the rewritten command"
-case "$(tf_reason)" in *"$TF_INTENT_LINE"*"> Please run grep on the log."*) _e2e_result pass "the rewritten command's ask holds the same literal and body" ;; *) _e2e_result fail "the rewritten command's ask holds the same literal and body" ;; esac
+tf_expect ask "default mode, the command the stand-in hook passed on"
+case "$(tf_reason)" in *"$TF_INTENT_LINE"*"> Please run grep on the log."*) _e2e_result pass "the ask after the stand-in hook holds the same literal and body" ;; *) _e2e_result fail "the ask after the stand-in hook holds the same literal and body" ;; esac
+e2e_expect_no_out "rtk grep"
+tf_run default "flow-factory.sh confirm $TF_ID 2>&1 | rtk grep -v DEBUG"
+tf_expect deny "default mode, a confirm piped into another command"
+# The lookup runs in the payload's cwd, where this intent exists; after cd or
+# env -C the engine would look elsewhere, so the call is denied with the
+# terminal text, not asked about (decision of 2026-11-19 on the B9 review).
+for C in "cd $E2E_DIR && flow-factory.sh confirm $TF_ID" "env -C $E2E_DIR flow-factory.sh confirm $TF_ID"; do
+  tf_run default "$C"
+  tf_expect deny "default mode, confirm after a change of directory: $C"
+  e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "the deny text for: $C"
+done
 # The lookup fails: deny with the terminal text (R46).
 for C in 'flow-factory.sh confirm issue-7-j1-4-99' 'flow-factory.sh confirm ../../x' 'flow-factory.sh confirm' "flow-factory.sh confirm \$ID"; do
   tf_run default "$C"
@@ -373,15 +434,30 @@ tf_factory tf8-nojq
 # denied, status allowed); plan 2.4 "Without jq" (a person subcommand word,
 # answer only with --text; in a worker, every text naming the files except
 # the two worker forms); design person_channels L31 (no mode: deny).
-e2e_describe "factory directory present, jq not on PATH: confirm, cancel through bash -c, answer --text, answer --choice and status outside a worker; context --mode and cancel in a worker"
+e2e_describe "factory directory present, jq not on PATH: confirm, cancel through bash -c, answer --text and python3 _flow_factory.py reject outside a worker; the untiered subcommands in plain words; quoted, escaped and chained forms, a mention and an interpreter form; context --mode and cancel in a worker"
 TF_NOJQ=$(e2e_path_without jq)
 for C in 'flow-factory.sh confirm x' "bash -c 'flow-factory.sh cancel 7'" 'flow-factory.sh answer NI-1 --text yes' "python3 $TF_BIN/_flow_factory.py reject 7"; do
   tf_run "PATH=$TF_NOJQ" default "$C"
   tf_expect deny "no jq: $C"
 done
-for C in 'flow-factory.sh status' 'flow-factory.sh answer NI-1 --choice 1' 'flow-factory.sh next'; do
+for C in 'flow-factory.sh status' 'flow-factory.sh answer NI-1 --choice 1' 'flow-factory.sh next' \
+         "$TF_BIN/flow-factory.sh status --intent x" 'flow-factory.sh wait --max-seconds 5' 'flow-factory.sh question q1 --prompt' \
+         'flow-factory.sh probe --environment' '  flow-factory.sh next --executor interactive  '; do
   tf_run "PATH=$TF_NOJQ" default "$C"
   tf_expect none "no jq, untiered: $C"
+done
+# Plan 2.4: the jq-free path fails closed. Without jq the text cannot be read
+# as program words, so outside a worker every command naming either file is
+# denied unless it is, as the whole command, an untiered subcommand with
+# plain words (decision of 2026-11-19 on the B9 review): a quote, a
+# backslash or a $ anywhere, a chain, or a mention also deny.
+for C in "flow-factory.sh con''firm x" 'flow-factory.sh "con"firm x' 'flow-factory.sh con\firm x' \
+         "flow-factory.sh \$'\\x63onfirm' x" "flow-factory.sh answer NI-1 --te''xt yes" 'flow-factory.sh answer NI-1 --tex yes' \
+         'flow-factory.sh question q1 --prompt "cancel it"' 'flow-factory.sh status; flow-factory.sh cancel 7' \
+         'flow-factory.sh status && true' 'grep -n "flow-factory.sh reject" docs/' 'flow-factory.sh status $X' \
+         'flow-factory.sh status > out.txt' 'bash flow-factory.sh status' "python3 $TF_BIN/_flow_factory.py status"; do
+  tf_run "PATH=$TF_NOJQ" default "$C"
+  tf_expect deny "no jq, not a plain untiered command: $C"
 done
 tf_run "PATH=$TF_NOJQ" FLOW_FACTORY_JOB=issue-7-j1 default 'flow-factory.sh context --mode'
 tf_expect none "no jq, worker: context --mode"
@@ -410,7 +486,7 @@ tf_other
 # (an ordinary default-mode session, and a worker whose FLOW_FACTORY_MAIN
 # names the checkout while its cwd is another repository); plan 2.4 (a deny
 # wins over an ask).
-e2e_describe "the factory repository: cat a job.json by the built and the physical path; a sibling folder factory2; an ask and a deny in one command; a worker with FLOW_FACTORY_MAIN and its cwd in another repository; ls src/outbox/ in that other repository"
+e2e_describe "the factory repository: cat a job.json by the built and the physical path, by a .. path, through a link named factory and in another case; a sibling folder factory2; an ask and a deny in one command; a worker with FLOW_FACTORY_MAIN and its cwd in another repository; ls src/outbox/ in that other repository"
 mkdir -p "$E2E_REPO/.flow/factory2"
 tf_run default "cat $TF_F/jobs/issue-5/job.json"
 tf_expect deny "ordinary session, the built path"
@@ -420,6 +496,26 @@ tf_run default "ls '$TF_F'"
 tf_expect deny "ordinary session, the folder itself in quotes"
 tf_run default "ls $E2E_REPO/.flow/factory2/"
 tf_expect none "a sibling folder whose name starts with factory"
+# The directory is compared by identity (device and inode), not spelling
+# (decision of 2026-11-19 on the B9 review): a .. path, a link to it and, on
+# a volume that ignores case, another case all reach it.
+tf_run default "cat $E2E_REPO/src/../.flow/factory/jobs/issue-5/job.json"
+tf_expect deny "ordinary session, a .. path"
+# tier-gate.sh reaches these rules only for a command whose text has
+# /factory in it, so the link is named factory as well.
+mkdir -p "$E2E_DIR/links"
+ln -s "$TF_F" "$E2E_DIR/links/factory"
+tf_run default "cat $E2E_DIR/links/factory/jobs/issue-5/job.json"
+tf_expect deny "ordinary session, a link to the folder"
+tf_run default "cat --file=$E2E_DIR/links/factory/jobs/issue-5/job.json"
+tf_expect deny "ordinary session, a link to the folder after ="
+if [ "$E2E_REPO/.FLOW/factory" -ef "$TF_F" ]; then
+  tf_run default "cat $E2E_REPO/.FLOW/factory/jobs/issue-5/job.json"
+  tf_expect deny "ordinary session, the folder in another case (this volume ignores case)"
+else
+  tf_run default "cat $E2E_REPO/.FLOW/factory/jobs/issue-5/job.json"
+  tf_expect none "ordinary session, another folder in another case (this volume keeps case)"
+fi
 tf_run default "flow-factory.sh cancel 7; cat $TF_F/jobs/issue-5/job.json"
 tf_expect deny "an ask and a deny in one command: the deny"
 tf_run FLOW_FACTORY_JOB=issue-5-j1 "FLOW_FACTORY_MAIN=$E2E_REPO" default "cat $TF_F/jobs/issue-5/job.json" "$TF_OTHER"
@@ -490,7 +586,7 @@ tf_other
 # dir>/factory; exit at once when FLOW_FACTORY_MAIN is unset and the cwd's
 # repository has no factory directory; FLOW_FACTORY_MAIN in a worker; allow
 # when the directory cannot be resolved); R84; design e2e_tests L110.
-e2e_describe "the factory repository: each tool under the factory by an absolute, a physical, a relative and a .. path, and outside it; a linked worktree; a repository with no factory; FLOW_FACTORY_MAIN naming no folder; a worker in another repository with FLOW_FACTORY_MAIN"
+e2e_describe "the factory repository: each tool under the factory by an absolute, a physical, a relative and a .. path, and outside it; without jq by an absolute and a relative path; by another case of a folder on the path; a linked worktree; a repository with no factory; FLOW_FACTORY_MAIN naming no folder; a worker in another repository with FLOW_FACTORY_MAIN"
 for T in Write:file_path Edit:file_path NotebookEdit:notebook_path; do
   tf_guard "${T%%:*}" "${T#*:}" "$TF_F/jobs/issue-5/job.json"
   tf_expect deny "${T%%:*} under the factory, absolute"
@@ -517,6 +613,27 @@ tf_guard "PATH=$TF_NOJQ" Write file_path "$TF_F/jobs/issue-5/job.json"
 tf_expect deny "no jq: a payload naming the factory directory"
 tf_guard "PATH=$TF_NOJQ" Write file_path "$E2E_REPO/src/b.txt"
 tf_expect none "no jq: a write outside the factory"
+# Without jq the payload text is also matched for the factory directory
+# relative to the repository top (decision of 2026-11-19 on the B9 review).
+for P in .flow/factory/jobs/issue-5/job.json .flow/factory ../repo/.flow/factory/x.json; do
+  tf_guard "PATH=$TF_NOJQ" Write file_path "$P"
+  tf_expect deny "no jq: a relative path naming the factory: $P"
+done
+for P in .flow/factory2/x.json src/factory/x.json; do
+  tf_guard "PATH=$TF_NOJQ" Write file_path "$P"
+  tf_expect none "no jq: a relative path naming another folder: $P"
+done
+# The directory is compared by identity (decision of 2026-11-19): on a
+# volume that ignores case, another case of a folder on the path is the
+# factory itself.
+for P in "$E2E_REPO/.FLOW/factory/x.json" "$E2E_REPO/.flow/Factory/x.json" "$E2E_REPO/.flow/FACTORY"; do
+  tf_guard Write file_path "$P"
+  if [ "$E2E_REPO/.FLOW" -ef "$E2E_REPO/.flow" ]; then
+    tf_expect deny "Write by another case of the path (this volume ignores case): $P"
+  else
+    tf_expect none "Write by another case of the path (this volume keeps case): $P"
+  fi
+done
 ( _e2e_git_env; cd "$E2E_REPO" && git worktree add -q -b wt "$E2E_DIR/linked" ) || _flow_assert_fail "$E2E_NAME: no worktree"
 tf_guard Edit file_path "$TF_F/jobs/issue-5/job.json" "$E2E_DIR/linked"
 tf_expect deny "Edit from a linked worktree of the factory repository"

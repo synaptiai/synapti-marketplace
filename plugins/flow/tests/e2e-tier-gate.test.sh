@@ -3051,45 +3051,73 @@ _tg_fac_reason() { printf '%s' "$E2E_OUT" | jq -r '.hookSpecificOutput.permissio
 if _want tg-fac-sourcing; then
   _tg_setup tg-fac-sourcing feature/issue-42-x '{"tiers":{"issueUpdate":"confirm"}}' \
     "lib/tier-factory.sh is sourced (the xtrace log of the hook shows the source line) only for a command with factory text and either a FLOW_FACTORY_JOB, _DIRECTIVE, _IO or _MAIN variable or a <main checkout>/.flow/factory directory, a linked worktree's main checkout included; a command the rules allow is then decided as without them (T45)"
+  # _tg_fac_traced [NAME=value ...] <payload> — the hook with xtrace on. The
+  # trace goes to a file of its own. stderr keeps only the trace's line
+  # count, its lines naming lib/tier-factory.sh, and its line for
+  # tier-gate.sh's own read of the command, which comes after the factory
+  # rules' call site, so a "no" is never read from a trace that stopped
+  # early. With the rules sourced the whole trace is about 50 KB, and the
+  # harness's masking of a stderr that size (bash 3.2 pattern substitution,
+  # over a minute each) took minutes per run.
+  _tg_fac_traced() {
+    local envs=()
+    while [ $# -gt 1 ]; do envs+=("$1"); shift; done
+    {
+      printf 'code: %s\n' "$HOOK"
+      printf 'code sha256: %s\n' "$(_e2e_sha256 "$E2E_ACTIVE_PLUGIN/$HOOK")"
+      printf 'payload: %s\n' "$1"
+      printf 'environment: SHELLOPTS=xtrace%s\n' "${envs[@]+ ${envs[*]}}"
+      printf 'stderr: the trace line count, and the trace lines naming lib/tier-factory.sh or .tool_input.command // empty\n'
+    } | _e2e_art
+    printf '%s' "$1" > "$E2E_DIR/payload.json"
+    _e2e_exec env ${envs[@]+"${envs[@]}"} /bin/sh -c 'env SHELLOPTS=xtrace "$1" < "$2" 2> "$3"; rc=$?
+      printf "trace lines: %s\n" "$(grep -c "" "$3")" >&2
+      grep -F -e "lib/tier-factory.sh" -e ".tool_input.command // empty" "$3" >&2
+      exit "$rc"' tg-fac-trace "$E2E_ACTIVE_PLUGIN/$HOOK" "$E2E_DIR/payload.json" "$E2E_DIR/trace"
+    printf -- '--- expectations\n' | _e2e_art
+    # The trace was on past the call site: a trace that stopped early would
+    # read as "not sourced".
+    case "$E2E_ERR" in *".tool_input.command // empty"*) _e2e_result pass "the hook's trace reaches its read of the command" ;; *) _e2e_result fail "the hook's trace reaches its read of the command (stderr: $E2E_ERR)" ;; esac
+  }
   _tg_trace_has_lib() {
     case "$E2E_ERR" in *lib/tier-factory.sh*) printf yes ;; *) printf no ;; esac
   }
   # No factory text: not sourced, with a worker variable set.
-  _tg_run SHELLOPTS=xtrace FLOW_FACTORY_JOB=job-1 'gh issue comment 5 --body hi'
+  _tg_fac_traced FLOW_FACTORY_JOB=job-1 "$(TG_FAC_PAYLOAD 'gh issue comment 5 --body hi')"
   _expect_ask "(tiers.issueUpdate)"
   e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced for a command without factory text"
   # Factory text, no variable, no factory directory: not sourced.
   for C in 'flow-factory.sh status' 'python3 bin/_flow_factory.py next' 'ls docs/factory' 'gh issue comment 5 --body "/flow-factory retry"'; do
-    _tg_run SHELLOPTS=xtrace "$C"
+    _tg_fac_traced "$(TG_FAC_PAYLOAD "$C")"
     e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced outside a factory for: $C"
   done
   _expect_ask "(tiers.issueUpdate)"
   # Factory text and each variable: sourced.
   for V in FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN; do
-    _tg_run SHELLOPTS=xtrace "$V=x" 'flow-factory.sh context --mode'
+    _tg_fac_traced "$V=x" "$(TG_FAC_PAYLOAD 'flow-factory.sh context --mode')"
     e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced with $V set"
     _expect_silent_allow
   done
   # An empty variable is not set.
-  _tg_run SHELLOPTS=xtrace FLOW_FACTORY_JOB= 'flow-factory.sh status'
+  _tg_fac_traced FLOW_FACTORY_JOB= "$(TG_FAC_PAYLOAD 'flow-factory.sh status')"
   e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced with FLOW_FACTORY_JOB empty"
   # The factory directory of the repository: sourced for factory text only.
   mkdir -p "$E2E_REPO/.flow/factory"
-  _tg_run SHELLOPTS=xtrace 'flow-factory.sh status'
+  _tg_fac_traced "$(TG_FAC_PAYLOAD 'flow-factory.sh status')"
   e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced with the factory directory present"
-  _tg_run SHELLOPTS=xtrace 'gh issue comment 5 --body "/flow-factory retry"'
+  _tg_fac_traced "$(TG_FAC_PAYLOAD 'gh issue comment 5 --body "/flow-factory retry"')"
   e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced for /flow-factory in a comment body"
   _expect_ask "(tiers.issueUpdate)"
-  _tg_run SHELLOPTS=xtrace 'gh issue comment 5 --body hi'
+  _tg_fac_traced "$(TG_FAC_PAYLOAD 'gh issue comment 5 --body hi')"
   e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced for a command without factory text, factory directory present"
   # A linked worktree: its main checkout has the factory directory.
   ( _e2e_git_env; cd "$E2E_REPO" && git worktree add -q -b wt-branch "$E2E_DIR/linked" ) \
     || _flow_assert_fail "tg-fac-sourcing: could not add the worktree"
-  e2e_run_hook SHELLOPTS=xtrace "$HOOK" "$(TG_FAC_PAYLOAD 'flow-factory.sh status' "$E2E_DIR/linked")"
+  _tg_fac_traced "$(TG_FAC_PAYLOAD 'flow-factory.sh status' "$E2E_DIR/linked")"
   e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced from a linked worktree of a factory repository"
   # Another repository without one: not sourced.
   ( _e2e_git_env; cd "$E2E_DIR" && git init -q other ) || _flow_assert_fail "tg-fac-sourcing: could not make the other repository"
-  e2e_run_hook SHELLOPTS=xtrace "$HOOK" "$(TG_FAC_PAYLOAD 'flow-factory.sh status' "$E2E_DIR/other")"
+  _tg_fac_traced "$(TG_FAC_PAYLOAD 'flow-factory.sh status' "$E2E_DIR/other")"
   e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced in a repository without a factory directory"
   e2e_expect_clean_edges
 fi
