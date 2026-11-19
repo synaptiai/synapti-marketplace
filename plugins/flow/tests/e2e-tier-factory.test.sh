@@ -19,7 +19,9 @@
 #        about
 #   TF4  (R43, R85) a command that only mentions a subcommand (grep), or an
 #        untiered subcommand (answer --choice, next, wait, question, status,
-#        status --intent, probe), is asked about or denied
+#        status --intent, probe), is asked about or denied; or a mention
+#        after a wrapper option the program documents (watch -d, sudo -B,
+#        xargs -i, parallel --bar, nice --adj, any --name=value) is denied
 #   TF5  (R46, design L37) the confirm ask shows no literal, shows a literal
 #        from a flow-factory.sh the command named, or asks when status
 #        --intent fails; a hook that rewrote the command changes the literal
@@ -312,21 +314,32 @@ for C in 'flock /tmp/l flow-factory.sh cancel 7' 'sudo -u x flow-factory.sh canc
   tf_run auto "$C"
   tf_expect deny "auto mode, a wrapper's program: $C"
 done
-# A wrapper option the hook's grammar does not know exactly (an option it
-# does not list, an abbreviated long option, a bare -) may take the next
-# word as its value or not, so the program position after it cannot be
-# read: the script word there still counts as the program, and the call is
-# counted (finding 0 of the fourth B9 review; fails closed). Each of these
-# runs the script with cancel 7 for GNU parallel, GNU env, doas, xargs,
-# stdbuf and sudo.
+# A wrapper option the hook's grammar does not know (one no list names, a
+# prefix of long options of which some take a value and some do not, a bare
+# -) may take the next word as its value or not, so the program position
+# after it cannot be read: the script word there still counts as the
+# program, and the call is counted (finding 0 of the fourth B9 review; fails
+# closed). A long option is known by any prefix that only its name begins
+# (--us is --user, --out is --output, --arg is --arg-file), as getopt_long
+# reads it, and those take the next word here. Each of these runs the script
+# with cancel 7 for GNU parallel, GNU env, doas, xargs, stdbuf and sudo.
 for C in 'parallel --env FOO flow-factory.sh cancel ::: 7' 'parallel --workdir /tmp flow-factory.sh cancel ::: 7' \
          'parallel --tagstring x flow-factory.sh cancel ::: 7' 'parallel -J prof flow-factory.sh cancel ::: 7' \
          'parallel -C , flow-factory.sh cancel ::: 7' 'env -a foo flow-factory.sh cancel 7' 'env --argv0 foo flow-factory.sh cancel 7' \
          'doas -a x flow-factory.sh cancel 7' 'xargs --arg root flow-factory.sh cancel' 'stdbuf --out L flow-factory.sh cancel 7' \
-         'sudo --us root flow-factory.sh cancel 7' 'env - flow-factory.sh cancel 7'; do
+         'sudo --us root flow-factory.sh cancel 7' 'env - flow-factory.sh cancel 7' 'sudo --pr x flow-factory.sh cancel 7' \
+         'parallel --hal x flow-factory.sh cancel ::: 7'; do
   tf_run auto "$C"
-  tf_expect deny "auto mode, a wrapper option the grammar does not know: $C"
+  tf_expect deny "auto mode, a wrapper option read by its documented grammar or not known: $C"
 done
+# An option no list names keeps the script word as the program even where it
+# is only a word of grep's (decision of the fifth B9 review: a missed call is
+# not accepted, a false deny after an option the lists do not know is).
+# timeout has no --foo; this pins that rule in both modes.
+tf_run auto 'timeout --foo 5 grep flow-factory.sh cancel'
+tf_expect deny "auto mode, an option no list names: the script word stays the program"
+tf_run default 'timeout --foo 5 grep flow-factory.sh cancel'
+tf_expect ask "default mode, an option no list names: the script word stays the program"
 # Each guard of the reading has a call it alone finds (the fourth B9
 # review, finding 2): python reading _flow_factory.py from its input
 # through a pattern, exec's -a value, a long option's value in the next
@@ -348,7 +361,8 @@ TF_NESTED=("flock /tmp/l -c 'flow-factory.sh cancel 7'" "flock -c 'flow-factory.
            "script -c 'flow-factory.sh cancel 7' f" "script -qc 'flow-factory.sh cancel 7' f" \
            "sudo flock /tmp/l -c 'flow-factory.sh cancel 7'" "flock \"\$LOCK\" -c 'flow-factory.sh cancel 7'" \
            "flock /tmp/l.\$\$ -c 'flow-factory.sh cancel 7'" "flock /tmp/l --comm 'flow-factory.sh cancel 7'" \
-           "flock /tmp/l --comm='flow-factory.sh cancel 7'" "script --c 'flow-factory.sh cancel 7' f")
+           "flock /tmp/l --comm='flow-factory.sh cancel 7'" "script --c 'flow-factory.sh cancel 7' f" \
+           "flock -X v /tmp/l -c 'flow-factory.sh cancel 7'" "X='flow-factory.sh cancel 7'; flock /tmp/l -c \"\$X\"")
 for M in auto default; do
   for C in "${TF_NESTED[@]}"; do
     tf_run "$M" "$C"
@@ -504,7 +518,18 @@ for M in default auto; do
            'sudo --user root grep flow-factory.sh cancel' 'sudo -E grep flow-factory.sh cancel' 'env -i grep flow-factory.sh cancel' \
            'find . -print0 | xargs -0 grep -l flow-factory.sh' 'nice -5 grep flow-factory.sh cancel' \
            'timeout -v 5 grep flow-factory.sh cancel' "flock /tmp/l -c 'flow-factory.sh status'" "script -q -c 'flow-factory.sh status' f" \
-           "flock /tmp/l grep -c 'flow-factory.sh cancel' x" "script -q f grep -c 'flow-factory.sh cancel' x"; do
+           "flock /tmp/l grep -c 'flow-factory.sh cancel' x" "script -q f grep -c 'flow-factory.sh cancel' x" \
+           'watch -d grep flow-factory.sh cancel' 'caffeinate -m grep flow-factory.sh cancel' 'sudo -B grep flow-factory.sh cancel' \
+           'nice --adj 5 grep flow-factory.sh cancel' 'stdbuf --out L grep flow-factory.sh cancel' \
+           'parallel --bar grep -l flow-factory.sh ::: a' 'parallel --halt now,fail=1 grep -l flow-factory.sh ::: a' \
+           'parallel -X grep -l flow-factory.sh ::: a' 'parallel -m grep -l flow-factory.sh ::: a' \
+           'parallel --dry-run grep -l flow-factory.sh ::: a' 'xargs -i grep {} flow-factory.sh' 'xargs --foo=1 grep -l flow-factory.sh' \
+           'parallel --halt=now,fail=1 grep -l flow-factory.sh ::: a' 'xargs -i{} grep {} flow-factory.sh' 'xargs -l1 grep -l flow-factory.sh' \
+           'xargs -e grep -l flow-factory.sh' 'sudo -BN grep flow-factory.sh cancel' 'sudo -e grep flow-factory.sh cancel' \
+           'sudo --preserve-g grep flow-factory.sh cancel' 'env --default-signal grep flow-factory.sh cancel' \
+           'parallel --eta --progress --line-buffer grep -l flow-factory.sh ::: a' 'script -r f grep flow-factory.sh cancel' \
+           'caffeinate -dims grep flow-factory.sh cancel' 'xargs --max-lines grep -l flow-factory.sh' \
+           'xargs --eof grep -l flow-factory.sh' 'xargs --replace grep {} flow-factory.sh'; do
     tf_run "$M" "$C"
     tf_expect none "$M mode, untiered: $C"
   done

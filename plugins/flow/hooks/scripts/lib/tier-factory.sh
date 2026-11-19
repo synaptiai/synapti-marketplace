@@ -555,39 +555,54 @@ _tf_target() {
 
 # _tf_wrapper_grammar <wrapper> — how a wrapper of _BD_WRAPPERS reads its
 # words before the program it runs: TF_WV the short options that take a
-# value, TF_WL the long ones that take the next word (when not written
-# --name=value), TF_WF and TF_WLF the short and long options that take no
-# value, TF_WN the operands before the program (timeout's duration, flock's
-# file, chrt's priority, taskset's mask, script's file). An option in none
-# of these lists is one the grammar does not know: whether it takes the next
-# word is not known, so the program position after it is not either. A
-# letter that takes a value in any version of the program is listed in
-# TF_WV, never in TF_WF, and a list leaves out what it is not sure of.
+# value, TF_WO the short ones whose value is only ever attached (GNU xargs
+# -i{}, -l1, -e<eof>; they never take the next word), TF_WL the long ones
+# that take the next word (when not written --name=value), TF_WF and TF_WLF
+# the short and long options that take no value, TF_WN the operands before
+# the program (timeout's duration, flock's file, chrt's priority, taskset's
+# mask, script's file). An option in none of these lists is one the grammar
+# does not know: whether it takes the next word is not known, so the
+# program position after it is not either. A letter that takes a value in
+# any version of the program is listed in TF_WV, never in TF_WF, and a list
+# leaves out what it is not sure of. Sources: sudo --help (sudo 1.9.17),
+# caffeinate(1), env(1), nice(1), stdbuf(1), script(1), time(1) and
+# xargs(1) of macOS, and the --help of GNU coreutils env, nice, stdbuf and
+# timeout. The lists of watch, parallel, flock, chrt, taskset, ionice,
+# setsid, doas, unbuffer and chronic, and GNU xargs's attached -e, -i and
+# -l, were not checked against an installed manual (none is on macOS).
 _tf_wrapper_grammar() {
-  TF_WV=""; TF_WL=""; TF_WF=""; TF_WLF=""; TF_WN=0
+  TF_WV=""; TF_WO=""; TF_WL=""; TF_WF=""; TF_WLF=""; TF_WN=0
   case "$1" in
     sudo) TF_WV=ugCDhprtUTR; TF_WL="user group close-from chdir host prompt role type other-user command-timeout chroot"
-      TF_WF=AbEHiKklnPSsVv; TF_WLF="askpass background preserve-env set-home login list non-interactive preserve-groups stdin shell validate version help remove-timeout reset-timeout" ;;
+      TF_WF=AbBEeHiKklNnPSsVv
+      TF_WLF="askpass background bell preserve-env edit set-home login list non-interactive preserve-groups stdin shell validate version help remove-timestamp reset-timestamp" ;;
     doas) TF_WV=uC; TF_WF=Lns ;;
-    env) TF_WV=uCSP; TF_WL="unset chdir split-string"; TF_WF=i0v; TF_WLF="ignore-environment null debug" ;;
-    timeout) TF_WV=sk; TF_WL="signal kill-after"; TF_WN=1; TF_WF=fpv; TF_WLF="foreground preserve-status verbose" ;;
-    xargs) TF_WV=ILnPsEdaJRS; TF_WL="max-args max-lines max-procs max-chars eof delimiter arg-file process-slot-var"
-      TF_WF=0oprtx; TF_WLF="null open-tty interactive no-run-if-empty verbose exit show-limits" ;;
+    # --block-signal, --default-signal and --ignore-signal take a signal
+    # only as --name=SIG.
+    env) TF_WV=uCSPa; TF_WL="unset chdir split-string argv0 env0-from"; TF_WF=i0v
+      TF_WLF="ignore-environment null debug block-signal default-signal ignore-signal list-signal-handling help version" ;;
+    timeout) TF_WV=sk; TF_WL="signal kill-after"; TF_WN=1; TF_WF=fpv; TF_WLF="foreground preserve-status verbose help version" ;;
+    # GNU xargs's --max-lines, --eof and --replace take their value only as
+    # --name=value (findutils xargs documentation), so they never take the
+    # next word.
+    xargs) TF_WV=ILnPsEdaJRS; TF_WO=eil; TF_WL="max-args max-procs max-chars delimiter arg-file process-slot-var"
+      TF_WF=0oprtx; TF_WLF="null open-tty interactive no-run-if-empty verbose exit show-limits max-lines eof replace" ;;
     # nice -5 is the old spelling of nice -n 5.
-    nice) TF_WV=n; TF_WL="adjustment"; TF_WF=0123456789 ;;
+    nice) TF_WV=n; TF_WL="adjustment"; TF_WF=0123456789; TF_WLF="help version" ;;
     time) TF_WV=fo; TF_WL="format output"; TF_WF=ahlpqv; TF_WLF="append portability quiet verbose" ;;
     exec) TF_WV=a; TF_WF=cl ;;
-    stdbuf) TF_WV=ioe; TF_WL="input output error" ;;
+    stdbuf) TF_WV=ioe; TF_WL="input output error"; TF_WLF="help version" ;;
     ionice) TF_WV=cnpPu; TF_WL="class classdata pid pgid uid"; TF_WF=t; TF_WLF="ignore" ;;
-    caffeinate) TF_WV=wt; TF_WF=disu ;;
+    caffeinate) TF_WV=wt; TF_WF=dimsu ;;
     chrt) TF_WN=1; TF_WF=abdfiorRv; TF_WLF="all-tasks batch deadline fifo idle other rr reset-on-fork verbose" ;;
     taskset) TF_WN=1; TF_WF=ac; TF_WLF="all-tasks cpu-list" ;;
     flock) TF_WV=wEc; TF_WL="timeout wait conflict-exit-code command"; TF_WN=1; TF_WF=sexunoFv
       TF_WLF="shared exclusive unlock nonblock nb close no-fork verbose" ;;
     script) TF_WV=FtTcOIBmoE; TF_WL="command log-out log-in log-io log-timing logging-format output-limit echo"; TF_WN=1
-      TF_WF=aefkq; TF_WLF="append return flush force quiet" ;;
-    watch) TF_WV=nq; TF_WL="interval equexit"; TF_WF=bcegptwx; TF_WLF="beep color errexit chgexit precise no-title no-wrap exec" ;;
-    parallel) TF_WV=jSadEINnLPs; TF_WL="jobs sshlogin arg-file delimiter colsep results joblog tmpdir"; TF_WF=0kquv; TF_WLF="null keep-order quote ungroup verbose" ;;
+      TF_WF=adefkpqr; TF_WLF="append return flush force quiet" ;;
+    watch) TF_WV=nq; TF_WL="interval equexit"; TF_WF=bcdegptwx; TF_WLF="beep color differences errexit chgexit precise no-title no-wrap exec" ;;
+    parallel) TF_WV=jSadEINnLPs; TF_WL="jobs sshlogin arg-file delimiter colsep results joblog tmpdir halt"; TF_WF=0kquvXm
+      TF_WLF="null keep-order quote ungroup verbose bar dry-run progress eta line-buffer" ;;
     command) TF_WF=p ;;
     setsid) TF_WF=cfw; TF_WLF="ctty fork wait" ;;
     unbuffer) TF_WF=p ;;
@@ -601,11 +616,13 @@ _tf_wrapper_grammar() {
 # with a digit, or is NAME=value, is never taken for the program: it is an
 # option's value, an operand (`nice --adjustment 5`) or an assignment. Both
 # err toward reading a later word as the program, which counts a call.
-# TF_PPSURE=1 when every option word on the way was one the grammar knows
-# exactly; an option it does not list, an abbreviated long option (sudo
-# --us) or a bare - leaves it 0, and the position is then not used.
+# TF_PPSURE=1 when every option word on the way was one the grammar knows;
+# an option it does not list, a long option written as a prefix of names of
+# which some take a value and some do not (sudo --pr), or a bare - leaves it
+# 0, and the position is then not used. A long option written --name=value
+# never takes the next word, whatever its name.
 _tf_prog_pos() {
-  local i="$1" n=${#TOK[@]} w b ops rest c done_opts name
+  local i="$1" n=${#TOK[@]} w b ops rest c done_opts
   TF_PPSURE=1
   while [ "$i" -lt "$n" ]; do
     w="${TOK[i]}"
@@ -622,16 +639,13 @@ _tf_prog_pos() {
         case "$w" in
           --) done_opts=1; i=$((i + 1)); continue ;;
           -) TF_PPSURE=0; i=$((i + 1)); continue ;;
-          --*=*)
-            name="${w#--}"; name="${name%%=*}"
-            case " $TF_WL $TF_WLF " in *" $name "*) ;; *) TF_PPSURE=0 ;; esac
-            i=$((i + 1)); continue ;;
+          --*=*) i=$((i + 1)); continue ;;
           --?*)
-            case " $TF_WL " in
-              *" ${w#--} "*) i=$((i + 2)) ;;
-              *)
-                case " $TF_WLF " in *" ${w#--} "*) ;; *) TF_PPSURE=0 ;; esac
-                i=$((i + 1)) ;;
+            _tf_long_kind "${w#--}"
+            case "$TF_LK" in
+              value) i=$((i + 2)) ;;
+              flag) i=$((i + 1)) ;;
+              *) TF_PPSURE=0; i=$((i + 1)) ;;
             esac
             continue ;;
           -?*)
@@ -640,7 +654,11 @@ _tf_prog_pos() {
               c="${rest:0:1}"; rest="${rest:1}"
               case "$TF_WV" in
                 *"$c"*) [ -n "$rest" ] || i=$((i + 1)); rest="" ;;
-                *) case "$TF_WF" in *"$c"*) ;; *) TF_PPSURE=0 ;; esac ;;
+                *)
+                  case "$TF_WO" in
+                    *"$c"*) rest="" ;;
+                    *) case "$TF_WF" in *"$c"*) ;; *) TF_PPSURE=0 ;; esac ;;
+                  esac ;;
               esac
             done
             continue ;;
@@ -656,6 +674,24 @@ _tf_prog_pos() {
     done
   done
   TF_PP=$i
+}
+
+# _tf_long_kind <name> — TF_LK: how the wrapper of _tf_wrapper_grammar's
+# lists reads --<name>: value (it takes the next word), flag (it does not),
+# or empty when not known. A name is read as getopt_long reads it: its own
+# entry, or else every entry it is a prefix of (command-parse.sh's
+# _bd_is_opt), known when all of those agree (--adj is --adjustment).
+_tf_long_kind() {
+  local o v=0 f=0
+  TF_LK=""
+  case " $TF_WL " in *" $1 "*) TF_LK=value; return 0 ;; esac
+  case " $TF_WLF " in *" $1 "*) TF_LK=flag; return 0 ;; esac
+  for o in $TF_WLF; do _bd_is_opt "--$1" "--$o" "--$1" && f=1; done
+  for o in $TF_WL; do _bd_is_opt "--$1" "--$o" "--$1" && v=1; done
+  if [ "$v" = 1 ] && [ "$f" = 0 ]; then TF_LK=value
+  elif [ "$f" = 1 ] && [ "$v" = 0 ]; then TF_LK=flag
+  fi
+  return 0
 }
 
 # _tf_cmdword <from> — BD_CMDI: the program of the simple command from

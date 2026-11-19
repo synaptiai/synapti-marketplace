@@ -357,12 +357,15 @@ _bd_words() {
 _bd_is_interpreter() {
   _bd_is_shell "$1" && return 0
   _bd_is_language "$1" && return 0
-  case "${1##*/}" in
-    eval|source|.|ssh|su|doas|sudo|env|nohup|timeout|xargs|docker|kubectl|make|at)
-      return 0 ;;
-  esac
+  case "${1##*/}" in ""|*[[:space:]]*) return 1 ;; esac
+  case " $_BD_INTERP_OTHERS " in *" ${1##*/} "*) return 0 ;; esac
   return 1
 }
+
+# The programs _bd_is_interpreter accepts besides the shells and the
+# languages: the one list it and _bd_expand_interpreter_args's
+# _BD_INTERP_RE use.
+_BD_INTERP_OTHERS="eval source . ssh su doas sudo env nohup timeout xargs docker kubectl make at"
 
 # The language interpreters, the one list _bd_is_language and the heredoc
 # reading of _bd_strip_noncode (langre) use: programs that run their script
@@ -1476,8 +1479,18 @@ _bd_runs_text() {
   return 1
 }
 
+# The words _bd_is_interpreter accepts (_BD_SHELLS, _BD_LANGS and
+# _BD_INTERP_OTHERS, with its . made literal), as one pattern for a whole
+# line of text with its quotes and backslashes removed: a name that starts
+# the text or follows a character no word of it can hold before the name (a
+# space, an operator, a /), and ends it or comes before one. Matched in any
+# case.
+_BD_INTERP_RE="${_BD_INTERP_OTHERS// /|}"
+_BD_INTERP_RE="${_BD_INTERP_RE//|.|/|\\.|}"
+_BD_INTERP_RE="(^|[^A-Za-z0-9_.-])(${_BD_SHELLS// /|}|${_BD_LANGS// /|}|$_BD_INTERP_RE)([^A-Za-z0-9_.+-]|\$)"
+
 _bd_expand_interpreter_args() {
-  local seg tok base i n found runs h prev by
+  local seg tok base i n found runs h prev by bare nc
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=()
   local BD_RIN=0 BD_CMDI=0
   local extra=""
@@ -1486,6 +1499,23 @@ _bd_expand_interpreter_args() {
     # A word with a space in it comes from quotes or a backslash, and a
     # here-string from <<<; a line with none of them has nothing to add.
     case "$seg" in *[\'\"\\]*|*'<<<'*) ;; *) continue ;; esac
+    # A line with no interpreter's name in it, once quotes and backslashes
+    # are gone (bash removes them: `"ba"sh`, `b\ash`), has no word to add
+    # either, and is passed over before _bd_words starts its awk: one awk
+    # per line of a long commit message with quoted words took seconds. Its
+    # here-strings are read only after an interpreter's name too. A line
+    # with a $ is always read: a hook that splits an expansion
+    # (BD_SPLIT_EXP=1) reads `${X:-bash}` as bash.
+    case "$seg" in
+      *'$'*) ;;
+      *)
+        bare="${seg//\\/}"; bare="${bare//\"/}"; bare="${bare//\'/}"
+        nc=0; shopt -q nocasematch && nc=1
+        shopt -s nocasematch
+        if [[ "$bare" =~ $_BD_INTERP_RE ]]; then [ "$nc" = 1 ] || shopt -u nocasematch
+        else [ "$nc" = 1 ] || shopt -u nocasematch; continue
+        fi ;;
+    esac
     # The words as bash hands them over (_bd_words): `ba\sh -c '...'` runs
     # bash, `x=$(bash -c '...')` has bash as a word of its own, and
     # `bash -c gh\ pr\ merge\ 1` hands bash one word with spaces in it.

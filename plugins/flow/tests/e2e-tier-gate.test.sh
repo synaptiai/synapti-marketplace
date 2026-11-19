@@ -598,7 +598,7 @@ fi
 # --- T18: backslashes inside a word ---------------------------------------------
 if _want tg-backslash; then
   _tg_setup tg-backslash feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; a backslash inside the program, a subcommand or an option, which bash removes before running it: each asks, naming its key; text that only mentions the action stays silent (T18)"
+    "every tier confirm; a backslash inside the program, a subcommand or an option, or quotes inside a shell's name, which bash removes before running it: each asks, naming its key; text that only mentions the action stays silent (T18)"
   while IFS='|' read -r KEY C; do
     _tg_run "$C"
     _expect_ask "tiers.$KEY"
@@ -608,6 +608,15 @@ merge|gh pr mer\ge 1
 merge|gh p\r merge 1
 merge|\g\h pr merge 1
 merge|ba\sh -c 'gh pr merge 1'
+merge|"ba"sh -c 'gh pr merge 1'
+merge|"bas"h -c 'gh pr merge 1'
+merge|zs\h -c 'gh pr merge 1'
+merge|BASH -c 'gh pr merge 1'
+merge|/bin/ba''sh -c 'gh pr merge 1'
+merge|true;"/usr/bin/"env bash -c 'gh pr merge 1'
+merge|(zsh -c 'gh pr merge 1')
+merge|echo x|"sh" -c 'gh pr merge 1'
+merge|timeout 5 'b'ash -c 'gh pr merge 1'
 release|gh rel\ease create v9
 release|git pu\sh --tags
 release|git push origin --t\ags
@@ -3151,6 +3160,28 @@ EOF"
   printf -- '--- expectations\n' | _e2e_art
   e2e_expect_equal "0 " "$E2E_RC $(cat "$E2E_DIR/timed-out")" "no jq, a 32 KB command holding tests/*_*.py: exit status and no decision"
   e2e_expect_equal yes "$([ "${TG_FAC_SECS:-99}" -lt 5 ] && echo yes || echo no)" "no jq, the 32 KB command decided within 5 seconds (${TG_FAC_SECS:-?} s)"
+  # The same 32 KB message with a quoted word on every line, with jq and
+  # without: a line that holds a quote is read for an interpreter's quoted
+  # arguments, and reading each line's words started one awk per line
+  # (about 8.5 seconds for this command, the fifth B9 review, finding 2). A
+  # line that names no interpreter is now passed over without that read.
+  TG_FAC_QMSG=$(printf 'line of "text" ab %.0s\n' $(seq 1 1800))
+  TG_FAC_QHUGE="git commit -F - <<'EOF'
+fix tests/*_*.py
+$TG_FAC_QMSG
+EOF"
+  TG_FAC_PAYLOAD "$TG_FAC_QHUGE" > "$E2E_DIR/timed-payload.json"
+  for TG_FAC_JQ in with without; do
+    printf 'code: %s\npayload: %s bytes, sha256 %s\nenvironment: PATH %s jq\nstdout: the hook run time in seconds; the hook output is kept in a file\n' \
+      "$HOOK" "$(wc -c < "$E2E_DIR/timed-payload.json" | tr -d ' ')" "$(_e2e_sha256 "$E2E_DIR/timed-payload.json")" "$TG_FAC_JQ" | _e2e_art
+    if [ "$TG_FAC_JQ" = with ]; then TG_FAC_PATH=$PATH; else TG_FAC_PATH=$(e2e_path_without jq); fi
+    _e2e_exec env "PATH=$TG_FAC_PATH" /bin/bash -c 'SECONDS=0; "$1" < "$2" > "$3"; rc=$?; printf "%s" "$SECONDS"; exit "$rc"' \
+      tg-fac-timed "$E2E_ACTIVE_PLUGIN/$HOOK" "$E2E_DIR/timed-payload.json" "$E2E_DIR/timed-out"
+    TG_FAC_SECS="$E2E_OUT"
+    printf -- '--- expectations\n' | _e2e_art
+    e2e_expect_equal "0 " "$E2E_RC $(cat "$E2E_DIR/timed-out")" "$TG_FAC_JQ jq, a 32 KB command with a quoted word on each line: exit status and no decision"
+    e2e_expect_equal yes "$([ "${TG_FAC_SECS:-99}" -lt 5 ] && echo yes || echo no)" "$TG_FAC_JQ jq, the 32 KB command with quoted lines decided within 5 seconds (${TG_FAC_SECS:-?} s)"
+  done
   # Quotes, backslashes and patterns that cannot spell either name, and a
   # pattern that matches any name, are not factory text: the rules are not
   # reached, so the factory check costs nothing for them.
