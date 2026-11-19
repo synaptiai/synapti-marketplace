@@ -917,12 +917,17 @@ for TR_C in \
   e2e_expect_equal 0 "$E2E_RC" "exit status for: $TR_C"
   e2e_expect_equal $((TR_BEFORE + 1)) "$(grep -c . "$E2E_DIR/gh-calls.log")" "gh ran: $TR_C"
 done
-TR_C='gh api -X DELETE repos/o/r/releases/1/issues/5/labels'
-printf '%s\n' "$TR_C" > "$E2E_REPO/m.sh"
-TR_BEFORE=$(grep -c . "$E2E_DIR/gh-calls.log")
-_tr_call 'bash m.sh'
-e2e_expect_equal 1 "$E2E_RC" "exit status for: $TR_C"
-e2e_expect_err "(tiers.release) needs your confirmation"
-e2e_expect_equal 0 "$(printf '%s' "$E2E_ERR" | grep -c issueUpdate)" "tiers.issueUpdate named for: $TR_C"
-e2e_expect_equal "$TR_BEFORE" "$(grep -c . "$E2E_DIR/gh-calls.log")" "gh did not run: $TR_C"
+# The second path ends like one label removed by name, so it pins that
+# the label match skips a path under releases/ as well as one under git/refs/.
+for TR_C in \
+  'gh api -X DELETE repos/o/r/releases/1/issues/5/labels' \
+  'gh api -X DELETE repos/o/r/releases/1/issues/5/labels/bug'; do
+  printf '%s\n' "$TR_C" > "$E2E_REPO/m.sh"
+  TR_BEFORE=$(grep -c . "$E2E_DIR/gh-calls.log")
+  _tr_call 'bash m.sh'
+  e2e_expect_equal 1 "$E2E_RC" "exit status for: $TR_C"
+  e2e_expect_err "(tiers.release) needs your confirmation"
+  e2e_expect_equal 0 "$(printf '%s' "$E2E_ERR" | grep -c issueUpdate)" "tiers.issueUpdate named for: $TR_C"
+  e2e_expect_equal "$TR_BEFORE" "$(grep -c . "$E2E_DIR/gh-calls.log")" "gh did not run: $TR_C"
+done
 e2e_expect_equal 0 "$(_tr_trail | grep -c 'auto-log')" "wrapper breadcrumbs"

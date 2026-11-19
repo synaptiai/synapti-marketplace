@@ -2979,10 +2979,15 @@ if _want tg-issueupdate-refs-releases; then
     _expect_silent_allow
     e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
   done
-  C='gh api -X DELETE repos/o/r/releases/1/issues/5/labels'
-  _tg_run "$C"
-  _expect_ask "(tiers.release)"
-  case "$E2E_OUT" in *issueUpdate*) _e2e_result fail "only tiers.release is named for: $C" ;; *) _e2e_result pass "only tiers.release is named for: $C" ;; esac
+  # The second path ends like one label removed by name, so it pins that
+  # the label match skips a path under releases/ as well as one under git/refs/.
+  for C in \
+    'gh api -X DELETE repos/o/r/releases/1/issues/5/labels' \
+    'gh api -X DELETE repos/o/r/releases/1/issues/5/labels/bug'; do
+    _tg_run "$C"
+    _expect_ask "(tiers.release)"
+    case "$E2E_OUT" in *issueUpdate*) _e2e_result fail "only tiers.release is named for: $C" ;; *) _e2e_result pass "only tiers.release is named for: $C" ;; esac
+  done
   e2e_expect_equal "" "$(_tg_trail)" "trail files"
   e2e_expect_clean_edges
 fi

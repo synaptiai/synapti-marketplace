@@ -116,7 +116,9 @@ def is_reply_to(comment, rnd):
 def _rounds(needs_info):
     if not isinstance(needs_info, dict):
         return []
-    return [needs_info] + [r for r in (needs_info.get("earlier") or []) if isinstance(r, dict)]
+    # An earlier round that is not an object is passed on as it is:
+    # is_reply_to, the only reader of these rounds, gives False for it.
+    return [needs_info] + list(needs_info.get("earlier") or [])
 
 
 def _comments(snapshot):

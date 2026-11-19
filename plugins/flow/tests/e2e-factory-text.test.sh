@@ -507,7 +507,8 @@ s = X.spec_input_set(snap([c(97, '/flow-factory spec\nx', trusted='yes')]), None
 print('truthy-trust in_set=%s' % (97 in ids(s)))
 # An earlier round that is not an object is skipped, not an error: the set is
 # the one the same snapshot gives without it. Comment 99 names no question id,
-# so every round, the junk one included, is tried for it.
+# so every round, the junk one included, is tried for it. is_reply_to's own
+# check that a round is an object is what skips it.
 js = snap([c(98, 'NI-1: 8080'), c(99, 'thanks, will check')])
 print('junk-earlier same=%s' % (X.spec_input_set(js, ni(T1, ['NI-1'], earlier=['junk']), {})
                                 == X.spec_input_set(js, ni(T1, ['NI-1']), {})
