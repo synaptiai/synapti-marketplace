@@ -212,6 +212,15 @@ One row per setting. The default is the value in the plugin's `settings.json` (o
 | `flow.factory.nextBudgetSeconds` | `60` | `bin/_flow_factory_next.py`: the time one `next` pass may take |
 | `flow.factory.syncIntervalSeconds` | `60` | `bin/_flow_factory_next.py`: the least time between two GitHub syncs; `0` syncs every pass |
 | `flow.factory.maxRounds` | `3` | `bin/_flow_factory_table.py`: review rounds before a job parks (`round_limit = round + maxRounds`) |
+| `flow.factory.intake.maxRounds` | `3` | `bin/_flow_factory_table.py`: needs-info rounds a job may take in intake; once the job's intake round reaches it, the job parks in needs_human instead of asking again. At least `1` |
+| `flow.factory.labels.inProgress` | `flow:in-progress` | `bin/_flow_factory_next.py`: added together with the engine's assignment when a job leaves intake for prepare, as one `gh issue edit` that counts under both `issueAssign` and `issueUpdate` |
+| `flow.factory.labels.needsInfo` | `flow:needs-info` | `bin/_flow_factory_next.py`: set on the issue while its job waits in needs_info for answers, and removed when it leaves |
+| `flow.factory.labels.needsHuman` | `flow:needs-human` | `bin/_flow_factory_next.py`: set on the issue while its job waits in needs_human, and removed when it leaves |
+| `flow.factory.labels.specReview` | `flow:spec-review` | not read yet: the label that will mark a job whose spec waits for a person's approval; the spec-approval stage that sets it comes in a later phase |
+| `flow.factory.labels.ready` | `flow:ready` | not read yet: the label that will be added with `gh pr ready` when a job's pull request is ready for a person, and removed with `gh pr ready --undo` when the job leaves the ready stage; that stage comes in a later phase |
+| `flow.factory.labels.priorityHigh` | `flow:priority-high` | `bin/_flow_factory_next.py`: read only, never added by the engine; queued jobs whose issue carries it are visited first, then the rest by issue number |
+| `flow.factory.trustedPermission` | `write` | `bin/_flow_factory_issue.py` and `bin/_flow_factory_commands.py`: the least repository role (`write`, `maintain` or `admin`) whose queue label, issue edits, replies, close and `/flow-factory` comment commands the engine trusts. `triage` and `read` are refused by the schema, and the engine applies the higher of `write` and this value, so a lower value never lowers the bar. A triage role may still send `/flow-factory retry` |
+| `flow.factory.trustedBots` | `[]` | `bin/_flow_factory_issue.py` and `bin/_flow_factory_commands.py`: bot logins whose repository role is checked like a person's. Every other bot (a login ending in `[bot]`, or an account of type Bot) is untrusted whatever its role |
 | `flow.factory.worker.model` | not set | `bin/_flow_factory_launch.py`: the model every worker runs; when not set, the model the platform probe recorded |
 | `flow.factory.worker.mcpConfig` | not set | `bin/_flow_factory_launch.py`: JSON text passed to each worker as its MCP configuration |
 | `flow.factory.worker.extraEnv` | `[]` | `bin/_flow_factory_launch.py`: names of further environment variables passed to each worker |

@@ -90,6 +90,8 @@ outbox-invalid-blocking-string.json blocking
 outbox-invalid-key-item.json key[0]
 outbox-invalid-argv-item.json argv[3]
 outbox-invalid-body-file-absolute.json body_file
+outbox-invalid-body-file-dotdot.json body_file
+outbox-invalid-body-file-inner-dotdot.json body_file
 outbox-invalid-effect-two.json effect
 outbox-invalid-effect-empty.json effect
 outbox-invalid-effect-sha.json effect
