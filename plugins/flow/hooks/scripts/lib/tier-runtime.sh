@@ -39,6 +39,11 @@
 #   gh pr create / new                              prCreate
 #   gh issue create / new                           issueCreate
 #   gh issue edit --add-assignee                    issueAssign
+#   gh issue comment, close, reopen; gh pr comment, review, ready (and
+#                  --undo), close; gh label create; gh issue edit and gh pr
+#                  edit with a label, body, title or reviewer flag
+#                                                   issueUpdate (an issue
+#                  edit that also adds an assignee is issueAssign as well)
 #   gh release create, new, edit, delete, upload, delete-asset   release
 #   gh api         by method and endpoint (a #fragment or ?query left out,
 #                  as gh sends it), as tier-gate.sh's header lists them; a
@@ -92,6 +97,23 @@
 # the command text of each of these.
 
 _tr_note() { printf 'flow: tier check — %s\n' "$1" >&2; }
+
+# The tier keys, and what each does in a sentence. tier-gate.sh sources this
+# file for the same list, so the keys it counts in an approval record
+# (asked) are the keys this file takes approvals for: a key in one list and
+# not the other would ask and then refuse the approved command.
+_TR_TIER_KEYS="merge release push prCreate issueAssign issueUpdate issueCreate"
+_tr_phrase() {
+  case "$1" in
+    push) printf 'Pushing to a remote' ;;
+    prCreate) printf 'Creating a pull request' ;;
+    issueAssign) printf 'Assigning an issue' ;;
+    issueUpdate) printf 'Writing to an existing issue or pull request' ;;
+    issueCreate) printf 'Creating an issue' ;;
+    merge) printf 'Merging a pull request' ;;
+    release) printf 'Creating a release or pushing a tag' ;;
+  esac
+}
 
 # The first <prog> on PATH that is not in a wrapper directory: this one, or
 # another flow's (a nested session, an older version), which would run this
@@ -278,7 +300,7 @@ _tr_gh() {   # $1 = alias depth, rest = gh's arguments
     if [ -z "$w1" ]; then
       w1=$a; shift
       if [ "$w1" = api ]; then _tr_gh_api "$@"; return 0; fi
-      case "$w1" in pr|issue|release) continue ;; esac
+      case "$w1" in pr|issue|release|label) continue ;; esac
       rest=("$@")
       break
     fi
@@ -288,17 +310,27 @@ _tr_gh() {   # $1 = alias depth, rest = gh's arguments
     "pr merge") _tr_add merge "gh pr merge" ;;
     "pr create"|"pr new") _tr_add prCreate "gh pr create" ;;
     "issue create"|"issue new") _tr_add issueCreate "gh issue create" ;;
-    "issue edit")
+    "issue edit"|"pr edit")
+      # An edit can assign and label at once: each key is added once.
       for a in "$@"; do
-        case "$a" in --add-assignee|--add-assignee=*) _tr_add issueAssign "gh issue edit --add-assignee"; break ;; esac
+        case "$w1:$a" in
+          issue:--add-assignee|issue:--add-assignee=*) _tr_add issueAssign "gh issue edit --add-assignee" ;;
+          *:--add-label|*:--add-label=*|*:--remove-label|*:--remove-label=*|\
+          *:--body|*:--body=*|*:--body-file|*:--body-file=*|*:--title|*:--title=*|\
+          *:-b|*:-b?*|*:-F|*:-F?*|*:-t|*:-t?*|\
+          pr:--add-reviewer|pr:--add-reviewer=*|pr:--remove-reviewer|pr:--remove-reviewer=*)
+            _tr_add issueUpdate "gh $w1 edit $a" ;;
+        esac
       done ;;
+    "issue comment"|"issue close"|"issue reopen"|"pr comment"|"pr review"|"pr ready"|"pr close"|"label create")
+      _tr_add issueUpdate "gh $w1 $w2" ;;
     "release create"|"release new")
       _tr_add release "gh release $w2"
       _tr_release_tag "$@" ;;
     "release edit"|"release delete"|"release upload"|"release delete-asset")
       _tr_add release "gh release $w2" ;;
   esac
-  case "$w1" in pr|issue|release|'') return 0 ;; esac
+  case "$w1" in pr|issue|release|label|'') return 0 ;; esac
   # Any other first word: an alias (gh's own `co` among them, which a user
   # may redefine), an extension, or a command flow does not tier.
   [ "$depth" -lt 10 ] || return 0
@@ -475,6 +507,13 @@ _tr_gql() {   # $1 = the document, or empty when it could not be read
     lf=$(printf '%s' "$f" | LC_ALL=C tr 'A-Z' 'a-z')
     case "$lf" in
       disablepullrequestautomerge|mutation) ;;
+      # Writes to an existing issue or pull request. None of these names
+      # holds merge, release or ref, so the arms below would not take them.
+      addcomment|updateissuecomment|addpullrequestreview|submitpullrequestreview|\
+      addpullrequestreviewcomment|addpullrequestreviewthreadreply|addlabelstolabelable|\
+      removelabelsfromlabelable|markpullrequestreadyforreview|\
+      convertpullrequesttodraft|closepullrequest|updatepullrequest|requestreviews|\
+      updateissue|closeissue|reopenissue) _tr_add issueUpdate "gh api graphql $f" ;;
       *merge*|enqueuepullrequest) _tr_add merge "gh api graphql $f" ;;
       *release*|*ref*) _tr_add release "gh api graphql $f" ;;
       createpullrequest) _tr_add prCreate "gh api graphql $f" ;;
@@ -502,7 +541,7 @@ _tr_field_value() {   # $1 = -f or -F, $2 = the value after key=
 }
 
 _tr_gh_api() {   # $@ = the arguments after api
-  local method="" ep="" body=0 a k v kind q="" qok=1 input="" ref="" refok=1 assignee=0 i c
+  local method="" ep="" body=0 a k v kind q="" qok=1 input="" ref="" refok=1 assignee=0 prfield=0 i c
   while [ $# -gt 0 ]; do
     a=$1; shift
     kind=""
@@ -548,6 +587,7 @@ _tr_gh_api() {   # $@ = the arguments after api
         ref)
           if _tr_field_value "$kind" "$v"; then ref=$_TR_FV; else refok=0; fi ;;
         assignee|assignees|assignee\[\]|assignees\[\]) assignee=1 ;;
+        state|body|title) prfield=1 ;;
       esac
     fi
   done
@@ -593,7 +633,18 @@ _tr_gh_api() {   # $@ = the arguments after api
     [ "$method" = POST ] && _tr_add issueCreate "gh api POST $ep"
   elif [[ "$ep" =~ ${R}issues/[^/]+/assignees/?$ ]]; then
     [ "$method" = POST ] && _tr_add issueAssign "gh api POST $ep"
+  elif [[ "$ep" =~ ${R}issues/[^/]+/comments/?$ ]] || [[ "$ep" =~ ${R}pulls/[^/]+/(comments|reviews|requested_reviewers)/?$ ]] ||
+       [[ "$ep" =~ ${R}pulls/[^/]+/comments/[^/]+/replies/?$ ]]; then
+    [ "$method" = POST ] && _tr_add issueUpdate "gh api POST $ep"
+  elif [[ "$ep" =~ ${R}(issues|pulls)/comments/[^/]+/?$ ]]; then
+    case "$method" in PATCH|DELETE) _tr_add issueUpdate "gh api $method $ep" ;; esac
+  elif [[ "$ep" =~ ${R}issues/[^/]+/labels/?$ ]]; then
+    case "$method" in POST|PUT|DELETE) _tr_add issueUpdate "gh api $method $ep" ;; esac
+  elif [[ "$ep" =~ ${R}pulls/[^/]+/?$ ]]; then
+    [ "$method" = PATCH ] && [ "$prfield" = 1 ] && _tr_add issueUpdate "gh api PATCH $ep"
   elif [[ "$ep" =~ ${R}issues/[^/]+/?$ ]]; then
+    # PATCH on an issue changes it, whatever the fields (design decision Q9).
+    [ "$method" = PATCH ] && _tr_add issueUpdate "gh api PATCH $ep"
     case "$method" in
       PATCH|PUT)
         if [ "$assignee" = 1 ]; then
@@ -609,17 +660,6 @@ _tr_gh_api() {   # $@ = the arguments after api
 }
 
 # --- the decision -----------------------------------------------------------
-
-_tr_phrase() {
-  case "$1" in
-    push) printf 'Pushing to a remote' ;;
-    prCreate) printf 'Creating a pull request' ;;
-    issueAssign) printf 'Assigning an issue' ;;
-    issueCreate) printf 'Creating an issue' ;;
-    merge) printf 'Merging a pull request' ;;
-    release) printf 'Creating a release or pushing a tag' ;;
-  esac
-}
 
 # Use one of the approvals the call's record holds for $1: 0 when there was
 # one (or the gate could not count them), 1 when there is none left. The

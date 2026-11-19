@@ -9,7 +9,15 @@
 #   tiers.push         git push                                  default journal
 #   tiers.prCreate     gh pr create                              default journal
 #   tiers.issueAssign  gh issue edit --add-assignee              default journal
+#   tiers.issueUpdate  gh issue comment, close and reopen;       default journal
+#                      gh pr comment, review, ready (and
+#                      --undo) and close; gh issue edit and gh
+#                      pr edit with a label, body, title or
+#                      reviewer flag; gh label create
 #   tiers.issueCreate  gh issue create                           default journal
+#
+# An issue edit that both assigns and labels (or sets a body or a title) is
+# issueAssign and issueUpdate at once, and asks or journals for each.
 #   tiers.merge        gh pr merge                               always confirm
 #   tiers.release      gh release create, edit, delete, upload   always confirm
 #                      and delete-asset, and a tag push
@@ -42,6 +50,15 @@
 #   POST .../issues                                       issueCreate
 #   POST .../issues/{n}/assignees; PATCH or PUT
 #     .../issues/{n} with an assignee or assignees field  issueAssign
+#   POST .../issues/{n}/comments; PATCH or DELETE
+#     .../issues/comments/{id}; POST .../pulls/{n}/reviews,
+#     .../pulls/{n}/comments, .../pulls/{n}/comments/{id}/
+#     replies or .../pulls/{n}/requested_reviewers; PATCH
+#     or DELETE .../pulls/comments/{id}; POST, PUT or
+#     DELETE .../issues/{n}/labels; PATCH .../pulls/{n}
+#     with a state, body or title field; PATCH
+#     .../issues/{n} (with an assignee field, issueAssign
+#     as well)                                            issueUpdate
 #   graphql with mergePullRequest or
 #     enablePullRequestAutoMerge                          merge
 #     (disablePullRequestAutoMerge is not one)
@@ -49,6 +66,15 @@
 #   graphql with createPullRequest                        prCreate
 #   graphql with createIssue                              issueCreate
 #   graphql with addAssigneesToAssignable                 issueAssign
+#   graphql with addComment, updateIssueComment,
+#     addPullRequestReview, submitPullRequestReview,
+#     addPullRequestReviewComment,
+#     addPullRequestReviewThreadReply,
+#     addLabelsToLabelable, removeLabelsFromLabelable,
+#     markPullRequestReadyForReview,
+#     convertPullRequestToDraft, closePullRequest,
+#     updatePullRequest, requestReviews, updateIssue,
+#     closeIssue or reopenIssue                           issueUpdate
 #   graphql mutation with any other field whose name
 #     holds Merge (any case), or enqueuePullRequest       merge
 #   graphql mutation with any other field whose name
@@ -242,11 +268,18 @@
 #                                                        repository does not keep a flow journal)
 #     the trail is refused (a symlink) or the write   -> exit 0, one stderr line
 #     fails
-#   push, prCreate, issueAssign or issueCreate whose  -> that action is allowed, one stderr line
-#     value is not autonomous|journal|confirm, or
-#     whose setting cannot be read (cascade fails)
-#   gh api PATCH/PUT on .../issues/{n} whose body is  -> allowed, one stderr line (it may change
-#     a file (--input)                                   assignees; not a confirm-floor action)
+#   push, prCreate, issueAssign, issueUpdate or       -> that action is allowed, one stderr line
+#     issueCreate whose value is not
+#     autonomous|journal|confirm, or whose setting
+#     cannot be read (cascade fails)
+#   gh api PATCH/PUT on .../issues/{n} whose body is  -> one stderr line for the assignees (it may
+#     a file (--input)                                   change them; not a confirm-floor action);
+#                                                        a PATCH is still issueUpdate, as above
+#   a command naming flow-factory, _flow_factory or   -> the factory rules (lib/tier-factory.sh)
+#     /factory, with FLOW_FACTORY_JOB, _DIRECTIVE,       decide first, before jq is needed; a deny
+#     _IO or _MAIN set or <main checkout>/<runtime       there is the answer, whatever else the
+#     dir>/factory present                               command does. A rules file that does not
+#                                                        load denies the command
 #   text this hook cannot read: a program, gh         -> no action is named for it: exit 0, no
 #     subcommand, gh api endpoint, method or GraphQL     output. The gh and git wrappers see the
 #     query that is a variable or a substitution         program and its words when it runs, and
@@ -362,7 +395,7 @@
 # merge 1"` and `npm run git push` ask nothing.
 #
 # Not covered, by design. A Tier 2 action (push, prCreate, issueAssign,
-# issueCreate) behind a program this hook does not know, or under a command
+# issueUpdate, issueCreate) behind a program this hook does not know, or under a command
 # word that is a variable: `caffeinate git push` is neither asked about nor
 # journaled, since a prompt for every script that
 # mentions git would cost more than the setting saves. And what text cannot
@@ -431,6 +464,13 @@ export CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT"
 
 _tg_note() { printf 'flow: tier-gate — %s\n' "$1" >&2; }
 
+# The tier keys (_TR_TIER_KEYS) and their phrases (_tr_phrase) come from the
+# run-time check's file, so an action this hook asks about is one the gh and
+# git wrappers take the approval for. The file only defines; a hook that
+# cannot load it reads no command (below, with the parser).
+# shellcheck source=lib/tier-runtime.sh
+. "$SCRIPT_DIR/lib/tier-runtime.sh" 2>/dev/null
+
 # The record the run-time check reads (lib/tier-runtime.sh) for this Bash
 # call: a directory pending.<time>.<pid> holding the command as Claude Code
 # hands it to the shell (cmdq: the text inside `eval '...'`, each ' written
@@ -478,7 +518,7 @@ _tg_record() {   # $1 = asked (key, or key:* when uncounted), $2 = journaled key
 $segs
 TG_MANY_EOF
   set -f
-  for k in merge release push prCreate issueAssign issueCreate; do
+  for k in ${_TR_TIER_KEYS:-}; do
     c=0
     for t in $1; do
       case "$t" in
@@ -517,6 +557,75 @@ _tg_undecidable() {
 }
 
 INPUT=$(cat 2>/dev/null) || INPUT=""
+
+# --- the factory rules ----------------------------------------------------------
+# A flow factory (bin/flow-factory.sh) has rules of its own for Bash
+# commands, in lib/tier-factory.sh: what a worker session may run, which
+# person commands ask or are refused, and which commands may not touch the
+# factory's files. They come before everything below, since a person command
+# such as `flow-factory.sh confirm <id>` names no gh, push, merge or release
+# and would pass the cheap reject, and since they must hold without jq and for
+# a payload jq cannot parse.
+#
+# They apply only in a factory: a FLOW_FACTORY_JOB, _DIRECTIVE, _IO or _MAIN
+# variable is set in this hook's environment, or the directory
+# <main checkout>/<runtime dir>/factory exists for the repository the command
+# runs in (the main checkout is the parent of the common git directory, so a
+# linked worktree finds it). First the payload must name flow-factory,
+# _flow_factory or /factory at all, so an ordinary command costs one text
+# match and nothing is resolved for it.
+#
+# The rules file is sourced and _tg_factory_rules is called with INPUT (the
+# raw payload), SCRIPT_DIR and PLUGIN_ROOT set; COMMAND is not read yet, and
+# jq may be missing. It returns to leave the decision to the rest of this
+# hook, or decides by printing one decision and exiting: _tg_deny prints a
+# deny without jq. A deny exits before any ask, breadcrumb or approval
+# record of the same command is written, so it wins over them. A rules file
+# that does not load, or that does not define _tg_factory_rules, denies: the
+# factory's rules would otherwise not apply at all.
+
+# The text as a JSON string's contents, without jq: backslash, double quote,
+# line end, carriage return and tab escaped, and any other control character
+# written as a space.
+_tg_json_text() {
+  local t="$1" b='\' q='"'
+  t=${t//"$b"/"$b$b"}
+  t=${t//"$q"/"$b$q"}
+  t=${t//$'\n'/"${b}n"}
+  t=${t//$'\r'/"${b}r"}
+  t=${t//$'\t'/"${b}t"}
+  printf '%s' "$t" | LC_ALL=C tr '\000-\037' ' '
+}
+
+_tg_deny() {   # $1 = the reason shown
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' \
+    "$(_tg_json_text "$1")"
+  exit 0
+}
+
+_tg_in_factory() {
+  local cwd="" common top rt
+  [ -n "${FLOW_FACTORY_JOB:-}${FLOW_FACTORY_DIRECTIVE:-}${FLOW_FACTORY_IO:-}${FLOW_FACTORY_MAIN:-}" ] && return 0
+  if command -v jq >/dev/null 2>&1; then
+    cwd=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null) || cwd=""
+  fi
+  [ -n "$cwd" ] && [ -d "$cwd" ] || cwd="$PWD"
+  common=$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  top=$(dirname -- "$common") || return 1
+  rt=$(cd "$top" 2>/dev/null && env -u PYTHONPATH "$PLUGIN_ROOT/bin/flow-runtime-dir.sh" 2>/dev/null) || return 1
+  [ -n "$rt" ] && [ -d "$top/$rt/factory" ]
+}
+
+case "$INPUT" in
+  *flow-factory*|*_flow_factory*|*/factory*)
+    if _tg_in_factory; then
+      # shellcheck source=lib/tier-factory.sh
+      if ! . "$SCRIPT_DIR/lib/tier-factory.sh" 2>/dev/null || ! declare -F _tg_factory_rules >/dev/null; then
+        _tg_deny "Flow is in a factory here, and its factory rules (hooks/scripts/lib/tier-factory.sh) could not be loaded, so this command, which names the factory, was not run. Reinstall the flow plugin."
+      fi
+      _tg_factory_rules
+    fi ;;
+esac
 
 if ! command -v jq >/dev/null 2>&1; then
   # Without jq the payload cannot be parsed, so the text from the command key
@@ -585,6 +694,8 @@ for _tg_fn in _bd_strip_noncode _bd_segments _bd_expand_interpreter_args _bd_wor
   type "$_tg_fn" >/dev/null 2>&1 || _tg_undecidable "$COMMAND" "the command parser did not load"
 done
 [ -n "${_BD_SEG_AWK:-}" ] || _tg_undecidable "$COMMAND" "the command parser did not load"
+{ declare -F _tr_phrase >/dev/null && [ -n "${_TR_TIER_KEYS:-}" ]; } \
+  || _tg_undecidable "$COMMAND" "the tier key list (lib/tier-runtime.sh) did not load"
 # A segment that holds a substitution is followed by its reading with the
 # substitution removed, marked __BD_ALT__ (_bd_segments, _tg_read_text).
 BD_SEG_ALT=1
@@ -1233,12 +1344,42 @@ _tg_pflag_short() {   # $1 = the word, $2 = the letters that take a value, $3 = 
 }
 
 # What a gh api request with this method does, one key per line: merge,
-# release, tagUnread, prCreate, issueCreate, issueAssign, assignUnread. Reads
+# release, tagUnread, prCreate, issueCreate, issueAssign, issueUpdate,
+# assignUnread. Reads
 # ep, fields and input of _tg_api. A field is `f:name=value` (-f, a raw
 # string) or `F:name=value` (-F, where a value `@file` or `@-` is read from
 # that file or stdin).
 _tg_api_keys() {   # $1 = method (POST, PUT, PATCH or DELETE)
-  local m="$1" fv ft name refs="" have=0 unr=0
+  local m="$1" fv ft name refs="" have=0 unr=0 R='(^|/)'
+  # Writes to an existing issue or pull request: comments, reviews, review
+  # replies, requested reviewers and labels, and a pull request's state, body
+  # or title. A PATCH of an issue is matched below, with its assignees. A
+  # git ref or a release is never one, whatever its last parts read like
+  # (git/refs/tags/issues/comments/9 is a tag): those are read below.
+  case "$ep" in */git/refs/*|*/releases/*) m="skip:$m" ;; esac
+  case "$m" in
+    POST)
+      if [[ "$ep" =~ ${R}issues/[^/]+/(comments|labels)$ ]] ||
+         [[ "$ep" =~ ${R}pulls/[^/]+/(reviews|comments|requested_reviewers)$ ]] ||
+         [[ "$ep" =~ ${R}pulls/[^/]+/comments/[^/]+/replies$ ]]; then
+        printf 'issueUpdate\n'; return 0
+      fi ;;
+    PATCH|DELETE)
+      if [[ "$ep" =~ ${R}(issues|pulls)/comments/[^/]+$ ]]; then printf 'issueUpdate\n'; return 0; fi ;;
+  esac
+  case "$m" in
+    PUT|DELETE)
+      if [[ "$ep" =~ ${R}issues/[^/]+/labels$ ]]; then printf 'issueUpdate\n'; return 0; fi ;;
+    PATCH)
+      if [[ "$ep" =~ ${R}pulls/[^/]+$ ]]; then
+        for fv in "${fields[@]+"${fields[@]}"}"; do
+          name="${fv#?:}"; name="${name%%=*}"
+          case "$name" in state|body|title) printf 'issueUpdate\n'; return 0 ;; esac
+        done
+        return 0
+      fi ;;
+  esac
+  m="${m#skip:}"
   # A tag ref deleted or moved (DELETE or PATCH on .../git/refs/tags/<tag>)
   # is a tag push. A ref whose last part cannot be read may be a tag.
   if [ "$m" = DELETE ] || [ "$m" = PATCH ]; then
@@ -1259,6 +1400,7 @@ _tg_api_keys() {   # $1 = method (POST, PUT, PATCH or DELETE)
       */releases/*) [ "$m" = PATCH ] && { printf 'release\n'; return 0; } ;;
       */issues/*/*) ;;
       */issues/*)
+        [ "$m" = PATCH ] && printf 'issueUpdate\n'
         for fv in "${fields[@]+"${fields[@]}"}"; do
           name="${fv#?:}"; name="${name%%=*}"
           case "$name" in
@@ -1374,13 +1516,15 @@ _tg_api() {   # $1 = index of gh, $2 = index of the word api
         if t=$(_tg_query_text "@$input"); then text="$text $t"; fi
       fi
       [ "$found" = 1 ] || return 0
-      for m in $(printf '%s' "$text" | grep -owE 'mergePullRequest|enablePullRequestAutoMerge|createRelease|updateRelease|createPullRequest|createIssue|addAssigneesToAssignable' | LC_ALL=C sort -u); do
+      local iu=0
+      for m in $(printf '%s' "$text" | grep -owE 'mergePullRequest|enablePullRequestAutoMerge|createRelease|updateRelease|createPullRequest|createIssue|addAssigneesToAssignable|addComment|updateIssueComment|addPullRequestReview|submitPullRequestReview|addPullRequestReviewComment|addPullRequestReviewThreadReply|addLabelsToLabelable|removeLabelsFromLabelable|markPullRequestReadyForReview|convertPullRequestToDraft|closePullRequest|updatePullRequest|requestReviews|updateIssue|closeIssue|reopenIssue' | LC_ALL=C sort -u); do
         case "$m" in
           mergePullRequest|enablePullRequestAutoMerge) _tg_emit merge "$1" ;;
           createRelease|updateRelease) _tg_emit release "$1" ;;
           createPullRequest) _tg_emit prCreate "$1" ;;
           createIssue) _tg_emit issueCreate "$1" ;;
           addAssigneesToAssignable) _tg_emit issueAssign "$1" ;;
+          *) [ "$iu" = 1 ] || { _tg_emit issueUpdate "$1"; iu=1; } ;;
         esac
       done
       # Any other mutation field whose name holds Merge, Release or Ref, in
@@ -1548,12 +1692,24 @@ _tg_gh() {   # $1 = index of gh
     # a release (and its tag, with --cleanup-tag); upload and delete-asset
     # change the files people download from it.
     "release edit"|"release delete"|"release upload"|"release delete-asset") _tg_emit release "$1" ;;
-    "issue edit")
+    # An edit can assign and label at once (design: a command that also
+    # assigns counts under issueAssign as well): each key once.
+    "issue edit"|"pr edit")
+      local ia=0 iu=0
       for ((k = i2 + 1; k < n; k++)); do
-        case "${TOK[k]}" in
-          --add-assignee|--add-assignee=*) _tg_emit issueAssign "$1"; break ;;
+        case "$w1:${TOK[k]}" in
+          issue:--add-assignee|issue:--add-assignee=*)
+            [ "$ia" = 1 ] || { _tg_emit issueAssign "$1"; ia=1; } ;;
+          *:--add-label|*:--add-label=*|*:--remove-label|*:--remove-label=*|\
+          *:--body|*:--body=*|*:--body-file|*:--body-file=*|*:--title|*:--title=*|\
+          *:-b|*:-b?*|*:-F|*:-F?*|*:-t|*:-t?*|\
+          pr:--add-reviewer|pr:--add-reviewer=*|pr:--remove-reviewer|pr:--remove-reviewer=*)
+            [ "$iu" = 1 ] || { _tg_emit issueUpdate "$1"; iu=1; } ;;
         esac
       done ;;
+    # Writes to an existing issue or pull request.
+    "issue comment"|"issue close"|"issue reopen"|"pr comment"|"pr review"|"pr ready"|"pr close"|"label create")
+      _tg_emit issueUpdate "$1" ;;
   esac
   return 0
 }
@@ -2303,16 +2459,7 @@ ACTIONS=$(printf '%s\n' "$ACTIONS" | awk '!seen[$0]++')
 REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || REPO_ROOT=""
 RUN_DIR="${REPO_ROOT:-$CWD}"
 
-_tg_phrase() {
-  case "$1" in
-    push) printf 'Pushing to a remote' ;;
-    prCreate) printf 'Creating a pull request' ;;
-    issueAssign) printf 'Assigning an issue' ;;
-    issueCreate) printf 'Creating an issue' ;;
-    merge) printf 'Merging a pull request' ;;
-    release) printf 'Creating a release or pushing a tag' ;;
-  esac
-}
+_tg_phrase() { _tr_phrase "$1"; }
 
 # host/owner/name of a git remote URL or a gh repository argument, in lower
 # case: https://host/o/n(.git), ssh://user@host:port/o/n, user@host:o/n,

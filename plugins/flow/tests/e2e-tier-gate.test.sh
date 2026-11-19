@@ -173,6 +173,29 @@
 #      program word "$@/journal-append.sh" or "$1/...", makes the markdown or
 #      a command held in a variable in its quoted body ask; or a merge
 #      written out in that body after export BASH_ENV runs unasked
+#   T41 a write to an existing issue or pull request (a comment, a review, a
+#      label, a body or title edit, ready, close, reopen, a label created; by
+#      gh, by gh api REST or by a GraphQL mutation) is not read as
+#      tiers.issueUpdate under one of its three values, or one of the
+#      mutation names is read as a merge or a release as well; or a read, a
+#      PATCH of a pull request's base, --remove-assignee or --milestone is
+#      read as one
+#   T42 gh issue edit that both assigns and labels names only the first of
+#      issueAssign and issueUpdate
+#   T43 tier-gate's own default for a tiers key differs from the plugin's
+#      settings.json default
+#   T44 the factory rules are not reached for a command that names no gh,
+#      push, merge or release, without jq, or with a payload jq cannot parse;
+#      a factory decision loses to an ask or a breadcrumb of the same
+#      command; the deny is not valid JSON; a factory rules file that does
+#      not load lets the command through
+#   T45 lib/tier-factory.sh is sourced for a command with no factory text,
+#      or outside a factory (no FLOW_FACTORY_JOB, _DIRECTIVE, _IO or _MAIN,
+#      and no <main checkout>/<runtime dir>/factory), or is not sourced in a
+#      linked worktree whose main checkout has the factory directory
+#   T46 FLOW_FACTORY_* or XDG_STATE_HOME exported in the shell that runs the
+#      suite reaches the hook, so an ordinary case is decided by the factory
+#      rules
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -195,7 +218,7 @@ _want() {
 }
 
 HOOK=hooks/scripts/tier-gate.sh
-ALL_CONFIRM='{"tiers":{"push":"confirm","prCreate":"confirm","issueAssign":"confirm","issueCreate":"confirm","merge":"confirm","release":"confirm"}}'
+ALL_CONFIRM='{"tiers":{"push":"confirm","prCreate":"confirm","issueAssign":"confirm","issueUpdate":"confirm","issueCreate":"confirm","merge":"confirm","release":"confirm"}}'
 ASK='"permissionDecision":"ask"'
 
 # _tg_setup <name> <branch> <settings json or empty> <purpose> — a scenario in
@@ -250,12 +273,13 @@ _tg_command() {
     push) printf '%s' 'git push -u origin HEAD' ;;
     prCreate) printf '%s' 'gh pr create --title "Add x" --body "Closes #42"' ;;
     issueAssign) printf '%s' 'gh issue edit 42 --add-assignee @me' ;;
+    issueUpdate) printf '%s' 'gh issue comment 42 --body "Done"' ;;
     issueCreate) printf '%s' 'gh issue create --title "Bug" --body "Steps"' ;;
   esac
 }
 
 # --- T1, T2: each key, each value -------------------------------------------
-for KEY in push prCreate issueAssign issueCreate; do
+for KEY in push prCreate issueAssign issueUpdate issueCreate; do
   CMD=$(_tg_command "$KEY")
   if _want "tg-$KEY-confirm"; then
     _tg_setup "tg-$KEY-confirm" feature/issue-42-x "{\"tiers\":{\"$KEY\":\"confirm\"}}" \
@@ -363,14 +387,11 @@ if _want tg-lookalikes; then
     'command -v gh' \
     'gh pr view 3' \
     'gh pr list --search "is:open gh pr create"' \
-    'gh issue edit 5 --add-label bug' \
     'gh issue edit 5 --remove-assignee @me' \
     'gh release view v1' \
     'git push-helper' \
     'gh api repos/o/r/pulls/7/merge' \
     'gh api -X GET repos/o/r/releases' \
-    'gh api -X POST repos/o/r/issues/3/comments -f body=x' \
-    'gh api --method PATCH repos/o/r/pulls/7 -f state=closed' \
     'grep -rn "gh release create v9" plugins' \
     'rg -n "gh pr merge 1 --squash" .' \
     'jq ".body | contains(\"gh pr merge 1\")" pr.json' \
@@ -381,13 +402,38 @@ if _want tg-lookalikes; then
     'gh api -X=GET repos/o/r/releases' \
     'gh api -XGET repos/o/r/pulls/7/merge' \
     'gh api --method=head repos/o/r/releases' \
-    'gh api -X OPTIONS repos/o/r/issues/3/comments' \
-    'gh api -X "$M" repos/o/r/issues/3/comments'; do
+    'gh issue edit 5 --milestone v1' \
+    'gh pr edit 7 --base main' \
+    'gh api --method PATCH repos/o/r/pulls/7 -f base=main' \
+    'gh api repos/o/r/issues/3/comments' \
+    'gh label list' \
+    'gh api -X OPTIONS repos/o/r/issues/3/comments'; do
     _tg_run "$C"
     _expect_silent_allow
     e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
   done
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
+  e2e_expect_equal "" "$(_tg_trail)" "trail files"
+  e2e_expect_clean_edges
+fi
+
+# Commands that were look-alikes before tiers.issueUpdate existed: each writes
+# to an existing issue or pull request, so under ALL_CONFIRM each now asks,
+# naming tiers.issueUpdate (a gh api write whose method is a variable may be
+# a POST, as for the other Tier 2 keys).
+if _want tg-lookalikes-now-issueupdate; then
+  _tg_setup tg-lookalikes-now-issueupdate feature/issue-42-x "$ALL_CONFIRM" \
+    "every tier confirm; a label added by gh issue edit, a comment posted by gh api (also with a method held in a variable) and a pull request closed by gh api PATCH were look-alikes and are now tiers.issueUpdate actions: each asks, naming tiers.issueUpdate only (T41)"
+  for C in \
+    'gh issue edit 5 --add-label bug' \
+    'gh api -X POST repos/o/r/issues/3/comments -f body=x' \
+    'gh api --method PATCH repos/o/r/pulls/7 -f state=closed' \
+    'gh api -X "$M" repos/o/r/issues/3/comments'; do
+    _tg_run "$C"
+    _expect_ask "is a Tier 2 action set to confirm (tiers.issueUpdate)"
+    case "$E2E_OUT" in *"Also:"*) _e2e_result fail "only tiers.issueUpdate is named for: $C" ;; *) _e2e_result pass "only tiers.issueUpdate is named for: $C" ;; esac
+  done
+  e2e_expect_equal "" "$(_tg_trail)" "trail files"
   e2e_expect_clean_edges
 fi
 
@@ -1142,7 +1188,7 @@ fi
 # --- T15: gh api PATCH and GraphQL ---------------------------------------------
 if _want tg-api-patch-graphql; then
   _tg_setup tg-api-patch-graphql feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them, also after a string with an escaped quote in single or double quotes; reads, other mutations, and a query the hook cannot read (a variable, a missing file, stdin, a double-quoted query in which the shell expands something) do not (T15)"
+    "every tier confirm; gh api PATCH on a release or on an issue's assignees, and GraphQL mutations read inline, from query=@file and from --input, ask with the right key, a mutation whose name holds Ref, Release or Merge in any case among them, also after a string with an escaped quote in single or double quotes; addComment and a PATCH of an issue's title ask under tiers.issueUpdate alone, whatever their strings and comments say about merges and releases; reads, other mutations, and a query the hook cannot read (a variable, a missing file, stdin, a double-quoted query in which the shell expands something) do not (T15, T41)"
   printf '%s\n' 'mutation { enablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }' > "$E2E_REPO/q.graphql"
   printf '%s\n' '{"query":"mutation { createRelease(input:{repositoryId:\"r\", tagName:\"v1\"}) { release { id } } }"}' > "$E2E_REPO/body.json"
   printf '%s\n' '{"query":"query { viewer { login } }"}' > "$E2E_REPO/read.json"
@@ -1151,6 +1197,9 @@ if _want tg-api-patch-graphql; then
     _tg_run "$C"
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      issueUpdate)
+        _expect_ask "(tiers.issueUpdate)"
+        case "$E2E_OUT" in *"Also:"*) _e2e_result fail "only tiers.issueUpdate is named for: $C" ;; *) _e2e_result pass "only tiers.issueUpdate is named for: $C" ;; esac ;;
       *) _expect_ask "(tiers.$WANT)" ;;
     esac
   done <<'EOF'
@@ -1169,7 +1218,7 @@ silent|gh api graphql -f query="$Q"
 silent|gh api graphql -F query=@missing.graphql
 silent|gh api graphql --input -
 silent|gh api graphql -f query='query { repository(owner:"o", name:"r") { pullRequest(number:1) { mergeable } } }'
-silent|gh api graphql -f query='mutation { addComment(input:{}) { clientMutationId } }'
+issueUpdate|gh api graphql -f query='mutation { addComment(input:{}) { clientMutationId } }'
 silent|gh api graphql -f query='mutation { createIssueType(input:{}) { clientMutationId } }'
 release|gh api graphql -f query='mutation { createRef(input:{repositoryId:"r", name:"refs/tags/v1", oid:"a"}) { ref { id } } }'
 release|gh api graphql -f query='mutation { updateRef(input:{refId:"r", oid:"a", force:true}) { ref { id } } }'
@@ -1180,16 +1229,16 @@ release|gh api graphql -f query='mutation { deleteRelease(input:{}) { clientMuta
 merge|gh api graphql -f query='mutation { mergeBranch(input:{}) { mergeCommit { oid } } }'
 merge|gh api graphql -f query='mutation { enqueuePullRequest(input:{pullRequestId:"x"}) { mergeQueueEntry { id } } }'
 silent|gh api graphql -f query='mutation { disablePullRequestAutoMerge(input:{pullRequestId:"x"}) { clientMutationId } }'
-silent|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"refactor(gate) and merge(y), prefer(x)"}) { clientMutationId } }'
-silent|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"""release(v1) and mergeBranch(x)"""}) { clientMutationId } }'
+issueUpdate|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"refactor(gate) and merge(y), prefer(x)"}) { clientMutationId } }'
+issueUpdate|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"""release(v1) and mergeBranch(x)"""}) { clientMutationId } }'
 merge|gh api graphql -f query='mutation { addComment(input:{body:"see #1"}) { clientMutationId } mergeBranch(input:{}) { mergeCommit { oid } } }'
 release|gh api graphql -f query='mutation { addComment(input:{body:"x"}) { clientMutationId } a: createRef(input:{}) { ref { id } } }'
 merge|gh api graphql -f query='mutation { addComment(input:{body:"unterminated) { id } mergeBranch(input:{}) { mergeCommit { oid } } }'
 silent|gh api graphql -f query='query { repository(owner:"o", name:"r") { refs(first:5, refPrefix:"refs/tags/") { nodes { name } } } }'
 silent|gh api graphql -f query='query { repository(owner:"o", name:"r") { pullRequest(number:1) { headRefName mergeable } } }'
-silent|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"merge the release ref"}) { clientMutationId } }'
+issueUpdate|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"merge the release ref"}) { clientMutationId } }'
 silent|gh api graphql --input read.json
-silent|gh api -X PATCH repos/o/r/issues/4 -f title=x
+issueUpdate|gh api -X PATCH repos/o/r/issues/4 -f title=x
 silent|gh api -X PATCH repos/o/r/releases/assets/5 -f name=x
 silent|gh api -X PUT repos/o/r/releases/123 -f name=x
 silent|gh api -X GET repos/o/r/releases/123
@@ -1199,9 +1248,9 @@ merge|gh api graphql -f query='mutation { updatePullRequest(input:{pullRequestId
 release|gh api graphql -f query='mutation { updatePullRequest(input:{pullRequestId:"x", body:"C:\\"}) { clientMutationId } createRelease(input:{repositoryId:"x", tagName:"v9"}) { clientMutationId } }'
 merge|gh api graphql -f query="mutation { updatePullRequest(input:{pullRequestId:\"x\", body:\"use a 6\\\" cable\"}) { clientMutationId } mergePullRequest(input:{pullRequestId:\"x\"}) { clientMutationId } }"
 release|gh api graphql -f query="mutation { updatePullRequest(input:{pullRequestId:\"x\", title:\"Say \\\"hi\"}) { clientMutationId } createRelease(input:{repositoryId:\"x\", tagName:\"v9\"}) { clientMutationId } }"
-silent|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"say \"hi\" then merge(x) and release(y)"}) { clientMutationId } }'
-silent|gh api graphql -f query="mutation { addComment(input:{subjectId:\"x\", body:\"say \\\"hi\\\" then merge(x) and release(y)\"}) { clientMutationId } }"
-silent|gh api graphql -f query="mutation(\$id: ID!) { addComment(input:{subjectId:\$id, body:\"x\"}) { clientMutationId } }"
+issueUpdate|gh api graphql -f query='mutation { addComment(input:{subjectId:"x", body:"say \"hi\" then merge(x) and release(y)"}) { clientMutationId } }'
+issueUpdate|gh api graphql -f query="mutation { addComment(input:{subjectId:\"x\", body:\"say \\\"hi\\\" then merge(x) and release(y)\"}) { clientMutationId } }"
+issueUpdate|gh api graphql -f query="mutation(\$id: ID!) { addComment(input:{subjectId:\$id, body:\"x\"}) { clientMutationId } }"
 silent|gh api graphql -f query="mutation { $FIELD(input:{}) { clientMutationId } }"
 silent|gh api graphql -f query="mutation { addComment(input:{subjectId:\"x\", body:\"`cat b`\"}) { clientMutationId } }"
 EOF
@@ -1219,20 +1268,23 @@ EOF
   printf '%s
 ' 'mutation { # mergeBranch(input:{}) "' 'addComment(input:{body:"x"}) { clientMutationId } }' > "$E2E_REPO/comment.graphql"
   _tg_run 'gh api graphql -F query=@comment.graphql'
-  _expect_silent_allow
+  _expect_ask "(tiers.issueUpdate)"
+  case "$E2E_OUT" in *"Also:"*) _e2e_result fail "the comment in comment.graphql names no merge" ;; *) _e2e_result pass "the comment in comment.graphql names no merge" ;; esac
   printf '%s
 ' 'mutation { # a "quote' 'mergeBranch(input:{}) { mergeCommit { oid } } }' > "$E2E_REPO/comment2.graphql"
   _tg_run 'gh api graphql -F query=@comment2.graphql'
   _expect_ask "(tiers.merge)"
+  # A PATCH of an issue is issueUpdate whatever its body; whether the body
+  # (a file) also changes the assignees cannot be read, so that is a note.
   _tg_run 'gh api -X PATCH repos/o/r/issues/4 --input assign.json'
-  _expect_silent_allow
+  _expect_ask "(tiers.issueUpdate)"
   e2e_expect_err "could not read whether gh api -X PATCH repos/o/r/issues/4 --input assign.json changes an issue's assignees"
   e2e_expect_clean_edges
 fi
 
 # --- T22: changing or deleting a release ------------------------------------------
 if _want tg-release-subcommands; then
-  _tg_setup tg-release-subcommands feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-release-subcommands feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous; editing (which publishes a draft), deleting a release, and adding or removing its files, through gh release or gh api, ask under tiers.release; reading or downloading a release stays silent (T22)"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
@@ -1284,12 +1336,13 @@ fi
 # --- T6: every way gh reads an option of gh api --------------------------------
 if _want tg-api-forms; then
   _tg_setup tg-api-forms feature/issue-42-x "$ALL_CONFIRM" \
-    "every tier confirm; gh api's method and fields are read as gh reads them (-X=VALUE, -XVALUE, -X VALUE, a bundle such as -iX=POST, -f=key=value); a method that is not a known verb, or a variable, and an endpoint xargs supplies, are silent even where a write would make a merge or a release; a ref read from a file (-F ref=@file) asks; a raw -f value starting with @ is text; an endpoint is read percent-decoded and without a redirection glued to it (T6, T7)"
+    "every tier confirm; a tag ref or a release whose path ends like an issue or pull request endpoint (git/refs/tags/issues/comments/9) is still a release; gh api's method and fields are read as gh reads them (-X=VALUE, -XVALUE, -X VALUE, a bundle such as -iX=POST, -f=key=value); a method that is not a known verb, or a variable, and an endpoint xargs supplies, are silent even where a write would make a merge or a release; a variable method on a comment endpoint, which may be a POST, asks under tiers.issueUpdate, as the other Tier 2 keys do; a ref read from a file (-F ref=@file) asks; a raw -f value starting with @ is text; an endpoint is read percent-decoded and without a redirection glued to it (T6, T7, T41)"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
     case "$WANT" in
       silent) _expect_silent_allow; e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
       maybe) _expect_ask "may push or delete a tag" ;;
+      issueUpdate) _expect_ask "is a Tier 2 action set to confirm (tiers.issueUpdate)" ;;
       *) _expect_ask "is a Tier 3 action (tiers.$WANT)" ;;
     esac
   done <<'EOF'
@@ -1317,7 +1370,7 @@ maybe|gh api repos/o/r/git/refs --field=ref=@- -f sha=abc
 maybe|gh api repos/o/r/git/refs -f "$K=refs/heads/x" -f ref=refs/heads/y -f sha=abc
 silent|gh api repos/o/r/git/refs -f ref=@heads.txt -f sha=abc
 silent|gh api -X=GET repos/o/r/releases
-silent|gh api -X "$M" repos/o/r/issues/3/comments
+issueUpdate|gh api -X "$M" repos/o/r/issues/3/comments
 silent|gh api -X OPTIONS repos/o/r/issues
 silent|printf '%s\n' repos/o/r/pulls/1/merge | xargs gh api -X PUT
 silent|xargs -n1 gh api --method=POST < endpoints.txt
@@ -1328,13 +1381,16 @@ release|gh api -X POST repos/o/r/%72eleases -f tag_name=v9
 merge|gh api -X PUT repos/o/r/pulls/1%2Fmerge
 silent|gh api -X DELETE repos/o/r/git/refs/heads%2Fx
 release|gh api repos/o/r/releases -f tag_name=v9>/dev/null
+release|gh api -X DELETE repos/o/r/git/refs/tags/issues/comments/9
+release|gh api -X PATCH repos/o/r/git/refs/tags/pulls/7 -f sha=abc
+release|gh api -X DELETE repos/o/r/releases/issues/5/labels
 EOF
   e2e_expect_equal "" "$(_tg_journals)" "journal files"
   e2e_expect_clean_edges
 fi
 
 if _want tg-api-unreadable; then
-  _tg_setup tg-api-unreadable feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-api-unreadable feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: a gh api write or a GET whose whole endpoint is a variable or a substitution is silent, as the hook cannot read it; the same write to a merge endpoint written out asks (T7)"
   _tg_run 'gh api -X POST "$EP" -f x=1'
   _expect_silent_allow
@@ -1351,7 +1407,7 @@ fi
 
 # --- T31: a command on a shell's input, in a substitution, around 2>&1 ---------
 if _want tg-shell-input; then
-  _tg_setup tg-shell-input feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-shell-input feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous, tag v1.2.0 and branch v1-fix: a here-string a shell reads as its script (any spacing, a file descriptor before <<<, before the command word, through a pipe, escaped spaces) or one given to a program the hook does not know, a shell's -c argument inside a substitution, a backquote inside double quotes, and an action with 2>&1 or >&2 in the middle of it ask; the same text read by cat or grep, an escaped or single-quoted backquote, a branch push with 2>&1, and up to 16 quoted words after one program that name no Tier 3 action do not; quoted words past the sixteenth that names push, merge, release or api are not read, and a merge after sixteen words that name none of those asks (T31)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix ) \
     || _flow_assert_fail "tg-shell-input: could not create the tag and branch"
@@ -1402,7 +1458,7 @@ fi
 
 # --- T32: a cd into another worktree of the same repository ---------------------
 if _want tg-cd-worktree; then
-  _tg_setup tg-cd-worktree feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-cd-worktree feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "a worktree ../wt of this repository (branch wt-branch), a separate repository ../other, tag v1.2.0: a cd into the worktree reads the push there as a branch push when it names its remote, asks when the remote is left to the branch's configuration or the worktree has its own configuration; a cd to \$(git rev-parse --show-toplevel) is a cd to the top of this repository; a cd to a variable, to another repository, or to any other substitution asks (T32)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix \
       && git worktree add -q -b wt-branch "$E2E_DIR/wt" && git init -q "$E2E_DIR/other" ) >/dev/null 2>&1 \
@@ -1442,7 +1498,7 @@ fi
 
 # --- T33: shell state or words the hook cannot read -----------------------------
 if _want tg-default-ask; then
-  _tg_setup tg-default-ask feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-default-ask feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous, tag v1.2.0, branches v1-fix and main, a second repository ../other: a push after (or before) anything that changes the shell's directory, environment or git configuration in a way the hook does not follow asks as a possible tag push; a merge, a release or a tag push written out in words a program joins into a shell command, behind a subcommand written \$\"...\", or in text piped into a shell asks as Tier 3; eval of a variable or a substitution, source of a process substitution, a command held in a variable, a gh subcommand that is a variable, and a shell reading a pipe whose text the hook cannot read stay silent, as do the same commands without the change (T33)"
   ( _e2e_git_env; cd "$E2E_REPO" && git tag -a v1.2.0 -m "v1.2.0" && git branch v1-fix && git branch -f main HEAD \
       && git init -q "$E2E_DIR/other" ) >/dev/null 2>&1 \
@@ -1606,7 +1662,7 @@ fi
 # the text around it: each of these may run the action without the
 # substitution.
 if _want tg-glued-substitution; then
-  _tg_setup tg-glued-substitution feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-glued-substitution feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous, branch v1-fix: a substitution glued to the endpoint, method, option or subcommand of a merge, a release or a tag push (\$(...), backquotes, inside double quotes) does not hide it; a branch push or a read with a substitution in it stays silent (T33)"
   ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix ) || _flow_assert_fail "tg-glued-substitution: could not create the branch"
   while IFS='|' read -r WANT C; do
@@ -1637,7 +1693,7 @@ fi
 # An upstream or tracking change can change only what a push that names no
 # remote, or no refspec, sends.
 if _want tg-upstream-named-push; then
-  _tg_setup tg-upstream-named-push feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-upstream-named-push feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous, origin with main, branch v1-fix: after an upstream or tracking change a push naming a remote and a refspec is silent; one naming no remote, or no refspec, asks (T33)"
   ( _e2e_git_env; cd "$E2E_REPO" && git init -q --bare "$E2E_DIR/origin.git" && git remote add origin "$E2E_DIR/origin.git" \
       && git push -q origin HEAD:main && git fetch -q origin && git branch v1-fix ) >/dev/null 2>&1 \
@@ -1672,7 +1728,7 @@ fi
 # eval of one assignment that reads a variable by name runs nothing; any
 # other text in it may be commands.
 if _want tg-eval-assignment; then
-  _tg_setup tg-eval-assignment feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-eval-assignment feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: an eval of an assignment from a variable is silent, written as eval \"v=\\\${\$name}\" or with anything more in it, since the hook cannot read what it runs; an eval whose text writes out a merge asks (T33)"
   while IFS='|' read -r WANT C; do
     _tg_run "$C"
@@ -1707,7 +1763,7 @@ fi
 # heredoc body, or after one. One that may be cd or eval still makes a later
 # push a possible tag push.
 if _want tg-command-word; then
-  _tg_setup tg-command-word feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-command-word feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous, branch v1-fix: a command word that is a variable or a parameter expansion is silent, alone, in a heredoc body or after one, since the hook cannot read what it runs; one that may be cd or eval makes a later push ask as a possible tag push; a merge on a line after a here-string asks (T33)"
   ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix && git init -q "$E2E_DIR/other" ) >/dev/null 2>&1 \
     || _flow_assert_fail "tg-command-word: could not create the branch and ../other"
@@ -1784,8 +1840,8 @@ fi
 # a body a shell reads asks.
 for TG_HR_MODE in journal autonomous; do
   if _want "tg-heredoc-redirect-$TG_HR_MODE"; then
-    _tg_setup "tg-heredoc-redirect-$TG_HR_MODE" feature/issue-42-x "{\"tiers\":{\"push\":\"$TG_HR_MODE\",\"prCreate\":\"$TG_HR_MODE\"}}" \
-      "tiers.push and tiers.prCreate $TG_HR_MODE: a heredoc body line \$SUMMARY is silent whether the body goes to a redirection, a pipe into gh or another program, or a shell; a merge written out in a body bash reads asks (T33)"
+    _tg_setup "tg-heredoc-redirect-$TG_HR_MODE" feature/issue-42-x "{\"tiers\":{\"push\":\"$TG_HR_MODE\",\"prCreate\":\"$TG_HR_MODE\",\"issueUpdate\":\"$TG_HR_MODE\"}}" \
+      "tiers.push, tiers.prCreate and tiers.issueUpdate $TG_HR_MODE: a heredoc body line \$SUMMARY is silent whether the body goes to a redirection, a pipe into gh or another program, or a shell; the two gh pr comment commands are tiers.issueUpdate actions, journaled once each under journal and not at all under autonomous; a merge written out in a body bash reads asks (T33, T41)"
     for C in \
       "$(printf "gh pr comment 5 --body-file - <<'EOF' >/dev/null\n\$SUMMARY\nEOF")" \
       "$(printf 'cat <<EOF | gh pr create --title t --body-file -\n$SUMMARY\nEOF')" \
@@ -1802,6 +1858,11 @@ for TG_HR_MODE in journal autonomous; do
       _expect_silent_allow
       e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
     done
+    if [ "$TG_HR_MODE" = journal ]; then
+      e2e_expect_equal 2 "$(grep -c 'tiers\.issueUpdate (journal) "gh pr comment 5' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "issueUpdate breadcrumbs for the two gh pr comment commands"
+    else
+      e2e_expect_equal "" "$(_tg_trail)" "trail files"
+    fi
     _tg_run "$(printf 'bash <<EOF\ngh pr merge 1\nEOF\ngh pr view 1')"
     _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
     e2e_expect_clean_edges
@@ -1813,7 +1874,7 @@ done
 # can read, so it asks nothing. Each body holds "right" or "release", so the
 # gate reads the text at all.
 if _want tg-quoted-body-data; then
-  _tg_setup tg-quoted-body-data feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-quoted-body-data feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: a quoted heredoc (<<'EOF', <<\"EOF\", <<\\EOF, <<-'EOF') whose body holds backticks or \$(...) and no merge, release or tag push written out is allowed silently when its program is flow's script named through a variable (\"\$FLOW_ROOT/bin/journal-append.sh\", \"\${CLAUDE_PLUGIN_ROOT}/bin/flow-question.sh\"), and the /flow:start specification-capture journal write is allowed (T34)"
   TAB=$(printf '\t')
   for C in \
@@ -1880,7 +1941,7 @@ fi
 # may be a shell reading its script from the body. A merge written out there
 # asks; a command held in a variable names nothing.
 if _want tg-quoted-body-script; then
-  _tg_setup tg-quoted-body-script feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-quoted-body-script feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: an unquoted heredoc body's \$(gh pr merge 1) or backticks ask, and a merge written out in a quoted body that a shell or a program named by a variable may run as a script asks; a command held in a variable in such a body is silent, whatever the program (alone, -s, -, --, -c, an argument that is an expansion, a variable that may split, a variable naming a shell or an interpreter) (T34)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
@@ -1927,7 +1988,7 @@ fi
 # tell "$P" from such a program, so its body stays commands: a merge written
 # out in it asks, and a command kept in a variable names nothing.
 if _want tg-quoted-body-stdin; then
-  _tg_setup tg-quoted-body-stdin feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-quoted-body-stdin feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: a quoted body handed to a program named by a bare variable is silent for a command held in a variable in it, whatever the arguments (under /dev/ or /proc/, a host, a time, a user, an option value, a script file such as n.md or x.sh) and when BASH_ENV or ENV is set; a merge written out in such a body asks (T35)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
@@ -1977,7 +2038,7 @@ fi
 # The backticks of its markdown and a command kept in a variable name
 # nothing; a merge written out in it asks.
 if _want tg-quoted-body-allowlist; then
-  _tg_setup tg-quoted-body-allowlist feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-quoted-body-allowlist feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: a quoted body is silent for the command held in a variable in it, or the backticks of its markdown, when its program is a bare variable, a name that is not one of the scripts in the plugin's bin/ (sqlite3, ed, script, ssh, x.sh), flow-judge.sh or flow-eval-run.sh, or a flow script after an assignment or BASH_ENV, not written as one double-quoted word, or with an argument holding an expansion, a redirection or a /dev/ path, and for a script added to bin/ in a copy of the plugin; a merge written out in such a body asks (T35)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
@@ -2027,7 +2088,7 @@ fi
 # whichever program the line names. Two backslashes are one literal
 # backslash, and the << after them starts a heredoc.
 if _want tg-escaped-heredoc; then
-  _tg_setup tg-escaped-heredoc feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-escaped-heredoc feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: the lines after \\<<'EOF' or \\<<\\EOF are commands, for cat, a script and a program named by a variable alike: a merge or a release on them asks, and a command held in a variable on them is silent; after \\\\<<'EOF' they are a body cat reads (T36)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
@@ -2058,7 +2119,7 @@ fi
 # printf and gh included. A quoted body, an escaped \$( or \`, and a command
 # held in a variable inside the substitution ($($CMD)) name nothing.
 if _want tg-unquoted-body-subst; then
-  _tg_setup tg-unquoted-body-subst feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-unquoted-body-subst feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: \$(gh pr merge 1) or a backquoted gh release create v1 in an unquoted heredoc body asks for the merge or the release whichever program reads the body (cat, tee, gh, a commit message through \$(cat <<EOF)); a quoted body, escaped \\\$( and \\\`, and a command held in a variable inside the substitution (\$(\$CMD)) stay silent (T4, T37)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
@@ -2101,7 +2162,7 @@ fi
 # text the hook does not read. An escaped backslash before a newline joins
 # nothing, and a quoted body is never joined or expanded.
 if _want tg-body-line-join; then
-  _tg_setup tg-body-line-join feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-body-line-join feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: a substitution split by a backslash-newline in an unquoted body (\$\\ then (gh pr merge 1) on the next line, or gh pr \\ then merge 1 inside one) asks; {x@P} or [y] joined that way, which run only text held in a variable, \$\\\\ before a newline, a joined line of prose and a quoted body stay silent (T38)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
@@ -2129,7 +2190,7 @@ fi
 # A ) inside a ${...} within a substitution closes nothing: bash reads
 # ${x:-)} as one expansion and runs the command after it.
 if _want tg-subst-brace; then
-  _tg_setup tg-subst-brace feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-subst-brace feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: a merge or release after a \${x:-)} inside a substitution of an unquoted body asks, also inside a group of that substitution; a plain \${BRANCH:-main} and \$(date) in prose stay text (T39)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
@@ -2157,7 +2218,7 @@ fi
 # markdown or a command held in a variable, and a merge written out in it
 # asks.
 if _want tg-env-named; then
-  _tg_setup tg-env-named feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-env-named feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous: a flow script's quoted body is silent for its markdown after echo \"check ENV first\" or NODE_ENV=test, and for the command held in a variable in it after export \"BASH_ENV=...\", B\"\"ASH_ENV=..., read \"BASH_ENV\", eval or trap of a string naming BASH_ENV, ENV named outside a string, BASH_ENV spelled with \$'...' escapes or set by a sourced file, or a program word that expands \"\$@\" or \"\$1\"; a merge written out in it after export BASH_ENV asks (T40)"
   while IFS='|' read -r WANT C; do
     C=$(printf '%b' "$C")
@@ -2193,7 +2254,7 @@ fi
 # feeds runs the piped text: a Tier 3 action written out in it asks, and
 # text the hook cannot read names nothing.
 if _want tg-shell-argument; then
-  _tg_setup tg-shell-argument feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueCreate":"autonomous"}}' \
+  _tg_setup tg-shell-argument feature/issue-42-x '{"tiers":{"push":"autonomous","prCreate":"autonomous","issueAssign":"autonomous","issueUpdate":"autonomous","issueCreate":"autonomous"}}' \
     "every Tier 2 action autonomous, branch v1-fix: a shell named as an argument (which, command -v, type, ls, file, docker run, direnv export) or after || is silent; a shell a pipe feeds (|, |&, through sudo or an unknown program) is silent when the piped text names no Tier 3 action the hook can read, and asks for a merge or a tag deletion written out in the piped text, in a group, a subshell, a compound command or a process substitution (T33)"
   ( _e2e_git_env; cd "$E2E_REPO" && git branch v1-fix ) || _flow_assert_fail "tg-shell-argument: could not create the branch"
   while IFS='|' read -r WANT C; do
@@ -2383,6 +2444,22 @@ if _want tg-parser-missing; then
   _tg_run 'git push'
   _expect_silent_allow
   e2e_expect_err "could not read the command (the command parser did not load)"
+  e2e_expect_equal 1 "$(printf '%s\n' "$E2E_ERR" | grep -c .)" "stderr lines"
+  _tg_run 'ls -la'
+  _expect_silent_allow
+  e2e_expect_equal "" "$E2E_ERR" "stderr for ls"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-keys-missing; then
+  _tg_setup tg-keys-missing feature/issue-42-x '{"tiers":{"push":"confirm"}}' \
+    "the tier key list (lib/tier-runtime.sh) defines nothing: a merge asks, git push is allowed with one stderr line naming the key list, ls is allowed silently (T11)"
+  e2e_plugin_copy hooks/scripts/lib/tier-runtime.sh '# emptied'
+  _tg_run 'gh pr merge 7 --repo o/r --squash'
+  _expect_ask "tiers.merge"
+  _tg_run 'git push'
+  _expect_silent_allow
+  e2e_expect_err "could not read the command (the tier key list (lib/tier-runtime.sh) did not load)"
   e2e_expect_equal 1 "$(printf '%s\n' "$E2E_ERR" | grep -c .)" "stderr lines"
   _tg_run 'ls -la'
   _expect_silent_allow
@@ -2769,6 +2846,272 @@ print("$(gh release create v1)")
 PY
 EOF
   _tg_case "$C/c.txt"; _expect_ask "tiers.release"
+  e2e_expect_clean_edges
+fi
+
+# --- T41, T42: tiers.issueUpdate ----------------------------------------------
+# Every form of design github_writes_and_tiers L6-L17 and the forms decision
+# Q9 added (gh issue close and reopen, PATCH issues/{n}, PUT
+# issues/{n}/labels, updateIssue, closeIssue, reopenIssue), one command each.
+TG_IU_GQL="addComment updateIssueComment addPullRequestReview submitPullRequestReview addPullRequestReviewComment addPullRequestReviewThreadReply addLabelsToLabelable removeLabelsFromLabelable markPullRequestReadyForReview convertPullRequestToDraft closePullRequest updatePullRequest requestReviews updateIssue closeIssue reopenIssue"
+_tg_iu_forms() {
+  local m
+  cat <<'EOF'
+gh issue comment 5 --body hi
+gh pr comment 7 --body hi
+gh pr review 7 --approve
+gh issue edit 5 --add-label bug
+gh issue edit 5 --remove-label bug
+gh issue edit 5 --body x
+gh issue edit 5 --title x
+gh issue edit 5 --body-file b.md
+gh issue edit 5 -t x
+gh pr edit 7 --add-label bug
+gh pr edit 7 --remove-label bug
+gh pr edit 7 -b x
+gh pr edit 7 --title=x
+gh pr edit 7 --add-reviewer octocat
+gh pr edit 7 --remove-reviewer octocat
+gh pr ready 7
+gh pr ready 7 --undo
+gh pr close 7
+gh label create triaged
+gh issue close 5
+gh issue reopen 5
+gh api -X POST repos/o/r/issues/5/comments -f body=hi
+gh api -X PATCH repos/o/r/issues/comments/9 -f body=x
+gh api -X DELETE repos/o/r/issues/comments/9
+gh api repos/o/r/pulls/7/reviews -f event=APPROVE
+gh api -X POST repos/o/r/pulls/7/comments -f body=x
+gh api -X POST repos/o/r/pulls/7/comments/9/replies -f body=x
+gh api -X PATCH repos/o/r/pulls/comments/9 -f body=x
+gh api -X DELETE repos/o/r/pulls/comments/9
+gh api -X POST repos/o/r/issues/5/labels -f labels[]=bug
+gh api -X DELETE repos/o/r/issues/5/labels
+gh api -X PATCH repos/o/r/pulls/7 -f state=closed
+gh api -X PATCH repos/o/r/pulls/7 -f body=x
+gh api -X PATCH /repos/o/r/pulls/7 -f title=x
+gh api -X POST repos/o/r/pulls/7/requested_reviewers -f reviewers[]=octocat
+gh api -X PATCH repos/o/r/issues/5 -f state=closed
+gh api -X PUT repos/o/r/issues/5/labels -f labels[]=bug
+EOF
+  for m in $TG_IU_GQL; do
+    printf "gh api graphql -f query='mutation { %s(input: {}) { clientMutationId } }'\n" "$m"
+  done
+}
+TG_IU_N=$(_tg_iu_forms | grep -c .)
+
+for TG_IU_V in confirm journal autonomous; do
+  if _want "tg-issueupdate-forms-$TG_IU_V"; then
+    _tg_setup "tg-issueupdate-forms-$TG_IU_V" feature/issue-42-x "{\"tiers\":{\"issueUpdate\":\"$TG_IU_V\"}}" \
+      "tiers.issueUpdate $TG_IU_V: each of the $TG_IU_N issueUpdate forms (gh, REST and the 16 GraphQL mutation names, the Q9 forms among them) is read as tiers.issueUpdate and nothing else: confirm asks once naming only tiers.issueUpdate, journal writes one breadcrumb each and no output, autonomous writes nothing (T41, R48, R65)"
+    while IFS= read -r C; do
+      [ -n "$C" ] || continue
+      _tg_run "$C"
+      case "$TG_IU_V" in
+        confirm)
+          _expect_ask "Command: ${C%% *}"
+          e2e_expect_out "is a Tier 2 action set to confirm (tiers.issueUpdate)"
+          case "$E2E_OUT" in *"Also:"*) _e2e_result fail "only tiers.issueUpdate is named for: $C" ;; *) _e2e_result pass "only tiers.issueUpdate is named for: $C" ;; esac ;;
+        *)
+          _expect_silent_allow
+          e2e_expect_equal "" "$E2E_ERR" "stderr for: $C" ;;
+      esac
+    done <<EOF
+$(_tg_iu_forms)
+EOF
+    case "$TG_IU_V" in
+      confirm|autonomous) e2e_expect_equal "" "$(_tg_trail)" "trail files" ;;
+      journal)
+        e2e_expect_equal "$TG_IU_N" "$(grep -c '^<!-- auto-log: .*tiers\.issueUpdate (journal) "gh ' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "issueUpdate breadcrumbs, one per form"
+        e2e_expect_equal 0 "$(grep -cE 'tiers\.(merge|release|issueAssign|issueCreate|prCreate|push)' "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)" "breadcrumbs of other keys" ;;
+    esac
+    e2e_expect_clean_edges
+  fi
+done
+
+if _want tg-issueupdate-not-forms; then
+  _tg_setup tg-issueupdate-not-forms feature/issue-42-x "$ALL_CONFIRM" \
+    "every tier confirm; reads and edits the design does not list under issueUpdate (gh issue edit --remove-assignee or --milestone, gh pr edit --base, PATCH of a pull request's base, reads of comments and labels, a GraphQL query that reads, a mutation of another name) ask nothing (T41)"
+  for C in \
+    'gh issue edit 5 --remove-assignee @me' \
+    'gh issue edit 5 --milestone v1' \
+    'gh pr edit 7 --base main' \
+    'gh api -X PATCH repos/o/r/pulls/7 -f base=main' \
+    'gh api repos/o/r/issues/5/comments' \
+    'gh api repos/o/r/issues/5/labels' \
+    'gh api -X GET repos/o/r/pulls/7/reviews' \
+    'gh issue view 5 --comments' \
+    'gh pr view 7' \
+    'gh label list' \
+    "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") { issue(number: 5) { title } } }'" \
+    "gh api graphql -f query='mutation { createIssueType(input: {}) { clientMutationId } }'"; do
+    _tg_run "$C"
+    _expect_silent_allow
+    e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
+  done
+  e2e_expect_equal "" "$(_tg_trail)" "trail files"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-issueupdate-both-keys; then
+  _tg_setup tg-issueupdate-both-keys feature/issue-42-x "$ALL_CONFIRM" \
+    "every tier confirm: gh issue edit that assigns and labels names both tiers.issueAssign and tiers.issueUpdate in one ask (design L19), in either flag order; PATCH of an issue with an assignee and a state does too; a pull request comment whose body runs a merge names the merge and tiers.issueUpdate (T42, R47)"
+  for C in \
+    'gh issue edit 5 --add-assignee me --add-label x' \
+    'gh issue edit 5 --add-label x --add-assignee=me' \
+    'gh api -X PATCH repos/o/r/issues/5 -f assignee=me -f state=closed'; do
+    _tg_run "$C"
+    _expect_ask "(tiers.issueAssign)"
+    e2e_expect_out "(tiers.issueUpdate)"
+  done
+  _tg_run 'gh pr comment 1 --body "`gh pr merge 1`"'
+  _expect_ask "Merging a pull request is a Tier 3 action (tiers.merge)"
+  e2e_expect_out "(tiers.issueUpdate)"
+  e2e_expect_clean_edges
+fi
+
+# --- T43: tier-gate's own defaults equal the plugin's settings.json ----------
+if _want tg-defaults-equal-settings; then
+  _tg_setup tg-defaults-equal-settings feature/issue-42-x "" \
+    "for each tiers key of the plugin's settings.json, tier-gate's own default, seen in a copy of the plugin whose settings.json has no tiers object, gives the same decision as the shipped default: merge and release ask, the others write one breadcrumb; the keys checked are exactly settings.json's (T43)"
+  TG_DEF_KEYS=$(jq -r '.tiers | keys[]' "$E2E_PLUGIN_DIR/settings.json" | LC_ALL=C sort | tr '\n' ' ')
+  e2e_expect_equal "issueAssign issueCreate issueUpdate merge prCreate push release " "$TG_DEF_KEYS" "the tiers keys of settings.json"
+  TG_DEF_SHIPPED=$(jq -c '.tiers' "$E2E_PLUGIN_DIR/settings.json")
+  e2e_plugin_copy settings.json "$(jq 'del(.tiers)' "$E2E_PLUGIN_DIR/settings.json")"
+  for KEY in $TG_DEF_KEYS; do
+    case "$KEY" in
+      merge) CMD='gh pr merge 7 --repo o/r --squash' ;;
+      release) CMD='gh release create v9' ;;
+      *) CMD=$(_tg_command "$KEY") ;;
+    esac
+    BEFORE=$(grep -c "tiers\.$KEY (journal)" "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)
+    _tg_run "$CMD"
+    AFTER=$(grep -c "tiers\.$KEY (journal)" "$E2E_REPO/$(_tg_trail42)" 2>/dev/null)
+    case "$E2E_OUT" in
+      *"$ASK"*) GOT=confirm ;;
+      '') if [ "${AFTER:-0}" -gt "${BEFORE:-0}" ]; then GOT=journal; else GOT=autonomous; fi ;;
+      *) GOT="unexpected output" ;;
+    esac
+    e2e_expect_equal "$(printf '%s' "$TG_DEF_SHIPPED" | jq -r --arg k "$KEY" '.[$k]')" "$GOT" "tier-gate's own default for tiers.$KEY equals settings.json's"
+    e2e_expect_equal "" "$E2E_ERR" "stderr for tiers.$KEY"
+  done
+  e2e_expect_clean_edges
+fi
+
+# --- T44, T45: the factory rules' call site ----------------------------------
+# The payload's cwd is the scratch repository, whose path holds no factory
+# text, so only the command decides the text pre-filter.
+TG_FAC_PAYLOAD() { jq -cn --arg c "$1" --arg cwd "${2:-$E2E_REPO}" '{cwd:$cwd,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'; }
+# The deny reason of the stand-in rules below: quotes, a backslash, a tab and
+# a line end, which the JSON must carry.
+TG_FAC_REASON=$'stand-in rule: "quoted" \\ back\tslash\nsecond line'
+TG_FAC_LIB='_tg_factory_rules() { _tg_deny $'"'"'stand-in rule: "quoted" \\ back\tslash\nsecond line'"'"'; }'
+_tg_fac_decision() { printf '%s' "$E2E_OUT" | jq -r '.hookSpecificOutput.permissionDecision // "unparsed"' 2>/dev/null || printf unparsed; }
+_tg_fac_reason() { printf '%s' "$E2E_OUT" | jq -r '.hookSpecificOutput.permissionDecisionReason' 2>/dev/null; }
+
+if _want tg-fac-sourcing; then
+  _tg_setup tg-fac-sourcing feature/issue-42-x '{"tiers":{"issueUpdate":"confirm"}}' \
+    "lib/tier-factory.sh is sourced (the xtrace log of the hook shows the source line) only for a command with factory text and either a FLOW_FACTORY_JOB, _DIRECTIVE, _IO or _MAIN variable or a <main checkout>/.flow/factory directory, a linked worktree's main checkout included; the shipped rules decide nothing, so each command is then decided as without them (T45)"
+  _tg_trace_has_lib() {
+    case "$E2E_ERR" in *lib/tier-factory.sh*) printf yes ;; *) printf no ;; esac
+  }
+  # No factory text: not sourced, with a worker variable set.
+  _tg_run SHELLOPTS=xtrace FLOW_FACTORY_JOB=job-1 'gh issue comment 5 --body hi'
+  _expect_ask "(tiers.issueUpdate)"
+  e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced for a command without factory text"
+  # Factory text, no variable, no factory directory: not sourced.
+  for C in 'flow-factory.sh status' 'python3 bin/_flow_factory.py next' 'ls docs/factory' 'gh issue comment 5 --body "/flow-factory retry"'; do
+    _tg_run SHELLOPTS=xtrace "$C"
+    e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced outside a factory for: $C"
+  done
+  _expect_ask "(tiers.issueUpdate)"
+  # Factory text and each variable: sourced.
+  for V in FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN; do
+    _tg_run SHELLOPTS=xtrace "$V=x" 'flow-factory.sh status'
+    e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced with $V set"
+    _expect_silent_allow
+  done
+  # An empty variable is not set.
+  _tg_run SHELLOPTS=xtrace FLOW_FACTORY_JOB= 'flow-factory.sh status'
+  e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced with FLOW_FACTORY_JOB empty"
+  # The factory directory of the repository: sourced for factory text only.
+  mkdir -p "$E2E_REPO/.flow/factory"
+  _tg_run SHELLOPTS=xtrace 'flow-factory.sh status'
+  e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced with the factory directory present"
+  _tg_run SHELLOPTS=xtrace 'gh issue comment 5 --body "/flow-factory retry"'
+  e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced for /flow-factory in a comment body"
+  _expect_ask "(tiers.issueUpdate)"
+  _tg_run SHELLOPTS=xtrace 'gh issue comment 5 --body hi'
+  e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced for a command without factory text, factory directory present"
+  # A linked worktree: its main checkout has the factory directory.
+  ( _e2e_git_env; cd "$E2E_REPO" && git worktree add -q -b wt-branch "$E2E_DIR/linked" ) \
+    || _flow_assert_fail "tg-fac-sourcing: could not add the worktree"
+  e2e_run_hook SHELLOPTS=xtrace "$HOOK" "$(TG_FAC_PAYLOAD 'flow-factory.sh status' "$E2E_DIR/linked")"
+  e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced from a linked worktree of a factory repository"
+  # Another repository without one: not sourced.
+  ( _e2e_git_env; cd "$E2E_DIR" && git init -q other ) || _flow_assert_fail "tg-fac-sourcing: could not make the other repository"
+  e2e_run_hook SHELLOPTS=xtrace "$HOOK" "$(TG_FAC_PAYLOAD 'flow-factory.sh status' "$E2E_DIR/other")"
+  e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced in a repository without a factory directory"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-fac-call-site; then
+  _tg_setup tg-fac-call-site feature/issue-42-x "$ALL_CONFIRM" \
+    "with factory rules that deny every command they see (a stand-in lib/tier-factory.sh) and FLOW_FACTORY_JOB set: a command with no gh, push, merge or release in it is denied, also without jq and with a payload jq cannot parse; a command that also merges gets the deny alone, with no ask and no breadcrumb; the deny is one JSON object whose reason keeps quotes, a backslash, a tab and a line end (T44)"
+  e2e_plugin_copy hooks/scripts/lib/tier-factory.sh "$TG_FAC_LIB"
+  _tg_run FLOW_FACTORY_JOB=job-1 'flow-factory.sh confirm issue-5-j1-note-1'
+  e2e_expect_equal 0 "$E2E_RC" "exit status"
+  e2e_expect_equal deny "$(_tg_fac_decision)" "decision for a command naming no gh, push, merge or release"
+  e2e_expect_equal "$TG_FAC_REASON" "$(_tg_fac_reason)" "the deny reason, as JSON carries it"
+  e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c .)" "stdout lines"
+  NOJQ="$E2E_DIR/nojq"
+  mkdir -p "$NOJQ"
+  for P in bash cat dirname tr; do ln -s "$(command -v "$P")" "$NOJQ/$P"; done
+  _tg_run "PATH=$NOJQ" FLOW_FACTORY_JOB=job-1 'flow-factory.sh confirm issue-5-j1-note-1'
+  e2e_expect_equal deny "$(_tg_fac_decision)" "decision without jq"
+  e2e_expect_equal "$TG_FAC_REASON" "$(_tg_fac_reason)" "the deny reason without jq"
+  e2e_run_hook FLOW_FACTORY_JOB=job-1 "$HOOK" '{"tool_input":{"command":"flow-factory.sh confirm x"'
+  e2e_expect_equal deny "$(_tg_fac_decision)" "decision for a payload jq cannot parse"
+  _tg_run FLOW_FACTORY_JOB=job-1 'gh pr merge 7 --repo o/r --squash && git push && flow-factory.sh status'
+  e2e_expect_equal deny "$(_tg_fac_decision)" "decision for a command that also merges and pushes"
+  e2e_expect_equal "" "$(_tg_trail)" "trail files"
+  # Without a variable or a factory directory the rules are not reached.
+  _tg_run 'flow-factory.sh confirm issue-5-j1-note-1'
+  _expect_silent_allow
+  e2e_expect_clean_edges
+fi
+
+if _want tg-fac-lib-broken; then
+  _tg_setup tg-fac-lib-broken feature/issue-42-x "" \
+    "in a factory (FLOW_FACTORY_JOB set), a lib/tier-factory.sh that fails to load, or that loads but defines no _tg_factory_rules, denies a command with factory text, naming the file; a command without factory text is untouched (T44)"
+  for TG_FAC_BAD in 'return 1' ': defines nothing'; do
+    e2e_plugin_copy hooks/scripts/lib/tier-factory.sh "$TG_FAC_BAD"
+    _tg_run FLOW_FACTORY_JOB=job-1 'flow-factory.sh status'
+    e2e_expect_equal deny "$(_tg_fac_decision)" "decision with a rules file that is: $TG_FAC_BAD"
+    e2e_expect_out "lib/tier-factory.sh"
+    _tg_run FLOW_FACTORY_JOB=job-1 'ls -la'
+    _expect_silent_allow
+  done
+  e2e_expect_clean_edges
+fi
+
+# --- T46: the suite's own environment does not reach a scenario -------------
+if _want tg-suite-env; then
+  _tg_setup tg-suite-env feature/issue-42-x '{"tiers":{"issueUpdate":"confirm"}}' \
+    "FLOW_FACTORY_JOB, _DIRECTIVE, _IO, _MAIN and XDG_STATE_HOME exported in the shell that runs the test: an ordinary gh issue comment with factory text is decided as without them (it asks, and lib/tier-factory.sh is not sourced), and none of them is in a scenario's environment (T46)"
+  TG_SAVE=""
+  for V in FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN XDG_STATE_HOME; do
+    if [ -n "${!V+x}" ]; then TG_SAVE="$TG_SAVE $V=$(printf '%q' "${!V}")"; fi
+  done
+  export FLOW_FACTORY_JOB=job-1 FLOW_FACTORY_DIRECTIVE=d-1 FLOW_FACTORY_IO="$E2E_DIR/io" FLOW_FACTORY_MAIN="$E2E_REPO" XDG_STATE_HOME="$E2E_DIR/state"
+  _tg_run SHELLOPTS=xtrace 'gh issue comment 5 --body "/flow-factory retry"'
+  _expect_ask "(tiers.issueUpdate)"
+  case "$E2E_ERR" in *lib/tier-factory.sh*) _e2e_result fail "lib/tier-factory.sh not sourced" ;; *) _e2e_result pass "lib/tier-factory.sh not sourced" ;; esac
+  _e2e_exec env
+  e2e_expect_equal "" "$(printf '%s\n' "$E2E_OUT" | grep -E '^(FLOW_FACTORY_[A-Z_]*|XDG_STATE_HOME)=')" "FLOW_FACTORY_* and XDG_STATE_HOME inside a scenario"
+  unset FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN XDG_STATE_HOME
+  for V in $TG_SAVE; do eval "export $V"; done
   e2e_expect_clean_edges
 fi
 
