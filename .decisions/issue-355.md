@@ -341,3 +341,52 @@ _2026-11-19. Choices the plan and design leave open, made while building B1, B3,
   - the comment-id keys of `revouched_replies`;
   - a comment object on every comment-channel event;
   - non-empty `proposed_criteria` for ACCEPT and non-empty `questions` for NEEDS_INFO.
+
+## Inferred readings (wave 2)
+
+_2026-11-19. Choices made while building B4 and B6 and fixing their reviews. Later tasks (B5, B9, B12, B13, B14) build on them._
+
+### Issue reads (B4, `bin/_flow_factory_issue.py`)
+
+These signatures differ from plan 5.3:
+- **`Permissions(gh, repo, settings=None)`** has these methods:
+  - `.of(login)`;
+  - `.trusted(login, type)`: write or higher, raised by `trustedPermission`;
+  - `.triage(login, type)`: triage or higher, the vouch bar (design trust_and_untrusted_text L2);
+  - `.write(login, type)`: write or higher with the bot rule, not raised by `trustedPermission`;
+  - `.open_pulls()`: read once per object.
+  - `repo` is passed because the gh callable carries no repository. `settings` is a callable `setting(key, default)`.
+  - The sync makes one object per pass, so each login's permission and the open pulls are read once per sync. A failed read is cached as untrusted for that object.
+- **`.triage` means triage or higher.** For B5's retry: a retry counts when `.trusted or .triage`, and `triage_only = .triage and not .trusted`.
+- **`read_issue(gh, repo, n, job, perms) -> snapshot or None`.**
+  - The snapshot has the plan 5.3 keys.
+  - `closed_by` and each event carry `trusted`.
+  - Each edit is `{editor, editor_type, edited_at, trusted}`.
+  - Two keys are added: `dependencies` (`{"<m>": state}`, read only for a queued job) and `pr_merged` (read when the job has a PR).
+  - Any failed read gives None and the caller computes no fact. That covers the issue, events, comments, GraphQL edits, a named dependency and the job's PR. It also covers:
+    - a REST comment missing from the GraphQL answer;
+    - a `hasNextPage` that is not true or false;
+    - a GraphQL answer that carries errors alongside its data.
+- **`read_unjobbed(gh, repo, n, perms, settings=None)`** returns `{number, state, labels, label_event, closing_prs: [{number, head_ref, cross, author, author_type, write}]}` or None.
+- **`creation_conditions(unjobbed, local, settings=None) -> bool`.** `local` is `{"open_job": bool, "terminal_vouch_at": [time or None]}`.
+- **Other entry points:** `needs_info_answers(snapshot, job) -> (trusted ids, untrusted ids)`, `untrusted_edit(snapshot, job)` and `facts(snapshot, job, settings=None)`.
+
+Choices:
+- **Repository role.**
+  - Only `role_name` is read. A custom role counts as none (design person_channels item 5, plan B4 outline 2).
+  - The legacy `permission` field is read only when `role_name` is absent, with triage mapped to read (R55).
+- **Edit times.**
+  - An edit at exactly vouch_at counts. An unreadable time or a missing vouch_at also counts (trust_and_untrusted_text L5).
+  - A truncated edit history adds an unknown editor at the node's `lastEditedAt`, or with no time when that cannot be read. This holds whatever order GitHub lists edits in.
+- **`cancel_signal`** reads the latest queue-label removal or close strictly after vouch_at, and is true when that actor is trusted. It stays true after a reopen.
+- **`untrusted_close`** is true when the issue is still closed, `closed_by` is not trusted, and the job's PR is not merged.
+- **Creation row 1.**
+  - A closing PR uses GitHub's closing keywords and an exact `#N`.
+  - A same-repository `feature/issue-N-` head is a factory branch.
+  - A non-factory PR blocks queueing when its author has write or higher. An unlisted bot has none.
+  - A terminal job with an unreadable vouch_at blocks a new job.
+- **Dependencies** come from lines that start `Depends on` or `Blocked by`, with bare `#N` only. A reference to the issue itself is ignored.
+
+Open, for later tasks:
+- **R7 is not closed by B4.** The revouch handler (B13/B14) knows the retry comment's time. It must compare that time with `snapshot["edits"]["comment:<id>"]`, so a reply edited between the retry and the re-vouching sync is not trusted.
+- **Real GitHub has not been checked.** The GraphQL query text, and whether `userContentEdits` can be null, are still to be checked against it; the B15 probes or a person run can check them.
