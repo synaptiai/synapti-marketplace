@@ -69,9 +69,12 @@
 #        reply is anything but stage_failed
 #   LI5  (R24) a worker launched after a judge gets CLAUDE_HOOK_GOAL_JUDGE_MODE
 #   LI6  an intake judge launches with no in-copies/issue.md
-#   LI7  the launcher reads a judge reply of any size into memory, so a
-#        valid reply padded past JUDGE_REPLY_LIMIT (4 MiB) is applied as a
-#        judge_* result instead of a stage_failed one
+#   LI7  a valid reply padded past JUDGE_REPLY_LIMIT (4 MiB) is applied as a
+#        judge_* result instead of a stage_failed one with no judge key
+#   LI9  the launcher reads the whole judge reply rather than at most
+#        JUDGE_REPLY_LIMIT + 1 bytes of it, so a reply of any size is held
+#        in memory (the outcome is the same either way, so LI7 cannot see
+#        it; LI9 makes the reply a named pipe and counts what was read)
 #   LI8  a hung flow-judge.sh that its own timeout(1) does not end runs on
 #        past the launcher's limit (the intake timeout plus the margin), or
 #        ends with an outcome other than timeout, a judge key, or a process
@@ -858,7 +861,7 @@ fi
 
 if in_run LI7; then
 fe_new li7-reply-over-cap
-e2e_describe "the launcher reads at most JUDGE_REPLY_LIMIT (4 MiB, 4194304 bytes) of a judge reply, which bounds its memory, and plan 5.3 'Judge reply' maps any stdout that is not a usable reply to stage_failed: a reply that is a valid ACCEPT envelope padded with 4194400 spaces inside the object (so jq still reads it as an ACCEPT) gives outcome error, event stage_failed, no judge key, a result that validates, and one pending stage_failed"
+e2e_describe "a reply over 4 MiB is malformed (decision journal, launcher: 'A reply over 4 MiB is malformed and its cost is not charged') and plan 5.3 'Judge reply' maps any stdout that is not a usable reply to stage_failed: a reply that is a valid ACCEPT envelope padded with 4194400 spaces inside the object (so jq still reads it as an ACCEPT) gives outcome error, event stage_failed, no judge key, a result that validates, and one pending stage_failed"
 li_seed
 { printf '%s' '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.01,'
   head -c 4194400 /dev/zero | tr '\0' ' '
@@ -912,4 +915,83 @@ e2e_expect_equal 0 "$(li_launches)" "claude launches"
 # Leave nothing running when an expectation above failed.
 if [ -n "$IN_HANG" ]; then kill "$IN_HANG" 2>/dev/null || true; fi
 rm -f "$E2E_BIN/timeout-hang"
+fi
+
+if in_run LI9; then
+fe_new li9-reply-read-capped
+e2e_describe "the launcher reads at most JUDGE_REPLY_LIMIT + 1 (4194305) bytes of a judge reply (decision journal, launcher: 'A reply over 4 MiB is malformed ... because the reply is not read'): the judge's timeout(1) stand-in replaces the reply file with a named pipe and leaves a writer behind in a session of its own, which offers 16 MiB (16777216 bytes) once the launcher opens the pipe; the launcher closes the pipe after its capped read, so the writer's next write fails with a broken pipe after at least 4128769 and at most 5242881 counted bytes (bounds from the cap of 4194305 bytes, not design values: the bytes of the one 64 KiB write the broken pipe cut short are not counted, so the floor is the cap less 64 KiB, and the ceiling is the cap plus 1 MiB of room for the pipe's own buffer, 64 KiB on macOS and Linux by default), never all 16 MiB; the result is still outcome error, event stage_failed, no judge key"
+li_seed
+IN_FIFO="$LI_J/results/$IN_ID.reply.json"
+printf '%s\n' "$IN_FIFO" > "$E2E_BIN/li9-fifo-path"
+cat > "$E2E_BIN/li9-fifo-writer.py" <<'PY'
+import errno, os, signal, sys, time
+path, here = sys.argv[1], sys.argv[2]
+def note(name, text):
+    t = os.path.join(here, name + '.t')
+    with open(t, 'w') as f:
+        f.write(text)
+    os.replace(t, os.path.join(here, name))
+os.unlink(path)
+os.mkfifo(path, 0o600)
+# Leave the judge's process group, so the launcher sees the judge end.
+if os.fork():
+    os._exit(0)
+os.setsid()
+if os.fork():
+    os._exit(0)
+null = os.open(os.devnull, os.O_RDWR)
+for fd in (0, 1, 2):
+    os.dup2(null, fd)
+signal.alarm(90)
+note('li9-writer-pid', str(os.getpid()))
+end = time.monotonic() + 60
+while True:
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+        break
+    except OSError as e:
+        if e.errno != errno.ENXIO or time.monotonic() > end:
+            note('li9-writer.txt', 'no reader')
+            sys.exit(1)
+        time.sleep(0.05)
+os.set_blocking(fd, True)
+chunk = b' ' * 65536
+total = 16 * 1024 * 1024
+n = 0
+try:
+    while n < total:
+        n += os.write(fd, chunk[:total - n])
+    os.close(fd)
+    note('li9-writer.txt', 'EOF %d' % n)
+except BrokenPipeError:
+    note('li9-writer.txt', 'EPIPE %d' % n)
+PY
+cat > "$E2E_BIN/timeout" <<'STUB'
+#!/usr/bin/env bash
+here=$(cd "$(dirname "$0")" && pwd)
+printf '%s\n' "$1" >> "$here/timeout-args.log"
+exec "$(cat "$here/fe-gh-python")" -I "$here/li9-fifo-writer.py" "$(cat "$here/li9-fifo-path")" "$here"
+STUB
+chmod +x "$E2E_BIN/timeout"
+printf 'judge stand-in: timeout(1) replaced by li9-fifo-writer.py, which makes the reply file a named pipe and offers 16777216 spaces through it\n' | _e2e_art
+li_launch
+e2e_expect_line "LAUNCHED directive=$IN_ID"
+fe_wait_for 60 "[ -f '$E2E_BIN/li9-writer.txt' ]"
+li_wait
+IN_W=$(cat "$E2E_BIN/li9-writer.txt" 2>/dev/null)
+printf 'writer: %s\n' "$IN_W" | _e2e_art
+IN_WN=${IN_W#* }
+case "$IN_WN" in ''|*[!0-9]*) IN_WN=0 ;; esac
+e2e_expect_equal EPIPE "${IN_W%% *}" "how the writer ended (EOF means the launcher read all 16 MiB)"
+e2e_expect_equal yes "$([ "$IN_WN" -ge 4128769 ] && [ "$IN_WN" -le 5242881 ] && echo yes || echo no)" "bytes the writer counted ($IN_WN) lie in 4128769..5242881"
+IN_R="$LI_J/results/$IN_ID.json"
+e2e_expect_equal "error stage_failed false" "$(jq -r '"\(.outcome) \(.event) \(has("judge"))"' "$IN_R" 2>/dev/null)" "result of the oversized reply"
+e2e_expect_equal stage_failed "$(li_pending)" "pending events"
+# Leave nothing running when an expectation above failed: the writer, and a
+# launcher still waiting to open the pipe.
+IN_WP=$(cat "$E2E_BIN/li9-writer-pid" 2>/dev/null)
+if [ -n "$IN_WP" ]; then kill "$IN_WP" 2>/dev/null || true; fi
+IN_LP=$(jq -r '.launcher_pid // empty' "$LI_J/directives/$IN_ID.lease.json" 2>/dev/null)
+if [ -n "$IN_LP" ]; then kill "$IN_LP" 2>/dev/null || true; fi
+rm -f "$IN_FIFO"
 fi
