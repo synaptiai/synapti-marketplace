@@ -503,3 +503,29 @@ Choices:
 - **status** takes each item's status from the events lines, not the item file.
 - **rebuild** replays only `REPLAYED_FIELDS` (vouch_at, vouch_event_id, base, revouched_replies, baseline_digest, baseline_pending, intake_inputs, intake, needs_info, pending_keys, pending_intent, held_result, confirmed_intent). A pr_recorded line also restores `pr`. B13 and B14 must add any new field they put in a line's `fields`. `LOGGED_LISTS` gains commands_seen and labels_set.
 - usage prints four lines (`usage:`, `Person: …`, `Engine: …`, `Worker: …`); B9 compares the Person line.
+
+## Inferred readings (wave 4)
+
+### Factory rules in tier-gate and the state guard (B9)
+
+- **Worker:** a session with FLOW_FACTORY_JOB or FLOW_FACTORY_DIRECTIVE set (design L35, person_channels L21). FLOW_FACTORY_IO alone does not make a worker for the hook, although the wrapper's own refusal also counts it. A worker may run only `[path/]flow-factory.sh context --mode` and `[path/]flow-factory.sh await <qid> [--max-seconds <n>]`, each as the whole command. B8's scenario tg-fac-sourcing was changed to run `context --mode` under each worker variable, because the rules deny `status` there.
+- **Person subcommands outside a worker:** default mode asks; any other mode, or no mode, denies with `run it in a terminal outside Claude Code: <command>`. A command the hook cannot read (a variable subcommand word, an open quote, a parser that does not load) is denied in every mode, because no ask could show what would run. A confirm is denied when `status --intent` (run in the payload cwd, stdin from /dev/null) exits non-zero or does not print `INTENT id=<id> `.
+- **approve-spec:** the ask prints `spec file: none recorded`, because the 1b job schema has no spec-file field. Hand-off to 1d: when the field is added, the ask must read it, and a test must pin it.
+- **Comment posts** are denied while flow.factory.enabled is true when the command names /flow-factory and posts to a comments or reviews endpoint. GraphQL mutations are not covered; design L40 names only the endpoints.
+- **State guard:** applies `.` and `..`, takes the physical path of the longest existing part, follows a link at the end of the path, and checks the /private spelling. It has no fast exit: a custom runtime directory makes a fixed `.flow/factory` check wrong, so it always resolves the directory (about 80 ms per call). Design L48's "exits at once" is not met; this is the reason.
+- **Later call sites:** nothing calls `context --mode` or `await` yet. When 1d adds them, they must use the plain whole-command form, or rule 1 denies them.
+
+### Table facts and the seam (B13)
+
+- A callable in `Context.built` wins over the four facts the job computes, as 1a's `_FROM_JOB` rule says.
+- `pending_intent_stale` is true when the pending intent's kind is push or comment and `foreign_head_change` is in pending_changes (T:facts.pending_intent_stale). assign_label is not tied to a head.
+- `intake_rounds_exhausted` reads `flow.factory.intake.maxRounds` (default 3). A value that is not a whole number of at least 1 counts as 3.
+- Row 50's "from waiting_operator" text acts only when the job leaves waiting_operator. `intent_clear` nulls pending_intent, held_result and pending_keys on rows 41b and 41p too.
+- `issue_changed` is false when either digest is missing, and while baseline_pending is set.
+- revouch and the transition line share one timestamp.
+- **For B14:** next builds no 1b callables, confirm_writes or ctx.sync yet, so files that run `next` fail with FactUnavailable until B14 step 0 (the person file's ps8a and ps13a-c). B14 must also supply `ctx.sync["revouch"]` (comment id to sha256) with replies edited after the retry filtered out (R7), and a non-empty `ctx.sync["pending_keys"]`; move the fixtures off confirm_keys; and add the `bodies["judge:intake"]` refusal (step 11).
+
+### Linked job folders in person commands (B12 follow-up)
+
+- A linked J/outbox or J/directives is treated as absent at every read in `_flow_factory_person.py`: write_seq, the directives read, the context lease and status's directive check. A linked J/jobs gets `factory_dir_refused`; a job folder that is itself a link gets `job_unreadable` (exit 5), matching what status and the other person subcommands say.
+- Left as they are: `directive_open` in next reads J/results with `os.path.lexists`, so a linked J/results can mark a directive finished (B14 owns next); and a factory directory configured outside the repository is not checked for links by the job lock (`_flow_factory_jobs.py`).
