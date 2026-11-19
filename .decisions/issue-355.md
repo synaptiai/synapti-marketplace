@@ -448,3 +448,58 @@ These signatures differ from plan 5.3. The plan's B6 line now points here.
 - B14 must pass `repo` to `record_job_intent`.
 - B14 must drop through `drop_intent`.
 - B12 must write `intent_confirmed` before it saves the item.
+
+## Inferred readings (wave 3)
+
+_2026-11-19. Choices made while building B5, B11 and B12 and fixing their reviews. B9, B13 and B14 build on them._
+
+### Plan conflict: where an NI answer applies
+
+Plan 2.3 says `answer NI-<k>` (terminal) and `/flow-factory answer NI-<k> <text>` (comment) apply in needs_info only. transitions.json, which the design names as the only source for states and events, has person_answer rows from needs_human that record the answer (44q, 44u, 44v, 44w, 44x). Both channels therefore accept an NI answer in needs_info and needs_human. The comment channel imports the state set (`NI_STATES`) from the person module.
+
+**Open for B14:** row 44 (needs_human, person_answer, no guard) is the fallback when none of 44q–44x holds. It resumes to blocked_stage, and its effects do not say "record the answer". Its effects do say the answer reaches a fresh session through the questions store. B14 must record an NI answer through `effect_answer` before row 44 resumes the job. Otherwise an answer given after row 9a parks a job (needs_info_exhausted) would restart intake without the answer.
+
+### Comment commands (B5, `bin/_flow_factory_commands.py`)
+
+These signatures differ from plan 5.3:
+- **`scan(snapshot, job, perms, engine_login, table=None) -> [command]`** only reads. Pass the pass's own table. It raises ValueError for an empty `engine_login`. Each command is `{comment_id, name, event, args, trusted, triage_only, raise, note, author, author_type, created_at, length, permission}`. `trusted` means the command counts, so it is true for a triage-only retry.
+- **`store(paths, job, command, *, repo, caller=None) -> [status line]`** runs under the job lock for every command, trusted or not. It changes `job` in place (`commands_seen`, `write_seq`, `updated_at`) and writes job.json.
+- **`label_notes(snapshot, job, label)`** and **`store_label_note(paths, job, note, *, repo) -> intent id`** (under the job lock).
+- **`jobs.store_pending(..., comment=None)`**: a `comment:<id>` channel must carry that comment object, and no other channel may carry one.
+
+Choices:
+- **Floor.** A command counts only when created strictly after the later of vouch_at and the newest marker the engine login posted (person_channels L57, R58). An unreadable vouch_at, marker time or command time raises nothing. A comment by the engine login with no marker is still a command (L59–L60).
+- **Untrusted commands.** They are not added to commands_seen, so trust is judged by each sync's permission read (person_channels L54; plan 2.2 caches permissions for one sync only). A failed read therefore cannot drop a later trusted reading. One consequence: a command from an author later raised to write is raised then, limited by the marker floor. The `UNTRUSTED_COMMAND` line is printed once per job and comment, recorded by an events line `{type: untrusted_command, job, comment, time, pass}` written before the status line. That line has no `id`, so the write module and rebuild ignore it.
+- **Refusal order:** trust, then the state (occurs_in), then the form, then the answer's state, then whether the job asked the question. A SPEC answer applies in needs_spec_approval only (person_channels L11).
+- **Note text** is built from fixed words, ids, the label and logins; no comment text is copied in. A label-note ref is the removal's event id.
+- **Unreadable pending file:** `store` refuses with `pending_unreadable` and leaves the comment unseen. A missing, unreadable or non-UTF-8 template gives `Refused(template_unreadable)`.
+
+### Actor types (B4 change, `bin/_flow_factory_issue.py`)
+
+Only `User` and `Bot` are kept. A missing type counts as User (plan 5.3). Any other value (Organization, Mannequin) becomes `Unknown`, which is untrusted whatever the role or trustedBots says (plan AC2: an unknown account fails closed). This applies to comment authors, event actors, closers, pull authors and GraphQL editors.
+
+### Intake judge (B11, `bin/_flow_factory_intake.py`, `bin/_flow_factory_launch.py`, `flow-judge.sh --judge intake`)
+
+Effect signatures add keywords to plan 5.3; B14 passes `repo=`, and `row=` for needs-human and tier-confirm:
+- `effect_accept(paths, job, result, *, repo) -> {"intake_inputs", "intake"}`: the caller puts these into the transition line's fields.
+- `effect_needs_info(paths, job, result, now, *, repo) -> needs_info`: the caller writes `job["needs_info"]`.
+- `effect_reject(...)`, `effect_revouch_notice(paths, job, comment_id, *, repo)`, `effect_answer(paths, job, qid, text)`, `effect_needs_human(paths, job, *, repo, row)`, `effect_tier_confirm(paths, job, keys, *, repo, row)`, `next_question_id(paths)`, `fact_sheet(job)`, `intake_stdin(issue_md, sheet)`, `map_result(stdout) -> (event, judge|None)`, `reply_envelope(stdout)`, `FAILED = "stage_failed"`.
+
+Choices:
+- Every effect checks the job lock and loads its template before it changes anything, so a retry after EFFECT_FAILED uses up no question id. Each changes `write_seq`; the caller writes job.json.
+- state_at_write is passed explicitly: prepare for row 6, needs_info for row 4, rejected for row 5, the job's own state for row 8u, needs_human for needs-human, waiting_operator for tier-confirm.
+- `intake_inputs` comes from the comment and answer fence lines of `J/in-copies/issue.md`, which is what the judge read (stages L44). `J/in-copies/intake.json` holds the whole validated reply (stages L80).
+- Questions: `J/questions/NI-<k>.json {job, id, text, round}`; the counter `F/questions.json {next}` under `F/questions.lock` (30 s). An unreadable counter is refused and left as it is. `needs_info.round` starts at 1.
+- Launcher: a judge has no clone, io folder, stage budget or `--max-budget-usd`, and records no session. Its environment is built from the keep list. cwd is the main checkout. A reply over 4 MiB is malformed and its cost is not charged, because the reply is not read. A launcher-side timeout gives outcome timeout; any other failure gives error. The judge result is applied in the launcher's own process, because apply_report drops a directive whose max_budget_usd is null.
+- flow-judge.sh intake: `--model` must match `[A-Za-z0-9._:[]-]+` and `--timeout-seconds` must be 1 to 9 digits, else exit 2.
+
+### Person commands (B12, `bin/_flow_factory_person.py`)
+
+- **confirm** checks the intent through the write module's check against its intent_recorded line, before showing anything and again under the job lock after the prompt. The literal, the body and both hashes go to the terminal with the prompt; stdout holds one outcome line (1a plan 2.6). Hashes are shown as `SHA256 recorded=<hex> current=<hex>`.
+- **Display:** argv and body inside `<<<UNTRUSTED_INTENT>>>` fences, every line prefixed `> `. Control characters other than tab show as `\xNN`, and format characters (bidi controls, zero-width characters, U+2028/U+2029) as `\u{xxxx}`. Text-mode status lines carrying such characters are escaped the same way.
+- **Linked folders:** a symbolic link for J/outbox, or a folder on the way to it, is treated as not found (`INTENT_UNKNOWN`, `FACTORY_REFUSED=intent_unknown`), as plan 2.2's lookup rule says.
+- **Notice confirm** is allowed when the job has an intent_pending_confirm line after the last record, with no confirmed, sent or dropped line, the item is not blocking, and the job is not terminal. A second confirm gets EVENT_REFUSED. An unknown id keeps 1a's `FACTORY_REFUSED=intent_unknown` (exit 5).
+- **answer NI-<k>** requires `--text`. QUESTION_AMBIGUOUS also applies to 1a q-ids.
+- **status** takes each item's status from the events lines, not the item file.
+- **rebuild** replays only `REPLAYED_FIELDS` (vouch_at, vouch_event_id, base, revouched_replies, baseline_digest, baseline_pending, intake_inputs, intake, needs_info, pending_keys, pending_intent, held_result, confirmed_intent). A pr_recorded line also restores `pr`. B13 and B14 must add any new field they put in a line's `fields`. `LOGGED_LISTS` gains commands_seen and labels_set.
+- usage prints four lines (`usage:`, `Person: …`, `Engine: …`, `Worker: …`); B9 compares the Person line.
