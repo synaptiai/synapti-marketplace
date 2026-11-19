@@ -288,3 +288,56 @@ _2026-11-18. Plan: ~/.claude/plans/factory-1b/plan.md (tasks B1-B19)._
 - A fix pass applied all round 6 findings; a fix-confirmation pass (checking only those findings, not a full review) passed with two non-blocking notes.
 - Those two notes and the advisor's consistency note were applied by hand: the unknown `/flow-factory` word rule (`is_command_line`, Inferred) is now stated in 3.1, 5.3, B3 and B4, with a B3 test case; `intent_effect_observed` raises FactFailed only for a job with a pending_intent.
 - Result: PASS (no open blocking finding).
+
+## Inferred readings (wave 1)
+
+_2026-11-19. Choices the plan and design leave open, made while building B1, B3, B7 and B8. Later tasks build on them._
+
+### Tiers (B7, `bin/_flow_factory_tiers.py`)
+
+- **`path_keys` covers every blocking write still ahead on the path to ready**, each key once, in stage order. It does not cover only the current stage. The grounds are design github_writes_and_tiers L68 ("with push at confirm a job parks before spending its spec and build budget") and AC8, where an intake job parks on `[issueAssign]`. Design execution_model L46-L53 does not name intake, spec, build or gate:
+  - intake and prepare: `[issueAssign, issueUpdate, push, prCreate]`
+  - spec, build and open_pr: `[push, prCreate, issueUpdate]`
+  - gate, review, rework, sync and resolve: `[push, issueUpdate]`
+  - ready and approve: `[issueUpdate]`
+  - As a result, a headless job with `tiers.push=confirm` parks by row 40b before its intake judge runs.
+- **A parked job (`waiting_operator`) uses its `resume_state`'s path.** A missing or unknown resume state reads every key.
+- **A key that no source sets resolves to confirm.** An intent with an empty key list makes `intent_key_not_confirm` false.
+- **Signatures as built**, which differ from plan 5.3:
+  - `confirm_writes(writes, job, tiers, fdir=None)`;
+  - `confirm_path_keys`, `tier_confirm_blocking` and `intent_key_not_confirm` take optional `tiers=` and `fdir=`;
+  - `fdir` defaults to the factory directory.
+- **The base fetch uses the refspec `+refs/heads/<base>:refs/remotes/origin/<base>`**, with `--no-recurse-submodules --no-auto-gc`. It retries once when the ref lock is held.
+- **The engine reads the base-branch project file itself**, through rev-parse, ls-tree and cat-file. A symbolic link or other non-regular entry counts as confirm. `cascade-resolve --repo-settings-ref` is a separate view and the engine does not call it.
+
+### Text (B3, `bin/_flow_factory_text.py`)
+
+- **Functions added beyond 5.3:**
+  - `is_reply_to(comment, round)`: id named, created strictly after `asked_at`, line 1 neither a marker nor a non-spec command. Trust is left to the caller.
+  - `body_sha256`
+  - `other_comments`
+  - `issue_set`
+- **A re-vouched reply stays in the set only while sha256 of its current body equals the stored hash.** Otherwise it is listed under Other comments.
+- **`command_of` returns the rest of line 1 unchanged, leading space included.**
+- **Adding a thanks, marker or command comment leaves the digest and the quoted part unchanged**, but adds an Other comments line (design trust_and_untrusted_text L21). The B3 test plan's "equal issue.md" is read that way.
+
+### Gate (B8, `tier-gate.sh` and `lib/tier-runtime.sh`)
+
+- **These forms are not classified as `tiers.issueUpdate`:**
+  - `gh pr reopen`;
+  - `gh pr edit --add-assignee`;
+  - `gh issue edit --remove-assignee` and `--milestone`;
+  - `PUT issues/{n}`;
+  - `PATCH pulls/{n}` with `--input`;
+  - `DELETE pulls/{n}/requested_reviewers`.
+- **Removing one label (`DELETE issues/{n}/labels/{name}`) is classified as issueUpdate.** It is the engine's own label-removal write.
+- **The shared key list and phrases live in `lib/tier-runtime.sh`, which `tier-gate.sh` sources.** If that file fails to load, the gate reads no command.
+- **`lib/tier-factory.sh` holds only `_tg_factory_rules`.** If it fails to load, the hook denies the command.
+
+### Schemas (B1)
+
+- **An outbox item id is `issue-N-j<seq>-<row>-<k>` or `probe-p9-<n>`.** A probe item may have a null job, row and state. `pending_intent.id` and `confirmed_intent` accept the issue form only.
+- **Some rules are enforced by the writers, because the stdlib validator lacks propertyNames, patternProperties, minItems and if/then:**
+  - the comment-id keys of `revouched_replies`;
+  - a comment object on every comment-channel event;
+  - non-empty `proposed_criteria` for ACCEPT and non-empty `questions` for NEEDS_INFO.
