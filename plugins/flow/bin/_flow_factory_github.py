@@ -19,9 +19,13 @@ on its standard input (-F body=@- at run time), never the file again.
 The events file, not the item, says what has happened to an intent. A
 write_recorded line means it was sent and an intent_dropped line means it
 was dropped, wherever they stand, and an item whose status says otherwise
-is refused (field=status). An intent_confirmed line counts only after the
-last intent_recorded line for the id and for the same job, and only for a
-notice. The dedupe in record_job_intent reads the intent_recorded lines too.
+is refused (field=status). An intent_confirmed line (a person confirmed the
+notice) and an intent_pending_confirm line (the drain made the notice wait
+for a confirm) count only after the last intent_recorded line for the id
+and for the same job, and only for a notice; the drain decides from them,
+not from the status, and an item that says pending_confirm or confirmed
+with no such line is refused. The dedupe in record_job_intent reads the
+intent_recorded lines too.
 
 The literals are fixed forms (see the literal_* builders): gh api calls for
 comments, labels and the PR close, and gh issue edit for the assignment and
@@ -41,13 +45,16 @@ API:
   literal_assign_label(repo, n, login, label), literal_pr_close(repo, pr)
       -> argv (a comment's body argument is added when it is recorded)
   record_job_intent(paths, job, row, kind, argv, body, key, blocking, ref=None,
-                    state=None) -> id, or None for a pr_close on a job with no PR
+                    state=None, *, repo) -> id, or None for a pr_close on a job
+                    with no PR; repo is the pass's repository
   record_probe_intent(folder, n, argv, body) -> "probe-p9-<n>"
   drain(paths, job, gh_real, tiers, login, enough=None) -> [status line]
   run_literal(paths, job, id, gh_real, login, tiers=None, lines=None) -> effect
   drop_intent(paths, job, id) -> None (the item becomes dropped)
   lookup(gh_real, job, id, login, paths=None) -> effect or None
   check_item(events_path, item) -> None or IntentChanged
+  sent_item(job_dir, id, job_key) -> the item, when a write_recorded line
+      names it and check_item accepts it; else None
   IntentNotPending, IntentChanged (both jobs.Refused, with .line), ReadFailed
 
 record_job_intent, drain, run_literal and drop_intent need the job's lock (the caller
@@ -325,14 +332,15 @@ def _save(path, item):
         raise _unwritable(path, e)
 
 
-def _write_intent(outbox, events_path, iid, mark, fields, argv, body, append, number=None):
+def _write_intent(outbox, events_path, iid, mark, fields, argv, body, append, number=None, repo=None):
     """Write the body file, the intent_recorded line and the item, in that
     order, so a process that dies part way leaves a record with no item
     (which nothing reads, and the same write is recorded again) and never an
     item with no record (which would stop the same write being recorded
     again and could never run). A failure removes the body file and raises
     outbox_unwritable naming the file that could not be written. With a
-    number, the literal must act on that issue or pull request number."""
+    number, the literal must act on that issue or pull request number, and
+    with a repo, in that repository (ignoring case)."""
     text, body_bytes, body_file, body_path = None, b"", None, None
     if fields["kind"] == "comment":
         _need(isinstance(body, str), "a comment needs its text")
@@ -345,6 +353,7 @@ def _write_intent(outbox, events_path, iid, mark, fields, argv, body, append, nu
         _need(body is None, f"a {fields['kind']} write has no body")
     t = _target(fields["kind"], argv)
     _need(number is None or t["n"] == number, f"literal for #{t['n']}, not the job's #{number}")
+    _need(repo is None or t["repo"].lower() == repo.lower(), f"literal for {t['repo']}, not {repo}")
     sha = intent_digest(argv, body_bytes)
     item = dict(fields, id=iid, argv=list(argv), body_file=body_file, sha256=sha, status="recorded", effect=None)
     errors = schema.validate(item, OUTBOX_SCHEMA)
@@ -380,7 +389,7 @@ def _check_fields(kind, key, blocking, ref):
     _need(ref is None or (isinstance(ref, int) and not isinstance(ref, bool) and ref > 0), f"ref {ref!r}")
 
 
-def record_job_intent(paths, job, row, kind, argv, body, key, blocking, ref=None, state=None):
+def record_job_intent(paths, job, row, kind, argv, body, key, blocking, ref=None, state=None, *, repo):
     """Record one write of the job and return its intent id (plan 2.2): k is
     1 + the larger of job.json write_seq and the largest k of the job's items
     in J/outbox, and job["write_seq"] is set to it (the caller writes
@@ -390,10 +399,12 @@ def record_job_intent(paths, job, row, kind, argv, body, key, blocking, ref=None
     and ref whose item file is still in J/outbox is found and its id
     returned, recording nothing (the line, not the item, which can be
     edited). The literal must act on the job's issue, or for a pr_close on
-    the job's pr, else ValueError. A pr_close on a job with no PR records
-    nothing and returns None. Raises Refused("outbox_unwritable ...") for
+    the job's pr, in repo (the pass's repository, owner/name, compared
+    ignoring case as GitHub does), else ValueError. A pr_close on a job with
+    no PR records nothing and returns None. Raises Refused("outbox_unwritable ...") for
     any failure to write, the job lock not held included."""
     _check_fields(kind, key, blocking, ref)
+    _need(isinstance(repo, str) and re.fullmatch(_REPO, repo), f"repository {repo!r}")
     n, job_key = job.get("issue"), job.get("key")
     _need(isinstance(job_key, str) and re.fullmatch(r"issue-[1-9][0-9]*-j[1-9][0-9]*", job_key)
           and job_key.startswith(f"issue-{n}-"), f"job {job_key!r}")
@@ -430,7 +441,7 @@ def record_job_intent(paths, job, row, kind, argv, body, key, blocking, ref=None
     fields = {"job": job_key, "row": item_row, "state_at_write": state or job.get("state"), "ref": ref,
               "kind": kind, "blocking": blocking, "key": list(key)}
     _write_intent(outbox, events_path, iid, marker(job_key, iid), fields, argv, body,
-                  lambda line: jobs.append_event(paths, n, line), number=number)
+                  lambda line: jobs.append_event(paths, n, line), number=number, repo=repo)
     job["write_seq"] = k
     return iid
 
@@ -505,17 +516,19 @@ def _records(events_path):
 def _history(events_path, iid):
     """What the events file says of iid: {rec: the last intent_recorded line
     or None, confirmed: an intent_confirmed line of rec's job after rec,
-    sent: a write_recorded line (anywhere), effect: the last one's effect,
-    dropped: an intent_dropped line (anywhere)}."""
-    h = {"rec": None, "confirmed": False, "sent": False, "effect": None, "dropped": False}
+    parked: an intent_pending_confirm line of rec's job after rec, sent: a
+    write_recorded line (anywhere), effect: the last one's effect, dropped:
+    an intent_dropped line (anywhere)}."""
+    h = {"rec": None, "confirmed": False, "parked": False, "sent": False, "effect": None, "dropped": False}
     for d in _lines(events_path):
         if d["id"] != iid:
             continue
         t = d.get("type")
         if t == "intent_recorded":
-            h["rec"], h["confirmed"] = d, False
-        elif t == "intent_confirmed":
-            h["confirmed"] = h["confirmed"] or (h["rec"] is not None and d.get("job") == h["rec"].get("job"))
+            h["rec"], h["confirmed"], h["parked"] = d, False, False
+        elif t in ("intent_confirmed", "intent_pending_confirm"):
+            flag = "confirmed" if t == "intent_confirmed" else "parked"
+            h[flag] = h[flag] or (h["rec"] is not None and d.get("job") == h["rec"].get("job"))
         elif t == "write_recorded":
             h["sent"], h["effect"] = True, d.get("effect")
         elif t == "intent_dropped":
@@ -581,11 +594,14 @@ def check_item(events_path, item):
     disagrees with the events file (field=status): not sent when a
     write_recorded line names the id, not dropped when an intent_dropped
     line does, dropped when none does, pending_confirm or confirmed on a
-    blocking item (only notices wait for a confirm, plan 2.2 and Q16), or
-    confirmed with no intent_confirmed line of the job after the record.
-    A sent item with no write_recorded line passes: _sent saves the item
-    before the line, so a process that died between them leaves exactly
-    that, and nothing runs a sent item."""
+    blocking item (only notices wait for a confirm, plan 2.2 and Q16),
+    confirmed with no intent_confirmed line of the job after the record, or
+    pending_confirm with no intent_pending_confirm line of the job after
+    the record. A sent item with no write_recorded line passes: _sent saves
+    the item before the line, so a process that died between them leaves
+    exactly that, and nothing runs a sent item. So does a recorded item
+    with an intent_pending_confirm or intent_confirmed line: the line is
+    written first, and the drain acts on the line, not on the status."""
     return _checked(events_path, item)[0]
 
 
@@ -605,9 +621,23 @@ def _checked(events_path, item):
     if (h["sent"] and status != "sent") or (h["dropped"] and not h["sent"] and status != "dropped") \
             or (status == "dropped" and not h["dropped"]) \
             or (status in ("pending_confirm", "confirmed") and item.get("blocking") is not False) \
-            or (status == "confirmed" and not h["confirmed"]):
+            or (status == "confirmed" and not h["confirmed"]) \
+            or (status == "pending_confirm" and not h["parked"]):
         return IntentChanged(iid, recorded, current, field="status"), None, h
     return None, body, h
+
+
+def sent_item(job_dir, iid, job_key):
+    """The job's outbox item iid (J/outbox/<iid>.json, J the job_dir) when a
+    write_recorded line names it and check_item accepts it, so its kind and
+    argv are the ones recorded and it was sent; else None. For a reader
+    outside this module (the tier keys' confirmed intent, B7), which checks
+    the shape of iid first, so it names a file in J/outbox."""
+    item = _valid(os.path.join(job_dir, "outbox", f"{iid}.json"), iid, job_key)
+    if item is None:
+        return None
+    changed, _, h = _checked(os.path.join(job_dir, "events.jsonl"), item)
+    return item if changed is None and h["sent"] else None
 
 
 def _valid(path, iid, job_key):
@@ -773,18 +803,22 @@ def drain(paths, job, gh_real, tiers, login, enough=None):
     """Run the job's unsent outbox items (plan 2.2 'Who runs an item', B6
     step 3) and return the status lines. Never touches the job's pending
     intent. Every unsent item is first checked against its intent_recorded
-    line (check_item), so every later decision reads recorded values. On a
+    line (check_item), so every later decision reads recorded values, and
+    whether a notice waits for a confirm or was confirmed is read from the
+    events file (an intent_pending_confirm or intent_confirmed line of the
+    job after the last intent_recorded line), not from its status. On a
     terminal job only the items of that state run and every other unsent
-    item is dropped; a pending_confirm notice whose job has left its state
-    is dropped. Then the effect is looked for, and a write found is recorded
-    with no run and no breadcrumb (design github_writes_and_tiers L50: the
-    breadcrumb goes with the run). Then the keys decide: all autonomous or
-    journal runs it (one breadcrumb per journal key), any confirm leaves a
-    blocking item recorded and makes a notice pending_confirm. A confirmed
-    notice runs whatever its keys say. enough, when given, is asked before
-    every gh call; when it says no the drain prints WRITE_DEFERRED for the
-    item it stopped at and stops, and the rest waits for the next pass
-    (plan 3.2). A drop appends an intent_dropped line. A J/outbox that is a
+    item is dropped; a notice waiting for a confirm whose job has left its
+    state is dropped (B6 step 7). Then the effect is looked for, and a write
+    found is recorded with no run and no breadcrumb (design
+    github_writes_and_tiers L50: the breadcrumb goes with the run). Then the
+    keys decide: all autonomous or journal runs it (one breadcrumb per
+    journal key), any confirm leaves a blocking item recorded and makes a
+    notice pending_confirm, with an intent_pending_confirm line appended
+    before the item is saved. A confirmed notice runs whatever its keys say.
+    enough, when given, is asked before every gh call; when it says no the
+    drain prints WRITE_DEFERRED for the item it stopped at and stops, and
+    the rest waits for the next pass (plan 3.2). A drop appends an intent_dropped line. A J/outbox that is a
     symbolic link, not a folder or cannot be listed gives one
     OUTBOX_UNREADABLE line and nothing runs."""
     n, job_key, state = job["issue"], job["key"], job.get("state")
@@ -823,12 +857,18 @@ def drain(paths, job, gh_real, tiers, login, enough=None):
             if changed:
                 lines.append(changed.line)
             continue
-        changed, body, _ = _checked(events_path, item)
+        changed, body, h = _checked(events_path, item)
         if changed:
             lines.append(changed.line)
             continue
+        # From here every decision reads the item as checked against its
+        # intent_recorded line, and the events file for what has happened
+        # to it: a notice is confirmed or waiting for a confirm when a line
+        # of its job after the record says so, whatever its status says.
         at = item["state_at_write"]
-        if (state in TERMINAL and at != state) or (status == "pending_confirm" and at != state):
+        confirmed = h["confirmed"] and item["blocking"] is False
+        parked = h["parked"] and item["blocking"] is False and not confirmed
+        if (state in TERMINAL and at != state) or (parked and at != state):
             _drop(paths, n, job_key, iid, path, item)
             lines.append(f"WRITE_DROPPED job={job_key} intent={iid} state_at_write={at} state={state}")
             continue
@@ -845,8 +885,14 @@ def drain(paths, job, gh_real, tiers, login, enough=None):
             _sent(paths, n, path, item, effect)
             lines.append(f"WRITE_SKIPPED job={job_key} intent={iid} found={_found_text(effect)}")
             continue
-        if status != "confirmed" and any(tiers(k) == "confirm" for k in item["key"]):
-            if not item["blocking"] and status == "recorded":
+        if not confirmed and any(tiers(k) == "confirm" for k in item["key"]):
+            if not item["blocking"] and status != "pending_confirm":
+                # The line first: an item saved as pending_confirm with no
+                # line is refused, and a line with the item still recorded
+                # (a process that died between them) is saved here again.
+                if not parked:
+                    jobs.append_event(paths, n, {"type": "intent_pending_confirm", "job": job_key,
+                                                 "time": ff.utc_now(), "id": iid})
                 _save(path, dict(item, status="pending_confirm"))
                 lines.append(f"PENDING_CONFIRM job={job_key} intent={iid} kind={item['kind']}")
             continue

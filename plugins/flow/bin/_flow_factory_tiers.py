@@ -438,7 +438,10 @@ def _covered(job, fdir):
     """The write kinds the sent outbox item named by job.confirmed_intent
     covers: assign_label the assignment and the in-progress label; label_add
     of labels.inProgress the in-progress label. Nothing when there is no such
-    item, it is not sent, it belongs to another job, or it cannot be read."""
+    item, it belongs to another job, it cannot be read, no write_recorded
+    line names it, or it is not the item its intent_recorded line records
+    (an edited kind or argv): sent, kind and argv are read through the
+    GitHub writes module's sent_item, never from the editable item alone."""
     iid = job.get("confirmed_intent")
     if not iid or not isinstance(job.get("issue"), int):
         return set()
@@ -451,14 +454,11 @@ def _covered(job, fdir):
             fdir = _fdir(ff.main_checkout(), None)
     except ff.Refused:
         return set()
-    path = os.path.join(fdir, "jobs", f"issue-{job['issue']}", "outbox", f"{iid}.json")
-    try:
-        with open(path, encoding="utf-8") as f:
-            item = json.load(f)
-    except (OSError, ValueError):
-        return set()
-    if not isinstance(item, dict) or item.get("id") != iid or item.get("job") != job.get("key") \
-            or item.get("status") != "sent":
+    # Imported here, as jobs is below: no import cycle (the GitHub writes
+    # module does not import this one), and only this reader needs it.
+    import _flow_factory_github as github
+    item = github.sent_item(os.path.join(fdir, "jobs", f"issue-{job['issue']}"), iid, job.get("key"))
+    if item is None:
         return set()
     kind = item.get("kind")
     if kind == "assign_label":

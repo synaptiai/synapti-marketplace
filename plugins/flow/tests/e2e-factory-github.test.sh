@@ -87,13 +87,23 @@
 #   GH33 an intent_confirmed line counts before the record it should follow,
 #        or for another job
 #   GH34 an intent is recorded for a literal aimed at another issue or pull
-#        request than the job's
+#        request than the job's, or at the job's number in another repository
 #   GH35 a write with no body whose body_file names a file is run, so
 #        status --intent would show a body that is never posted
 #   GH36 the dedupe reads kind, row and ref from the editable item, so an
 #        edit lets the same write be recorded twice
 #   GH37 a body file that is a named pipe is read, so a pipe that never ends
 #        holds the drain for ever
+#   GH38 a notice is pending_confirm in its file only, so editing it back to
+#        recorded lets it run after the job left its state (B6 step 7); a
+#        process that dies between the events line and the item leaves a
+#        notice that never runs; a notice edited to pending_confirm with no
+#        events line is acted on as one; another job's line counts; a
+#        confirm or park line makes a blocking item run under confirm or
+#        drop when its job moves; a confirm line written before the item
+#        was saved is not acted on
+#   GH39 an intent_confirmed or intent_pending_confirm line written before
+#        the last intent_recorded line of the same id still counts after it
 #   GH22 (design new_files L11) the breadcrumb goes to the trail of the
 #        branch the main checkout has checked out instead of issue N's; a
 #        repository with no journal folder gets one
@@ -206,7 +216,7 @@ def body_of(it):
         return fh.read()
 def record(job, row, kind, argv, body, key, blocking, ref=None, state=None):
     with jobs.job_lock(P, 7):
-        return G.record_job_intent(P, job, row, kind, argv, body, key, blocking, ref=ref, state=state)
+        return G.record_job_intent(P, job, row, kind, argv, body, key, blocking, ref=ref, state=state, repo=REPO)
 def drain(job, t, login=LOGIN, gh=None):
     with jobs.job_lock(P, 7):
         lines = G.drain(P, job, gh or GH, t, login)
@@ -321,7 +331,8 @@ def attempt(tag, locked=True):
         if locked:
             record(job, '4', 'comment', G.literal_comment(REPO, 7), 'x', ['issueUpdate'], False)
         else:
-            G.record_job_intent(P, job, '4', 'comment', G.literal_comment(REPO, 7), 'x', ['issueUpdate'], False)
+            G.record_job_intent(P, job, '4', 'comment', G.literal_comment(REPO, 7), 'x', ['issueUpdate'], False,
+                                repo=REPO)
         print('%s recorded' % tag)
     except jobs.Refused as e:
         print('%s %s' % (tag, str(e).split(' ')[0]))
@@ -1465,28 +1476,49 @@ e2e_expect_line "later line posts 2"
 _flow_test_begin "factory github: an intent is recorded only for the job's own issue or pull request (GH34)"
 gw_start gh34-target needs_info "d['pr'] = 12"
 fe_world_issue 8 "Another issue" "Not this job's issue."
-e2e_describe "plan 2.2 (an outbox item is a write of its job; look-first and lookup read the target the literal names, and row 41e releases on it): on job issue-7-j1, a label_add, label_remove, assign_label or comment literal for issue 8 is refused with ValueError and records nothing; a pr_close for pull request 13 on a job whose pr is 12 is refused the same way; a pr_close for 12 and a label_add for issue 7 are recorded. Two items and two intent_recorded lines in all"
+e2e_describe "plan 2.2 (an outbox item is a write of its job; look-first and lookup read the target the literal names, and row 41e releases on it): on job issue-7-j1, a label_add, label_remove, assign_label or comment literal for issue 8 is refused with ValueError and records nothing; a pr_close for pull request 13 on a job whose pr is 12 is refused the same way; each of the five for the job's own number in repository other/repo (the pass's repository is flow-e2e/scratch) is refused too; a pr_close for 12, a label_add for issue 7, and a label_add for issue 7 of Flow-E2E/Scratch (GitHub repository names ignore case) are recorded. record_job_intent with no repo raises TypeError (a required keyword), and with repo None or 'scratch' (not owner/name) ValueError. Three items and three intent_recorded lines in all"
 read -r -d '' GW_CODE <<'PY' || true
 job = J()
 cases = (('label_add', G.literal_label_add(REPO, 8, LABEL)), ('label_remove', G.literal_label_remove(REPO, 8, LABEL)),
          ('assign_label', G.literal_assign_label(REPO, 8, LOGIN, LABEL)), ('comment', G.literal_comment(REPO, 8)),
-         ('pr_close', G.literal_pr_close(REPO, 13)))
-for kind, argv in cases:
+         ('pr_close', G.literal_pr_close(REPO, 13)),
+         ('other-repo label_add', G.literal_label_add('other/repo', 7, LABEL)),
+         ('other-repo label_remove', G.literal_label_remove('other/repo', 7, LABEL)),
+         ('other-repo assign_label', G.literal_assign_label('other/repo', 7, LOGIN, LABEL)),
+         ('other-repo comment', G.literal_comment('other/repo', 7)),
+         ('other-repo pr_close', G.literal_pr_close('other/repo', 12)))
+for tag, argv in cases:
+    kind = tag.split(' ')[-1]
     try:
         record(job, '4', kind, argv, 'x' if kind == 'comment' else None, ['issueUpdate'], False)
-        print('%s recorded' % kind)
+        print('%s recorded' % tag)
     except ValueError:
-        print('%s ValueError' % kind)
+        print('%s ValueError' % tag)
 print('own %s %s' % (record(job, '53', 'pr_close', G.literal_pr_close(REPO, 12), None, ['issueUpdate'], False),
                      record(job, '4', 'label_add', G.literal_label_add(REPO, 7, LABEL), None, ['issueUpdate'], False)))
+print('other case %s' % record(job, '4', 'label_add', G.literal_label_add('Flow-E2E/Scratch', 7, LABEL), None,
+                               ['issueUpdate'], False))
+with jobs.job_lock(P, 7):
+    for tag, extra in (('no repo', {}), ('repo None', {'repo': None}), ('repo not a name', {'repo': 'scratch'})):
+        try:
+            G.record_job_intent(P, job, '4', 'label_add', G.literal_label_add(REPO, 7, LABEL), None, ['issueUpdate'],
+                                False, **extra)
+            print('%s recorded' % tag)
+        except (TypeError, ValueError) as e:
+            print('%s %s' % (tag, type(e).__name__))
 print('items %d records %d' % (len(items()), len(events('intent_recorded'))))
 PY
 gw_py "$GW_CODE"
 for GW_T in label_add label_remove assign_label comment pr_close; do
   e2e_expect_line "$GW_T ValueError"
+  e2e_expect_line "other-repo $GW_T ValueError"
 done
 e2e_expect_line "own issue-7-j1-53-1 issue-7-j1-4-2"
-e2e_expect_line "items 2 records 2"
+e2e_expect_line "other case issue-7-j1-4-3"
+e2e_expect_line "no repo TypeError"
+e2e_expect_line "repo None ValueError"
+e2e_expect_line "repo not a name ValueError"
+e2e_expect_line "items 3 records 3"
 
 _flow_test_begin "factory github: a write with no body whose body_file names a file is not run (GH35)"
 gw_start gh35-no-body needs_info
@@ -1549,3 +1581,111 @@ PY
 gw_py "$GW_CODE"
 e2e_expect_line "line $(printf '%s\n' "$E2E_OUT" | sed -n 's/^expected //p')"
 e2e_expect_line "item recorded posts 0"
+
+_flow_test_begin "factory github: a notice waits for a confirm in the events file, not in its file alone (GH38)"
+gw_start gh38-park-line needs_info
+e2e_describe "plan B6 step 7 (a pending_confirm notice is dropped when the job has left state_at_write) and plan 2.2 (Dropped items: 'so a later key change cannot send a write the table dropped'), read with design person_channels L42 (an item edited after it was recorded is not acted on): when the drain makes a notice pending_confirm it first appends an intent_pending_confirm line {type, job, time, id} (Inferred line type, as intent_dropped). (1) A notice under issueUpdate confirm: PENDING_CONFIRM and one intent_pending_confirm line naming it and job issue-7-j1. Its file edited back to status recorded, the job moved to intake and the key now journal: WRITE_DROPPED job=issue-7-j1 intent=<id> state_at_write=needs_info state=intake, one intent_dropped line, nothing posted. (2) A process that died after the line and before the item was saved (the line appended here, the file still recorded): with the job in needs_info and the key still confirm, no INTENT_CHANGED line and nothing posted, and the item is pending_confirm. (3) A recorded notice edited to pending_confirm with no line (only an edit makes that), key journal, job in needs_info: INTENT_CHANGED=<id> recorded=<hash> current=<hash> field=status, nothing posted. Each of these is then dropped with drop_intent, so three intent_dropped lines in all and one INTENT_CHANGED line. (4) A recorded notice whose only intent_pending_confirm line names job issue-7-j2, the job in intake and the key journal: it is a recorded notice of this job, so it is sent (WRITE_SENT, the one post; plan B14 step 8: a recorded notice is posted although the job left its state). (5) A process that died after a person's intent_confirmed line of job issue-7-j1 and before the notice was saved as confirmed (Q16 and plan 2.3 confirm case 3; the file still recorded): with the key still confirm it is sent (WRITE_SENT, a second post), since the line says the person confirmed it. (6) Only a notice waits for or gets a confirm (plan 2.2, Q16): a blocking row-40 comment with an intent_confirmed and an intent_pending_confirm line of the job, its file recorded, the job in intake (not its state_at_write needs_info) and the key confirm: not run and not dropped (it stays recorded, still two posts and three intent_dropped lines); with the key journal it is sent (WRITE_SENT, a third post)"
+read -r -d '' GW_CODE <<'PY' || true
+job = J()
+c = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'C.', ['issueUpdate'], False)
+drain(job, tiers(issueUpdate='confirm'))
+pc = events('intent_pending_confirm')
+print('park lines %d %s %s' % (len(pc), pc[0]['id'] == c if pc else None, pc[0]['job'] if pc else None))
+put(dict(items()[c], status='recorded'))
+moved = dict(job, state='intake')
+drain(moved, tiers())
+print('edited posts %d dropped lines %d' % (len(posts()), len(events('intent_dropped'))))
+d = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'D.', ['issueUpdate'], False)
+with jobs.job_lock(P, 7):
+    jobs.append_event(P, 7, {'type': 'intent_pending_confirm', 'job': 'issue-7-j1', 'time': ff.utc_now(), 'id': d})
+drain(job, tiers(issueUpdate='confirm'))
+print('died %s posts %d' % (items()[d]['status'], len(posts())))
+with jobs.job_lock(P, 7):
+    G.drop_intent(P, job, d)
+f = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'F.', ['issueUpdate'], False)
+itf = items()[f]
+put(dict(itf, status='pending_confirm'))
+drain(job, tiers())
+print('unlined expected INTENT_CHANGED=%s recorded=%s current=%s field=status' % (f, want(itf['argv'], body_of(itf)), want(itf['argv'], body_of(itf))))
+print('unlined posts %d' % len(posts()))
+put(itf)
+with jobs.job_lock(P, 7):
+    G.drop_intent(P, job, f)
+e = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'E.', ['issueUpdate'], False)
+with jobs.job_lock(P, 7):
+    jobs.append_event(P, 7, {'type': 'intent_pending_confirm', 'job': 'issue-7-j2', 'time': ff.utc_now(), 'id': e})
+drain(moved, tiers())
+print('other job posts %d dropped lines %d' % (len(posts()), len(events('intent_dropped'))))
+g = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'G.', ['issueUpdate'], False)
+with jobs.job_lock(P, 7):
+    jobs.append_event(P, 7, {'type': 'intent_confirmed', 'job': 'issue-7-j1', 'time': ff.utc_now(), 'id': g})
+drain(job, tiers(issueUpdate='confirm'))
+print('confirm died posts %d' % len(posts()))
+b = record(job, '40', 'comment', G.literal_comment(REPO, 7), 'B.', ['issueUpdate'], True)
+with jobs.job_lock(P, 7):
+    for t in ('intent_confirmed', 'intent_pending_confirm'):
+        jobs.append_event(P, 7, {'type': t, 'job': 'issue-7-j1', 'time': ff.utc_now(), 'id': b})
+drain(moved, tiers(issueUpdate='confirm'))
+print('blocking confirm %s posts %d dropped lines %d' % (items()[b]['status'], len(posts()), len(events('intent_dropped'))))
+drain(moved, tiers())
+print('blocking journal %s posts %d' % (items()[b]['status'], len(posts())))
+PY
+gw_py "$GW_CODE"
+e2e_expect_line "line PENDING_CONFIRM job=issue-7-j1 intent=issue-7-j1-4-1 kind=comment"
+e2e_expect_line "park lines 1 True issue-7-j1"
+e2e_expect_line "line WRITE_DROPPED job=issue-7-j1 intent=issue-7-j1-4-1 state_at_write=needs_info state=intake"
+e2e_expect_line "edited posts 0 dropped lines 1"
+e2e_expect_no_line "line INTENT_CHANGED=issue-7-j1-4-2 "
+e2e_expect_line "died pending_confirm posts 0"
+e2e_expect_line "line $(printf '%s\n' "$E2E_OUT" | sed -n 's/^unlined expected //p')"
+e2e_expect_line "unlined posts 0"
+e2e_expect_line "line WRITE_SENT job=issue-7-j1 intent=issue-7-j1-4-4 kind=comment"
+e2e_expect_line "other job posts 1 dropped lines 3"
+e2e_expect_line "line WRITE_SENT job=issue-7-j1 intent=issue-7-j1-4-5 kind=comment"
+e2e_expect_line "confirm died posts 2"
+e2e_expect_line "blocking confirm recorded posts 2 dropped lines 3"
+e2e_expect_line "line WRITE_SENT job=issue-7-j1 intent=issue-7-j1-40-6 kind=comment"
+e2e_expect_line "blocking journal sent posts 3"
+e2e_expect_equal "1" "$(printf '%s\n' "$E2E_OUT" | grep -c '^line INTENT_CHANGED=')" "INTENT_CHANGED lines (only the notice edited to pending_confirm)"
+
+_flow_test_begin "factory github: a confirm or park line before a record of the same id does not count after it (GH39)"
+gw_start gh39-rerecord needs_info
+e2e_describe "plan 2.3 confirm case 3 and Q16 (intent_confirmed is written after the intent was recorded), plan B6 step 7, and plan 2.2 ('Dedupe before recording', k from items and write_seq): a process dies while writing the item of notice issue-7-j1-4-1, after its intent_recorded line (as GH27). Then an intent_confirmed and an intent_pending_confirm line of job issue-7-j1 name that id, and the same notice is recorded again (the same id, a second intent_recorded line). Edited to status confirmed under issueUpdate confirm: INTENT_CHANGED=<id> recorded=<hash> current=<hash> field=status and nothing posted, since the confirmation came before the record it would confirm. Restored to recorded, with the job moved to intake and the key journal: it is a recorded notice, not a parked one, so it is sent (WRITE_SENT, one post, no intent_dropped line; plan B14 step 8)"
+read -r -d '' GW_CODE <<'PY' || true
+job = J()
+real_write = G._atomic_write
+def dying(path, *a, **k):
+    if path.endswith('.json'):
+        os._exit(9)
+    return real_write(path, *a, **k)
+G._atomic_write = dying
+record(job, '4', 'comment', G.literal_comment(REPO, 7), 'First.', ['issueUpdate'], False)
+print('survived')
+PY
+gw_py "$GW_CODE"
+e2e_expect_no_line "survived"
+read -r -d '' GW_CODE <<'PY' || true
+print('left items %d records %d' % (len(items()), len(events('intent_recorded'))))
+with jobs.job_lock(P, 7):
+    for t in ('intent_confirmed', 'intent_pending_confirm'):
+        jobs.append_event(P, 7, {'type': t, 'job': 'issue-7-j1', 'time': ff.utc_now(), 'id': 'issue-7-j1-4-1'})
+job = J()
+i = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'Second.', ['issueUpdate'], False)
+print('id %s records %d' % (i, len(events('intent_recorded'))))
+it = items()[i]
+h = want(it['argv'], body_of(it))
+put(dict(it, status='confirmed'))
+drain(job, tiers(issueUpdate='confirm'))
+print('confirmed expected INTENT_CHANGED=%s recorded=%s current=%s field=status' % (i, h, h))
+print('confirmed posts %d' % len(posts()))
+put(it)
+drain(dict(job, state='intake'), tiers())
+print('moved posts %d dropped lines %d' % (len(posts()), len(events('intent_dropped'))))
+PY
+gw_py "$GW_CODE"
+e2e_expect_line "left items 0 records 1"
+e2e_expect_line "id issue-7-j1-4-1 records 2"
+e2e_expect_line "line $(printf '%s\n' "$E2E_OUT" | sed -n 's/^confirmed expected //p')"
+e2e_expect_line "confirmed posts 0"
+e2e_expect_line "line WRITE_SENT job=issue-7-j1 intent=issue-7-j1-4-1 kind=comment"
+e2e_expect_line "moved posts 1 dropped lines 0"

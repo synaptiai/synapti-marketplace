@@ -46,6 +46,9 @@
 #        intent stops covering its kinds; a confirmed_intent that climbs out
 #        of the outbox ('../x'), an item whose id is not its file's name, or
 #        a job whose issue is not a whole number is taken as covering
+#   TR14 the confirmed intent's status, kind or argv is read from the
+#        editable item, so an item whose kind was edited, or a recorded item
+#        whose status was edited to sent, covers kinds no write sent
 #   TR13 a .claude at the base ref that is not a directory (a symbolic link to
 #        one, or a file) is read as "no project file", since git lists no
 #        .claude/settings.flow.json under it, so the project source drops out
@@ -357,7 +360,7 @@ e2e_expect_line "kinds-match True"
 
 _flow_test_begin "factory tiers: row 40b's and row 11's writes through the table; a sent confirmed intent covers its kinds, nothing else does (TR7, TR8)"
 tr_start tr8-confirmed ''
-e2e_describe "writes_for over the shipped table: row 40b from intake has no writes ([]), from approve the undo of ready ([issueUpdate] with issueUpdate at confirm). Row 11 from prepare with issueAssign and issueUpdate at confirm (plan 2.2, 'The confirmation of a released intent'): confirmed_intent naming a sent assign_label item gives []; a recorded one, a missing one, and a sent one whose job is another give [issueAssign, issueUpdate]; a sent label_add of flow:in-progress (the plugin's labels.inProgress) gives [issueAssign]; a sent label_add of flow:ready gives both. Called with no fdir, the sent assign_label item in the main checkout's factory directory still gives [] (fdir defaults to it, as fetch_base's does). Each of these gives both keys, though a sent assign_label item for the job is there to be found if the guard were missing: confirmed_intent '../x' with such an item at jobs/issue-7/x.json; confirmed_intent issue-7-j1-11-6 whose file holds id issue-7-j1-11-1; and a job whose issue is the text '7'"
+e2e_describe "writes_for over the shipped table: row 40b from intake has no writes ([]), from approve the undo of ready ([issueUpdate] with issueUpdate at confirm). Row 11 from prepare with issueAssign and issueUpdate at confirm (plan 2.2, 'The confirmation of a released intent'): confirmed_intent naming a sent assign_label item gives []; a recorded one, a missing one, and a sent one whose job is another give [issueAssign, issueUpdate]; a sent label_add of flow:in-progress (the plugin's labels.inProgress) gives [issueAssign]; a sent label_add of flow:ready gives both. Sent means a write_recorded line names the item, and the item is the one its intent_recorded line records (plan 2.2 and 5.3, design person_channels L42; each item here is written with its intent_recorded line, the plan 2.2 hash computed with hashlib, and for a sent one its write_recorded line): a sent label_add of flow:in-progress whose kind was edited to assign_label, and a recorded assign_label item whose status was edited to sent with no write_recorded line, give both (TR14). Called with no fdir, the sent assign_label item in the main checkout's factory directory still gives [] (fdir defaults to it, as fetch_base's does). Each of these gives both keys, though a sent assign_label item for the job is there to be found if the guard were missing: confirmed_intent '../x' with such an item at jobs/issue-7/x.json; confirmed_intent issue-7-j1-11-6 whose file holds id issue-7-j1-11-1; and a job whose issue is the text '7'"
 read -r -d '' TR_CODE <<'PY' || true
 import _flow_factory_table as T
 rows = {r['id']: r for r in json.load(open(os.path.join(os.environ['CLAUDE_PLUGIN_ROOT'], 'references',
@@ -369,20 +372,43 @@ import _flow_factory as ff
 F = os.path.join(M, ff.factory_rel(M))
 out = os.path.join(F, 'jobs', 'issue-7', 'outbox')
 os.makedirs(out, exist_ok=True)
-def item(i, kind, status, job_key='issue-7-j1', argv=None):
+import hashlib
+EV = os.path.join(F, 'jobs', 'issue-7', 'events.jsonl')
+ASSIGN = ['gh', 'issue', 'edit', '7', '--repo', 'flow-e2e/scratch', '--add-assignee', 'flow-e2e-engine',
+          '--add-label', 'flow:in-progress']
+def add(label):
+    return ['gh', 'api', '--method', 'POST', 'repos/flow-e2e/scratch/issues/7/labels', '-f', 'labels[]=' + label]
+def event(d):
+    with open(EV, 'a') as fh:
+        fh.write(json.dumps(d) + '\n')
+def item(i, kind, status, job_key='issue-7-j1', argv=None, edit=None):
+    # plan 2.2: sha256 over the argv elements joined by NUL, a NUL, then the
+    # body bytes (none for a label or an assignment).
+    argv = argv or ASSIGN
+    sha = hashlib.sha256(b'\0'.join(a.encode('utf-8') for a in argv) + b'\0').hexdigest()
     d = {'id': i, 'job': job_key, 'row': '11', 'state_at_write': 'prepare', 'ref': None, 'kind': kind,
-         'blocking': True, 'key': ['issueAssign', 'issueUpdate'], 'argv': argv or ['gh', 'issue', 'edit', '7'],
-         'body_file': None, 'sha256': '0' * 64, 'status': status, 'effect': None}
+         'blocking': True, 'key': ['issueAssign', 'issueUpdate'], 'argv': argv,
+         'body_file': None, 'sha256': sha, 'status': status, 'effect': None}
+    rec = {'type': 'intent_recorded', 'time': '2026-11-16T00:00:00Z', 'sha256': sha}
+    rec.update({f: d[f] for f in ('id', 'job', 'row', 'state_at_write', 'ref', 'kind', 'blocking', 'key')})
+    event(rec)
+    if status == 'sent':
+        d['effect'] = {'label': 'flow:in-progress'}
+        event({'type': 'write_recorded', 'job': job_key, 'time': '2026-11-16T00:00:00Z', 'id': i, 'effect': d['effect']})
+    d.update(edit or {})
     json.dump(d, open(os.path.join(out, i + '.json'), 'w'))
 item('issue-7-j1-11-1', 'assign_label', 'sent')
 item('issue-7-j1-11-2', 'assign_label', 'recorded')
 item('issue-7-j1-11-3', 'assign_label', 'sent', job_key='issue-7-j2')
-item('issue-7-j1-11-4', 'label_add', 'sent', argv=['gh', 'issue', 'edit', '7', '--add-label', 'flow:in-progress'])
-item('issue-7-j1-11-5', 'label_add', 'sent', argv=['gh', 'issue', 'edit', '7', '--add-label', 'flow:ready'])
+item('issue-7-j1-11-4', 'label_add', 'sent', argv=add('flow:in-progress'))
+item('issue-7-j1-11-5', 'label_add', 'sent', argv=add('flow:ready'))
+item('issue-7-j1-11-7', 'label_add', 'sent', argv=add('flow:in-progress'), edit={'kind': 'assign_label'})
+item('issue-7-j1-11-8', 'assign_label', 'recorded', edit={'status': 'sent'})
 w11 = T.writes_for(rows['11'], 'prepare')
 for tag, i in (('sent', 'issue-7-j1-11-1'), ('recorded', 'issue-7-j1-11-2'), ('missing', 'issue-7-j1-11-9'),
                ('other-job', 'issue-7-j1-11-3'), ('label-in-progress', 'issue-7-j1-11-4'),
-               ('label-ready', 'issue-7-j1-11-5'), ('null', None)):
+               ('label-ready', 'issue-7-j1-11-5'), ('kind-edited', 'issue-7-j1-11-7'),
+               ('status-edited', 'issue-7-j1-11-8'), ('null', None)):
     print('row11 %s %s' % (tag, R.confirm_writes(w11, job(confirmed_intent=i), both, F)))
 # A sent assign_label item for this job, one directory up from the outbox:
 # only the id's shape keeps '../x' from reaching it.
@@ -401,7 +427,7 @@ tr_py "$TR_CODE"
 e2e_expect_line "40b intake []"
 e2e_expect_line "40b approve ['issueUpdate']"
 e2e_expect_line "row11 sent []"
-for TR_N in recorded missing other-job label-ready null dotdot id-not-name issue-text; do
+for TR_N in recorded missing other-job label-ready kind-edited status-edited null dotdot id-not-name issue-text; do
   e2e_expect_line "row11 $TR_N ['issueAssign', 'issueUpdate']"
 done
 e2e_expect_line "row11 label-in-progress ['issueAssign']"
