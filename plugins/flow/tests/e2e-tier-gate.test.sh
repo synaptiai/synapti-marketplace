@@ -3050,7 +3050,7 @@ _tg_fac_reason() { printf '%s' "$E2E_OUT" | jq -r '.hookSpecificOutput.permissio
 
 if _want tg-fac-sourcing; then
   _tg_setup tg-fac-sourcing feature/issue-42-x '{"tiers":{"issueUpdate":"confirm"}}' \
-    "lib/tier-factory.sh is sourced (the xtrace log of the hook shows the source line) only for a command with factory text and either a FLOW_FACTORY_JOB, _DIRECTIVE, _IO or _MAIN variable or a <main checkout>/.flow/factory directory, a linked worktree's main checkout included; the shipped rules decide nothing, so each command is then decided as without them (T45)"
+    "lib/tier-factory.sh is sourced (the xtrace log of the hook shows the source line) only for a command with factory text and either a FLOW_FACTORY_JOB, _DIRECTIVE, _IO or _MAIN variable or a <main checkout>/.flow/factory directory, a linked worktree's main checkout included; a command the rules allow is then decided as without them (T45)"
   _tg_trace_has_lib() {
     case "$E2E_ERR" in *lib/tier-factory.sh*) printf yes ;; *) printf no ;; esac
   }
@@ -3066,7 +3066,7 @@ if _want tg-fac-sourcing; then
   _expect_ask "(tiers.issueUpdate)"
   # Factory text and each variable: sourced.
   for V in FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN; do
-    _tg_run SHELLOPTS=xtrace "$V=x" 'flow-factory.sh status'
+    _tg_run SHELLOPTS=xtrace "$V=x" 'flow-factory.sh context --mode'
     e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced with $V set"
     _expect_silent_allow
   done
