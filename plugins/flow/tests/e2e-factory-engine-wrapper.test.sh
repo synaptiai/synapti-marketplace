@@ -33,6 +33,8 @@
 #   WR14 a moved factory directory reads as "no record"
 #   WR15 a marker ancestor counts although its lease is revoked, or names
 #        another start time or pid (a pid the system gave to another process)
+#   WR17 `usage` starts Python or needs a record, or its Person group differs
+#        from the engine's PERSON list (plan 2.3, B12 outline 6)
 #
 # WR9 and WR11-WR13 run `wait` under the launcher: the engine answers it with
 # FACTORY_REFUSED=not_built before any other check (plan 2.7 step 1b), and only
@@ -42,7 +44,7 @@
 # records that it did, so a scenario cannot pass because a lease was not there
 # yet.
 #
-# FW_ONLY=<id> (WR1 ... WR15) runs only that scenario.
+# FW_ONLY=<id> (WR1 ... WR17) runs only that scenario.
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -549,4 +551,23 @@ for FW_MODE in live revoked badstart badpid; do
   e2e_expect_line "rc=5"
   fw_expect_absent "$E2E_DIR/planted-ran" "the planted interpreter's marker"
 done
+fi
+
+if fw_run WR17; then
+_flow_test_begin "factory wrapper: usage prints the subcommand groups in shell, its Person group equal to the engine's PERSON (WR17)"
+fe_new fw-usage
+# Source: plan 2.3 usage row (0; the groups, with
+# "Person: answer approve-spec confirm feedback rework retry reject cancel rebuild");
+# plan B12 outline 6 (usage runs without starting Python; the printed list is
+# compared with _flow_factory_caller.PERSON read through python3 -I -c).
+e2e_describe "no probe record, python stand-ins first on PATH: usage exits 0, prints the Person line, and no stand-in runs; its Person words equal PERSON"
+e2e_repo main
+FW_FAKE=$(fw_fake_pythons)
+e2e_run_bin PATH="$FW_FAKE:$E2E_BIN:$PATH" bin/flow-factory.sh usage < /dev/null
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_line "Person: answer approve-spec confirm feedback rework retry reject cancel rebuild"
+fw_expect_no_python
+FW_SHELL=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^Person: //p')
+FW_PY=$("$(fe_python)" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import _flow_factory_caller as c; print(" ".join(c.PERSON))' "$E2E_ACTIVE_PLUGIN/bin")
+e2e_expect_equal "$FW_PY" "$FW_SHELL" "the Person group equals _flow_factory_caller.PERSON"
 fi
