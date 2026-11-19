@@ -1082,3 +1082,86 @@ OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u CLAUDE_CONFIG_DIR /bin/bash "$HELP
 assert_equal "" "$OUT" "unset: nothing printed"
 OUT=$(cd "$D" && /bin/bash "$HELPER" --user-env PATH 2>&1); RC=$?
 assert_exit 2 "$RC" "any other variable is refused"
+
+# --- --repo-settings-ref <ref>: the project file read from a commit ----------
+# The factory engine reads base-branch settings from the main checkout's
+# origin/<base>, never from the working tree (design changed_files L3,
+# worktrees_ports_bootstrap_auth L51). Ways it can be wrong, written before
+# the code: the working-tree project file is read instead of the one at the
+# ref; the local file stops winning (the cascade's order must not change); an
+# unknown ref reads as "no project file" instead of failing; a ref that looks
+# like an option reaches git as one; a ref with no file is an error instead of
+# reading as no project file; the flag is silently combined with
+# --no-repo-settings, which reads no project file at all.
+_rsr_repo() {
+  local d="$SCRATCH_ROOT/rsr-$1"
+  mkdir -p "$d/.claude" "$d/home/.claude" "$d/plugins/flow"
+  (
+    cd "$d" && git init -q . && git checkout -q -b main 2>/dev/null
+    printf '{"tiers": {"issueAssign": "journal", "push": "journal"}}\n' > plugins/flow/settings.json
+    printf '{"tiers": {"issueAssign": "confirm"}}\n' > .claude/settings.flow.json
+    git add .claude/settings.flow.json plugins/flow/settings.json
+    git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+  ) >/dev/null 2>&1
+  printf '%s' "$d"
+}
+
+_flow_test_begin "--repo-settings-ref: the project file is read at the ref, not from the working tree"
+D=$(_rsr_repo committed)
+printf '{"tiers": {"issueAssign": "autonomous"}}\n' > "$D/.claude/settings.flow.json"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_equal "confirm" "$OUT" "the committed value, not the working file's autonomous"
+assert_exit 0 "$RC" "exit 0"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" '.tiers.issueAssign' 2>/dev/null)
+assert_equal "autonomous" "$OUT" "without the flag the working file is read, as before"
+mkdir -p "$D/sub"
+OUT=$(cd "$D/sub" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+assert_equal "confirm" "$OUT" "from a subdirectory the same file at the ref is read"
+
+_flow_test_begin "--repo-settings-ref: the local file still wins, and the user file and plugin default still follow"
+D=$(_rsr_repo order)
+printf '{"tiers": {"issueAssign": "autonomous"}}\n' > "$D/.claude/settings.flow.local.json"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+assert_equal "autonomous" "$OUT" "the local file is first, as in the cascade"
+printf '{"tiers": {"push": "confirm"}}\n' > "$D/home/.claude/settings.flow.json"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.push' 2>/dev/null)
+assert_equal "confirm" "$OUT" "a key the ref's file lacks comes from the user file"
+
+_flow_test_begin "--repo-settings-ref: an unknown ref exits 3 with ref_unresolved"
+D=$(_rsr_repo unknown)
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref refs/remotes/origin/nope '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 3 "$RC" "exit 3"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "ref_unresolved" "$(cat "$D/err")" "stderr names ref_unresolved"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref nope '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 3 "$RC" "a --default does not hide an unknown ref"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref "--since=2020-01-01" '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 3 "$RC" "a ref that looks like an option is an unknown ref"
+OUT=$(cd "$SCRATCH_ROOT" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 3 "$RC" "outside a repository no ref resolves"
+
+_flow_test_begin "--repo-settings-ref: a ref with no project file reads as no project file"
+D=$(_rsr_repo nofile)
+(
+  cd "$D" && git checkout -q -b other && git rm -q .claude/settings.flow.json \
+    && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m drop && git checkout -q main
+) >/dev/null 2>&1
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref other '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "journal" "$OUT" "the plugin default, though the working tree's file says confirm"
+assert_exit 0 "$RC" "exit 0"
+assert_equal "" "$(cat "$D/err")" "and no warning"
+
+_flow_test_begin "--repo-settings-ref: refused with --no-repo-settings and without a value"
+D=$(_rsr_repo combos)
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --no-repo-settings --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 2 "$RC" "the two flags together exit 2"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref 2>/dev/null)
+RC=$?
+assert_exit 2 "$RC" "the flag with no value exits 2"

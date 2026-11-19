@@ -84,6 +84,21 @@
 #                         a WARN, and exit 0. The transcript miner takes both
 #                         from here: a repository that set either could point
 #                         /flow:learn at transcripts it ships.
+#   --repo-settings-ref <ref>
+#                         read the project file (.claude/settings.flow.json)
+#                         as it is in commit <ref> of the repository the
+#                         working directory is in, not from the working tree;
+#                         the local file, the user file and the plugin default
+#                         are read as without it, in the same order. The
+#                         factory engine reads its base-branch settings this
+#                         way, from origin/<base> after its own fetch. A ref
+#                         that `git rev-parse --verify <ref>^{commit}` cannot
+#                         resolve (outside a repository, none resolves) exits 3
+#                         with `cascade-resolve: ref_unresolved <ref>` on
+#                         stderr, whatever --default says. A ref that resolves
+#                         but has no project file reads as no project file.
+#                         Not with --no-repo-settings, which reads no project
+#                         file at all, nor with the two path flags (exit 2).
 #   --scalar              accepted and ignored: refusing such a value IS the
 #                         default now, and this flag is kept so that a call site
 #                         written against the revision that introduced it keeps
@@ -98,6 +113,7 @@
 #   0 — resolved a value (or returned the default; both are normal)
 #   2 — infrastructure error (jq missing, no expression provided, a leftover
 #       argument, or a refused value with no --default to fall back to)
+#   3 — --repo-settings-ref named a ref that does not resolve to a commit
 #
 # WHO MAY SET FLOW_STATE_DIR AND FLOW_USER_SETTINGS (and, through --user-env,
 # CLAUDE_TRANSCRIPT_DIR and CLAUDE_CONFIG_DIR): the user, not the
@@ -159,6 +175,8 @@ USER_HOME_ONLY=0
 USER_ENV_NAME=""
 REPO_PATHS_ONLY=0
 PROJECT_PATH_ONLY=0
+SETTINGS_REF=""
+SETTINGS_REF_SET=0
 
 while [ $# -gt 0 ]; do
   case "${1:-}" in
@@ -184,6 +202,12 @@ while [ $# -gt 0 ]; do
     --no-repo-settings)
       NO_REPO_SETTINGS=1
       shift
+      ;;
+    --repo-settings-ref)
+      [ $# -lt 2 ] && { echo "cascade-resolve: --repo-settings-ref requires a ref" >&2; exit 2; }
+      SETTINGS_REF="$2"
+      SETTINGS_REF_SET=1
+      shift 2
       ;;
     --repo-settings-paths)
       REPO_PATHS_ONLY=1
@@ -244,6 +268,11 @@ EXPR="${1:-}"
 # so it is refused.
 if [ $# -gt 1 ]; then
   echo "cascade-resolve: unexpected argument after the expression: $2 (flags must precede it)" >&2
+  exit 2
+fi
+
+if [ "$SETTINGS_REF_SET" -eq 1 ] && { [ "$NO_REPO_SETTINGS" -eq 1 ] || [ "$REPO_PATHS_ONLY" -eq 1 ] || [ "$PROJECT_PATH_ONLY" -eq 1 ]; }; then
+  echo "cascade-resolve: --repo-settings-ref cannot be combined with --no-repo-settings, --repo-settings-paths or --project-settings-path" >&2
   exit 2
 fi
 
@@ -596,6 +625,41 @@ if [ "$PROJECT_PATH_ONLY" -eq 1 ]; then
   printf '%s\n' "$PROJECT_SETTINGS"
   exit 0
 fi
+# --repo-settings-ref: the project file is the one in that commit, copied to
+# a temporary file the loop below reads. The ref reaches git with ^{commit}
+# after it, so one that looks like an option (--since=...) is never taken as
+# one: it is a ref that does not resolve. The commit's file is read from its path at the
+# repository top, wherever in the repository the command runs.
+PROJECT_LABEL="$PROJECT_SETTINGS"
+_cr_ref_tmp=""
+if [ "$SETTINGS_REF_SET" -eq 1 ]; then
+  _cr_commit=""
+  if [ -n "$_cr_repo_top" ] && [ -n "$SETTINGS_REF" ]; then
+    _cr_commit=$(git -C "$_cr_repo_top" rev-parse --verify -q "$SETTINGS_REF^{commit}" 2>/dev/null) || _cr_commit=""
+  fi
+  case "$_cr_commit" in
+    *[!0-9a-f]*|'')
+      # The ref is printed without control characters: the caller reads
+      # stderr line by line.
+      _cr_shown=$(printf '%s' "$SETTINGS_REF" | LC_ALL=C tr -d '\000-\037\177')
+      printf 'cascade-resolve: ref_unresolved %s\n' "$_cr_shown" >&2
+      exit 3 ;;
+  esac
+  PROJECT_LABEL="$(printf '%s' "$SETTINGS_REF" | LC_ALL=C tr -d '\000-\037\177'):.claude/settings.flow.json"
+  PROJECT_SETTINGS=""
+  if [ "$(git -C "$_cr_repo_top" cat-file -t "$_cr_commit:.claude/settings.flow.json" 2>/dev/null)" = blob ]; then
+    _cr_ref_tmp=$(mktemp -t cascade-resolve.ref.XXXXXX 2>/dev/null) || {
+      echo "cascade-resolve: cannot make a temporary file for $PROJECT_LABEL" >&2
+      exit 2
+    }
+    trap 'rm -f "$_cr_ref_tmp"' EXIT
+    if ! git -C "$_cr_repo_top" cat-file blob "$_cr_commit:.claude/settings.flow.json" > "$_cr_ref_tmp" 2>/dev/null; then
+      echo "cascade-resolve: WARN: failed to read $PROJECT_LABEL; skipping this source" >&2
+    else
+      PROJECT_SETTINGS="$_cr_ref_tmp"
+    fi
+  fi
+fi
 USER_SETTINGS="${_cr_user_home}/.claude/settings.flow.json"
 # FLOW_USER_SETTINGS names a different user settings file. The review-precision
 # eval uses it to give each session its own settings, because changing HOME
@@ -683,6 +747,9 @@ fi
 
 for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_SETTINGS"; do
   [ -n "$SETTINGS" ] && [ -f "$SETTINGS" ] || continue
+  # The name messages give: the ref's file is read from a temporary copy.
+  _cr_label="$SETTINGS"
+  [ "$SETTINGS" = "$PROJECT_SETTINGS" ] && _cr_label="$PROJECT_LABEL"
 
   # --no-repo-settings: neither file under the working directory is read.
   # Deciding which of them the reviewer wrote (git tracking, symlinks, case)
@@ -710,7 +777,7 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
   if [ $EXIT -ne 0 ]; then
     ERR=$(tr '\n' ' ' <"$STDERR_TMP" 2>/dev/null | cut -c1-200)
     rm -f "$STDERR_TMP" 2>/dev/null
-    echo "cascade-resolve: WARN: failed to parse $SETTINGS (jq exit=$EXIT, error: $ERR); skipping this source" >&2
+    echo "cascade-resolve: WARN: failed to parse $_cr_label (jq exit=$EXIT, error: $ERR); skipping this source" >&2
     continue
   fi
   rm -f "$STDERR_TMP" 2>/dev/null
@@ -757,7 +824,7 @@ for SETTINGS in "$LOCAL_SETTINGS" "$PROJECT_SETTINGS" "$USER_SETTINGS" "$PLUGIN_
            esac
            exit 1 ); then _REFUSED=1; fi
       if [ "$_REFUSED" -eq 1 ]; then
-        echo "cascade-resolve: WARN: the value resolved for $EXPR from $SETTINGS contains a control character or a Unicode line separator (a newline forges a second KEY=value line for whoever reads this); refusing it" >&2
+        echo "cascade-resolve: WARN: the value resolved for $EXPR from $_cr_label contains a control character or a Unicode line separator (a newline forges a second KEY=value line for whoever reads this); refusing it" >&2
         if [ $DEFAULT_SET -eq 1 ]; then
           printf '%s\n' "$DEFAULT_VALUE"
           exit 0
