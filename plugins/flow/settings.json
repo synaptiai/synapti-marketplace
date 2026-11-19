@@ -5,6 +5,7 @@
     "push": "journal",
     "prCreate": "journal",
     "issueAssign": "journal",
+    "issueUpdate": "journal",
     "issueCreate": "journal",
     "merge": "confirm",
     "release": "confirm"
@@ -173,6 +174,19 @@
       "nextBudgetSeconds": 60,
       "syncIntervalSeconds": 60,
       "maxRounds": 3,
+      "labels": {
+        "inProgress": "flow:in-progress",
+        "needsInfo": "flow:needs-info",
+        "needsHuman": "flow:needs-human",
+        "ready": "flow:ready",
+        "specReview": "flow:spec-review",
+        "priorityHigh": "flow:priority-high"
+      },
+      "trustedPermission": "write",
+      "trustedBots": [],
+      "intake": {
+        "maxRounds": 3
+      },
       "worker": {
         "extraEnv": [],
         "stages": {
@@ -181,7 +195,8 @@
           "open_pr": {"maxBudgetUsd": 5, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
           "review": {"maxBudgetUsd": 10, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
           "rework": {"maxBudgetUsd": 10, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
-          "resolve": {"maxBudgetUsd": 5, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]}
+          "resolve": {"maxBudgetUsd": 5, "timeoutSeconds": 1800, "allowedTools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Agent", "Task", "Skill", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]},
+          "intake": {"timeoutSeconds": 1800}
         }
       }
     }

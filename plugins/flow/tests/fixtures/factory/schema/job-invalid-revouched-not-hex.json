@@ -1,0 +1,99 @@
+{
+  "apiVersion": "flow.synapti.ai/v1",
+  "kind": "FlowFactoryJob",
+  "key": "issue-7-j1",
+  "issue": 7,
+  "state": "waiting_operator",
+  "attempt": 0,
+  "stage_launches": {},
+  "sessions": {},
+  "holds_slot": false,
+  "directive": null,
+  "cost": {
+    "usd_total": 0,
+    "runs": [],
+    "stage_usd": {},
+    "dearest_turn_usd": 0
+  },
+  "created_at": "2026-11-16T10:00:00Z",
+  "updated_at": "2026-11-16T10:00:00Z",
+  "vouch_at": "2026-11-16T09:59:30Z",
+  "reason": "blocking_write_confirm",
+  "resume_state": "prepare",
+  "vouch_event_id": 4401,
+  "base": "main",
+  "write_seq": 3,
+  "revouched_replies": {
+    "9001": "XYZe0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a"
+  },
+  "intake_inputs": {
+    "comments": [
+      9001,
+      9004
+    ],
+    "answers": [
+      "NI-1",
+      "NI-2"
+    ]
+  },
+  "intake": {
+    "risk": "low",
+    "surfaces": [
+      "cli",
+      "docs"
+    ],
+    "scope": "one new flag on the export command"
+  },
+  "intake_round": 2,
+  "needs_info": {
+    "asked_at": "2026-11-16T10:20:00Z",
+    "questions": [
+      "NI-2"
+    ],
+    "round": 2,
+    "earlier": [
+      {
+        "asked_at": "2026-11-16T10:05:00Z",
+        "questions": [
+          "NI-1"
+        ],
+        "round": 1
+      }
+    ]
+  },
+  "commands_seen": [
+    9002,
+    9003
+  ],
+  "pending_keys": null,
+  "pending_intent": {
+    "id": "issue-7-j1-11-3",
+    "kind": "assign_label",
+    "key": [
+      "issueAssign",
+      "issueUpdate"
+    ]
+  },
+  "held_result": {
+    "event": "stage_succeeded",
+    "args": {
+      "directive": "issue-7-j1-prepare-1"
+    },
+    "channel": "launcher",
+    "caller": {
+      "pid": 70110,
+      "start": "Mon Nov 16 12:01:00 2026",
+      "ancestry": [
+        70110,
+        1
+      ]
+    },
+    "facts": {}
+  },
+  "confirmed_intent": "issue-7-j1-11-2",
+  "sync_seen": "a1c2e3f4a1c2e3f4a1c2e3f4a1c2e3f4a1c2e3f4a1c2e3f4a1c2e3f4a1c2e3f4",
+  "priority_high": true,
+  "labels_set": [
+    "flow:in-progress"
+  ]
+}

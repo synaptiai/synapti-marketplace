@@ -1,0 +1,33 @@
+{
+  "directive": "issue-7-j1-intake-1",
+  "outcome": "completed",
+  "written_at": "2026-11-16T11:52:40Z",
+  "event": null,
+  "session_id": null,
+  "num_turns": null,
+  "api_error_status": null,
+  "is_error": false,
+  "permission_denials": null,
+  "terminal_reason": null,
+  "charged_usd": 0.01,
+  "charge_basis": "first_total",
+  "total_cost_usd": 0.01,
+  "since_last_usd": null,
+  "judge": {
+    "decision": "ACCEPT",
+    "risk": "low",
+    "surfaces": [
+      "cli"
+    ],
+    "scope": "one new flag on the export command",
+    "proposed_criteria": [
+      "export --csv writes one row per record"
+    ],
+    "questions": [
+      {
+        "text": "which format?"
+      }
+    ],
+    "reason": "the issue names the flag, its output and a check"
+  }
+}

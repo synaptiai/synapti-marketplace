@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://synapti.ai/schemas/flow/v1/factory-directive.schema.json",
   "title": "FlowFactoryDirective",
-  "description": "One launch the factory engine asked for: a worker, judge or directive run of a job's stage, at <factory dir>/jobs/issue-<N>/directives/<id>.json. The $defs hold the lease, the launcher's result, a stored event and a line the shell report appends. A field that only some kinds fill is nullable here, and the code that needs it checks it. The engine checks these with bin/_flow_factory_schema.py, which supports only the keywords this file uses.",
+  "description": "One launch the factory engine asked for: a worker, judge or directive run of a job's stage, at <factory dir>/jobs/issue-<N>/directives/<id>.json. The $defs hold the lease, the launcher's result, the intake judge's reply, a stored event and a line the shell report appends. A field that only some kinds fill is nullable here, and the code that needs it checks it. The engine checks these with bin/_flow_factory_schema.py, which supports only the keywords this file uses.",
   "type": "object",
   "required": [
     "id", "job", "issue", "kind", "stage", "start_mode", "cause_row", "created_in_pass", "created_at",
@@ -148,7 +148,26 @@
           "enum": ["since_last", "session_increase", "first_total", "limit_plus_turn", null]
         },
         "total_cost_usd": { "type": ["number", "null"], "minimum": 0 },
-        "since_last_usd": { "type": ["number", "null"], "minimum": 0 }
+        "since_last_usd": { "type": ["number", "null"], "minimum": 0 },
+        "judge": {
+          "description": "An intake judge's validated reply, written only when it maps to judge_accept, judge_needs_info or judge_reject; event stays null, since the pending event carries the judge_* name.",
+          "$ref": "#/$defs/judge"
+        }
+      }
+    },
+    "judge": {
+      "description": "The intake judge's output. The launcher also refuses an ACCEPT with no proposed_criteria and a NEEDS_INFO with no questions, which this validator cannot express.",
+      "type": "object",
+      "required": ["decision", "risk", "surfaces", "scope", "proposed_criteria", "questions", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "decision": { "type": "string", "enum": ["ACCEPT", "NEEDS_INFO", "REJECT"] },
+        "risk": { "type": "string" },
+        "surfaces": { "type": "array", "items": { "type": "string" } },
+        "scope": { "type": "string" },
+        "proposed_criteria": { "type": "array", "items": { "type": "string" } },
+        "questions": { "type": "array", "items": { "type": "string" } },
+        "reason": { "type": "string" }
       }
     },
     "pending_event": {
@@ -164,7 +183,22 @@
         },
         "channel": {
           "type": "string",
-          "pattern": "^(terminal|launcher|session:.+)$"
+          "pattern": "^(terminal|launcher|session:.+|comment:[0-9]+)$"
+        },
+        "comment": {
+          "description": "For an event read from a /flow-factory issue comment: the comment, its author and the author's repository role at the sync that read it. The writer sets it on every comment-channel event.",
+          "type": "object",
+          "required": ["id", "author", "permission", "created_at"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "integer", "minimum": 1 },
+            "author": { "type": "string", "minLength": 1 },
+            "permission": {
+              "type": "string",
+              "enum": ["read", "triage", "write", "maintain", "admin", "none"]
+            },
+            "created_at": { "$ref": "#/$defs/utc" }
+          }
         },
         "caller": {
           "type": "object",

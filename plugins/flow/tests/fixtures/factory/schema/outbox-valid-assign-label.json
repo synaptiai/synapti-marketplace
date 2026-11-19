@@ -1,0 +1,29 @@
+{
+  "id": "issue-7-j1-11-1",
+  "job": "issue-7-j1",
+  "row": "11",
+  "state_at_write": "prepare",
+  "ref": null,
+  "kind": "assign_label",
+  "blocking": true,
+  "key": [
+    "issueAssign",
+    "issueUpdate"
+  ],
+  "argv": [
+    "gh",
+    "issue",
+    "edit",
+    "7",
+    "--repo",
+    "flow-e2e/scratch",
+    "--add-assignee",
+    "flow-bot",
+    "--add-label",
+    "flow:in-progress"
+  ],
+  "body_file": null,
+  "sha256": "3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a",
+  "status": "pending_confirm",
+  "effect": null
+}

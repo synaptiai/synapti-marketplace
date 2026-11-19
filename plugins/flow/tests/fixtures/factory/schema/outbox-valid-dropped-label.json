@@ -1,0 +1,28 @@
+{
+  "id": "issue-7-j1-8u-5",
+  "job": "issue-7-j1",
+  "row": "8u",
+  "state_at_write": "needs_info",
+  "ref": null,
+  "kind": "label_remove",
+  "blocking": false,
+  "key": [
+    "issueUpdate"
+  ],
+  "argv": [
+    "gh",
+    "issue",
+    "edit",
+    "7",
+    "--repo",
+    "flow-e2e/scratch",
+    "--remove-label",
+    "flow:needs-info"
+  ],
+  "body_file": null,
+  "sha256": "3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a",
+  "status": "dropped",
+  "effect": {
+    "label": "flow:needs-info"
+  }
+}
