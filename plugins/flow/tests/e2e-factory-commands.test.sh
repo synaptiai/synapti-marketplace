@@ -31,10 +31,14 @@
 #        a malformed command (missing text, short or upper-case hash, extra
 #        words after a command that takes none, a word glued to the name)
 #        raised instead of refused with a note; an NI answer outside
-#        needs_info, or naming a question the job never asked, raised
+#        needs_info and needs_human, or naming a question the job never
+#        asked, raised; an NI answer in needs_human refused, although the
+#        terminal answer takes it there (rows 44v, 44u, 44w, 44x and 44q)
 #   CM8  (L66) an untrusted command stored, noted, or listed with its text;
-#        a failed permission read marking the comment as seen, so the
-#        person's command is lost for good
+#        listed again on every later pass (plan B5 outline 5: one line); a
+#        failed permission read marking the comment as seen, so the
+#        person's command is lost for good; an author whose type is neither
+#        User nor Bot (an Organization, a Mannequin) trusted by its role
 #   CM9  (R56, L56) a queue-label removal by triage or a bot cancelling or
 #        getting no note; a removal before vouch_at, of another label, or by
 #        write access noted; the note posted twice
@@ -172,6 +176,13 @@ def state(job, s, **kw):
     d.update(kw)
     return d
 NI1 = {'asked_at': T1, 'questions': ['NI-1'], 'round': 1, 'earlier': []}
+def world(edit):
+    p = os.environ['FE_WORLD']
+    with open(p, encoding='utf-8') as fh:
+        w = json.load(fh)
+    edit(w)
+    with open(p, 'w', encoding='utf-8') as fh:
+        json.dump(w, fh)
 PY
 
 cm_py() { fe_py "$CM_PRE
@@ -285,6 +296,7 @@ _flow_test_begin "factory commands: untrusted and bot commands raise nothing and
 cm_start cm-trust queued "d['needs_info'] = {'asked_at': '2026-11-18T10:00:00Z', 'questions': ['NI-1'], 'round': 1, 'earlier': []}"
 fe_world_perm 'botri[bot]' triage
 fe_world_actor_type deploy-app Bot
+fe_world_actor_type orgacct Organization
 cm_c 41 rdr read 2026-11-18T11:00:00Z '/flow-factory cancel'
 cm_c 42 'ci[bot]' write 2026-11-18T11:01:00Z '/flow-factory cancel'
 cm_c 43 deploy-app write 2026-11-18T11:02:00Z '/flow-factory cancel'
@@ -292,7 +304,8 @@ cm_c 44 'botri[bot]' triage 2026-11-18T11:03:00Z '/flow-factory retry'
 cm_c 45 tri triage 2026-11-18T11:04:00Z '/flow-factory cancel'
 cm_c 46 rdr read 2026-11-18T11:05:00Z '/flow-factory answer NI-1 use port 8080'
 cm_c 47 err status:500 2026-11-18T11:06:00Z '/flow-factory cancel'
-e2e_describe "design person_channels L54 and R90: a [bot] login or a Bot type is untrusted whatever its role unless trustedBots lists it (ci[bot] write, deploy-app of type Bot with write, botri[bot] triage on retry); triage counts for retry only (45); read access (41, 46) and a failed permission read (47) are untrusted. L66: an untrusted command is ignored and listed by author, date and length only: one UNTRUSTED_COMMAND job=<key> comment=<id> author=<login> at=<t> length=<n> line (plan 2.3), length the body's characters, no pending file and no outbox item (the read-only answer gets no row 8u notice, plan 3.1). Inferred: an untrusted command is not added to commands_seen, so a permission read that failed once (cached as none for that sync only) does not lose a later trusted reading of it. With trustedBots [deploy-app] its cancel is stored (R90: for a listed bot the role decides)"
+cm_c 48 orgacct write 2026-11-18T11:07:00Z '/flow-factory cancel'
+e2e_describe "design person_channels L54 and R90: a [bot] login or a Bot type is untrusted whatever its role unless trustedBots lists it (ci[bot] write, deploy-app of type Bot with write, botri[bot] triage on retry); triage counts for retry only (45); read access (41, 46) and a failed permission read (47) are untrusted; an author of type Organization with write (48) is untrusted (plan AC2: an unknown account fails closed; L54 trusts a person's role, and names Bot as the other type). L66: an untrusted command is ignored and listed by author, date and length only: one UNTRUSTED_COMMAND job=<key> comment=<id> author=<login> at=<t> length=<n> line (plan 2.3), length the body's characters, no pending file and no outbox item (the read-only answer gets no row 8u notice, plan 3.1). Each comment is scanned and stored in two passes here, and plan B5 outline 5 asks for one line per comment, so each id is listed once, recorded by one untrusted_command events line per comment. Inferred: an untrusted command is not added to commands_seen, because L54 judges trust by the permission read of each sync (cached for one sync, a failed read untrusted), so a permission read that failed once does not lose a later trusted reading of it: with err's read answering write in a later sync, 47 is stored. With trustedBots [deploy-app] its cancel is stored (R90: for a listed bot the role decides)"
 read -r -d '' CM_CODE <<'PY' || true
 job = J()
 cmds = scan(job)
@@ -301,12 +314,22 @@ for c in cmds:
     store(job, c)
 print('pending %d outbox %d seen %s lines %d' % (len(pending()), len(items()), J().get('commands_seen'),
                                                 len(events('commands_seen'))))
+print('recorded %s' % sorted(e['comment'] for e in events('untrusted_command')))
 SET['flow.factory.trustedBots'] = ['deploy-app']
 job = J()
 for c in scan(job):
     if c['comment_id'] == 43:
         store(job, c)
 print('listed %s' % [(r['event'], r['channel']) for r in pending()])
+print('-- a later sync reads err as write')
+world(lambda w: w['permissions'].update(err={'role_name': 'write', 'permission': 'write'}))
+job = J()
+for c in scan(job, only=(47,)):
+    store(job, c)
+print('later %s seen %s' % ([(r['event'], r['channel']) for r in pending()], J().get('commands_seen')))
+print('-- a later job on the same issue')
+c41 = [c for c in cmds if c['comment_id'] == 41][0]
+store(dict(J(), key='issue-7-j2'), c41)
 PY
 cm_py "$CM_CODE"
 e2e_expect_equal "0" "$E2E_RC" "exit status"
@@ -321,8 +344,20 @@ e2e_expect_line "line UNTRUSTED_COMMAND job=issue-7-j1 comment=41 author=rdr at=
 e2e_expect_line "line UNTRUSTED_COMMAND job=issue-7-j1 comment=42 author=ci[bot] at=2026-11-18T11:01:00Z length=20"
 e2e_expect_line "line UNTRUSTED_COMMAND job=issue-7-j1 comment=46 author=rdr at=2026-11-18T11:05:00Z length=39"
 e2e_expect_line "line UNTRUSTED_COMMAND job=issue-7-j1 comment=47 author=err at=2026-11-18T11:06:00Z length=20"
+e2e_expect_line 'cmd 48 cancel raise=False trusted=False triage_only=False event=person_cancel args={} note=no'
+e2e_expect_line "line UNTRUSTED_COMMAND job=issue-7-j1 comment=48 author=orgacct at=2026-11-18T11:07:00Z length=20"
+# A later job on the same issue keeps its events in the same folder; the
+# listing is per job and comment, so its own first store lists 41 once.
+e2e_expect_line "line UNTRUSTED_COMMAND job=issue-7-j2 comment=41 author=rdr at=2026-11-18T11:00:00Z length=20"
+# One line per comment although every comment was stored in two passes.
+for CM_ID in 41 42 43 44 45 46 47 48; do
+  e2e_expect_equal "1" "$(grep -c "^line UNTRUSTED_COMMAND job=issue-7-j1 comment=$CM_ID " <<<"$E2E_OUT")" \
+    "UNTRUSTED_COMMAND lines for comment $CM_ID"
+done
 e2e_expect_line "pending 0 outbox 0 seen None lines 0"
+e2e_expect_line "recorded [41, 42, 43, 44, 45, 46, 47, 48]"
 e2e_expect_line "listed [('person_cancel', 'comment:43')]"
+e2e_expect_line "later [('person_cancel', 'comment:43'), ('person_cancel', 'comment:47')] seen [43, 47]"
 # The answer's text is listed nowhere (L66: author, date and length only).
 e2e_expect_no_out "use port"
 
@@ -426,7 +461,7 @@ cm_c 75 wrt write 2026-11-18T11:14:00Z '/flow-factory answer NI-9 something'
 cm_c 76 wrt write 2026-11-18T11:15:00Z "$(printf '/flow-factory cancel\r\nsecond line')"
 cm_c 77 wrt write 2026-11-18T11:16:00Z '/flow-factory answer NI-2 a; rm -rf ~'
 cm_c 78 wrt write 2026-11-18T11:17:00Z '/flow-factory rework-later fix it'
-e2e_describe "design runner L14 and person_channels L58 give the forms: approve-spec <spec-hash> [<head>], each at least 12 hex digits (lower case, as the terminal's --spec-hash, person module HEX); answer <qid> <n> [<text>], n a whole number of 1 or more; rework <text>; reject, cancel and retry with nothing after them (Inferred: extra words get a note rather than a guess). Q17: answer NI-<k> <text>, the text the rest of line 1 after the id, not empty; plan 2.3: an NI answer applies in needs_info only, and (Inferred) only for a question of this job, any round (NI-1 of round 1 counts, NI-9 does not); design person_channels L11: a SPEC-<k> answer is the needs_spec_approval form, so (Inferred) it applies there only. R57: the text is stored as written, apart from the blanks at its two ends, and no shell runs (no file pwned). A CRLF line 1 is read without its CR (plan 5.3 command_of). A word glued to the name (cancel-now, rework-later) is a form note, not text. Each state is one where the event occurs (T:events): needs_spec_approval for approve-spec, answer SPEC-1 and reject; ready for rework; needs_info for the NI answers and cancel"
+e2e_describe "design runner L14 and person_channels L58 give the forms: approve-spec <spec-hash> [<head>], each at least 12 hex digits (lower case, as the terminal's --spec-hash, person module HEX); answer <qid> <n> [<text>], n a whole number of 1 or more; rework <text>; reject, cancel and retry with nothing after them (Inferred: extra words get a note rather than a guess). Q17: answer NI-<k> <text>, the text the rest of line 1 after the id, not empty; an NI answer applies in needs_info (rows 8a and 9a) and in needs_human (rows 44v, 44u, 44w, 44x and 44q of transitions.json take person_answer there, the one source of states and events; plan 2.3 says needs_info only, and the terminal answer already takes needs_human, so both channels give one result), and (Inferred) only for a question of this job, any round (NI-1 of round 1 counts, NI-9 does not, in either state); design person_channels L11: a SPEC-<k> answer is the needs_spec_approval form, so (Inferred) it applies there only. R57: the text is stored as written, apart from the blanks at its two ends, and no shell runs (no file pwned). A CRLF line 1 is read without its CR (plan 5.3 command_of). A word glued to the name (cancel-now, rework-later) is a form note, not text. Each state is one where the event occurs (T:events): needs_spec_approval for approve-spec, answer SPEC-1 and reject; ready for rework; needs_info for the NI answers and cancel"
 read -r -d '' CM_CODE <<'PY' || true
 job = J()
 print('-- needs_spec_approval')
@@ -435,8 +470,9 @@ print('-- ready')
 scan(state(job, 'ready'), only=(70, 71, 72, 78))
 print('-- needs_info')
 scan(job, only=(69, 73, 74, 75, 76, 77))
-print('-- the NI answer in ready and in needs_spec_approval, the SPEC answer in needs_info')
-for s, cid in (('ready', 73), ('needs_spec_approval', 73), ('needs_info', 65)):
+print('-- the NI answer in ready, needs_spec_approval and needs_human, the SPEC answer in needs_info')
+for s, cid in (('ready', 73), ('needs_spec_approval', 73), ('needs_info', 65), ('needs_human', 73),
+               ('needs_human', 75)):
     for c in C.scan(I.read_issue(gh, REPO, 7, job, perms()), state(job, s), perms(), LOGIN):
         if c['comment_id'] == cid:
             print('wrong-state %s %s note=%s raise=%s' % (s, cid, 'yes' if c['note'] else 'no', c['raise']))
@@ -465,6 +501,8 @@ e2e_expect_line 'cmd 77 answer raise=True trusted=True triage_only=False event=p
 e2e_expect_line "wrong-state ready 73 note=yes raise=False"
 e2e_expect_line "wrong-state needs_spec_approval 73 note=yes raise=False"
 e2e_expect_line "wrong-state needs_info 65 note=yes raise=False"
+e2e_expect_line "wrong-state needs_human 73 note=no raise=True"
+e2e_expect_line "wrong-state needs_human 75 note=yes raise=False"
 e2e_expect_line "pwned False"
 
 # ---------------------------------------------------------------------------

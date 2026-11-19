@@ -682,14 +682,20 @@ fe_world_actor_type deploy-app Bot
 # repository role whose base permission is write.
 _fe_world "legacy and custom permission entries" \
   '.permissions.legacy = {permission: "triage"} | .permissions.custom = {role_name: "docs-writer", permission: "write"}'
-e2e_describe "the permission endpoint per login, with the type the read that named it gives. Expected (design person_channels L54; trust_and_untrusted_text L4; R5, R53, R54, R55, R90): of() is the role_name; a login with no entry (gone) or a 500 is none; with no role_name the legacy field counts, its triage as read (R55); a custom role is none, because the design reads role_name only (design person_channels item 5 names role_name as the field read; plan B4 outline 2 says role_name only; the legacy field is read only when role_name is absent, R55). trusted() is write or higher, triage() is triage or higher (Inferred: the vouch bar of T:creation row 1 and B5's retry bar); a [bot] login or a Bot type is neither unless trustedBots lists it, and then its role decides. trustedPermission admin raises the bar (write is then triage only), triage cannot lower it (R54). One read per login per Permissions object, a failure included; a new object reads again (R5)"
+e2e_describe "the permission endpoint per login, with the type the read that named it gives. Expected (design person_channels L54; trust_and_untrusted_text L4; R5, R53, R54, R55, R90): of() is the role_name; a login with no entry (gone) or a 500 is none; with no role_name the legacy field counts, its triage as read (R55); a custom role is none, because the design reads role_name only (design person_channels item 5 names role_name as the field read; plan B4 outline 2 says role_name only; the legacy field is read only when role_name is absent, R55). trusted() is write or higher, triage() is triage or higher (Inferred: the vouch bar of T:creation row 1 and B5's retry bar); a [bot] login or a Bot type is neither unless trustedBots lists it, and then its role decides. trustedPermission admin raises the bar (write is then triage only), triage cannot lower it (R54). A type other than User or Bot (Organization, Mannequin, a lower-case user) is none of trusted, triage or write whatever the role, and trustedBots does not change that (plan AC2: an unknown account fails closed; L54 names only a person and a Bot or App actor); a missing type counts as User (plan 5.3 Issue module: a missing type counts as User), so wrt with none is trusted. One read per login per Permissions object, a failure included; a new object reads again (R5)"
 read -r -d '' IS_CODE <<'PY' || true
 P = I.Permissions(gh, REPO, setting)
 for login, typ in (('adm', 'User'), ('mnt', 'User'), ('wrt', 'User'), ('tri', 'User'), ('rdr', 'User'),
                    ('non', 'User'), ('gone', 'User'), ('err', 'User'), ('legacy', 'User'), ('custom', 'User'),
                    ('ci[bot]', 'User'), ('deploy-app', 'Bot'), ('wrt', 'Bot'), ('botread[bot]', 'Bot')):
     print('p %s %s of=%s trusted=%s triage=%s' % (login, typ, P.of(login), P.trusted(login, typ), P.triage(login, typ)))
-print('p none-type trusted=%s' % P.trusted('wrt', None))
+print('p none-type trusted=%s triage=%s' % (P.trusted('wrt', None), P.triage('wrt', None)))
+for typ in ('Organization', 'Mannequin', 'user'):
+    print('p other-type %s trusted=%s triage=%s write=%s' % (typ, P.trusted('wrt', typ), P.triage('wrt', typ),
+                                                           P.write('wrt', typ)))
+SET['flow.factory.trustedBots'] = ['ci[bot]', 'deploy-app', 'botread[bot]', 'wrt']
+P = I.Permissions(gh, REPO, setting)
+print('listed other-type trusted=%s' % P.trusted('wrt', 'Organization'))
 SET['flow.factory.trustedBots'] = ['ci[bot]', 'deploy-app', 'botread[bot]']
 P = I.Permissions(gh, REPO, setting)
 for login, typ in (('ci[bot]', 'Bot'), ('deploy-app', 'Bot'), ('botread[bot]', 'Bot')):
@@ -731,7 +737,11 @@ e2e_expect_line "p ci[bot] User of=write trusted=False triage=False"
 e2e_expect_line "p deploy-app Bot of=write trusted=False triage=False"
 e2e_expect_line "p wrt Bot of=write trusted=False triage=False"
 e2e_expect_line "p botread[bot] Bot of=read trusted=False triage=False"
-e2e_expect_line "p none-type trusted=True"
+e2e_expect_line "p none-type trusted=True triage=True"
+e2e_expect_line "p other-type Organization trusted=False triage=False write=False"
+e2e_expect_line "p other-type Mannequin trusted=False triage=False write=False"
+e2e_expect_line "p other-type user trusted=False triage=False write=False"
+e2e_expect_line "listed other-type trusted=False"
 e2e_expect_line "listed ci[bot] trusted=True triage=True"
 e2e_expect_line "listed deploy-app trusted=True triage=True"
 e2e_expect_line "listed botread[bot] trusted=False triage=False"
@@ -893,7 +903,9 @@ fe_new is3-untrusted-edit
 e2e_repo main
 is_world
 fe_world_perm 'ci[bot]' write
-for IS_N in 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37; do is_issue "$IS_N" "body $IS_N"; done
+for IS_N in 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39; do is_issue "$IS_N" "body $IS_N"; done
+fe_world_perm orgacct write
+fe_world_actor_type orgacct Organization
 fe_world_edit issue:20 rdr 2026-11-18T11:00:00Z
 fe_world_edit issue:20 wrt 2026-11-18T12:00:00Z
 fe_world_edit issue:21 rdr 2026-11-18T09:00:00Z
@@ -919,10 +931,12 @@ fe_world_edit issue:34 rdr 2026-11-18T09:00:00Z
 fe_world_comment 35 3501 rdr read 2026-11-18T11:00:00Z "a thought"
 fe_world_edit comment:3501 - 2026-11-18T12:00:00Z
 fe_world_edit issue:37 'ci[bot]' 2026-11-18T11:00:00Z
+fe_world_edit issue:38 orgacct 2026-11-18T11:00:00Z
+fe_world_rename 39 orgacct write 2026-11-18T11:00:00Z "Renamed 39"
 # 36: no edit at all.
-e2e_describe "vouch_at T1 (10:00) unless said. Expected from T:facts.untrusted_edit and design trust_and_untrusted_text L5-L6: 20 body edits [rdr 11:00, wrt 12:00] → true (R4: the whole history, not the newest editor); 21 rdr edit at 09:00 → false; 22 rdr edit at exactly 10:00 → true (Inferred: an edit at vouch_at counts, fail closed); 23 rename by rdr after → true; 24 rename by a deleted account → true; 25 rename by wrt → false; 26 rename by rdr at 09:00 → false (R99); 27 a trusted spec comment edited by rdr → true; 28 a trusted NI-1 reply (round asked at 11:00) edited by a null editor → true; 29 the spec comment edited by its trusted author → false (R86); 30 a thanks comment outside the set edited by its author → false; 31 a re-vouched reply whose body no longer has its frozen hash → true, 32 one that still has it → false (L6); 33 an outsider body edit, then the label removed by triage and re-added by write → untrusted_edit still true and cancel_signal false (R64, Q3); 34 vouch_at null and a 09:00 rdr edit → true (Inferred: fail closed); 35 a non-set comment edited by a null editor → false; 36 nothing → false; 37 a body edit by ci[bot] with write, not listed → true (R90)"
+e2e_describe "vouch_at T1 (10:00) unless said. Expected from T:facts.untrusted_edit and design trust_and_untrusted_text L5-L6: 20 body edits [rdr 11:00, wrt 12:00] → true (R4: the whole history, not the newest editor); 21 rdr edit at 09:00 → false; 22 rdr edit at exactly 10:00 → true (Inferred: an edit at vouch_at counts, fail closed); 23 rename by rdr after → true; 24 rename by a deleted account → true; 25 rename by wrt → false; 26 rename by rdr at 09:00 → false (R99); 27 a trusted spec comment edited by rdr → true; 28 a trusted NI-1 reply (round asked at 11:00) edited by a null editor → true; 29 the spec comment edited by its trusted author → false (R86); 30 a thanks comment outside the set edited by its author → false; 31 a re-vouched reply whose body no longer has its frozen hash → true, 32 one that still has it → false (L6); 33 an outsider body edit, then the label removed by triage and re-added by write → untrusted_edit still true and cancel_signal false (R64, Q3); 34 vouch_at null and a 09:00 rdr edit → true (Inferred: fail closed); 35 a non-set comment edited by a null editor → false; 36 nothing → false; 37 a body edit by ci[bot] with write, not listed → true (R90); 38 a body edit (GraphQL editor __typename) and 39 a rename (REST actor type) by orgacct, of type Organization with write → true (plan AC2: an edit by an unknown account fails closed)"
 read -r -d '' IS_CODE <<'PY' || true
-for n in (20, 21, 22, 23, 24, 25, 26, 27, 29, 30, 33, 35, 36, 37):
+for n in (20, 21, 22, 23, 24, 25, 26, 27, 29, 30, 33, 35, 36, 37, 38, 39):
     fx(n)
 fx(28, 'needs_info', needs_info={'asked_at': T2, 'questions': ['NI-1'], 'round': 1, 'earlier': []})
 rv = {'asked_at': T2, 'questions': ['NI-1'], 'round': 1, 'earlier': []}
@@ -935,7 +949,8 @@ is_py "$IS_CODE"
 e2e_expect_equal "0" "$E2E_RC" "exit status"
 IS_F="cancel_signal=False dependency_open=False needs_info_answer=False untrusted_close=False"
 for IS_L in "20 True" "21 False" "22 True" "23 True" "24 True" "25 False" "26 False" "27 True" "29 False" \
-            "30 False" "31 True" "32 False" "33 True" "34 True" "35 False" "36 False" "37 True"; do
+            "30 False" "31 True" "32 False" "33 True" "34 True" "35 False" "36 False" "37 True" "38 True" \
+            "39 True"; do
   e2e_expect_line "f ${IS_L%% *} $IS_F untrusted_edit=${IS_L#* } untrusted_needs_info_answer=False"
 done
 # 28's reply is a trusted answer to the round, so needs_info_answer is true too.

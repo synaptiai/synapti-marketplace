@@ -19,6 +19,10 @@ a failed issue read: it makes that login untrusted (person_channels L54).
       .open_pulls() -> [pull] or None the repository's open pulls
       A login ending in [bot], or of type Bot, is none of trusted, write or
       triage unless trustedBots lists it; for a listed bot its role decides.
+      A type other than User or Bot (an Organization, a Mannequin, the
+      reads' "Unknown") is none of the three whatever the role or
+      trustedBots says (plan AC2: an unknown account fails closed); a
+      missing type (None) counts as User (plan 5.3 Issue module).
       One read per login per object, and one read of the open pulls, a
       failed read included (a role counts as none, the pulls as None); the
       sync makes one object per pass.
@@ -94,6 +98,20 @@ def _setting(settings):
     return settings if callable(settings) else jobs.setting
 
 
+# The actor types the trust tests know: a person, and a Bot or App actor
+# (design person_channels L54). A missing type counts as User (plan 5.3
+# Issue module); the reads give every other type as UNKNOWN, which no trust
+# test passes (plan AC2: an unknown account fails closed).
+TYPES = ("User", "Bot")
+UNKNOWN = "Unknown"
+
+
+def _type(value):
+    if value is None:
+        return "User"
+    return value if value in TYPES else UNKNOWN
+
+
 def _is_bot(login, typ):
     return login.endswith("[bot]") or typ == "Bot"
 
@@ -133,7 +151,7 @@ class Permissions:
         return LEGACY.get(legacy, "none") if isinstance(legacy, str) else "none"
 
     def _counts(self, login, typ):
-        if not isinstance(login, str) or not login:
+        if not isinstance(login, str) or not login or (typ is not None and typ not in TYPES):
             return False
         return not _is_bot(login, typ) or login in self.bots
 
@@ -168,10 +186,11 @@ def _pages(gh, path):
 
 
 def _who(obj):
-    """(login, type) of a REST user object; (None, None) for a deleted one."""
+    """(login, type) of a REST user object, the type User, Bot or UNKNOWN;
+    (None, None) for a deleted one."""
     if not isinstance(obj, dict) or not isinstance(obj.get("login"), str) or not obj.get("login"):
         return None, None
-    return obj["login"], ("Bot" if obj.get("type") == "Bot" else "User")
+    return obj["login"], _type(obj.get("type"))
 
 
 def _events(raw, perms):
@@ -200,7 +219,7 @@ def _edit_list(node, perms):
     def add(editor, at):
         login = editor.get("login") if isinstance(editor, dict) else None
         login = login if isinstance(login, str) and login else None
-        typ = (("Bot" if editor.get("__typename") == "Bot" else "User") if login else None)
+        typ = _type(editor.get("__typename")) if login else None
         out.append({"editor": login, "editor_type": typ, "edited_at": at, "trusted": perms.trusted(login, typ)})
 
     hist = node.get("userContentEdits")

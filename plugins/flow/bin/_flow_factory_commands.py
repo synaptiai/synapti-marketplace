@@ -16,8 +16,15 @@ only when:
 A counted command whose event does not occur in the job's state, or whose
 arguments do not have the form of runner L14 (and Q17 for an answer to a
 needs-info question), is refused with one status note instead of an event.
+An answer to a needs-info question NI-<k> applies in the person module's
+NI_STATES, needs_info and needs_human (rows 8a, 9a, 44v, 44u, 44w, 44x and
+44q), the same states as the terminal answer, and only for a question the
+job asked.
 An untrusted command raises nothing, posts nothing, and is listed by author,
-date and length only (L66).
+date and length only (L66), once per comment and job: an untrusted_command
+events line records the listing. It is not marked seen, because trust is the
+permission read of each sync (L54: cached for one sync, a failed read
+untrusted), so a later sync that reads the author at the bar raises it.
 
   scan(snapshot, job, perms, engine_login, table=None) -> [command]
       snapshot is the issue module's read_issue result, perms its
@@ -32,8 +39,10 @@ date and length only (L66).
       under the job's lock: a counted command is stored as a pending event
       (unless J/pending already holds one from that comment) or noted, then
       its id joins commands_seen, first in a commands_seen events line with
-      the whole list, then in job.json; an untrusted one gives one
-      UNTRUSTED_COMMAND line and is not marked seen. job is changed in place.
+      the whole list, then in job.json; an untrusted one is not marked seen,
+      and gives one UNTRUSTED_COMMAND line the first time only, after its
+      {type: untrusted_command, job, comment} events line is written. job is
+      changed in place.
   label_notes(snapshot, job, label) -> [{event_id, actor, label}]
       removals of the queue label after vouch_at by an actor that is not
       trusted (L56: a triage user or a bot), which get a status note
@@ -66,6 +75,7 @@ import _flow_factory as ff
 import _flow_factory_caller as fcaller
 import _flow_factory_github as github
 import _flow_factory_jobs as jobs
+import _flow_factory_person as person
 import _flow_factory_table as ftable
 import _flow_factory_text as text
 
@@ -165,14 +175,17 @@ def _args(name, rest):
     return args
 
 
-def _answer_state(qid):
-    """The one state an answer to this question id applies in (needs_info
-    for NI-<k>, plan 2.3; needs_spec_approval for SPEC-<k>, design
-    person_channels L11), or None for a worker question."""
+def _answer_states(qid):
+    """The states an answer to this question id applies in: the person
+    module's NI_STATES for NI-<k>, the states the terminal answer takes it
+    in (transitions.json rows 8a, 9a, 44v, 44u, 44w, 44x and 44q; plan 2.3
+    says needs_info only, and the journal records the conflict);
+    needs_spec_approval for SPEC-<k> (design person_channels L11); None for
+    a worker question."""
     if NI_ID.fullmatch(qid):
-        return "needs_info"
+        return person.NI_STATES
     if SPEC_ID.fullmatch(qid):
-        return "needs_spec_approval"
+        return ("needs_spec_approval",)
     return None
 
 
@@ -185,10 +198,12 @@ def _refusal(name, args, job, table):
     if args is None:
         return f"The form is {FORMS[name]}."
     if name == "answer":
-        only = _answer_state(args["qid"])
-        if (only is not None and state != only) or (only is None and state in ("needs_info", "needs_spec_approval")):
+        only = _answer_states(args["qid"])
+        if only is not None and state not in only:
             return where
-        if only == "needs_info" and args["qid"] not in _questions(job):
+        if only is None and state in ("needs_info", "needs_spec_approval"):
+            return where
+        if NI_ID.fullmatch(args["qid"]) and args["qid"] not in _questions(job):
             return f"Job {key} has no question {args['qid']}."
     return None
 
@@ -254,6 +269,18 @@ def _pending_from(paths, n, cid):
     return False
 
 
+def _listed(paths, n, key, cid):
+    """Whether J/events.jsonl already has the untrusted_command line of this
+    job and comment. A file that cannot be read counts as not listed, so the
+    line is printed again rather than lost."""
+    try:
+        lines = ff.read_jsonl(os.path.join(jobs.job_dir(paths, n), "events.jsonl"))
+    except (OSError, UnicodeError):
+        return False
+    return any(d.get("type") == "untrusted_command" and d.get("job") == key and d.get("comment") == cid
+               for d in lines)
+
+
 def _render(what, reason):
     try:
         with open(TEMPLATE, encoding="utf-8") as f:
@@ -276,6 +303,9 @@ def store(paths, job, command, *, repo, caller=None):
     if cid in seen:
         return []
     if not command["trusted"]:
+        if _listed(paths, n, key, cid):
+            return []
+        jobs.append_event(paths, n, {"type": "untrusted_command", "job": key, "comment": cid})
         author = command.get("author") or "-"
         at = command.get("created_at") if isinstance(command.get("created_at"), str) else "-"
         return [f"UNTRUSTED_COMMAND job={key} comment={cid} author={author} at={at} length={command['length']}"]
