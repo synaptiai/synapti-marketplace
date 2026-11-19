@@ -528,3 +528,602 @@ done
 e2e_expect_line "truthy-trust in_set=False"
 e2e_expect_line "junk-earlier same=True"
 e2e_expect_line "done"
+
+# ---------------------------------------------------------------------------
+# The factory's issue module (bin/_flow_factory_issue.py, plan 1b B4): the
+# sync's reads of one issue through a gh callable with Pass.gh's contract, the
+# permission reads, creation row 1's conditions and the six issue facts. The
+# gh callable runs the factory gh stand-in (engine/gh with a world file)
+# through ff.run_cmd, as the module scenario of plan B4 says.
+#
+# Ways it can be wrong, written down before the checks:
+#   IS1  (R5, R53, R54, R55, R90) trust read from author_association or from
+#        `.of` compared with a role, so the bot rule is skipped; a bot found
+#        by the [bot] suffix only, or by the type only; a listed bot trusted
+#        without reading its role; trustedPermission lowering the bar below
+#        write; triage taken from the legacy permission field; a failed read
+#        cached as a role, or reused by the next sync's reader; one login read
+#        twice in one sync
+#   IS2  (R3, T:creation row 1) vouch taken from the first label event or
+#        from updated_at; a read-only or bot label actor vouching; a terminal
+#        job's vouch_at at the label time not refusing; "Closes #70" blocking
+#        issue 7; a factory branch, or an outsider's fork PR, blocking; a fork
+#        PR with a factory branch name not blocking; a stale in-progress label
+#        ignored with no local job
+#   IS3  (R4, R64, R86, R99) untrusted_edit reads only editor and lastEditedAt,
+#        counts edits made before vouch_at, ignores renamed events or their
+#        null actors, ignores spec-input comment edits, counts edits to
+#        comments outside the set, misses a re-vouched reply whose body no
+#        longer has its frozen hash, or clears when the queue label is
+#        removed by triage and re-added
+#   IS4  (R96, R98, R102) the answer facts use a floor other than the current
+#        round's asked_at, count an earlier round's ids, count a
+#        /flow-factory answer command, an unknown command or an engine notice
+#        as a reply, count a re-vouched reply as waiting, or miss a reply on
+#        the second page of comments
+#   IS5  (R90, T:facts cancel_signal, untrusted_close) a bot or triage close
+#        or label removal cancels; a close or removal before vouch_at counts;
+#        another label's removal cancels; a close with a merged PR parks; a
+#        null closer is trusted
+#   IS6  (R76, Q13) dependency lines matched loosely ("See #3", another
+#        repository's #3), a not_planned close counted as open, a failed read
+#        of a named issue taken as closed, or dependencies read for a job that
+#        is not queued
+#   IS7  a failed read of the issue, its events, its comments or its edit
+#        fields gives a snapshot (the caller must compute nothing); a failed
+#        permission read fails the whole snapshot instead of counting as
+#        untrusted; an event on the second page is missed
+#
+# Every expected value is written out by hand from the design line or risk
+# row named in the scenario, never from the module's output.
+
+# The Python every issue scenario starts with (fe_py runs it with -E, bin/
+# first on sys.path, in the scratch environment):
+#   gh(args)          Pass.gh's contract over the stand-in, through ff.run_cmd;
+#                     every call is kept in CALLS
+#   SET, setting      the settings the scenario gives (else the default)
+#   T0..T5            times; T1 is the vouch time unless a scenario says not
+#   job(n, ...)       a job dict for issue n
+#   fx(n, ...)        read_issue and facts for issue n, printed on one line
+#   world(f)          edit the world file with f(world)
+read -r -d '' IS_PRE <<'PY' || true
+import sys
+sys.dont_write_bytecode = True
+import hashlib, json, os
+import _flow_factory as ff
+import _flow_factory_issue as I
+REPO = 'flow-e2e/scratch'
+GH = ff.which_real('gh')
+CALLS = []
+def gh(args):
+    CALLS.append(list(args))
+    rc, out, err = ff.run_cmd([GH] + list(args), os.getcwd(), dict(os.environ), timeout=30)
+    if rc != 0:
+        return False, None
+    try:
+        return True, json.loads(out)
+    except ValueError:
+        return False, None
+SET = {}
+def setting(key, default=None):
+    return SET.get(key, default)
+T0, T1, T2, T3, T4, T5 = ('2026-11-18T09:00:00Z', '2026-11-18T10:00:00Z', '2026-11-18T11:00:00Z',
+                          '2026-11-18T12:00:00Z', '2026-11-18T13:00:00Z', '2026-11-18T14:00:00Z')
+def job(n, state='intake', vouch=T1, **kw):
+    d = {'issue': n, 'key': 'issue-%d-j1' % n, 'state': state, 'vouch_at': vouch}
+    d.update(kw)
+    return d
+def fx(n, state='intake', vouch=T1, tag=None, perms=None, **kw):
+    j = job(n, state, vouch, **kw)
+    s = I.read_issue(gh, REPO, n, j, perms or I.Permissions(gh, REPO, setting))
+    if s is None:
+        print('f %s none' % (tag or n))
+        return None
+    f = I.facts(s, j, setting)
+    print('f %s %s' % (tag or n, ' '.join('%s=%s' % kv for kv in sorted(f.items()))))
+    return s
+def world(edit):
+    p = os.environ['FE_WORLD']
+    w = json.load(open(p))
+    edit(w)
+    json.dump(w, open(p, 'w'))
+def reads(path):
+    return sum(1 for a in CALLS if any(x.split('?')[0] == path for x in a))
+def sha(text):
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+PY
+
+# is_py <python> — run the prelude and then the scenario's Python.
+is_py() { fe_py "$IS_PRE
+$1"; }
+
+# is_world — a world for flow-e2e/scratch whose engine login has write.
+is_world() {
+  fe_world_new flow-e2e-engine flow-e2e/scratch
+  fe_world_perm flow-e2e-engine write
+}
+
+# is_issue <n> <body> — issue n, labelled flow:factory by wrt (write) at T1.
+is_issue() {
+  fe_world_issue "$1" "Issue $1" "$2"
+  fe_world_label "$1" flow:factory wrt write 2026-11-18T10:00:00Z
+}
+
+# is_no_unhandled — every gh call the module made was one the stand-in knows.
+is_no_unhandled() {
+  if [ -s "$E2E_BIN/fe-gh-unhandled.log" ]; then
+    _e2e_result fail "every gh call was answered ($(tr '\n' ';' < "$E2E_BIN/fe-gh-unhandled.log"))"
+  else
+    _e2e_result pass "every gh call was answered"
+  fi
+}
+
+_flow_test_begin "factory issue: Permissions reads role_name once per login, applies the bot rule and the trust bar, and fails closed (IS1)"
+fe_new is1-permissions
+e2e_repo main
+is_world
+for IS_P in adm:admin mnt:maintain wrt:write tri:triage rdr:read non:none err:status:500 \
+            'ci[bot]:write' deploy-app:write 'botread[bot]:read' flip:write; do
+  fe_world_perm "${IS_P%%:*}" "${IS_P#*:}"
+done
+fe_world_actor_type deploy-app Bot
+# legacy: no role_name, the legacy field says triage (R55); custom: a custom
+# repository role whose base permission is write.
+_fe_world "legacy and custom permission entries" \
+  '.permissions.legacy = {permission: "triage"} | .permissions.custom = {role_name: "docs-writer", permission: "write"}'
+e2e_describe "the permission endpoint per login, with the type the read that named it gives. Expected (design person_channels L54; trust_and_untrusted_text L4; R5, R53, R54, R55, R90): of() is the role_name; a login with no entry (gone) or a 500 is none; with no role_name the legacy field counts, its triage as read (R55); a custom role takes its legacy base permission (Inferred). trusted() is write or higher, triage() is triage or higher (Inferred: the vouch bar of T:creation row 1 and B5's retry bar); a [bot] login or a Bot type is neither unless trustedBots lists it, and then its role decides. trustedPermission admin raises the bar (write is then triage only), triage cannot lower it (R54). One read per login per Permissions object, a failure included; a new object reads again (R5)"
+read -r -d '' IS_CODE <<'PY' || true
+P = I.Permissions(gh, REPO, setting)
+for login, typ in (('adm', 'User'), ('mnt', 'User'), ('wrt', 'User'), ('tri', 'User'), ('rdr', 'User'),
+                   ('non', 'User'), ('gone', 'User'), ('err', 'User'), ('legacy', 'User'), ('custom', 'User'),
+                   ('ci[bot]', 'User'), ('deploy-app', 'Bot'), ('wrt', 'Bot'), ('botread[bot]', 'Bot')):
+    print('p %s %s of=%s trusted=%s triage=%s' % (login, typ, P.of(login), P.trusted(login, typ), P.triage(login, typ)))
+print('p none-type trusted=%s' % P.trusted('wrt', None))
+SET['flow.factory.trustedBots'] = ['ci[bot]', 'deploy-app', 'botread[bot]']
+P = I.Permissions(gh, REPO, setting)
+for login, typ in (('ci[bot]', 'Bot'), ('deploy-app', 'Bot'), ('botread[bot]', 'Bot')):
+    print('listed %s trusted=%s triage=%s' % (login, P.trusted(login, typ), P.triage(login, typ)))
+for bar in ('admin', 'maintain', 'triage', 'read'):
+    SET['flow.factory.trustedPermission'] = bar
+    P = I.Permissions(gh, REPO, setting)
+    print('bar %s %s' % (bar, ' '.join('%s=%s/%s' % (lg, P.trusted(lg, 'User'), P.triage(lg, 'User'))
+                                      for lg in ('adm', 'mnt', 'wrt', 'tri'))))
+SET.clear()
+del CALLS[:]
+P = I.Permissions(gh, REPO, setting)
+for _ in range(3):
+    P.of('wrt'); P.trusted('wrt', 'User'); P.of('err')
+print('cache wrt=%d err=%d' % (reads('repos/flow-e2e/scratch/collaborators/wrt/permission'),
+                               reads('repos/flow-e2e/scratch/collaborators/err/permission')))
+first = I.Permissions(gh, REPO, setting)
+print('flip first=%s' % first.trusted('flip', 'User'))
+world(lambda w: w['knobs'].update(permission_fails=['flip']))
+second = I.Permissions(gh, REPO, setting)
+print('flip second=%s again=%s first-kept=%s' % (second.trusted('flip', 'User'), second.of('flip'),
+                                                 first.trusted('flip', 'User')))
+print('flip reads=%d' % reads('repos/flow-e2e/scratch/collaborators/flip/permission'))
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+e2e_expect_line "p adm User of=admin trusted=True triage=True"
+e2e_expect_line "p mnt User of=maintain trusted=True triage=True"
+e2e_expect_line "p wrt User of=write trusted=True triage=True"
+e2e_expect_line "p tri User of=triage trusted=False triage=True"
+e2e_expect_line "p rdr User of=read trusted=False triage=False"
+e2e_expect_line "p non User of=none trusted=False triage=False"
+e2e_expect_line "p gone User of=none trusted=False triage=False"
+e2e_expect_line "p err User of=none trusted=False triage=False"
+e2e_expect_line "p legacy User of=read trusted=False triage=False"
+e2e_expect_line "p custom User of=write trusted=True triage=True"
+e2e_expect_line "p ci[bot] User of=write trusted=False triage=False"
+e2e_expect_line "p deploy-app Bot of=write trusted=False triage=False"
+e2e_expect_line "p wrt Bot of=write trusted=False triage=False"
+e2e_expect_line "p botread[bot] Bot of=read trusted=False triage=False"
+e2e_expect_line "p none-type trusted=True"
+e2e_expect_line "listed ci[bot] trusted=True triage=True"
+e2e_expect_line "listed deploy-app trusted=True triage=True"
+e2e_expect_line "listed botread[bot] trusted=False triage=False"
+e2e_expect_line "bar admin adm=True/True mnt=False/True wrt=False/True tri=False/True"
+e2e_expect_line "bar maintain adm=True/True mnt=True/True wrt=False/True tri=False/True"
+e2e_expect_line "bar triage adm=True/True mnt=True/True wrt=True/True tri=False/True"
+e2e_expect_line "bar read adm=True/True mnt=True/True wrt=True/True tri=False/True"
+e2e_expect_line "cache wrt=1 err=1"
+e2e_expect_line "flip first=True"
+e2e_expect_line "flip second=False again=none first-kept=True"
+e2e_expect_line "flip reads=2"
+e2e_expect_line "done"
+is_no_unhandled
+
+_flow_test_begin "factory issue: Permissions reads trustedBots and trustedPermission from the user settings (IS1)"
+fe_new is1-settings
+e2e_repo main
+is_world
+fe_world_perm 'ci[bot]' write
+fe_world_perm tri triage
+fe_world_perm wrt write
+fe_world_perm mnt maintain
+fe_settings '{"flow":{"factory":{"trustedBots":["ci[bot]"],"trustedPermission":"triage"}}}'
+e2e_describe "Permissions with no settings callable reads jobs.setting: trustedBots [ci[bot]] makes ci[bot] with role write trusted (R53); trustedPermission triage, which the schema refuses but jobs.setting returns, leaves the bar at write (R54). Then trustedPermission maintain makes write untrusted"
+is_py "P = I.Permissions(gh, REPO)
+print('settings ci=%s tri=%s wrt=%s' % (P.trusted('ci[bot]', 'Bot'), P.trusted('tri', 'User'), P.trusted('wrt', 'User')))"
+e2e_expect_line "settings ci=True tri=False wrt=True"
+fe_settings '{"flow":{"factory":{"trustedPermission":"maintain"}}}'
+is_py "P = I.Permissions(gh, REPO)
+print('settings ci=%s wrt=%s mnt=%s' % (P.trusted('ci[bot]', 'Bot'), P.trusted('wrt', 'User'), P.trusted('mnt', 'User')))"
+e2e_expect_line "settings ci=False wrt=False mnt=True"
+is_no_unhandled
+
+_flow_test_begin "factory issue: read_unjobbed and creation_conditions apply creation row 1's six conditions (IS2)"
+fe_new is2-creation
+e2e_repo main
+is_world
+fe_world_perm wrt2 write
+# 7: labelled at T0 and again at T1, both by write (R3): vouch is T1.
+fe_world_issue 7 "Issue 7" "body"
+fe_world_label 7 flow:factory wrt write 2026-11-18T09:00:00Z
+fe_world_label 7 flow:factory wrt2 write 2026-11-18T10:00:00Z
+fe_world_issue 8 "Issue 8" "body"
+fe_world_label 8 flow:factory tri triage 2026-11-18T10:00:00Z
+fe_world_issue 9 "Issue 9" "body"
+fe_world_label 9 flow:factory rdr read 2026-11-18T10:00:00Z
+fe_world_issue 10 "Issue 10" "body"
+fe_world_label 10 flow:factory deploy-app write 2026-11-18T10:00:00Z
+fe_world_actor_type deploy-app Bot
+# 11: the latest label actor is read-only though write labelled it first.
+fe_world_issue 11 "Issue 11" "body"
+fe_world_label 11 flow:factory wrt write 2026-11-18T09:00:00Z
+fe_world_label 11 flow:factory rdr read 2026-11-18T10:00:00Z
+fe_world_issue 12 "Issue 12" "body"
+fe_world_label 12 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_close 12 wrt write 2026-11-18T11:00:00Z
+fe_world_issue 13 "Issue 13" "body"
+fe_world_label 13 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_pull 31 fix-13 wrt write "Closes #13"
+fe_world_issue 14 "Issue 14" "body"
+fe_world_label 14 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_pull 32 fix-140 wrt write "Closes #140"
+fe_world_pull 33 feature/issue-14-port wrt write "fixes #14"
+fe_world_issue 15 "Issue 15" "body"
+fe_world_label 15 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_pull 34 my-fix rdr read "Closes #15" cross
+fe_world_issue 16 "Issue 16" "body"
+fe_world_label 16 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_pull 35 feature/issue-16-port wrt write "Resolves #16" cross
+fe_world_issue 17 "Issue 17" "body"
+fe_world_label 17 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_label 17 flow:in-progress wrt write 2026-11-18T10:00:00Z
+# 18: labelled, then the label removed: the issue no longer carries it.
+fe_world_issue 18 "Issue 18" "body"
+fe_world_label 18 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_label 18 flow:factory wrt write 2026-11-18T11:00:00Z unlabeled
+fe_world_issue 19 "Issue 19" "body"
+fe_world_label 19 flow:factory 'ci[bot]' write 2026-11-18T10:00:00Z
+fe_world_issue 20 "Issue 20" "body"
+fe_world_label 20 flow:factory legacy - 2026-11-18T10:00:00Z
+_fe_world "legacy: no role_name, the legacy field says triage" '.permissions.legacy = {permission: "triage"}'
+e2e_describe "T:creation row 1, all six conditions, from read_unjobbed's reads: 7 two write label events at T0 and T1 → label event at T1 by wrt2 (R3), allowed; 8 triage actor → allowed (design trust_and_untrusted_text L2: triage or higher); 9 read actor, 10 a Bot-type actor with write (R90), 11 a read actor after an earlier write one → refused; 12 closed, 18 label removed → refused; 13 an open PR from fix-13 by write saying Closes #13 → refused; 14 a PR saying Closes #140 and a factory-branch PR saying fixes #14 → allowed; 15 a fork PR by a read-only author → allowed; 16 a fork PR with the factory branch name by write → refused; 17 the in-progress label with no local job → refused, with a terminal local job → allowed; 19 ci[bot] with write, not listed → refused (R53); 20 an actor with only the legacy permission triage → refused (R55); 10 again with trustedBots [deploy-app] → allowed (R90). 7 with an open job, or a terminal job vouched at or after T1 → refused; vouched at T0 → allowed. A missing issue → None"
+read -r -d '' IS_CODE <<'PY' || true
+P = I.Permissions(gh, REPO, setting)
+NONE = {'open_job': False, 'terminal_vouch_at': []}
+for n in range(7, 21):
+    u = I.read_unjobbed(gh, REPO, n, P, setting)
+    print('c %d %s' % (n, I.creation_conditions(u, NONE, setting)))
+u = I.read_unjobbed(gh, REPO, 7, P, setting)
+ev = u['label_event']
+print('c 7 event at=%s actor=%s' % (ev['created_at'], ev['actor']))
+print('c 7 open-job %s' % I.creation_conditions(u, {'open_job': True, 'terminal_vouch_at': []}, setting))
+for tag, at in (('at', T1), ('after', T2), ('before', T0)):
+    print('c 7 terminal-%s %s' % (tag, I.creation_conditions(u, {'open_job': False, 'terminal_vouch_at': [at]}, setting)))
+u = I.read_unjobbed(gh, REPO, 17, P, setting)
+print('c 17 local %s' % I.creation_conditions(u, {'open_job': False, 'terminal_vouch_at': [T0]}, setting))
+print('c 999 %s' % I.read_unjobbed(gh, REPO, 999, P, setting))
+SET['flow.factory.trustedBots'] = ['deploy-app']
+P = I.Permissions(gh, REPO, setting)
+print('c 10 listed %s' % I.creation_conditions(I.read_unjobbed(gh, REPO, 10, P, setting), NONE, setting))
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+for IS_L in "7 True" "8 True" "9 False" "10 False" "11 False" "12 False" "13 False" "14 True" "15 True" \
+            "16 False" "17 False" "18 False" "19 False" "20 False" "10 listed True" "7 event at=2026-11-18T10:00:00Z actor=wrt2" "7 open-job False" \
+            "7 terminal-at False" "7 terminal-after False" "7 terminal-before True" "17 local True" "999 None"; do
+  e2e_expect_line "c $IS_L"
+done
+e2e_expect_line "done"
+is_no_unhandled
+
+_flow_test_begin "factory issue: untrusted_edit reads every edit, rename and spec-input comment edit since vouch_at (IS3)"
+fe_new is3-untrusted-edit
+e2e_repo main
+is_world
+fe_world_perm 'ci[bot]' write
+for IS_N in 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37; do is_issue "$IS_N" "body $IS_N"; done
+fe_world_edit issue:20 rdr 2026-11-18T11:00:00Z
+fe_world_edit issue:20 wrt 2026-11-18T12:00:00Z
+fe_world_edit issue:21 rdr 2026-11-18T09:00:00Z
+fe_world_edit issue:22 rdr 2026-11-18T10:00:00Z
+fe_world_rename 23 rdr read 2026-11-18T11:00:00Z "Renamed 23"
+fe_world_rename 24 - - 2026-11-18T11:00:00Z "Renamed 24"
+fe_world_rename 25 wrt write 2026-11-18T11:00:00Z "Renamed 25"
+fe_world_rename 26 rdr read 2026-11-18T09:00:00Z "Renamed 26"
+fe_world_comment 27 2701 wrt write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
+fe_world_edit comment:2701 rdr 2026-11-18T11:00:00Z
+fe_world_comment 28 2801 wrt write 2026-11-18T12:00:00Z "NI-1: port 8080"
+fe_world_edit comment:2801 - 2026-11-18T13:00:00Z
+fe_world_comment 29 2901 wrt write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
+fe_world_edit comment:2901 wrt 2026-11-18T11:00:00Z
+fe_world_comment 30 3001 rdr read 2026-11-18T11:00:00Z "thanks"
+fe_world_edit comment:3001 rdr 2026-11-18T12:00:00Z
+fe_world_comment 31 3101 rdr read 2026-11-18T12:00:00Z "NI-1: port 9090"
+fe_world_comment 32 3201 rdr read 2026-11-18T12:00:00Z "NI-1: port 8080"
+fe_world_edit issue:33 rdr 2026-11-18T11:00:00Z
+fe_world_label 33 flow:factory tri triage 2026-11-18T12:00:00Z unlabeled
+fe_world_label 33 flow:factory wrt write 2026-11-18T13:00:00Z
+fe_world_edit issue:34 rdr 2026-11-18T09:00:00Z
+fe_world_comment 35 3501 rdr read 2026-11-18T11:00:00Z "a thought"
+fe_world_edit comment:3501 - 2026-11-18T12:00:00Z
+fe_world_edit issue:37 'ci[bot]' 2026-11-18T11:00:00Z
+# 36: no edit at all.
+e2e_describe "vouch_at T1 (10:00) unless said. Expected from T:facts.untrusted_edit and design trust_and_untrusted_text L5-L6: 20 body edits [rdr 11:00, wrt 12:00] → true (R4: the whole history, not the newest editor); 21 rdr edit at 09:00 → false; 22 rdr edit at exactly 10:00 → true (Inferred: an edit at vouch_at counts, fail closed); 23 rename by rdr after → true; 24 rename by a deleted account → true; 25 rename by wrt → false; 26 rename by rdr at 09:00 → false (R99); 27 a trusted spec comment edited by rdr → true; 28 a trusted NI-1 reply (round asked at 11:00) edited by a null editor → true; 29 the spec comment edited by its trusted author → false (R86); 30 a thanks comment outside the set edited by its author → false; 31 a re-vouched reply whose body no longer has its frozen hash → true, 32 one that still has it → false (L6); 33 an outsider body edit, then the label removed by triage and re-added by write → untrusted_edit still true and cancel_signal false (R64, Q3); 34 vouch_at null and a 09:00 rdr edit → true (Inferred: fail closed); 35 a non-set comment edited by a null editor → false; 36 nothing → false; 37 a body edit by ci[bot] with write, not listed → true (R90)"
+read -r -d '' IS_CODE <<'PY' || true
+for n in (20, 21, 22, 23, 24, 25, 26, 27, 29, 30, 33, 35, 36, 37):
+    fx(n)
+fx(28, 'needs_info', needs_info={'asked_at': T2, 'questions': ['NI-1'], 'round': 1, 'earlier': []})
+rv = {'asked_at': T2, 'questions': ['NI-1'], 'round': 1, 'earlier': []}
+fx(31, 'intake', revouched_replies={'3101': sha('NI-1: port 8080')}, needs_info=rv)
+fx(32, 'intake', revouched_replies={'3201': sha('NI-1: port 8080')}, needs_info=rv)
+fx(34, vouch=None)
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+IS_F="cancel_signal=False dependency_open=False needs_info_answer=False untrusted_close=False"
+for IS_L in "20 True" "21 False" "22 True" "23 True" "24 True" "25 False" "26 False" "27 True" "29 False" \
+            "30 False" "31 True" "32 False" "33 True" "34 True" "35 False" "36 False" "37 True"; do
+  e2e_expect_line "f ${IS_L%% *} $IS_F untrusted_edit=${IS_L#* } untrusted_needs_info_answer=False"
+done
+# 28's reply is a trusted answer to the round, so needs_info_answer is true too.
+e2e_expect_line "f 28 cancel_signal=False dependency_open=False needs_info_answer=True untrusted_close=False untrusted_edit=True untrusted_needs_info_answer=False"
+e2e_expect_line "done"
+is_no_unhandled
+
+_flow_test_begin "factory issue: the answer facts count trusted and untrusted replies to the current round only, after its asked_at (IS4)"
+fe_new is4-answers
+e2e_repo main
+is_world
+fe_world_perm 'ci[bot]' write
+for IS_N in 40 41 42 43 44 45 46 47 49 50 51 52 53 54 55; do is_issue "$IS_N" "body $IS_N"; done
+fe_world_comment 40 4001 wrt write 2026-11-18T09:30:00Z "NI-1: 8080"
+fe_world_comment 41 4101 wrt write 2026-11-18T11:00:00Z "NI-1: 8080"
+fe_world_comment 42 4201 rdr read 2026-11-18T11:00:00Z "NI-1: 8080"
+fe_world_comment 43 4301 wrt write 2026-11-18T11:00:00Z "NI-1: 8080"
+fe_world_comment 43 4302 flow-e2e-engine write 2026-11-18T12:00:00Z \
+  $'<!-- FLOW_FACTORY job=issue-43-j1 event=issue-43-j1-4-1 -->\nPlease answer NI-1.'
+fe_world_comment 44 4401 wrt write 2026-11-18T11:00:00Z "NI-1: 8080"
+fe_world_comment 44 4402 wrt write 2026-11-18T12:00:00Z "NI-2: yes"
+fe_world_comment 45 4501 wrt write 2026-11-18T11:00:00Z "/flow-factory answer NI-1 use port 8080"
+fe_world_comment 46 4601 rdr read 2026-11-18T11:00:00Z "/flow-factory answer NI-1 use port 8080"
+fe_world_comment 47 4701 flow-e2e-engine write 2026-11-18T12:00:00Z \
+  $'<!-- FLOW_FACTORY job=issue-47-j1 event=issue-47-j1-4-1 -->\nPlease answer NI-1.'
+fe_world_comment 49 4901 rdr read 2026-11-18T14:00:00Z "NI-1: 8080"
+fe_world_comment 50 5001 rdr read 2026-11-18T11:00:00Z "NI-1: 8080"
+fe_world_comment 51 5101 wrt write 2026-11-18T10:30:00Z "NI-1: 8080"
+_fe_world "100 thanks comments on issue 52" '.comments["52"] = [range(1; 101) | {id: (5200 + .), author: {login: "rdr", type: "User"}, created_at: "2026-11-18T10:45:00Z", updated_at: "2026-11-18T10:45:00Z", body: "thanks"}]'
+fe_world_comment 52 5301 wrt write 2026-11-18T11:00:00Z "NI-1: 8080"
+fe_world_comment 53 5401 wrt write 2026-11-18T11:00:00Z "NI-1: 8080"
+fe_world_comment 54 5501 wrt write 2026-11-18T11:00:00Z "/flow-factory foo NI-1 x"
+fe_world_comment 55 5601 'ci[bot]' write 2026-11-18T11:00:00Z "NI-1: 8080"
+e2e_describe "vouch_at T0 (09:00); round 1 asks NI-1 at T1 (10:30) unless said. Expected from T:facts needs_info_answer and untrusted_needs_info_answer, plan 3.1 (floor = asked_at), R96, R98, R102: 40 a trusted reply at 09:30, before the round → false/false; 41 trusted at 11:00 → true/false; 42 read-only at 11:00 → false/true; 43 a trusted reply then the engine's notice naming NI-1 at 12:00 → still true/false (R96); 44 round 2 asks NI-3 at 13:00 with round 1 (NI-1, NI-2) in earlier, trusted replies to NI-1 and NI-2 → false/false (R98); 45 a trusted /flow-factory answer NI-1 comment → false/false, 46 the same by read → false/false (R102); 47 the engine notice alone → false/false; 49 round 2 (NI-3) and a read-only reply naming NI-1 at 14:00 → false/false (current round only); 50 a read-only reply that was re-vouched → false/false; 51 a trusted reply exactly at asked_at → false/false; 52 the trusted reply after 100 thanks comments (page 2) → true/false; 53 no needs_info on the job → false/false; 54 an unknown /flow-factory foo NI-1 command → false/false; 55 ci[bot] with write naming NI-1 → false/true (R90)"
+read -r -d '' IS_CODE <<'PY' || true
+R1 = {'asked_at': '2026-11-18T10:30:00Z', 'questions': ['NI-1'], 'round': 1, 'earlier': []}
+R2 = {'asked_at': T4, 'questions': ['NI-3'], 'round': 2,
+      'earlier': [{'asked_at': '2026-11-18T10:30:00Z', 'questions': ['NI-1', 'NI-2'], 'round': 1}]}
+for n in (40, 41, 42, 43, 45, 46, 47, 51, 52, 54, 55):
+    fx(n, 'needs_info', vouch=T0, needs_info=R1)
+for n in (44, 49):
+    fx(n, 'needs_info', vouch=T0, needs_info=R2)
+fx(50, 'needs_info', vouch=T0, needs_info=R1, revouched_replies={'5001': sha('NI-1: 8080')})
+fx(53, 'needs_info', vouch=T0)
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+for IS_L in "40 False False" "41 True False" "42 False True" "43 True False" "44 False False" "45 False False" \
+            "46 False False" "47 False False" "49 False False" "50 False False" "51 False False" "52 True False" \
+            "53 False False" "54 False False" "55 False True"; do
+  IS_A=${IS_L#* }
+  e2e_expect_line "f ${IS_L%% *} cancel_signal=False dependency_open=False needs_info_answer=${IS_A%% *} untrusted_close=False untrusted_edit=False untrusted_needs_info_answer=${IS_A#* }"
+done
+e2e_expect_line "done"
+is_no_unhandled
+
+_flow_test_begin "factory issue: cancel_signal and untrusted_close by the closer's or remover's trust (IS5)"
+fe_new is5-cancel-close
+e2e_repo main
+is_world
+fe_world_perm 'ci[bot]' write
+fe_world_actor_type deploy-app Bot
+for IS_N in 60 61 62 63 64 65 66 67 68 69; do is_issue "$IS_N" "body $IS_N"; done
+fe_world_close 60 wrt write 2026-11-18T11:00:00Z
+fe_world_close 61 rdr read 2026-11-18T11:00:00Z
+fe_world_close 62 'ci[bot]' write 2026-11-18T11:00:00Z
+fe_world_label 63 flow:factory wrt write 2026-11-18T11:00:00Z unlabeled
+fe_world_label 64 flow:factory tri triage 2026-11-18T11:00:00Z unlabeled
+fe_world_label 65 bug wrt write 2026-11-18T10:30:00Z
+fe_world_label 65 bug wrt write 2026-11-18T11:00:00Z unlabeled
+fe_world_close 66 wrt write 2026-11-18T09:00:00Z
+_fe_world "issue 66 reopened at 09:30" '.issues["66"].state = "open" | .issues["66"].state_reason = null
+  | .issues["66"].closed_by = null
+  | .events["66"] += [{id: 9001, event: "reopened", actor: {login: "wrt", type: "User"}, created_at: "2026-11-18T09:30:00Z"}]'
+fe_world_close 67 - - 2026-11-18T11:00:00Z
+fe_world_pull 5 feature/issue-68-port flow-e2e-engine write "Closes #68"
+_fe_world "PR 5 merged" '.pulls |= map(if .number == 5 then .merged = true | .state = "closed" else . end)'
+fe_world_close 68 rdr read 2026-11-18T11:00:00Z
+fe_world_label 69 flow:factory deploy-app write 2026-11-18T11:00:00Z unlabeled
+# is_reopen <n> <time> — the issue reopened by wrt at that time.
+is_reopen() {
+  _fe_world "issue $1 reopened at $2" --arg n "$1" --arg t "$2" '.issues[$n] += {state: "open", state_reason: null, closed_by: null}
+    | .events[$n] += [{id: ((.events[$n] | map(.id) | max) + 1), event: "reopened", actor: {login: "wrt", type: "User"}, created_at: $t}]'
+}
+for IS_N in 85 86 87; do is_issue "$IS_N" "body $IS_N"; done
+fe_world_close 85 rdr read 2026-11-18T11:00:00Z
+is_reopen 85 2026-11-18T11:30:00Z
+fe_world_close 86 wrt write 2026-11-18T11:00:00Z
+is_reopen 86 2026-11-18T11:30:00Z
+fe_world_close 86 rdr read 2026-11-18T12:00:00Z
+fe_world_close 87 wrt write 2026-11-18T11:00:00Z
+is_reopen 87 2026-11-18T11:30:00Z
+e2e_describe "vouch_at T1 (10:00). Expected from T:facts cancel_signal and untrusted_close, design person_channels L54 and L56, R90: 60 closed by write → cancel; 61 closed by a read-only author → untrusted_close; 62 closed by ci[bot] with write → untrusted_close, not cancel (R90); 63 queue label removed by write → cancel; 64 removed by triage → neither; 65 another label removed by write → neither; 66 closed by write at 09:00, before vouch_at, and reopened → neither; 67 closed by a deleted account → untrusted_close; 68 closed by read-only while the job's PR 5 is merged → neither; 69 the queue label removed by a Bot-type actor with write → neither; 85 closed by read-only and reopened → neither (untrusted_close needs the issue still closed); 86 closed by write, reopened, closed by read-only → untrusted_close only (Inferred: the latest close or removal decides cancel_signal, plan 3.1); 87 closed by write after vouch_at and reopened → cancel (Inferred: the signal stays, plan 3.1 reads the latest such event)"
+read -r -d '' IS_CODE <<'PY' || true
+for n in (60, 61, 62, 63, 64, 65, 66, 67, 69, 85, 86, 87):
+    fx(n)
+fx(68, pr=5)
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+for IS_L in "60 True False" "61 False True" "62 False True" "63 True False" "64 False False" "65 False False" \
+            "66 False False" "67 False True" "68 False False" "69 False False" "85 False False" "86 False True" \
+            "87 True False"; do
+  IS_A=${IS_L#* }
+  e2e_expect_line "f ${IS_L%% *} cancel_signal=${IS_A%% *} dependency_open=False needs_info_answer=False untrusted_close=${IS_A#* } untrusted_edit=False untrusted_needs_info_answer=False"
+done
+e2e_expect_line "done"
+is_no_unhandled
+
+_flow_test_begin "factory issue: dependency_open reads same-repository #N on Depends on and Blocked by lines of a queued job (IS6)"
+fe_new is6-dependencies
+e2e_repo main
+is_world
+fe_world_issue 3 "Dep 3" "x" closed
+_fe_world "issue 3 closed as not planned" '.issues["3"].state_reason = "not_planned"'
+fe_world_issue 4 "Dep 4" "x"
+fe_world_issue 5 "Dep 5" "x"
+is_issue 70 $'Some text.\nDepends on #3'
+is_issue 71 $'Blocked by #4\nmore'
+is_issue 72 $'See #4\nDepends on o/other#4'
+is_issue 73 'Depends on #5'
+is_issue 74 'Blocked by #4'
+is_issue 75 'Depends on #3, #4'
+is_issue 76 'Depends on #76'
+fe_world_knob list_fails '["repos/flow-e2e/scratch/issues/5"]'
+e2e_describe "queued jobs. Expected from T:facts.dependency_open, Q13 and R76: 70 Depends on #3, closed as not_planned → false; 71 Blocked by #4, open → true; 72 See #4 and Depends on o/other#4 only → false, and issue 4 is not read; 73 Depends on #5 whose read fails → read_issue gives None (the sync computes nothing); 74 Blocked by #4 on a job in intake → false and no read of #4; 75 Depends on #3, #4 → true; 76 a line naming the issue itself → false (Inferred)"
+read -r -d '' IS_CODE <<'PY' || true
+for n in (70, 71, 73, 75, 76):
+    fx(n, 'queued')
+del CALLS[:]
+fx(72, 'queued')
+fx(74, 'intake')
+print('dep reads of 4: %d' % reads('repos/flow-e2e/scratch/issues/4'))
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+IS_TAIL="needs_info_answer=False untrusted_close=False untrusted_edit=False untrusted_needs_info_answer=False"
+for IS_L in "70 False" "71 True" "72 False" "74 False" "75 True" "76 False"; do
+  e2e_expect_line "f ${IS_L%% *} cancel_signal=False dependency_open=${IS_L#* } $IS_TAIL"
+done
+e2e_expect_line "f 73 none"
+e2e_expect_line "dep reads of 4: 0"
+e2e_expect_line "done"
+is_no_unhandled
+
+_flow_test_begin "factory issue: a failed read gives no snapshot, a failed permission read only an untrusted author, and every page is read (IS7)"
+fe_new is7-reads
+e2e_repo main
+is_world
+for IS_N in 80 81 82 83 84; do is_issue "$IS_N" "body $IS_N"; done
+fe_world_comment 83 8301 lost write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
+_fe_world "100 label events on issue 84" '.events["84"] += [range(1; 101) | {id: (8400 + .), event: (if . % 2 == 1 then "labeled" else "unlabeled" end), label: "bug", actor: {login: "rdr", type: "User"}, created_at: "2026-11-18T10:30:00Z"}]'
+fe_world_close 84 wrt write 2026-11-18T11:00:00Z
+fe_world_knob list_fails '["repos/flow-e2e/scratch/issues/80/comments", "repos/flow-e2e/scratch/issues/81/events"]'
+fe_world_knob permission_fails '["lost"]'
+e2e_describe "Expected from plan B4 outline 1 and 3.1 (a failed read computes nothing) and design person_channels L54 (a failed permission read is untrusted): 80 comments read fails → None; 81 events read fails → None; 999 no such issue → None; 82 only the GraphQL edit read fails → None; then with no read failing: 83 the spec comment's author's permission read fails → a snapshot whose comment is untrusted, so the comment is not in the set; 84 the close by write is event 102 of 102, on the second page of 100 → cancel_signal true; 84 with a job PR 6 that the read cannot find → None. The snapshot has the 5.3 keys"
+read -r -d '' IS_CODE <<'PY' || true
+for n in (80, 81, 999):
+    fx(n)
+# Only the GraphQL read fails for 82, so its None comes from that read.
+world(lambda w: w['knobs'].update(list_fails=['graphql']))
+fx(82)
+world(lambda w: w['knobs'].update(list_fails=[]))
+s = fx(83)
+print('83 comment trusted=%s author=%s type=%s' % (s['comments'][0]['trusted'], s['comments'][0]['author'],
+                                                   s['comments'][0]['author_type']))
+import _flow_factory_text as X
+print('83 in set=%s' % (8301 in [x[1] for x in X.spec_input_set(s, None, {}) if x[0] == 'comment']))
+s = fx(84)
+print('84 events=%d' % len(s['events']))
+fx(84, pr=6, tag='84-missing-pr')
+print('keys %s' % ','.join(k for k in ('title', 'body', 'comments', 'state', 'labels', 'closed_by', 'events', 'edits')
+                           if k in s))
+print('no answers key=%s' % ('answers' not in s))
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+for IS_N in 80 81 82 999; do e2e_expect_line "f $IS_N none"; done
+e2e_expect_line "83 comment trusted=False author=lost type=User"
+e2e_expect_line "83 in set=False"
+e2e_expect_line "f 84 cancel_signal=True dependency_open=False needs_info_answer=False untrusted_close=False untrusted_edit=False untrusted_needs_info_answer=False"
+e2e_expect_line "84 events=102"
+e2e_expect_line "f 84-missing-pr none"
+e2e_expect_line "keys title,body,comments,state,labels,closed_by,events,edits"
+e2e_expect_line "no answers key=True"
+e2e_expect_line "done"
+is_no_unhandled
+
+_flow_test_begin "factory issue: the GraphQL edit read follows the comment pages and fails closed on an edit history it cannot finish (IS8)"
+fe_new is8-graphql-pages
+e2e_repo main
+is_world
+fe_world_perm rdr read
+for IS_N in 90 91 92 93; do is_issue "$IS_N" "body $IS_N"; done
+fe_world_edit issue:90 wrt 2026-11-18T11:00:00Z
+fe_world_edit issue:91 wrt 2026-11-18T09:00:00Z
+fe_world_comment 92 9201 wrt write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
+fe_world_comment 93 9301 wrt write 2026-11-18T09:00:00Z $'/flow-factory spec\nUse port 8080.'
+e2e_describe "the stand-in never pages GraphQL, so the scenario's gh rewrites its answers. vouch_at T1 (10:00). Expected from design trust_and_untrusted_text L5 (an unknown editor counts as untrusted) and plan B4 outline 1 (a read that fails computes nothing): 90 a body history with a next page whose oldest edit read is 11:00 → untrusted_edit true (the edits not read may be after vouch_at); 91 the same with the oldest read at 09:00 → false (every edit not read is older); 92 the spec comment's node only on the second comment page, edited there by rdr at 11:00 → untrusted_edit true, with two GraphQL calls, the second with after=c2; 93 a next comment page with no cursor → None"
+read -r -d '' IS_CODE <<'PY' || true
+def issue_of(data):
+    return data['data']['repository']['issue']
+def more_edits(args, data):
+    issue_of(data)['userContentEdits']['pageInfo'] = {'hasNextPage': True, 'endCursor': 'e2'}
+    return data
+NODE = {'databaseId': 9201, 'lastEditedAt': T2, 'editor': {'login': 'rdr', '__typename': 'User'},
+        'userContentEdits': {'nodes': [{'editedAt': T2, 'editor': {'login': 'rdr', '__typename': 'User'}}],
+                             'pageInfo': {'hasNextPage': False, 'endCursor': None}}}
+def two_pages(args, data):
+    page = issue_of(data)['comments']
+    if 'after=c2' in args:
+        page['nodes'] = [NODE]
+    else:
+        page['nodes'], page['pageInfo'] = [], {'hasNextPage': True, 'endCursor': 'c2'}
+    return data
+def no_cursor(args, data):
+    issue_of(data)['comments']['pageInfo'] = {'hasNextPage': True, 'endCursor': None}
+    return data
+def with_rewrite(rewrite):
+    def g(args):
+        ok, data = gh(args)
+        if ok and list(args[:2]) == ['api', 'graphql']:
+            data = rewrite(args, data)
+        return ok, data
+    return g
+for n, rw in ((90, more_edits), (91, more_edits), (92, two_pages), (93, no_cursor)):
+    del CALLS[:]
+    j = job(n)
+    s = I.read_issue(with_rewrite(rw), REPO, n, j, I.Permissions(gh, REPO, setting))
+    q = [a for a in CALLS if a[:2] == ['api', 'graphql']]
+    got = 'none' if s is None else 'untrusted_edit=%s' % I.facts(s, j, setting)['untrusted_edit']
+    print('g %d %s graphql=%d after=%s' % (n, got, len(q), [x for a in q for x in a if x.startswith('after=')]))
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+e2e_expect_line "g 90 untrusted_edit=True graphql=1 after=[]"
+e2e_expect_line "g 91 untrusted_edit=False graphql=1 after=[]"
+e2e_expect_line "g 92 untrusted_edit=True graphql=2 after=['after=c2']"
+e2e_expect_line "g 93 none graphql=1 after=[]"
+e2e_expect_line "done"
+is_no_unhandled
