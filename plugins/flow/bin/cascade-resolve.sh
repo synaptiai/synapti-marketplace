@@ -708,19 +708,41 @@ if [ "$SETTINGS_REF_SET" -eq 1 ]; then
     echo "cascade-resolve: cannot make a temporary directory for $PROJECT_LABEL" >&2
     exit 2
   }
+  # A relative TMPDIR names a folder under the caller's directory, but git -C
+  # reads GIT_INDEX_FILE from the repository top: make the path absolute.
+  _cr_ref_abs=$(cd "$_cr_ref_dir" 2>/dev/null && pwd -P) || {
+    echo "cascade-resolve: cannot use the temporary directory for $PROJECT_LABEL" >&2
+    exit 2
+  }
+  _cr_ref_dir="$_cr_ref_abs"
   _cr_ref_git() {
     GIT_INDEX_FILE="$_cr_ref_dir/index" git -C "$_cr_repo_top" -c core.hooksPath=/dev/null \
       -c core.splitIndex=false -c index.sparse=false -c core.sparseCheckout=false \
       -c core.fsmonitor=false "$@"
   }
-  if ! _cr_ref_git read-tree "$_cr_commit" >/dev/null 2>&1; then
-    echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git read-tree failed: the commit holds a path a checkout refuses, or git could not read it)" >&2
+  if ! _cr_ref_git read-tree "$_cr_commit" >/dev/null 2>"$_cr_ref_dir/read-tree.err"; then
+    # git's first line says which: a path a checkout refuses, or a write or
+    # read failure. Control characters are dropped before it is shown.
+    _cr_rt_why=$(head -n 1 "$_cr_ref_dir/read-tree.err" | LC_ALL=C tr -d '\000-\037\177')
+    echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git read-tree failed: ${_cr_rt_why:-no reason given})" >&2
     exit 2
   fi
-  if ! _cr_ref_git ls-files -s -z > "$_cr_ref_dir/list" 2>/dev/null; then
+  if ! _cr_ref_git ls-files -s -z > "$_cr_ref_dir/all" 2>/dev/null; then
     echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git ls-files failed)" >&2
     exit 2
   fi
+  # Keep only the entries the scan below can act on: a first name that folds
+  # to .claude by ASCII, or one holding a byte above 0x7f. Every other entry
+  # is read past by the scan anyway; filtering first keeps a large tree from
+  # costing one shell loop pass per path. grep exit 1 is an empty list; any
+  # other failure refuses.
+  LC_ALL=C grep -z -a -E $'\t([.][cC][lL][aA][uU][dD][eE](/|$)|[^/]*[\x80-\xff])' \
+    < "$_cr_ref_dir/all" > "$_cr_ref_dir/list" 2>/dev/null
+  case $? in
+    0|1) ;;
+    *) echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (grep could not filter the path list)" >&2
+       exit 2 ;;
+  esac
   # _cr_ref_scan: set _cr_entry to the "<mode> <id> <stage>" of the exact
   # entry, or to nothing; exit 2 on any entry refused above. read-tree of
   # one commit lists each path once, at stage 0: two entries at one path

@@ -1297,7 +1297,7 @@ assert_equal "" "$(cat "$D/err")" "and no warning"
 # With no python3 to compare them, such names refuse the commit: they could
 # fold to the expected name.
 NOPY="$SCRATCH_ROOT/nopy-bin"; mkdir -p "$NOPY"
-for b in bash sh env git jq mktemp tr cut rm cat readlink dirname basename uname; do
+for b in bash sh env git jq mktemp tr cut rm cat readlink dirname basename uname grep head; do
   T=$(command -v "$b" 2>/dev/null) && ln -sf "$T" "$NOPY/$b"
 done
 OUT=$(cd "$D" && PATH="$NOPY" HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$NOPY/bash" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
@@ -1402,7 +1402,20 @@ for N in .. .git; do
   assert_exit 2 "$RC" "a tree holding $N exits 2"
   assert_equal "" "$OUT" "nothing on stdout for $N"
   assert_contains "git read-tree failed" "$(cat "$D/err")" "stderr says why for $N"
+  assert_contains "invalid path" "$(cat "$D/err")" "stderr carries git's own reason for $N"
 done
+
+_flow_test_begin "--repo-settings-ref: a relative TMPDIR from a subdirectory still reads the commit"
+# mktemp makes a relative TMPDIR's folder under the caller's directory, while
+# git -C reads GIT_INDEX_FILE from the repository top. A valid commit must not
+# be refused as one a checkout refuses.
+D=$(_rsr_repo rel-tmp)
+mkdir -p "$D/sub/rel"
+OUT=$(cd "$D/sub" && TMPDIR=rel HOME="$D/home" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "confirm" "$OUT" "the committed value"
+assert_exit 0 "$RC" "exit 0"
+assert_equal "" "$(ls -A "$D/sub/rel")" "nothing is left in the relative TMPDIR"
 
 _flow_test_begin "--repo-settings-ref: a .Claude that is not a directory is refused"
 # A symbolic link named .Claude to a directory whose file sets confirm: a
