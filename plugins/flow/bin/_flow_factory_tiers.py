@@ -56,7 +56,9 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 
 import json
 import re
+import shutil
 import subprocess
+import tempfile
 import time
 import unicodedata
 
@@ -228,32 +230,44 @@ def _folded(name):
     return unicodedata.normalize("NFD", unicodedata.normalize("NFD", name).casefold())
 
 
-def _entry_named(F, main, tree, name, label, ref):
-    """The [mode, type, id] of the entry called name in tree, listing the
-    whole tree; None when there is none. git matches names exactly, but a
-    checkout on a file system that ignores case (macOS by default) finds
-    .Claude or Settings.flow.json under the expected name, so the commit
-    would read as having no project file while a checkout of it has one.
-    Any other entry whose name folds to name is refused instead; with it
-    beside the exact entry, which one a checkout finds is up to the file
-    system. The expected names are ASCII, so a difference in Unicode
-    normalisation alone cannot match them; _folded normalises anyway."""
-    rc, out, err = fgit.git(F, ["ls-tree", "-z", "--full-tree", tree], main)
-    if rc != 0:
-        raise _Unreadable(f"project: git ls-tree {ff.exit_text(rc, ff.first_text(err))}")
-    found = None
+def _checkout_paths(F, main, commit, ref):
+    """The [mode, id, stage, path] of every path a checkout of commit writes,
+    from git read-tree into a temporary index (removed afterwards) and git
+    ls-files. A walk of the commit's trees by name could miss what a checkout
+    still writes: a top-level entry whose own name is
+    '.claude/settings.flow.json', or two '.claude' trees in one tree, which a
+    checkout merges (both probed with git 2.55.0, 2026-11-19). A commit
+    read-tree refuses ('..' or '.git' as a name) is refused here too. fgit
+    runs git with no hooks and no fsmonitor; split and sparse index are off,
+    so the index is one plain file in the temporary directory."""
+    tmp = tempfile.mkdtemp(prefix="flow-tiers-index-")
+    try:
+        env = {"GIT_INDEX_FILE": os.path.join(tmp, "index")}
+        cfg = ["-c", "core.splitIndex=false", "-c", "index.sparse=false", "-c", "core.sparseCheckout=false"]
+        rc, _, err = fgit.git(F, cfg + ["read-tree", commit], main, extra_env=env)
+        if rc != 0:
+            raise _Unreadable(f"project: git read-tree {ff.exit_text(rc, ff.first_text(err))} at {ref}")
+        # ls-files lists only the paths under its working directory, so it
+        # runs at the checkout's top, wherever in the checkout main is.
+        rc, out, err = fgit.git(F, ["rev-parse", "--show-toplevel"], main)
+        top = out.rstrip("\n")
+        if rc != 0 or not os.path.isabs(top):
+            raise _Unreadable(f"project: git rev-parse --show-toplevel {ff.exit_text(rc, ff.first_text(err))}")
+        rc, out, err = fgit.git(F, cfg + ["ls-files", "-s", "-z"], top, extra_env=env)
+        if rc != 0:
+            raise _Unreadable(f"project: git ls-files {ff.exit_text(rc, ff.first_text(err))}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    entries = []
     for entry in out.split("\0"):
         if not entry:
             continue
-        meta, _, path = entry.partition("\t")
+        meta, tab, path = entry.partition("\t")
         fields = meta.split(" ")
-        if len(fields) != 3 or not re.fullmatch(r"[0-9a-f]{40,64}", fields[2]):
-            raise _Unreadable(f"project: git ls-tree printed an entry it should not at {ref}")
-        if path == name:
-            found = fields
-        elif _folded(path) == name:
-            raise _Unreadable(f"project: an entry at {ref} is named {label} only on a case-insensitive file system")
-    return found
+        if not tab or len(fields) != 3 or not re.fullmatch(r"[0-9a-f]{40,64}", fields[1]):
+            raise _Unreadable(f"project: git ls-files printed an entry it should not at {ref}")
+        entries.append(fields + [path])
+    return entries
 
 
 def _project_at(main, ref, fdir):
@@ -269,28 +283,48 @@ def _project_at(main, ref, fdir):
         commit = out.strip()
         if rc != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
             return {}, f"ref_unresolved {ref}"
-        # Each tree on the path is listed in full and its entry picked by
-        # name (_entry_named). Each directory on the path must be a directory
-        # (mode 040000) at the commit. A .claude that is a symbolic link to a
-        # directory, a file or a submodule leaves git no
-        # .claude/settings.flow.json to list, so the commit would read as
-        # having no project file while a checkout of it still finds one
-        # through the link; it is refused instead.
-        parts = PROJECT_PATH.split("/")
-        tree = commit
-        for i, part in enumerate(parts[:-1]):
-            fields = _entry_named(F, main, tree, part, "/".join(parts[:i + 1]), ref)
-            if fields is None:
-                return {}, None
-            if fields[0] != "040000" or fields[1] != "tree":
-                raise _Unreadable(f"project: {'/'.join(parts[:i + 1])} at {ref} is not a directory")
-            tree = fields[2]
-        fields = _entry_named(F, main, tree, parts[-1], PROJECT_PATH, ref)
-        if fields is None:
+        # The project file is the entry a checkout writes at exactly
+        # .claude/settings.flow.json (_checkout_paths), and only a regular
+        # file (mode 100644 or 100755) is read: a symbolic link would be read
+        # as its target's text, a submodule as no file. Refused instead:
+        # - an entry at .claude itself (a symbolic link, file or submodule):
+        #   git lists nothing under it, while a checkout can find the file
+        #   through a link;
+        # - an entry below .claude/settings.flow.json (a directory there);
+        # - any other entry whose first two names fold to .claude and
+        #   settings.flow.json, or whose only name folds to .claude: a
+        #   checkout on a file system that ignores case (macOS by default)
+        #   finds it under the expected name. The expected names are ASCII,
+        #   so a difference in Unicode normalisation alone cannot match them;
+        #   _folded normalises anyway.
+        # read-tree of one commit lists each path once, at stage 0: two
+        # entries at one path (two '.claude' trees that both hold the file,
+        # or the slash-named entry beside a '.claude' tree) leave the one a
+        # checkout writes.
+        top, name = PROJECT_PATH.split("/")
+        found = None
+        for mode, oid, _stage, path in _checkout_paths(F, main, commit, ref):
+            parts = path.split("/")
+            if _folded(parts[0]) != top:
+                continue
+            if len(parts) == 1:
+                if parts[0] == top:
+                    raise _Unreadable(f"project: {top} at {ref} is not a directory")
+                raise _Unreadable(f"project: an entry at {ref} is named {top} only on a case-insensitive file system")
+            if _folded(parts[1]) != name:
+                continue
+            if parts[0] != top or parts[1] != name:
+                raise _Unreadable(f"project: an entry at {ref} is named {PROJECT_PATH} only on a case-insensitive "
+                                  "file system")
+            if len(parts) > 2:
+                raise _Unreadable(f"project: {PROJECT_PATH} at {ref} is not a regular file")
+            found = (mode, oid)
+        if found is None:
             return {}, None
-        if fields[1] != "blob" or fields[0] not in ("100644", "100755"):
+        mode, oid = found
+        if mode not in ("100644", "100755"):
             raise _Unreadable(f"project: {PROJECT_PATH} at {ref} is not a regular file")
-        rc, out, err = fgit.git(F, ["cat-file", "blob", fields[2]], main)
+        rc, out, err = fgit.git(F, ["cat-file", "blob", oid], main)
         if rc != 0:
             raise _Unreadable(f"project: git cat-file {ff.exit_text(rc, ff.first_text(err))}")
     except (fgit.GitFailed, ff.Refused) as e:

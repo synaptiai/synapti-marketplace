@@ -55,6 +55,13 @@
 #        "no project file", since git matches names exactly, while a checkout
 #        on a file system that ignores case finds it; or an unrelated name
 #        that is not ASCII is refused along with them
+#   TR15 the project file is read by walking the base ref's trees by name, so
+#        what a checkout writes is missed: a top-level entry whose own name is
+#        '.claude/settings.flow.json', the first of two '.claude' trees in one
+#        tree (a checkout merges both), or a case variant in that first tree;
+#        a tree git read-tree refuses ('..' or '.git' as a name) is read as no
+#        project file; reading runs the main checkout's post-index-change
+#        hook, or leaves its temporary index behind
 #
 # Every expected value is written out by hand from the design lines named in
 # each scenario's description; none comes from the module.
@@ -597,3 +604,109 @@ print('unrelated %s %s' % (t('issueAssign'), t.base_problem))
 PY
 tr_py "$TR_CODE"
 e2e_expect_line "unrelated journal None"
+
+# tr_rawtree (<mode> <name> <id>)... — write a tree object with exactly these
+# entries, in this order, through hash-object --literally (which takes names
+# git fsck warns about or refuses), and print its id.
+tr_rawtree() {
+  (
+    cd "$E2E_REPO" || exit 1
+    while [ $# -ge 3 ]; do
+      printf '%s %s\0' "$1" "$2"
+      printf "$(printf '%s' "$3" | sed 's/../\\x&/g')"
+      shift 3
+    done | git hash-object -w -t tree --literally --stdin
+  )
+}
+# tr_blob <value> — a project file blob setting issueAssign to <value>.
+tr_blob() { printf '{"tiers": {"issueAssign": "%s"}}\n' "$1" | (cd "$E2E_REPO" && git hash-object -w --stdin); }
+# tr_rawcommit <tree> <what> — make main a commit of <tree>, then origin/main.
+tr_rawcommit() {
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    c=$(git -c commit.gpgsign=false commit-tree -p main -m raw "$1") || exit 1
+    git update-ref refs/heads/main "$c"
+  ) || _e2e_result fail "committed main as $2"
+  printf 'committed main as %s\n' "$2" | _e2e_art
+  fe_origin_local
+}
+
+_flow_test_begin "factory tiers: the project file is the one a checkout of the base ref writes (TR15)"
+tr_start tr15-index ''
+e2e_describe "plan B7 step 2 (fail closed): the project file at the base ref is the one a checkout writes; probed with git 2.55.0 on 2026-11-19, git read-tree and a real checkout give the same file for each tree below. Every source but the project file gives journal. (1) origin/main's top tree holds one entry named '.claude/settings.flow.json' (a slash in the name) setting issueAssign confirm: a checkout writes it as the project file, so issueAssign is confirm with no problem; a walk of the trees by name finds no .claude and gives journal. (2) Two '.claude' trees, the first holding settings.flow.json (confirm), the second only other.json: a checkout merges them, so confirm with no problem; reading only the last gives journal. (3) The same with Settings.flow.json in the first: confirm, refused as a case variant. (4) A tree holding '..' or '.git': read-tree refuses it, so the source is refused (confirm) and base_problem names read-tree. (5) .claude/settings.flow.json a directory: refused as not a regular file, so confirm. (6) .Claude a symbolic link to a directory whose settings.flow.json sets confirm: a checkout on a file system that ignores case finds the file through it, so confirm, refused as a case variant. (7) Two '.claude' trees, the second holding settings.flow.json (journal): journal with no problem; the main checkout's index is unchanged, its post-index-change hook does not run, and no temporary file is left in the temporary directory"
+tr_rawcommit "$(tr_rawtree 100644 .claude/settings.flow.json "$(tr_blob confirm)")" "a top tree with one entry named .claude/settings.flow.json (confirm)"
+e2e_expect_equal ".claude/settings.flow.json" "$(cd "$E2E_REPO" && git ls-tree --name-only refs/remotes/origin/main)" "origin/main's top tree"
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('slash %s %s' % (t('issueAssign'), t.base_problem))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "slash confirm None"
+# git ls-files lists only the paths under its working directory; the file is
+# read the same with main given as a subdirectory of the checkout.
+mkdir -p "$E2E_REPO/sub"
+read -r -d '' TR_CODE <<'PY' || true
+print('sub %s' % (R._project_at(os.path.join(M, 'sub'), BASE, R._fdir(M, None)),))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "sub ({'issueAssign': 'confirm'}, None)"
+TR_T1=$(tr_rawtree 100644 settings.flow.json "$(tr_blob confirm)")
+TR_T2=$(tr_rawtree 100644 other.json "$(tr_blob autonomous)")
+tr_rawcommit "$(tr_rawtree 40000 .claude "$TR_T1" 40000 .claude "$TR_T2")" "a top tree with two .claude trees, the first holding settings.flow.json (confirm)"
+e2e_expect_equal "2" "$(cd "$E2E_REPO" && git ls-tree refs/remotes/origin/main | grep -c '	\.claude$')" "origin/main's .claude entries"
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('dup %s %s' % (t('issueAssign'), t.base_problem))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "dup confirm None"
+TR_T1=$(tr_rawtree 100644 Settings.flow.json "$(tr_blob confirm)")
+tr_rawcommit "$(tr_rawtree 40000 .claude "$TR_T1" 40000 .claude "$TR_T2")" "a top tree with two .claude trees, the first holding Settings.flow.json (confirm)"
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('dupcase %s %s' % (t('issueAssign'), 'case-insensitive file system' in (t.base_problem or '')))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "dupcase confirm True"
+for TR_N in .. .git; do
+  tr_rawcommit "$(tr_rawtree 100644 "$TR_N" "$(tr_blob autonomous)")" "a top tree holding $TR_N"
+  e2e_expect_equal "$TR_N" "$(cd "$E2E_REPO" && git ls-tree --name-only refs/remotes/origin/main)" "origin/main's top tree"
+  read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('refused %s %s' % (t('issueAssign'), 'read-tree' in (t.base_problem or '')))
+PY
+  tr_py "$TR_CODE"
+  e2e_expect_line "refused confirm True"
+done
+tr_rawcommit "$(tr_rawtree 40000 .claude "$(tr_rawtree 40000 settings.flow.json "$(tr_rawtree 100644 x "$(tr_blob journal)")")")" "a top tree whose .claude/settings.flow.json is a directory"
+e2e_expect_equal "040000 tree" "$(cd "$E2E_REPO" && git ls-tree refs/remotes/origin/main -- .claude/settings.flow.json | cut -c1-11)" "origin/main's .claude/settings.flow.json"
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('dir %s %s' % (t('issueAssign'), 'not a regular file' in (t.base_problem or '')))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "dir confirm True"
+tr_rawcommit "$(tr_rawtree 120000 .Claude "$(cd "$E2E_REPO" && printf 'real' | git hash-object -w --stdin)" 40000 real "$(tr_rawtree 100644 settings.flow.json "$(tr_blob confirm)")")" "a top tree with .Claude a symbolic link to real/, whose settings.flow.json sets confirm"
+e2e_expect_equal "120000" "$(cd "$E2E_REPO" && git ls-tree refs/remotes/origin/main -- .Claude | cut -c1-6)" "origin/main's .Claude mode"
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('caselink %s %s' % (t('issueAssign'), 'case-insensitive file system' in (t.base_problem or '')))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "caselink confirm True"
+tr_rawcommit "$(tr_rawtree 40000 .claude "$TR_T2" 40000 .claude "$(tr_rawtree 100644 settings.flow.json "$(tr_blob journal)")")" "a top tree with two .claude trees, the second holding settings.flow.json (journal)"
+mkdir -p "$E2E_DIR/tiers-tmp"
+cp "$E2E_REPO/.git/index" "$E2E_DIR/index-before"
+printf '#!/bin/sh\ntouch "%s/hook-ran"\n' "$E2E_DIR" > "$E2E_REPO/.git/hooks/post-index-change"
+chmod +x "$E2E_REPO/.git/hooks/post-index-change"
+read -r -d '' TR_CODE <<PY || true
+import tempfile
+tempfile.tempdir = '$E2E_DIR/tiers-tmp'
+t = R.resolver(M, BASE)
+print('read %s %s %s' % (t('issueAssign'), t.base_problem, os.listdir(tempfile.tempdir)))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "read journal None []"
+e2e_expect_equal "no" "$([ -e "$E2E_DIR/hook-ran" ] && echo yes || echo no)" "whether the post-index-change hook ran"
+e2e_expect_equal "same" "$(cmp -s "$E2E_DIR/index-before" "$E2E_REPO/.git/index" && echo same || echo changed)" "the main checkout's index"

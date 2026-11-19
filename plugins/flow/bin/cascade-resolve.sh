@@ -103,6 +103,10 @@
 #                         with `cascade-resolve: ref_unresolved <ref>` on
 #                         stderr, whatever --default says. A ref that resolves
 #                         but has no project file reads as no project file.
+#                         The project file is the one a checkout of the
+#                         commit writes: it is found in the paths git
+#                         read-tree lists for the commit, and a commit
+#                         read-tree refuses exits 2.
 #                         The commit's entry is read only when it is a regular
 #                         file (mode 100644 or 100755); any other entry (a
 #                         symbolic link, a directory, a submodule) or a file
@@ -110,7 +114,9 @@
 #                         whatever --default says. So does a .claude at the
 #                         commit that is not a directory (a symbolic link to
 #                         one, a file, a submodule), since git then lists no
-#                         project file under it.
+#                         project file under it, and a path that is
+#                         .claude/settings.flow.json or .claude only on a
+#                         file system that ignores case.
 #                         Not with --no-repo-settings, which reads no project
 #                         file at all, nor with the two path flags (exit 2).
 #   --scalar              accepted and ignored: refusing such a value IS the
@@ -128,7 +134,9 @@
 #   2 — infrastructure error (jq missing, no expression provided, a leftover
 #       argument, a refused value with no --default to fall back to, or a
 #       --repo-settings-ref project file that is not a regular file, sits
-#       under a .claude that is not a directory, or cannot be read)
+#       under a .claude that is not a directory, is named so only on a file
+#       system that ignores case, sits in a commit git read-tree refuses, or
+#       cannot be read)
 #   3 — --repo-settings-ref named a ref that does not resolve to a commit
 #
 # WHO MAY SET FLOW_STATE_DIR AND FLOW_USER_SETTINGS (and, through --user-env,
@@ -647,7 +655,6 @@ fi
 # one: it is a ref that does not resolve. The commit's file is read from its path at the
 # repository top, wherever in the repository the command runs.
 PROJECT_LABEL="$PROJECT_SETTINGS"
-_cr_ref_tmp=""
 if [ "$SETTINGS_REF_SET" -eq 1 ]; then
   _cr_commit=""
   if [ -n "$_cr_repo_top" ] && [ -n "$SETTINGS_REF" ]; then
@@ -663,126 +670,156 @@ if [ "$SETTINGS_REF_SET" -eq 1 ]; then
   esac
   PROJECT_LABEL="$(printf '%s' "$SETTINGS_REF" | LC_ALL=C tr -d '\000-\037\177'):.claude/settings.flow.json"
   PROJECT_SETTINGS=""
-  # Each tree on the path is listed in full and its entry picked by name
-  # (_cr_ref_entry): "<mode> <type> <id>". Only a regular file is read. A
-  # symbolic link would be read as the text of its target, and a directory or
-  # submodule as no file, so a commit could hide its settings that way; each
-  # is refused instead.
-  # The directory on the path, .claude, must itself be a directory (mode
-  # 040000) at the commit: a symbolic link to a directory, a file or a
-  # submodule there leaves git no .claude/settings.flow.json to list, so the
-  # commit would read as having no project file while a checkout of it still
-  # finds one through the link. It is refused instead. When .claude is
-  # absent, the commit has no project file.
+  # The project file is the one a checkout of the commit writes. git read-tree
+  # builds, in a temporary index, the list of paths a checkout writes from,
+  # and the file is read from that list. A walk of the commit's trees by name
+  # could miss what a checkout still writes: a top-level entry whose own name
+  # is '.claude/settings.flow.json', or two '.claude' trees in one tree,
+  # which a checkout merges (both probed with git 2.55.0, 2026-11-19). A
+  # commit read-tree refuses ('..' or '.git' as a name) is refused here too.
   #
-  # _cr_ref_entry <tree> <name> <path>: set _cr_ref_meta to the entry called
-  # <name> in <tree>, or to nothing when there is none. git matches names
-  # exactly, but a checkout on a file system that ignores case (macOS by
-  # default) finds .Claude or Settings.flow.json under the expected name, so
-  # the commit would read as having no project file while a checkout of it
-  # has one. Any other entry whose name folds to <name> is refused instead;
-  # beside the exact entry, which one a checkout finds is up to the file
-  # system. An ASCII name is compared here; a name that is not ASCII goes to
-  # Python, whose full Unicode case folding is what APFS was found to do
-  # (the long s, U+017F, reads as s there). The expected names are ASCII, so
-  # a difference in Unicode normalisation alone cannot match them. The
-  # listing goes through a file, not a pipe, so git's exit status is seen
-  # and an exit below leaves this script, not a subshell.
-  _cr_ref_entry() {
-    local tree="$1" want="$2" path="$3" list ent name up pat="" i c u rc variant=0
-    local -a nonascii=()
+  # From the list: the project file is the entry at exactly
+  # .claude/settings.flow.json, and only a regular file (mode 100644 or
+  # 100755) is read: a symbolic link would be read as the text of its target,
+  # a submodule as no file. Refused instead:
+  # - an entry at .claude itself (a symbolic link, file or submodule there):
+  #   git lists nothing under it, while a checkout can find the file through
+  #   a link;
+  # - an entry below .claude/settings.flow.json (a directory there);
+  # - any other entry whose first two names fold to .claude and
+  #   settings.flow.json, or whose only name folds to .claude: a checkout on
+  #   a file system that ignores case (macOS by default) finds it under the
+  #   expected name. An ASCII name is compared here; a name that is not ASCII
+  #   goes to Python, whose full Unicode case folding is what APFS was found
+  #   to do (the long s, U+017F, reads as s there). The expected names are
+  #   ASCII, so a difference in Unicode normalisation alone cannot match them.
+  # The index, the list and the blob's copy are temporary files in one
+  # private directory, removed on exit. read-tree writes an index, so git
+  # runs with no hooks (a post-index-change hook would otherwise run), no
+  # split or sparse index and no fsmonitor. Each listing goes through a file,
+  # not a pipe, so git's exit status is seen and an exit below leaves this
+  # script, not a subshell.
+  _cr_ref_shown=$(printf '%s' "$SETTINGS_REF" | LC_ALL=C tr -d '\000-\037\177')
+  _cr_ref_dir=""
+  trap '[ -z "$_cr_ref_dir" ] || rm -rf "$_cr_ref_dir"' EXIT
+  # A template under TMPDIR, not -t: macOS mktemp -t ignores TMPDIR.
+  _cr_ref_dir=$(mktemp -d "${TMPDIR:-/tmp}/cascade-resolve.ref.XXXXXX" 2>/dev/null) || {
+    _cr_ref_dir=""
+    echo "cascade-resolve: cannot make a temporary directory for $PROJECT_LABEL" >&2
+    exit 2
+  }
+  _cr_ref_git() {
+    GIT_INDEX_FILE="$_cr_ref_dir/index" git -C "$_cr_repo_top" -c core.hooksPath=/dev/null \
+      -c core.splitIndex=false -c index.sparse=false -c core.sparseCheckout=false \
+      -c core.fsmonitor=false "$@"
+  }
+  if ! _cr_ref_git read-tree "$_cr_commit" >/dev/null 2>&1; then
+    echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git read-tree failed: the commit holds a path a checkout refuses, or git could not read it)" >&2
+    exit 2
+  fi
+  if ! _cr_ref_git ls-files -s -z > "$_cr_ref_dir/list" 2>/dev/null; then
+    echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git ls-files failed)" >&2
+    exit 2
+  fi
+  # _cr_ref_scan: set _cr_entry to the "<mode> <id> <stage>" of the exact
+  # entry, or to nothing; exit 2 on any entry refused above. read-tree of
+  # one commit lists each path once, at stage 0: two entries at one path
+  # (two '.claude' trees that both hold the file, or the slash-named entry
+  # beside a '.claude' tree) leave the one a checkout writes.
+  _cr_ref_scan() {
+    local ent path c0 c1 rest k s0 s1 asked=0 rc
     local LC_ALL=C
-    _cr_ref_meta=""
-    up=$(printf '%s' "$want" | tr 'a-z' 'A-Z')
-    for ((i = 0; i < ${#want}; i++)); do
-      c=${want:i:1}; u=${up:i:1}
-      if [ "$c" = "$u" ]; then pat="$pat[$c]"; else pat="$pat[$c$u]"; fi
-    done
-    list=$(mktemp -t cascade-resolve.tree.XXXXXX 2>/dev/null) || {
-      echo "cascade-resolve: cannot make a temporary file for $PROJECT_LABEL" >&2
-      exit 2
-    }
-    if ! git -C "$_cr_repo_top" ls-tree -z --full-tree "$tree" > "$list" 2>/dev/null; then
-      rm -f "$list"
-      echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git ls-tree failed)" >&2
-      exit 2
-    fi
+    local p0='[.][cC][lL][aA][uU][dD][eE]'
+    local p1='[sS][eE][tT][tT][iI][nN][gG][sS][.][fF][lL][oO][wW][.][jJ][sS][oO][nN]'
+    local fold="an entry at $_cr_ref_shown is named .claude or .claude/settings.flow.json only on a case-insensitive file system"
+    _cr_entry=""
+    : > "$_cr_ref_dir/ask"
     while IFS= read -r -d '' ent; do
-      name="${ent#*$'\t'}"
-      if [ "$name" = "$want" ]; then
-        _cr_ref_meta="${ent%%$'\t'*}"
+      path="${ent#*$'\t'}"
+      c0="${path%%/*}"
+      case "$c0" in
+        .claude) s0=exact ;;
+        $p0) s0=fold ;;
+        *[!$'\001'-$'\177']*) s0=other ;;
+        *) continue ;;
+      esac
+      if [ "$c0" = "$path" ]; then
+        case "$s0" in
+          exact) echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL ($_cr_ref_shown:.claude is not a directory)" >&2
+                 exit 2 ;;
+          fold) echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL ($fold)" >&2
+                exit 2 ;;
+        esac
+        printf '%s\0' "$c0" >> "$_cr_ref_dir/ask"; asked=1
         continue
       fi
-      case "$name" in
-        $pat) variant=1 ;;
-        *[!$'\001'-$'\177']*) nonascii+=("$name") ;;
+      rest="${path#*/}"
+      c1="${rest%%/*}"
+      if [ "$c1" = "$rest" ]; then k=2; else k=3; fi
+      case "$c1" in
+        settings.flow.json) s1=exact ;;
+        $p1) s1=fold ;;
+        *[!$'\001'-$'\177']*) s1=other ;;
+        *) continue ;;
       esac
-    done < "$list"
-    rm -f "$list"
-    if [ "$variant" -eq 0 ] && [ "${#nonascii[@]}" -gt 0 ]; then
-      # Only the isolated call itself names the interpreter; 127 is "not
-      # there", which refuses: such a name could fold to <name>.
-      python3 -I -c 'import os, sys, unicodedata as u
+      if [ "$s0" = exact ] && [ "$s1" = exact ]; then
+        if [ "$k" -ne 2 ]; then
+          echo "cascade-resolve: ERROR: $PROJECT_LABEL is not a regular file" >&2
+          exit 2
+        fi
+        _cr_entry="${ent%%$'\t'*}"
+      elif [ "$s0" = other ] || [ "$s1" = other ]; then
+        printf '%s/%s\0' "$c0" "$c1" >> "$_cr_ref_dir/ask"; asked=1
+      else
+        echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL ($fold)" >&2
+        exit 2
+      fi
+    done < "$_cr_ref_dir/list"
+    [ "$asked" -eq 1 ] || return 0
+    # Only the isolated call itself names the interpreter; 127 is "not
+    # there", which refuses: such a name could fold to an expected one.
+    python3 -I -c 'import os, sys, unicodedata as u
 def f(n):
     return u.normalize("NFD", u.normalize("NFD", n).casefold())
-w = sys.argv[1]
-names = [os.fsencode(a).decode("utf-8", "surrogateescape") for a in sys.argv[2:]]
-sys.exit(3 if any(f(n) == w for n in names) else 0)' "$want" "${nonascii[@]}" 2>/dev/null
-      rc=$?
-      case "$rc" in
-        0) ;;
-        3) variant=1 ;;
-        127) echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (a name beside $path at $_cr_ref_shown is not ASCII, and no Python interpreter is installed to compare it as a case-insensitive file system would)" >&2
-             exit 2 ;;
-        *) echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (the Python interpreter could not compare the names beside $path)" >&2
+def hit(a):
+    parts = a.split("/", 1)
+    if f(parts[0]) != ".claude":
+        return False
+    return len(parts) == 1 or f(parts[1]) == "settings.flow.json"
+names = [n.decode("utf-8", "surrogateescape") for n in sys.stdin.buffer.read().split(b"\0") if n]
+sys.exit(3 if any(hit(n) for n in names) else 0)' < "$_cr_ref_dir/ask" 2>/dev/null
+    rc=$?
+    case "$rc" in
+      0) ;;
+      3) echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL ($fold)" >&2
+         exit 2 ;;
+      127) echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (a name on the path .claude/settings.flow.json at $_cr_ref_shown is not ASCII, and no Python interpreter is installed to compare it as a case-insensitive file system would)" >&2
            exit 2 ;;
-      esac
-    fi
-    if [ "$variant" -eq 1 ]; then
-      echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (an entry at $_cr_ref_shown is named $path only on a case-insensitive file system)" >&2
-      exit 2
-    fi
+      *) echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (the Python interpreter could not compare the names on the path .claude/settings.flow.json)" >&2
+         exit 2 ;;
+    esac
   }
-  _cr_ref_shown=$(printf '%s' "$SETTINGS_REF" | LC_ALL=C tr -d '\000-\037\177')
-  _cr_entry=""
-  _cr_ref_entry "$_cr_commit" .claude .claude
-  if [ -n "$_cr_ref_meta" ]; then
-    # "<mode> <type> <id>": the mode and the type, each checked.
-    _cr_rest="${_cr_ref_meta#* }"
-    _cr_tree="${_cr_rest#* }"
-    if [ "${_cr_ref_meta%% *}" != 040000 ] || [ "${_cr_rest%% *}" != tree ] ||
-       [ -z "$_cr_tree" ] || [ -n "${_cr_tree//[0-9a-f]/}" ]; then
-      echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL ($_cr_ref_shown:.claude is not a directory)" >&2
-      exit 2
-    fi
-    _cr_ref_entry "$_cr_tree" settings.flow.json .claude/settings.flow.json
-    _cr_entry="$_cr_ref_meta"
-  fi
+  _cr_ref_scan
   if [ -n "$_cr_entry" ]; then
+    # "<mode> <id> <stage>": the mode and the id, each checked.
     _cr_mode="${_cr_entry%% *}"
     _cr_rest="${_cr_entry#* }"
-    _cr_type="${_cr_rest%% *}"
-    _cr_blob="${_cr_rest#* }"
+    _cr_blob="${_cr_rest%% *}"
     case "$_cr_mode" in
       100644|100755) ;;
-      *) _cr_type="" ;;
+      *) _cr_blob="" ;;
     esac
-    if [ "$_cr_type" != blob ] || [ -z "$_cr_blob" ] || [ -n "${_cr_blob//[0-9a-f]/}" ]; then
+    if [ -z "$_cr_blob" ] || [ -n "${_cr_blob//[0-9a-f]/}" ]; then
       echo "cascade-resolve: ERROR: $PROJECT_LABEL is not a regular file" >&2
       exit 2
     fi
-    _cr_ref_tmp=$(mktemp -t cascade-resolve.ref.XXXXXX 2>/dev/null) || {
-      echo "cascade-resolve: cannot make a temporary file for $PROJECT_LABEL" >&2
-      exit 2
-    }
-    trap 'rm -f "$_cr_ref_tmp"' EXIT
     # A file git cannot read is refused, not skipped: skipping would drop
     # the commit's values from the cascade with only a warning.
-    if ! git -C "$_cr_repo_top" cat-file blob "$_cr_blob" > "$_cr_ref_tmp" 2>/dev/null; then
+    if ! git -C "$_cr_repo_top" cat-file blob "$_cr_blob" > "$_cr_ref_dir/project.json" 2>/dev/null; then
       echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL" >&2
       exit 2
     fi
-    PROJECT_SETTINGS="$_cr_ref_tmp"
+    PROJECT_SETTINGS="$_cr_ref_dir/project.json"
   fi
 fi
 USER_SETTINGS="${_cr_user_home}/.claude/settings.flow.json"
