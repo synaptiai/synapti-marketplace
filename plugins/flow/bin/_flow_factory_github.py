@@ -16,10 +16,14 @@ only the J/outbox/<id>.body.md the record wrote can match, and body_file
 must name that file. The bytes hashed are the bytes posted: gh reads them
 on its standard input (-F body=@- at run time), never the file again.
 
-The events file, not the item, says what has happened to an intent. A
-write_recorded line means it was sent and an intent_dropped line means it
-was dropped, wherever they stand, and an item whose status says otherwise
-is refused (field=status). An intent_confirmed line (a person confirmed the
+The events file, not the item, says what has happened to an intent. Each
+line is appended before the item is saved, so a process that dies between
+the two leaves a line the next pass acts on. A write_recorded line means it
+was sent, wherever it stands: an item it names is never run again and is
+saved as sent whatever its status says, and an item that says sent with no
+such line is refused (field=status). An intent_dropped line means it was
+dropped, and an unsent item whose status says otherwise is refused
+(field=status). An intent_confirmed line (a person confirmed the
 notice) and an intent_pending_confirm line (the drain made the notice wait
 for a confirm) count only after the last intent_recorded line for the id
 and for the same job, and only for a notice; the drain decides from them,
@@ -591,17 +595,19 @@ def check_item(events_path, item):
     be acted on, else the IntentChanged to report: the hash of the argv and
     the posted body differs from the line's (or either is missing); a field
     of RECORD_FIELDS differs from the line's (field=<name>); or the status
-    disagrees with the events file (field=status): not sent when a
-    write_recorded line names the id, not dropped when an intent_dropped
-    line does, dropped when none does, pending_confirm or confirmed on a
-    blocking item (only notices wait for a confirm, plan 2.2 and Q16),
-    confirmed with no intent_confirmed line of the job after the record, or
-    pending_confirm with no intent_pending_confirm line of the job after
-    the record. A sent item with no write_recorded line passes: _sent saves
-    the item before the line, so a process that died between them leaves
-    exactly that, and nothing runs a sent item. So does a recorded item
-    with an intent_pending_confirm or intent_confirmed line: the line is
-    written first, and the drain acts on the line, not on the status."""
+    disagrees with the events file (field=status): sent when no
+    write_recorded line names the id; or, when none does, not dropped when
+    an intent_dropped line does, dropped when none does, pending_confirm or
+    confirmed on a blocking item (only notices wait for a confirm, plan 2.2
+    and Q16), confirmed with no intent_confirmed line of the job after the
+    record, or pending_confirm with no intent_pending_confirm line of the
+    job after the record. An item a write_recorded line names passes
+    whatever its status: it was sent (_sent appends the line before it
+    saves the item, so a process that died between them leaves the item in
+    its old status), and the drain and run_literal save it as sent and
+    never run it. So does a recorded item with an intent_pending_confirm or
+    intent_confirmed line: the line is written first, and the drain acts on
+    the line, not on the status."""
     return _checked(events_path, item)[0]
 
 
@@ -618,7 +624,9 @@ def _checked(events_path, item):
         if f not in rec or not _same(rec[f], item.get(f)):
             return IntentChanged(iid, recorded, current, field=f), None, h
     status = item.get("status")
-    if (h["sent"] and status != "sent") or (h["dropped"] and not h["sent"] and status != "dropped") \
+    if h["sent"]:
+        return None, body, h
+    if status == "sent" or (h["dropped"] and status != "dropped") \
             or (status == "dropped" and not h["dropped"]) \
             or (status in ("pending_confirm", "confirmed") and item.get("blocking") is not False) \
             or (status == "confirmed" and not h["confirmed"]) \
@@ -791,11 +799,23 @@ def _drop(paths, n, job_key, iid, path, item):
 
 
 def _sent(paths, n, path, item, effect):
-    item = dict(item, status="sent", effect=effect)
-    _save(path, item)
+    """The write_recorded line first, then the item saved as sent, so an
+    item is never sent in its file only. A process that dies between the
+    two leaves an item in its old status that a write_recorded line names:
+    the next drain or run_literal saves it as sent (_resent) and runs
+    nothing."""
     jobs.append_event(paths, n, {"type": "write_recorded", "job": item["job"], "time": ff.utc_now(),
                                  "id": item["id"], "effect": effect})
+    item = dict(item, status="sent", effect=effect)
+    _save(path, item)
     return item
+
+
+def _resent(path, item, h):
+    """Save an item a write_recorded line names (h, its history) as sent
+    with that line's effect, when its file says otherwise."""
+    if item.get("status") != "sent" or not _same(item.get("effect"), h["effect"]):
+        _save(path, dict(item, status="sent", effect=h["effect"]))
 
 
 # drain, run_literal, lookup --------------------------------------------------
@@ -806,7 +826,10 @@ def drain(paths, job, gh_real, tiers, login, enough=None):
     line (check_item), so every later decision reads recorded values, and
     whether a notice waits for a confirm or was confirmed is read from the
     events file (an intent_pending_confirm or intent_confirmed line of the
-    job after the last intent_recorded line), not from its status. On a
+    job after the last intent_recorded line), not from its status, and
+    whether it was sent from its write_recorded line: an item that line
+    names is saved as sent if its file says otherwise and nothing runs,
+    and an item that says sent with no such line is refused. On a
     terminal job only the items of that state run and every other unsent
     item is dropped; a notice waiting for a confirm whose job has left its
     state is dropped (B6 step 7). Then the effect is looked for, and a write
@@ -848,18 +871,21 @@ def drain(paths, job, gh_real, tiers, login, enough=None):
             lines.append(f"OUTBOX_ITEM_INVALID job={job_key} file={name}")
             continue
         status, iid = item["status"], item["id"]
-        if status == "sent" or iid == pending_id:
-            continue
-        if status == "dropped":
-            # Only an edit makes a dropped item with no intent_dropped line
-            # (_drop writes the line first); say so, and run nothing.
-            changed = _checked(events_path, item)[0]
-            if changed:
-                lines.append(changed.line)
+        if iid == pending_id:
             continue
         changed, body, h = _checked(events_path, item)
         if changed:
+            # Only an edit makes a sent item with no write_recorded line or
+            # a dropped one with no intent_dropped line (each line is
+            # written first); say so, and run nothing.
             lines.append(changed.line)
+            continue
+        if h["sent"]:
+            # The write ran: a process that died after the write_recorded
+            # line and before the item was saved left its old status.
+            _resent(path, item, h)
+            continue
+        if status == "dropped":
             continue
         # From here every decision reads the item as checked against its
         # intent_recorded line, and the events file for what has happened
@@ -917,7 +943,8 @@ def run_literal(paths, job, iid, gh_real, login, tiers=None, lines=None):
     lines) with nothing run. With tiers, one breadcrumb per journal key
     after a run. An intent a write_recorded line names returns that line's
     effect with no gh call (it already ran: the item the drain ran, or a
-    run before a process died); one an intent_dropped line names raises
+    run before a process died) and saves the item as sent if its file says
+    otherwise; one an intent_dropped line names raises
     Refused("intent_dropped ..."). A failed lookup or run raises
     Refused("write_failed ..."); no engine login raises
     Refused("engine_login_unknown")."""
@@ -937,6 +964,7 @@ def run_literal(paths, job, iid, gh_real, login, tiers=None, lines=None):
     if changed:
         raise changed
     if h["sent"]:
+        _resent(path, item, h)
         return h["effect"]
     if h["dropped"]:
         raise Refused(f"intent_dropped {iid}")
