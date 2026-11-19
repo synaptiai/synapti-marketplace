@@ -1093,7 +1093,9 @@ assert_exit 2 "$RC" "any other variable is refused"
 # reading as no project file; the flag is silently combined with
 # --no-repo-settings, which reads no project file at all; the commit's entry
 # is read whatever it is (a symbolic link read as its target's text, a
-# directory read as no file) instead of only a regular file; a blob git cannot
+# directory read as no file) instead of only a regular file; a .claude at the
+# ref that is a symbolic link or a file (so git lists no project file under
+# it) reads as no project file; a blob git cannot
 # read is skipped, so the project file's values silently drop out.
 _rsr_repo() {
   local d="$SCRATCH_ROOT/rsr-$1"
@@ -1198,6 +1200,37 @@ OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --re
 RC=$?
 assert_exit 2 "$RC" "a directory at the ref exits 2"
 assert_contains "not a regular file" "$(cat "$D/err")" "stderr names it"
+
+_flow_test_begin "--repo-settings-ref: a .claude at the ref that is not a directory is refused"
+# The commit's .claude is a symbolic link to a directory whose file sets
+# confirm. git stores no .claude/settings.flow.json path for it, so reading
+# it as "no project file" shows as the plugin's journal, exit 0.
+D=$(_rsr_repo parentlink)
+(
+  cd "$D" && git rm -q .claude/settings.flow.json && rm -rf .claude && mkdir real \
+    && printf '{"tiers": {"issueAssign": "confirm"}}\n' > real/settings.flow.json \
+    && ln -s real .claude && git add .claude real/settings.flow.json \
+    && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m parentlink
+) >/dev/null 2>&1
+assert_equal "120000" "$(cd "$D" && git ls-tree main -- .claude | cut -c1-6)" "the ref's .claude is a symbolic link"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a symbolic link .claude at the ref exits 2"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "main:.claude is not a directory" "$(cat "$D/err")" "stderr names .claude"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 2 "$RC" "a --default does not hide it"
+# A regular file named .claude at the ref is refused the same way.
+D=$(_rsr_repo parentfile)
+(
+  cd "$D" && git rm -q .claude/settings.flow.json && rm -rf .claude && printf 'x\n' > .claude \
+    && git add .claude && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m parentfile
+) >/dev/null 2>&1
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a regular file .claude at the ref exits 2"
+assert_contains "main:.claude is not a directory" "$(cat "$D/err")" "stderr names .claude"
 
 _flow_test_begin "--repo-settings-ref: a project file git cannot read at the ref is refused, not skipped"
 # The working tree's file is gone too, so only the ref could give confirm;

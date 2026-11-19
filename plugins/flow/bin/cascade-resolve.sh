@@ -91,7 +91,13 @@
 #                         the local file, the user file and the plugin default
 #                         are read as without it, in the same order. For a
 #                         caller that must judge the settings a branch holds,
-#                         not the ones the working tree has. A ref
+#                         not the ones the working tree has. The flag is
+#                         listed in the factory design's changed files
+#                         (docs/flow-factory/design.json, changed_files) as a
+#                         view of the settings at a base ref. No shipped
+#                         command calls it yet, and the factory engine reads
+#                         its base branch's project file itself, through its
+#                         own git, not through this flag. A ref
 #                         that `git rev-parse --verify <ref>^{commit}` cannot
 #                         resolve (outside a repository, none resolves) exits 3
 #                         with `cascade-resolve: ref_unresolved <ref>` on
@@ -101,7 +107,10 @@
 #                         file (mode 100644 or 100755); any other entry (a
 #                         symbolic link, a directory, a submodule) or a file
 #                         git cannot read exits 2 with an ERROR on stderr,
-#                         whatever --default says.
+#                         whatever --default says. So does a .claude at the
+#                         commit that is not a directory (a symbolic link to
+#                         one, a file, a submodule), since git then lists no
+#                         project file under it.
 #                         Not with --no-repo-settings, which reads no project
 #                         file at all, nor with the two path flags (exit 2).
 #   --scalar              accepted and ignored: refusing such a value IS the
@@ -118,8 +127,8 @@
 #   0 — resolved a value (or returned the default; both are normal)
 #   2 — infrastructure error (jq missing, no expression provided, a leftover
 #       argument, a refused value with no --default to fall back to, or a
-#       --repo-settings-ref project file that is not a regular file or cannot
-#       be read)
+#       --repo-settings-ref project file that is not a regular file, sits
+#       under a .claude that is not a directory, or cannot be read)
 #   3 — --repo-settings-ref named a ref that does not resolve to a commit
 #
 # WHO MAY SET FLOW_STATE_DIR AND FLOW_USER_SETTINGS (and, through --user-env,
@@ -659,6 +668,27 @@ if [ "$SETTINGS_REF_SET" -eq 1 ]; then
   # of its target, and a directory or submodule as no file, so a commit
   # could hide its settings that way; each is refused instead. ls-tree's
   # NUL-ended output goes through tr, since $(...) drops NUL bytes.
+  # The directory on the path, .claude, must itself be a directory (mode
+  # 040000) at the commit: a symbolic link to a directory, a file or a
+  # submodule there leaves git no .claude/settings.flow.json to list, so the
+  # commit would read as having no project file while a checkout of it still
+  # finds one through the link. It is refused instead. When .claude is
+  # absent, the commit has no project file.
+  if ! _cr_entry=$(git -C "$_cr_repo_top" ls-tree -z --full-tree "$_cr_commit" -- .claude 2>/dev/null \
+                   | LC_ALL=C tr '\000' '\n'); then
+    echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git ls-tree failed)" >&2
+    exit 2
+  fi
+  _cr_entry="${_cr_entry%%$'\n'*}"
+  if [ -n "$_cr_entry" ]; then
+    # "<mode> <type> <id>": the mode and the type, each checked.
+    _cr_meta="${_cr_entry%%$'\t'*}"
+    _cr_rest="${_cr_meta#* }"
+    if [ "${_cr_entry#*$'\t'}" != .claude ] || [ "${_cr_meta%% *}" != 040000 ] || [ "${_cr_rest%% *}" != tree ]; then
+      echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL ($(printf '%s' "$SETTINGS_REF" | LC_ALL=C tr -d '\000-\037\177'):.claude is not a directory)" >&2
+      exit 2
+    fi
+  fi
   if ! _cr_entry=$(git -C "$_cr_repo_top" ls-tree -z --full-tree "$_cr_commit" -- .claude/settings.flow.json 2>/dev/null \
                    | LC_ALL=C tr '\000' '\n'); then
     echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git ls-tree failed)" >&2

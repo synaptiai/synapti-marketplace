@@ -46,6 +46,10 @@
 #        intent stops covering its kinds; a confirmed_intent that climbs out
 #        of the outbox ('../x'), an item whose id is not its file's name, or
 #        a job whose issue is not a whole number is taken as covering
+#   TR13 a .claude at the base ref that is not a directory (a symbolic link to
+#        one, or a file) is read as "no project file", since git lists no
+#        .claude/settings.flow.json under it, so the project source drops out
+#        instead of counting as confirm
 #
 # Every expected value is written out by hand from the design lines named in
 # each scenario's description; none comes from the module.
@@ -161,7 +165,7 @@ _flow_test_begin "factory tiers: an unresolved ref or no base counts as confirm;
 tr_start tr3-refs ''
 tr_file "~/.claude/settings.flow.json" '{"tiers": {"push": "confirm"}}'
 tr_file .claude/settings.flow.json '{"tiers": {"issueAssign": "confirm"}}'
-e2e_describe "origin/main has no project file (the working tree has one with issueAssign confirm, which is not read); the user file sets push confirm; the plugin default is journal. At origin/main: issueAssign journal, push confirm, base_problem None. At refs/remotes/origin/nope (never fetched) and with no base ref (None): issueAssign confirm (the project source counts as confirm, plan B7 step 2), with base_problem naming the case. base_ref of a job: main gives refs/remotes/origin/main; a missing base, an empty one, one starting with '-', one holding '..' or ':', one ending in '.lock', one with a part starting with '.', one holding '//' and one of 201 characters give None (the module's branch-name rule); one of 200 characters gives its ref"
+e2e_describe "origin/main has no project file (the working tree has one with issueAssign confirm, which is not read); the user file sets push confirm; the plugin default is journal. At origin/main: issueAssign journal, push confirm, base_problem None. At refs/remotes/origin/nope (never fetched) and with no base ref (None): issueAssign confirm (the project source counts as confirm, plan B7 step 2), with base_problem naming the case. base_ref of a job: main gives refs/remotes/origin/main; a missing base, an empty one, one starting with '-', one holding '..' or ':', one ending in '.lock', one with a part ending in '.lock' (a.lock/b), one with a part starting with '.', one holding '//' and one of 201 characters give None (the module's branch-name rule); one of 200 characters gives its ref"
 read -r -d '' TR_CODE <<'PY' || true
 print('origin issueAssign %s push %s problem %s' % (R.resolve(M, BASE, 'issueAssign'), R.resolve(M, BASE, 'push'),
                                                    R.resolver(M, BASE).base_problem))
@@ -171,7 +175,7 @@ t = R.resolver(M, None)
 print('none issueAssign %s problem %s' % (t('issueAssign'), t.base_problem))
 print('base_ref main %s' % R.base_ref(job()))
 for tag, b in (('missing', None), ('empty', ''), ('dash', '-x'), ('dots', 'a..b'), ('colon', 'a:b'),
-               ('lock', 'a.lock'), ('dot-part', 'a/.b'), ('double-slash', 'a//b'), ('long', 'a' * 201)):
+               ('lock', 'a.lock'), ('lock-part', 'a.lock/b'), ('dot-part', 'a/.b'), ('double-slash', 'a//b'), ('long', 'a' * 201)):
     print('base_ref %s %s' % (tag, R.base_ref(job(base=b))))
 print('base_ref absent %s' % R.base_ref({'key': 'issue-7-j1'}))
 print('base_ref 200 %s' % (R.base_ref(job(base='a' * 200)) == 'refs/remotes/origin/' + 'a' * 200))
@@ -181,7 +185,7 @@ e2e_expect_line "origin issueAssign journal push confirm problem None"
 e2e_expect_line "nope issueAssign confirm problem ref_unresolved refs/remotes/origin/nope"
 e2e_expect_line "none issueAssign confirm problem no_base"
 e2e_expect_line "base_ref main refs/remotes/origin/main"
-for TR_N in missing empty dash dots colon lock dot-part double-slash long absent; do
+for TR_N in missing empty dash dots colon lock lock-part dot-part double-slash long absent; do
   e2e_expect_line "base_ref $TR_N None"
 done
 e2e_expect_line "base_ref 200 True"
@@ -505,3 +509,36 @@ tr_py "$TR_CODE"
 e2e_expect_line "failing confirm None"
 e2e_expect_line "problem cascade-resolve.sh --repo-settings-paths: exited 1"
 e2e_expect_line "problem cascade-resolve.sh --user-settings-path: exited 1"
+
+_flow_test_begin "factory tiers: a .claude at the base ref that is not a directory counts as confirm (TR13)"
+tr_start tr13-parent ''
+(
+  _e2e_git_env
+  cd "$E2E_REPO" || exit 1
+  if [ -e .claude ]; then mv .claude "$E2E_DIR/claude-before" || exit 1; fi
+  mkdir real && printf '%s\n' '{"tiers": {"issueAssign": "confirm"}}' > real/settings.flow.json \
+    && ln -s real .claude && git add .claude real/settings.flow.json \
+    && git commit -q -m 'settings under a linked .claude'
+) || _e2e_result fail "committed .claude as a symbolic link to real/, whose settings.flow.json sets issueAssign confirm"
+printf 'committed .claude on main as a symbolic link to real/, with real/settings.flow.json setting issueAssign confirm\n' | _e2e_art
+fe_origin_local
+e2e_describe "plan B7 step 2 (fail closed): origin/main's .claude is a symbolic link (mode 120000) to a directory whose settings.flow.json sets issueAssign confirm, so git lists no .claude/settings.flow.json; every other source gives journal. Reading that as no project file gives journal; the engine instead refuses the source, so issueAssign is confirm and base_problem names .claude as not a directory. Then .claude committed as a regular file: confirm, with the same problem"
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('link %s %s' % (t('issueAssign'), 'not a directory' in (t.base_problem or '')))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "link confirm True"
+(
+  _e2e_git_env
+  cd "$E2E_REPO" && git rm -q .claude && printf 'x\n' > .claude && git add .claude \
+    && git commit -q -m '.claude as a file'
+) || _e2e_result fail "committed .claude as a regular file"
+printf 'committed .claude on main as a regular file\n' | _e2e_art
+fe_origin_local
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('file %s %s' % (t('issueAssign'), 'not a directory' in (t.base_problem or '')))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "file confirm True"

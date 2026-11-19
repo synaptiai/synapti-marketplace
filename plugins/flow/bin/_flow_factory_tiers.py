@@ -114,8 +114,11 @@ _LOCK_HELD = re.compile(r"cannot lock ref|\.lock'?: File exists|Unable to create
 
 
 def _branch_ok(base):
+    # git refuses a ref with any slash-separated part ending in .lock, not
+    # only the last one.
     return (isinstance(base, str) and bool(_BRANCH.match(base)) and ".." not in base and "//" not in base
-            and not base.endswith(("/", ".", ".lock")) and "/." not in base and len(base) <= 200)
+            and not base.endswith(("/", ".")) and "/." not in base and len(base) <= 200
+            and not any(part.endswith(".lock") for part in base.split("/")))
 
 
 def base_ref(job):
@@ -229,7 +232,25 @@ def _project_at(main, ref, fdir):
         commit = out.strip()
         if rc != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
             return {}, f"ref_unresolved {ref}"
-        rc, out, err = fgit.git(F, ["ls-tree", "-z", commit, "--", PROJECT_PATH], main)
+        # Each directory on the path must be a directory (mode 040000) at the
+        # commit. A .claude that is a symbolic link to a directory, a file or
+        # a submodule leaves git no .claude/settings.flow.json to list, so the
+        # commit would read as having no project file while a checkout of it
+        # still finds one through the link; it is refused instead.
+        parts = PROJECT_PATH.split("/")
+        for i in range(1, len(parts)):
+            parent = "/".join(parts[:i])
+            rc, out, err = fgit.git(F, ["ls-tree", "-z", "--full-tree", commit, "--", parent], main)
+            if rc != 0:
+                raise _Unreadable(f"project: git ls-tree {ff.exit_text(rc, ff.first_text(err))}")
+            entry = out.split("\0")[0]
+            if not entry:
+                return {}, None
+            meta, _, path = entry.partition("\t")
+            fields = meta.split(" ")
+            if path != parent or len(fields) != 3 or fields[0] != "040000" or fields[1] != "tree":
+                raise _Unreadable(f"project: {parent} at {ref} is not a directory")
+        rc, out, err = fgit.git(F, ["ls-tree", "-z", "--full-tree", commit, "--", PROJECT_PATH], main)
         if rc != 0:
             raise _Unreadable(f"project: git ls-tree {ff.exit_text(rc, ff.first_text(err))}")
         entry = out.split("\0")[0]
