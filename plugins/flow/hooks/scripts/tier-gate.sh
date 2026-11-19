@@ -594,9 +594,20 @@ INPUT=$(cat 2>/dev/null) || INPUT=""
 
 # The text as a JSON string's contents, without jq: backslash, double quote,
 # line end, carriage return and tab escaped, and any other control character
-# written as a space.
+# written as a space. A text over 1 KB is escaped by one sed, its lines
+# joined by one awk with \n between them: bash 3.2's pattern substitution
+# takes time that grows with the square of the text, and a long command in a
+# deny took over 15 seconds. The x after the text keeps a line end at its
+# end, and the y after the output keeps what $(...) would strip.
 _tg_json_text() {
-  local t="$1" b='\' q='"'
+  local t="$1" b='\' q='"' cr=$'\r' tab=$'\t'
+  if [ "${#t}" -gt 1024 ]; then
+    t=$(printf '%sx' "$t" | LC_ALL=C sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$cr/\\\\r/g" -e "s/$tab/\\\\t/g" \
+      | LC_ALL=C awk 'NR > 1 { printf "%s", "\\n" } { printf "%s", $0 }' | LC_ALL=C tr '\000-\037' ' '; printf y)
+    t=${t%y}
+    printf '%s' "${t%x}"
+    return 0
+  fi
   t=${t//"$b"/"$b$b"}
   t=${t//"$q"/"$b$q"}
   t=${t//$'\n'/"${b}n"}

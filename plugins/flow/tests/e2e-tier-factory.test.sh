@@ -117,6 +117,30 @@ tf_guard() {
   e2e_run_hook ${envs[@]+"${envs[@]}"} "$TF_GUARD" \
     "$(tf_payload "$1" default "${4:-$E2E_REPO}" "$(jq -cn --arg k "$2" --arg p "$3" '{($k):$p, content:"x", old_string:"a", new_string:"b", new_source:"c"}')")"
 }
+# tf_timed [NAME=value ...] <mode> <command> — tier-gate on a Bash call, timed
+# inside the scenario's own process: the payload is read from a file and the
+# hook's stdout goes to a file, so the harness, whose masking of a long text
+# takes time of its own, is not timed. The artifact records the payload's
+# size and sha256 instead of its text. TF_SECS is the hook's run time in
+# whole seconds, E2E_OUT its stdout.
+tf_timed() {
+  local envs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in [A-Za-z_]*=*) envs+=("$1"); shift ;; *) break ;; esac
+  done
+  tf_payload Bash "$1" "$E2E_REPO" "$(jq -cn --arg c "$2" '{command:$c}')" > "$E2E_DIR/timed-payload.json"
+  {
+    printf 'code: %s\n' "$TF_HOOK"
+    printf 'payload: %s bytes, sha256 %s\n' "$(wc -c < "$E2E_DIR/timed-payload.json" | tr -d ' ')" "$(_e2e_sha256 "$E2E_DIR/timed-payload.json")"
+    [ "${#envs[@]}" -gt 0 ] && printf 'environment: %s\n' "${envs[*]}"
+    printf 'stdout: the hook run time in seconds; the hook output is kept in a file\n'
+  } | _e2e_art
+  _e2e_exec env ${envs[@]+"${envs[@]}"} /bin/bash -c 'SECONDS=0; "$1" < "$2" > "$3"; rc=$?; printf "%s" "$SECONDS"; exit "$rc"' \
+    tf-timed "$E2E_ACTIVE_PLUGIN/$TF_HOOK" "$E2E_DIR/timed-payload.json" "$E2E_DIR/timed-out"
+  TF_SECS="$E2E_OUT"
+  E2E_OUT=$(cat "$E2E_DIR/timed-out")
+  printf -- '--- expectations\n' | _e2e_art
+}
 # The decision: deny, ask or allow from the JSON, none for no output, and
 # unparsed for output that is not one decision object.
 tf_decision() {
@@ -231,7 +255,7 @@ tf_factory tf3-modes
 # answer without --text, next, wait, question, status and probe untiered);
 # plan 2.4 rule 2 (program words after the wrapped forms; split at ;, &&, ||,
 # | and line ends); R43 (a grep that only mentions a subcommand is no call).
-e2e_describe "factory directory present, no FLOW_FACTORY_*: each person subcommand in each of the eight forms in auto mode; cancel in plan, acceptEdits, bypassPermissions and with no mode; chains; interpreter options that take a value, python3 -m _flow_factory and env --split-string; in default mode a person call that is not the whole command (chain, cd, pushd, env -C, an assignment, a pipe, a substitution) and one that is; a grep naming a subcommand; the untiered subcommands in default and auto mode; answer --choice --text"
+e2e_describe "factory directory present, no FLOW_FACTORY_*: each person subcommand in each of the eight forms in auto mode; cancel in plan, acceptEdits, bypassPermissions and with no mode; chains; interpreter options that take a value, python3 -m _flow_factory and env --split-string; wrapper options the hook does not know exactly; a command given to flock -c, --command or script -c; in default mode a person call that is not the whole command (chain, cd, pushd, env -C, an assignment, a pipe, a substitution) and one that is; a grep naming a subcommand, also after wrapper options the hook knows; the untiered subcommands in default and auto mode; answer --choice --text"
 for S in $TF_SUBS; do
   for FORM in $TF_FORMS; do
     C=$(tf_form "$FORM" "$(tf_args "$S")" "$TF_BIN")
@@ -287,6 +311,50 @@ for C in 'flock /tmp/l flow-factory.sh cancel 7' 'sudo -u x flow-factory.sh canc
          'nice --adj 5 flow-factory.sh cancel 7' 'timeout --kill 1 5 flow-factory.sh cancel 7'; do
   tf_run auto "$C"
   tf_expect deny "auto mode, a wrapper's program: $C"
+done
+# A wrapper option the hook's grammar does not know exactly (an option it
+# does not list, an abbreviated long option, a bare -) may take the next
+# word as its value or not, so the program position after it cannot be
+# read: the script word there still counts as the program, and the call is
+# counted (finding 0 of the fourth B9 review; fails closed). Each of these
+# runs the script with cancel 7 for GNU parallel, GNU env, doas, xargs,
+# stdbuf and sudo.
+for C in 'parallel --env FOO flow-factory.sh cancel ::: 7' 'parallel --workdir /tmp flow-factory.sh cancel ::: 7' \
+         'parallel --tagstring x flow-factory.sh cancel ::: 7' 'parallel -J prof flow-factory.sh cancel ::: 7' \
+         'parallel -C , flow-factory.sh cancel ::: 7' 'env -a foo flow-factory.sh cancel 7' 'env --argv0 foo flow-factory.sh cancel 7' \
+         'doas -a x flow-factory.sh cancel 7' 'xargs --arg root flow-factory.sh cancel' 'stdbuf --out L flow-factory.sh cancel 7' \
+         'sudo --us root flow-factory.sh cancel 7' 'env - flow-factory.sh cancel 7'; do
+  tf_run auto "$C"
+  tf_expect deny "auto mode, a wrapper option the grammar does not know: $C"
+done
+# Each guard of the reading has a call it alone finds (the fourth B9
+# review, finding 2): python reading _flow_factory.py from its input
+# through a pattern, exec's -a value, a long option's value in the next
+# word, and a quoted spelling of the script in a command over 1 KB.
+TF_LONGQ="echo $(printf 'a%.0s' $(seq 1 1500)); \"$TF_BIN/flow-factory\".sh cancel 7"
+for C in "python3 - cancel 7 < $TF_BIN/_flow_fac*.py" 'exec -a foo flow-factory.sh cancel 7' \
+         'sudo --user root flow-factory.sh cancel 7' "$TF_LONGQ"; do
+  tf_run auto "$C"
+  tf_expect deny "auto mode, a call one guard finds: ${C:0:80}"
+done
+# flock's -c and --command and script's -c hand their value to a shell, as
+# env -S does: the value is read as a command of its own (the fourth B9
+# review, finding 3), so a person call there is never the whole command.
+# Both programs accept a long option by a prefix that is not ambiguous
+# (--comm), and the lock file may be an expansion.
+TF_NESTED=("flock /tmp/l -c 'flow-factory.sh cancel 7'" "flock -c 'flow-factory.sh cancel 7' /tmp/l" \
+           "flock /tmp/l --command 'flow-factory.sh cancel 7'" "flock /tmp/l --command='flow-factory.sh cancel 7'" \
+           "flock -xc 'flow-factory.sh cancel 7' /tmp/l" "flock /tmp/l -c'flow-factory.sh cancel 7'" \
+           "script -c 'flow-factory.sh cancel 7' f" "script -qc 'flow-factory.sh cancel 7' f" \
+           "sudo flock /tmp/l -c 'flow-factory.sh cancel 7'" "flock \"\$LOCK\" -c 'flow-factory.sh cancel 7'" \
+           "flock /tmp/l.\$\$ -c 'flow-factory.sh cancel 7'" "flock /tmp/l --comm 'flow-factory.sh cancel 7'" \
+           "flock /tmp/l --comm='flow-factory.sh cancel 7'" "script --c 'flow-factory.sh cancel 7' f")
+for M in auto default; do
+  for C in "${TF_NESTED[@]}"; do
+    tf_run "$M" "$C"
+    tf_expect deny "$M mode, a command given to flock or script: $C"
+    e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "the deny text for: $C"
+  done
 done
 # Bash removes quotes and backslashes from the program word and expands a
 # pattern in it before it runs (finding 0 of the third B9 review). A quoted
@@ -431,7 +499,12 @@ for M in default auto; do
            'timeout 5 grep -rn --include=flow-factory.sh retry .' 'sudo rsync -a --exclude=_flow_factory.py a/ b/' \
            'timeout 5 grep flow-factory.sh cancel' 'nice grep flow-factory.sh cancel' 'sudo grep flow-factory.sh cancel' \
            'flock /tmp/l grep flow-factory.sh cancel' 'env grep flow-factory.sh cancel' 'xargs grep -l flow-factory.sh' \
-           'nice -n 5 grep flow-factory.sh cancel' "ls $TF_BIN/flow-fac*.sh" 'ls *.sh' "grep -n 'flow-factory.s* cancel' docs/"; do
+           'nice -n 5 grep flow-factory.sh cancel' "ls $TF_BIN/flow-fac*.sh" 'ls *.sh' "grep -n 'flow-factory.s* cancel' docs/" \
+           'nice --adjustment 5 grep flow-factory.sh cancel' 'exec -a foo grep flow-factory.sh cancel' \
+           'sudo --user root grep flow-factory.sh cancel' 'sudo -E grep flow-factory.sh cancel' 'env -i grep flow-factory.sh cancel' \
+           'find . -print0 | xargs -0 grep -l flow-factory.sh' 'nice -5 grep flow-factory.sh cancel' \
+           'timeout -v 5 grep flow-factory.sh cancel' "flock /tmp/l -c 'flow-factory.sh status'" "script -q -c 'flow-factory.sh status' f" \
+           "flock /tmp/l grep -c 'flow-factory.sh cancel' x" "script -q f grep -c 'flow-factory.sh cancel' x"; do
     tf_run "$M" "$C"
     tf_expect none "$M mode, untiered: $C"
   done
@@ -618,6 +691,34 @@ for C in 'flow-factory.sh question q1 --prompt "cancel it" --x' 'flow-factory.sh
   tf_expect deny "no jq, the deny text: $C"
   e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "no jq: the deny shows the whole command: $C"
 done
+# The same over 1 KB, where the command is read back and the deny text
+# escaped in one pass each (the fourth B9 review, findings 1 and 4): quotes,
+# backslashes, a backslash before an n (JSON's \\n, never a line end), a
+# tab, a carriage return and a line end come back as written, with jq and
+# without it.
+TF_PAD=$(printf 'b%.0s' $(seq 1 1100))
+for C in "echo $TF_PAD; flow-factory.sh feedback 7 \"cancel \\\"it\\\"\"" "echo $TF_PAD; flow-factory.sh feedback 7 'a\\nb'" \
+         "echo '$TF_PAD'"$'\t'"x\\\\y"$'\r'$'\n''flow-factory.sh can\cel 7'; do
+  tf_run "PATH=$TF_NOJQ" default "$C"
+  tf_expect deny "no jq, the deny text over 1 KB: ${C:0:40}"
+  e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "no jq: the deny shows the whole command over 1 KB: ${C:0:40}"
+  tf_run auto "$C"
+  tf_expect deny "jq, auto mode, the deny text over 1 KB: ${C:0:40}"
+  e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "jq: the deny shows the whole command over 1 KB: ${C:0:40}"
+done
+# A long command is decided in time: a 16 KB commit message in a heredoc
+# that names bin/flow-factory.sh is denied without jq, the whole command
+# shown, within 5 seconds (it took over 15 before the deny text was escaped
+# in one pass).
+TF_MSG=$(printf 'line of text abc %.0s\n' $(seq 1 900))
+TF_HEREDOC="git commit -F - <<'EOF'
+mention bin/flow-factory.sh
+$TF_MSG
+EOF"
+tf_timed "PATH=$TF_NOJQ" default "$TF_HEREDOC"
+tf_expect deny "no jq: a 16 KB heredoc naming bin/flow-factory.sh"
+e2e_expect_equal "$(tf_terminal "$TF_HEREDOC")" "$(tf_reason)" "no jq: the deny shows the whole 16 KB command"
+e2e_expect_equal yes "$([ "${TF_SECS:-99}" -lt 5 ] && echo yes || echo no)" "no jq: the 16 KB command decided within 5 seconds (${TF_SECS:-?} s)"
 # A JSON escape the hook does not read back without jq (\u), or two command
 # keys, leave the command unknown: the deny says so instead of showing JSON.
 TF_UNREAD_TEXT='run it in a terminal outside Claude Code: the command, which this hook could not read without jq'

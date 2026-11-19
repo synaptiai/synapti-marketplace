@@ -3130,6 +3130,27 @@ if _want tg-fac-sourcing; then
   TG_FAC_LONG="echo $(printf 'x%.0s' $(seq 1 2100)) && \"bin/flow-factor\"y.sh status"
   _tg_fac_traced "$(TG_FAC_PAYLOAD "$TG_FAC_LONG")"
   e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced for a quoted name in a payload over 2 KB"
+  # Without jq, a 32 KB commit message whose text holds a pattern that could
+  # match the engine's name (tests/*_*.py) reaches the rules, which read the
+  # command back from its JSON string: that is one pass, so the command is
+  # decided (no decision) within 5 seconds; reading it one escape at a time
+  # took over 15. Timed inside the scenario's process, payload from a file
+  # and output to a file, since the harness's masking of a long text takes
+  # time of its own; the artifact records the payload's size and sha256.
+  TG_FAC_MSG=$(printf 'line of text %.0s\n' $(seq 1 2400))
+  TG_FAC_HUGE="git commit -F - <<'EOF'
+fix tests/*_*.py
+$TG_FAC_MSG
+EOF"
+  TG_FAC_PAYLOAD "$TG_FAC_HUGE" > "$E2E_DIR/timed-payload.json"
+  printf 'code: %s\npayload: %s bytes, sha256 %s\nenvironment: PATH without jq\nstdout: the hook run time in seconds; the hook output is kept in a file\n' \
+    "$HOOK" "$(wc -c < "$E2E_DIR/timed-payload.json" | tr -d ' ')" "$(_e2e_sha256 "$E2E_DIR/timed-payload.json")" | _e2e_art
+  _e2e_exec env "PATH=$(e2e_path_without jq)" /bin/bash -c 'SECONDS=0; "$1" < "$2" > "$3"; rc=$?; printf "%s" "$SECONDS"; exit "$rc"' \
+    tg-fac-timed "$E2E_ACTIVE_PLUGIN/$HOOK" "$E2E_DIR/timed-payload.json" "$E2E_DIR/timed-out"
+  TG_FAC_SECS="$E2E_OUT"
+  printf -- '--- expectations\n' | _e2e_art
+  e2e_expect_equal "0 " "$E2E_RC $(cat "$E2E_DIR/timed-out")" "no jq, a 32 KB command holding tests/*_*.py: exit status and no decision"
+  e2e_expect_equal yes "$([ "${TG_FAC_SECS:-99}" -lt 5 ] && echo yes || echo no)" "no jq, the 32 KB command decided within 5 seconds (${TG_FAC_SECS:-?} s)"
   # Quotes, backslashes and patterns that cannot spell either name, and a
   # pattern that matches any name, are not factory text: the rules are not
   # reached, so the factory check costs nothing for them.

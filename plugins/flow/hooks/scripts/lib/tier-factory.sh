@@ -71,12 +71,17 @@
 #      only in the program position, read by the wrapper's own grammar (its
 #      options and their values, and its operands: timeout's duration,
 #      flock's file), so `timeout 5 grep flow-factory.sh x` and `xargs grep
-#      -l flow-factory.sh` are no calls. Of a wrapper's options, only one
-#      that holds a command in the same word (env -S'...',
-#      --split-string=...) is read for the script. An interpreter's options
-#      are read as it reads them (bash -o pipefail, python3 -W ignore,
-#      python3 -m _flow_factory). A call that cannot be read is denied in
-#      every mode, as no ask can show what runs: a subcommand word that is an
+#      -l flow-factory.sh` are no calls. That position is used only when
+#      every option before it is one the grammar knows exactly; after an
+#      option it does not list, an abbreviated long option (sudo --us) or a
+#      bare -, the script word stays the program, so the call is counted.
+#      Of a wrapper's options, one that holds a command in the same word
+#      (env -S'...', --split-string=...) is read for the script; env -S
+#      '...' and flock's -c and --command and script's -c (in any spelling)
+#      have their command read as a command of its own. An interpreter's
+#      options are read as it reads them (bash -o pipefail, python3 -W
+#      ignore, python3 -m _flow_factory). A call that cannot be read is
+#      denied in every mode, as no ask can show what runs: a subcommand word that is an
 #      expansion or a pattern bash expands ({a,b}, *, ?, [..]), and any later
 #      word of a person call that is one or holds a $; a program or script
 #      word (or python's -m module) that is a pattern that could match either
@@ -88,12 +93,12 @@
 #      _flow_factory.py; a -c script that is an expansion, or a python -c
 #      (perl, ruby, node or bun -e) script that names either file. A person
 #      call that is not the whole command (in a chain, beside another
-#      command, in a substitution, through eval or find, or after an
-#      assignment or a wrapper's -C, -D or --chdir, also before the bash -c
-#      that holds it) is denied with the terminal text below in every mode:
-#      what an ask would show could differ from what runs. A bash -c is not
-#      counted as a command of its own only when a person call was found
-#      inside its own script.
+#      command, in a substitution, through eval, find, env -S, flock -c or
+#      script -c, or after an assignment or a wrapper's -C, -D or --chdir,
+#      also before the bash -c that holds it) is denied with the terminal
+#      text below in every mode: what an ask would show could differ from
+#      what runs. A bash -c is not counted as a command of its own only when
+#      a person call was found inside its own script.
 #      Otherwise, with permission_mode "default" it asks, showing the whole command:
 #      for confirm, the stored literal from the read-only `status --intent`
 #      of this plugin's own bin/flow-factory.sh (never the path the command
@@ -279,9 +284,14 @@ _tf_read() {
 # its first closing quote that is not escaped, with the escapes \", \\, \/,
 # \n, \t, \r, \b and \f read back. 1 when the payload has more than one
 # command key, the string does not end, or it holds another escape (\u):
-# the command is then not known.
+# the command is then not known. The result is kept for the next call. A
+# string over 1 KB is read by one awk (_tf_raw_long): bash 3.2 copies the
+# rest of the string at each escape, which takes time that grows with the
+# square of the text.
 _tf_raw_value() {
   local v="$TF_RAW" rest out="" chunk
+  if [ "${TF_RV_SET:-}" = 1 ]; then TF_VAL="$TF_RV_VAL"; return "$TF_RV_RC"; fi
+  TF_RV_SET=1; TF_RV_RC=1; TF_RV_VAL=""
   TF_VAL=""
   rest="${INPUT#*\"command\"}"
   case "$rest" in *'"command"'*) return 1 ;; esac
@@ -289,27 +299,62 @@ _tf_raw_value() {
   case "$v" in :*) v="${v#:}" ;; *) return 1 ;; esac
   v="${v#"${v%%[![:space:]]*}"}"
   case "$v" in \"*) v="${v#\"}" ;; *) return 1 ;; esac
-  while :; do
-    chunk="${v%%[\\\"]*}"
-    [ "$chunk" != "$v" ] || return 1
-    out="$out$chunk"
-    v="${v:${#chunk}}"
-    case "$v" in
-      \"*) break ;;
-      '\"'*) out="$out\"" ;;
-      '\\'*) out="$out\\" ;;
-      '\/'*) out="$out/" ;;
-      '\n'*) out="$out"$'\n' ;;
-      '\t'*) out="$out"$'\t' ;;
-      '\r'*) out="$out"$'\r' ;;
-      '\b'*) out="$out"$'\b' ;;
-      '\f'*) out="$out"$'\f' ;;
-      *) return 1 ;;
-    esac
-    v="${v:2}"
-  done
-  TF_VAL="$out"
+  if [ "${#v}" -gt 1024 ]; then
+    _tf_raw_long "$v" || return 1
+    out="$TF_VAL"
+  else
+    while :; do
+      chunk="${v%%[\\\"]*}"
+      [ "$chunk" != "$v" ] || return 1
+      out="$out$chunk"
+      v="${v:${#chunk}}"
+      case "$v" in
+        \"*) break ;;
+        '\"'*) out="$out\"" ;;
+        '\\'*) out="$out\\" ;;
+        '\/'*) out="$out/" ;;
+        '\n'*) out="$out"$'\n' ;;
+        '\t'*) out="$out"$'\t' ;;
+        '\r'*) out="$out"$'\r' ;;
+        '\b'*) out="$out"$'\b' ;;
+        '\f'*) out="$out"$'\f' ;;
+        *) return 1 ;;
+      esac
+      v="${v:2}"
+    done
+  fi
+  TF_VAL="$out"; TF_RV_VAL="$out"; TF_RV_RC=0
   return 0
+}
+
+# _tf_raw_long <text> — TF_VAL is the JSON string that starts the text, read
+# as _tf_raw_value reads it, by one awk whose substitutions each go over the
+# text once: escaped backslashes first, in pairs from the left as JSON reads
+# them (so \\n stays a backslash and an n), held as \001; then escaped
+# quotes, held as \002; the string ends at the first quote left. A text
+# that already holds \001 or \002 is not read. 1 when the string does not
+# end or holds another escape. awk's exit status is hidden by the command
+# substitution, so it reports by its last character: o for a string read.
+_tf_raw_long() {
+  local r
+  r=$(printf '%s' "$1" | LC_ALL=C awk '
+    { s = (NR > 1) ? s "\n" $0 : $0 }
+    END {
+      if (index(s, "\001") || index(s, "\002")) { printf "e"; exit }
+      gsub(/\\\\/, "\001", s)
+      gsub(/\\"/, "\002", s)
+      q = index(s, "\"")
+      if (!q) { printf "e"; exit }
+      s = substr(s, 1, q - 1)
+      gsub(/\\\//, "/", s); gsub(/\\n/, "\n", s); gsub(/\\t/, "\t", s); gsub(/\\r/, "\r", s)
+      gsub(/\\b/, "\b", s); gsub(/\\f/, "\f", s)
+      if (index(s, "\\")) { printf "e"; exit }
+      printf "%s", s
+      printf "o"
+    }' | LC_ALL=C tr '\001\002' '\\"')
+  case "$r" in *o) TF_VAL="${r%o}"; return 0 ;; esac
+  TF_VAL=""
+  return 1
 }
 
 # The deny text when the command cannot be read without jq: no part of the
@@ -511,27 +556,42 @@ _tf_target() {
 # _tf_wrapper_grammar <wrapper> — how a wrapper of _BD_WRAPPERS reads its
 # words before the program it runs: TF_WV the short options that take a
 # value, TF_WL the long ones that take the next word (when not written
-# --name=value), TF_WN the operands before the program (timeout's duration,
-# flock's file, chrt's priority, taskset's mask, script's file).
+# --name=value), TF_WF and TF_WLF the short and long options that take no
+# value, TF_WN the operands before the program (timeout's duration, flock's
+# file, chrt's priority, taskset's mask, script's file). An option in none
+# of these lists is one the grammar does not know: whether it takes the next
+# word is not known, so the program position after it is not either. A
+# letter that takes a value in any version of the program is listed in
+# TF_WV, never in TF_WF, and a list leaves out what it is not sure of.
 _tf_wrapper_grammar() {
-  TF_WV=""; TF_WL=""; TF_WN=0
+  TF_WV=""; TF_WL=""; TF_WF=""; TF_WLF=""; TF_WN=0
   case "$1" in
-    sudo) TF_WV=ugCDhprtUTR; TF_WL="user group close-from chdir host prompt role type other-user command-timeout chroot" ;;
-    doas) TF_WV=uC ;;
-    env) TF_WV=uCSP; TF_WL="unset chdir split-string" ;;
-    timeout) TF_WV=sk; TF_WL="signal kill-after"; TF_WN=1 ;;
-    xargs) TF_WV=ILnPsEdaJRS; TF_WL="max-args max-lines max-procs max-chars eof delimiter arg-file process-slot-var" ;;
-    nice) TF_WV=n; TF_WL="adjustment" ;;
-    time) TF_WV=fo; TF_WL="format output" ;;
-    exec) TF_WV=a ;;
+    sudo) TF_WV=ugCDhprtUTR; TF_WL="user group close-from chdir host prompt role type other-user command-timeout chroot"
+      TF_WF=AbEHiKklnPSsVv; TF_WLF="askpass background preserve-env set-home login list non-interactive preserve-groups stdin shell validate version help remove-timeout reset-timeout" ;;
+    doas) TF_WV=uC; TF_WF=Lns ;;
+    env) TF_WV=uCSP; TF_WL="unset chdir split-string"; TF_WF=i0v; TF_WLF="ignore-environment null debug" ;;
+    timeout) TF_WV=sk; TF_WL="signal kill-after"; TF_WN=1; TF_WF=fpv; TF_WLF="foreground preserve-status verbose" ;;
+    xargs) TF_WV=ILnPsEdaJRS; TF_WL="max-args max-lines max-procs max-chars eof delimiter arg-file process-slot-var"
+      TF_WF=0oprtx; TF_WLF="null open-tty interactive no-run-if-empty verbose exit show-limits" ;;
+    # nice -5 is the old spelling of nice -n 5.
+    nice) TF_WV=n; TF_WL="adjustment"; TF_WF=0123456789 ;;
+    time) TF_WV=fo; TF_WL="format output"; TF_WF=ahlpqv; TF_WLF="append portability quiet verbose" ;;
+    exec) TF_WV=a; TF_WF=cl ;;
     stdbuf) TF_WV=ioe; TF_WL="input output error" ;;
-    ionice) TF_WV=cnpPu; TF_WL="class classdata pid pgid uid" ;;
-    caffeinate) TF_WV=wt ;;
-    chrt|taskset) TF_WN=1 ;;
-    flock) TF_WV=wEc; TF_WL="timeout wait conflict-exit-code command"; TF_WN=1 ;;
-    script) TF_WV=FtTcOIBmoE; TF_WL="command log-out log-in log-io log-timing logging-format output-limit echo"; TF_WN=1 ;;
-    watch) TF_WV=nq; TF_WL="interval equexit" ;;
-    parallel) TF_WV=jSadEINnLPs; TF_WL="jobs sshlogin arg-file delimiter colsep results joblog tmpdir" ;;
+    ionice) TF_WV=cnpPu; TF_WL="class classdata pid pgid uid"; TF_WF=t; TF_WLF="ignore" ;;
+    caffeinate) TF_WV=wt; TF_WF=disu ;;
+    chrt) TF_WN=1; TF_WF=abdfiorRv; TF_WLF="all-tasks batch deadline fifo idle other rr reset-on-fork verbose" ;;
+    taskset) TF_WN=1; TF_WF=ac; TF_WLF="all-tasks cpu-list" ;;
+    flock) TF_WV=wEc; TF_WL="timeout wait conflict-exit-code command"; TF_WN=1; TF_WF=sexunoFv
+      TF_WLF="shared exclusive unlock nonblock nb close no-fork verbose" ;;
+    script) TF_WV=FtTcOIBmoE; TF_WL="command log-out log-in log-io log-timing logging-format output-limit echo"; TF_WN=1
+      TF_WF=aefkq; TF_WLF="append return flush force quiet" ;;
+    watch) TF_WV=nq; TF_WL="interval equexit"; TF_WF=bcegptwx; TF_WLF="beep color errexit chgexit precise no-title no-wrap exec" ;;
+    parallel) TF_WV=jSadEINnLPs; TF_WL="jobs sshlogin arg-file delimiter colsep results joblog tmpdir"; TF_WF=0kquv; TF_WLF="null keep-order quote ungroup verbose" ;;
+    command) TF_WF=p ;;
+    setsid) TF_WF=cfw; TF_WLF="ctty fork wait" ;;
+    unbuffer) TF_WF=p ;;
+    chronic) TF_WF=ev ;;
   esac
 }
 
@@ -541,8 +601,12 @@ _tf_wrapper_grammar() {
 # with a digit, or is NAME=value, is never taken for the program: it is an
 # option's value, an operand (`nice --adjustment 5`) or an assignment. Both
 # err toward reading a later word as the program, which counts a call.
+# TF_PPSURE=1 when every option word on the way was one the grammar knows
+# exactly; an option it does not list, an abbreviated long option (sudo
+# --us) or a bare - leaves it 0, and the position is then not used.
 _tf_prog_pos() {
-  local i="$1" n=${#TOK[@]} w b ops rest c done_opts
+  local i="$1" n=${#TOK[@]} w b ops rest c done_opts name
+  TF_PPSURE=1
   while [ "$i" -lt "$n" ]; do
     w="${TOK[i]}"
     case "$w" in [A-Za-z_]*=*) i=$((i + 1)); continue ;; esac
@@ -557,9 +621,18 @@ _tf_prog_pos() {
       if [ "$done_opts" = 0 ]; then
         case "$w" in
           --) done_opts=1; i=$((i + 1)); continue ;;
-          --*=*) i=$((i + 1)); continue ;;
+          -) TF_PPSURE=0; i=$((i + 1)); continue ;;
+          --*=*)
+            name="${w#--}"; name="${name%%=*}"
+            case " $TF_WL $TF_WLF " in *" $name "*) ;; *) TF_PPSURE=0 ;; esac
+            i=$((i + 1)); continue ;;
           --?*)
-            case " $TF_WL " in *" ${w#--} "*) i=$((i + 2)) ;; *) i=$((i + 1)) ;; esac
+            case " $TF_WL " in
+              *" ${w#--} "*) i=$((i + 2)) ;;
+              *)
+                case " $TF_WLF " in *" ${w#--} "*) ;; *) TF_PPSURE=0 ;; esac
+                i=$((i + 1)) ;;
+            esac
             continue ;;
           -?*)
             rest="${w#-}"; i=$((i + 1))
@@ -567,6 +640,7 @@ _tf_prog_pos() {
               c="${rest:0:1}"; rest="${rest:1}"
               case "$TF_WV" in
                 *"$c"*) [ -n "$rest" ] || i=$((i + 1)); rest="" ;;
+                *) case "$TF_WF" in *"$c"*) ;; *) TF_PPSURE=0 ;; esac ;;
               esac
             done
             continue ;;
@@ -590,7 +664,9 @@ _tf_prog_pos() {
 # wrapper, the word counts as the program only in the program position the
 # wrappers' grammar gives; otherwise it is an argument of the program there
 # (`timeout 5 grep flow-factory.sh x`, `xargs grep -l flow-factory.sh`), and
-# BD_CMDI is that program.
+# BD_CMDI is that program. When an option on the way is one the grammar
+# does not know exactly (TF_PPSURE=0), the script word stays the program,
+# so the call is counted.
 _tf_cmdword() {
   local i
   _bd_command_word _tf_target "$1"
@@ -599,7 +675,7 @@ _tf_cmdword() {
   [ "$i" -lt "${#TOK[@]}" ] || return 0
   _tf_is_script "${TOK[i]}" || _tf_glob_name "${TOK[i]}" || return 0
   _tf_prog_pos "$1"
-  [ "$TF_PP" -lt "$i" ] && BD_CMDI=$TF_PP
+  if [ "$TF_PP" -lt "$i" ] && [ "$TF_PPSURE" = 1 ]; then BD_CMDI=$TF_PP; fi
   return 0
 }
 
@@ -888,6 +964,41 @@ _tf_dispatch() {
   return 0
 }
 
+# _tf_shell_opt <index> — TOK[index] is flock's or script's -c or --command,
+# in any of its spellings (-c <cmd>, -c<cmd>, a bundle such as -xc <cmd>,
+# --command <cmd>, --command=<cmd>, and a prefix of --command such as
+# --comm, which both programs accept when it is not ambiguous; an ambiguous
+# one is read as --command too, which only reads more): TF_SHOPT is the
+# command, its first character 1 when the word it came from is an
+# expansion and 0 otherwise. 1 when the word is no such option. The
+# wrapper is $wrap.
+_tf_shell_opt() {
+  local k="$1" w="${TOK[$1]}" rest c name
+  case "$w" in
+    --?*)
+      name="${w#--}"; name="${name%%=*}"
+      case command in "$name"*) ;; *) return 1 ;; esac
+      case "$w" in *=*) TF_SHOPT="${TOKE[k]:-0}${w#*=}"; return 0 ;; esac
+      k=$((k + 1)); [ "$k" -lt "${#TOK[@]}" ] || return 1
+      TF_SHOPT="${TOKE[k]:-0}${TOK[k]}"; return 0 ;;
+    --|-) return 1 ;;
+    -?*) ;;
+    *) return 1 ;;
+  esac
+  _tf_wrapper_grammar "$wrap"
+  rest="${w#-}"
+  while [ -n "$rest" ]; do
+    c="${rest:0:1}"; rest="${rest:1}"
+    case "$TF_WV" in *"$c"*) ;; *) continue ;; esac
+    # Another option that takes a value takes the rest of the word.
+    [ "$c" = c ] || return 1
+    if [ -n "$rest" ]; then TF_SHOPT="${TOKE[k]:-0}$rest"; return 0; fi
+    k=$((k + 1)); [ "$k" -lt "${#TOK[@]}" ] || return 1
+    TF_SHOPT="${TOKE[k]:-0}${TOK[k]}"; return 0
+  done
+  return 1
+}
+
 # _tf_scan — read TF_CMD by program words: TF_CALLS (person calls), TF_POST=1
 # for a comment post, TF_SCAN_FAIL=1 when a part could not be read, TF_NSEG
 # the number of commands (a shell's -c that only carries a person call is
@@ -906,7 +1017,8 @@ _tf_scan_text() {
   local BD_LANG_DATA=0 BD_BLANK_BODIES=0 BD_SEG_ALT=0 BD_SEG_MARK=0 BD_SPLIT_EXP=0
   local -a TOK=() TOKE=() TOKQ=() BD_HSTR=() BD_RDIR=() BD_WRAPI=()
   local BD_RIN=0 BD_CMDI=0 BD_CODE="" BD_KEPT_BODY=0 BD_UNBALANCED=0
-  local seg segs n i k code more lvl
+  local seg segs n i k code more lvl wrap lim
+  local -a nested=()
   _bd_strip_noncode "$1" || { TF_SCAN_FAIL=1; return 0; }
   code="$BD_CODE"; more="$BD_CODE"
   for lvl in 1 2 3 4; do
@@ -929,7 +1041,7 @@ _tf_scan_text() {
     n=${#TOK[@]}
     _tf_cmdword 0
     i=$BD_CMDI
-    TF_SEGPRE=0; TF_ARGIN=0
+    TF_SEGPRE=0; TF_ARGIN=0; wrap=""; nested=()
     for ((k = 0; k < i && k < n; k++)); do
       case "${TOK[k]}" in
         [A-Za-z_]*=*|--chdir|--chdir=*) TF_SEGPRE=1 ;;
@@ -939,19 +1051,49 @@ _tf_scan_text() {
       # A wrapper's option that holds a command of its own in the same word
       # (env -S'...', --split-string=...) and names the script is a call
       # this reading cannot split. Other options (grep --include=..., rsync
-      # --exclude=...) only name a file. An option whose command is the
-      # next word (env -S '...', flock -c '...') is read where quoted words
-      # that run as commands are.
+      # --exclude=...) only name a file. env -S '...', with its command in
+      # the next word, is read where quoted words that run as commands are
+      # (command-parse.sh counts env among the programs that run their
+      # quoted words).
       if [[ "${TOK[k]}" == --split-string* || "${TOK[k]}" =~ ^-[A-Za-z0-9]*S ]]; then
         _tf_names_file "${TOK[k]}" && TF_CALLS+=("unread	")
       fi
     done
+    # flock -c and --command, and script -c, hand their value to a shell:
+    # the value is read below as a command of its own, as eval's words are,
+    # so a call there is never the whole command. The options are looked
+    # for up to the program the wrappers' grammar gives (a lock file that is
+    # an expansion, "$LOCK", is where _bd_command_word stops, and the -c
+    # after it still runs), so grep's -c in `flock /tmp/l grep -c x` is not
+    # read; when an option on the way is one the grammar does not know,
+    # up to BD_CMDI when that is later.
+    case " ${TOK[*]##*/} " in
+      *" flock "*|*" script "*)
+        _tf_prog_pos 0
+        lim=$TF_PP
+        [ "$TF_PPSURE" = 1 ] || [ "$lim" -ge "$i" ] || lim=$i
+        for ((k = 0; k < lim && k < n; k++)); do
+          case " $_BD_WRAPPERS " in *" ${TOK[k]##*/} "*) wrap="${TOK[k]##*/}"; continue ;; esac
+          case "$wrap" in flock|script) _tf_shell_opt "$k" && nested+=("$TF_SHOPT") ;; esac
+        done ;;
+    esac
     # xargs and parallel add words from their input to the command.
     for k in ${BD_WRAPI[@]+"${BD_WRAPI[@]}"}; do
       case "${TOK[k]##*/}" in xargs|parallel) TF_ARGIN=1 ;; esac
     done
     _tf_dispatch "$i" "$2"
     TF_ARGIN=0
+    for k in ${nested[@]+"${nested[@]}"}; do
+      if [ "${k:0:1}" = 1 ]; then
+        # A command that is an expansion, in a command that names either
+        # file, cannot be read.
+        _tf_names_any "$TF_CMD" && TF_CALLS+=("unread	")
+      elif [ "$2" -ge 4 ]; then
+        _tf_names_any "${k:1}" && TF_CALLS+=("unread	")
+      else
+        _tf_scan_text "${k:1}" "$(($2 + 1))"
+      fi
+    done
   done <<TF_SEGS_EOF
 $segs
 TF_SEGS_EOF
