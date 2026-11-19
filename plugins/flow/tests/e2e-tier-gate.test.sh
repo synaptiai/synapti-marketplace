@@ -3118,6 +3118,25 @@ if _want tg-fac-sourcing; then
     _tg_fac_traced "$(TG_FAC_PAYLOAD "$C")"
     e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced for factory text in another case: $C"
   done
+  # A name that bash reads as the engine's once it has removed quotes and
+  # backslashes, or a pattern that could match only names like the engine's
+  # (the third B9 review, finding 0).
+  for C in '"bin/flow-factor"y.sh status' "flow-factory.s''h status" 'bin/flow-factor\y.sh status' 'ls bin/flow-fac*.sh' \
+           'ls bin/flow-factor?.sh' 'ls bin/flow-fact{ory,}.sh' 'ls bin/_flow_fac*' "python3 -m _flow_fact''ory status" 'ls bin/FLOW-FAC*'; do
+    _tg_fac_traced "$(TG_FAC_PAYLOAD "$C")"
+    e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced for a quoted, escaped or patterned name: $C"
+  done
+  # A payload over 2 KB is cleaned by one sed instead of word by word.
+  TG_FAC_LONG="echo $(printf 'x%.0s' $(seq 1 2100)) && \"bin/flow-factor\"y.sh status"
+  _tg_fac_traced "$(TG_FAC_PAYLOAD "$TG_FAC_LONG")"
+  e2e_expect_equal yes "$(_tg_trace_has_lib)" "sourced for a quoted name in a payload over 2 KB"
+  # Quotes, backslashes and patterns that cannot spell either name, and a
+  # pattern that matches any name, are not factory text: the rules are not
+  # reached, so the factory check costs nothing for them.
+  for C in 'ls *.sh' 'ls build/*' 'grep -n "a*b" x.txt' "echo 'it''s'" 'ls src/[ab].py' 'ls {a,b}.txt' 'printf "%s\\n" x'; do
+    _tg_fac_traced "$(TG_FAC_PAYLOAD "$C")"
+    e2e_expect_equal no "$(_tg_trace_has_lib)" "sourced for an ordinary quoted or patterned command: $C"
+  done
   # A linked worktree: its main checkout has the factory directory.
   ( _e2e_git_env; cd "$E2E_REPO" && git worktree add -q -b wt-branch "$E2E_DIR/linked" ) \
     || _flow_assert_fail "tg-fac-sourcing: could not add the worktree"

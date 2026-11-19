@@ -27,17 +27,18 @@
 # of a name on a volume that ignores case reaches it too.
 #
 # Without jq the path cannot be read: the write is denied when the payload
-# text names the factory directory, absolutely or relative to the
-# repository top (`<runtime dir>/factory` followed by `/` or the end of the
-# string), and allowed otherwise. The text is read in one case, with `\/`
-# read as `/` and `//` and `/./` collapsed, so `.flow//factory`,
-# `.flow/./factory`, `.FLOW/Factory` and `.flow\/factory` are denied. These
-# still pass without jq: a path relative to a folder inside the runtime
-# directory (`factory/x` from `.flow`); a `..` that enters the folder from
-# another one (`.flow/x/../factory/y`); a link to the factory, or to a
-# folder above it, under another name; and a JSON \u escape in the path.
-# The match also denies a write naming another repository's
+# text names the factory directory, absolutely (its built, physical or
+# /private spelling) or relative to the repository top (`<runtime
+# dir>/factory`), followed by `/` or the end of the string, and allowed
+# otherwise (`.flow/factory2` is another folder). The text is read in one
+# case, with `\/` read as `/` and `//` and `/./` collapsed, so
+# `.flow//factory`, `.flow/./factory`, `.FLOW/Factory` and `.flow\/factory`
+# are denied. The match also denies a write naming another repository's
 # `<runtime dir>/factory`, or another case of it on a volume that keeps case.
+# What still passes without jq is the residual recorded in the decision
+# journal (wave 4, "What the text match does not cover"): `x/../factory` and
+# `factory/x` from inside the runtime directory, and a link to the factory
+# directory under another name. A JSON \u escape in the path also passes.
 #
 # Output: nothing (allow), or one PreToolUse deny. Exit 0 always.
 
@@ -103,7 +104,7 @@ if [ "$HAVE_JQ" = 0 ]; then
   done
   for S in "$FDIR" "$FDIR_P" ${FDIR_ALT:+"$FDIR_ALT"}; do
     SL=$(lower "$S") || SL="$S"
-    case "$TEXT" in *"$SL"*) deny "This write names a path that $REASON_TAIL" ;; esac
+    case "$TEXT" in *"$SL/"*|*"$SL\""*) deny "This write names a path that $REASON_TAIL" ;; esac
   done
   RTL=$(lower "$RT") || RTL="$RT"
   case "$TEXT" in

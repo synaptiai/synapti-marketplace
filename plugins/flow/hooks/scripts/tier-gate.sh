@@ -576,9 +576,11 @@ INPUT=$(cat 2>/dev/null) || INPUT=""
 # variable is set in this hook's environment, or the directory
 # <main checkout>/<runtime dir>/factory exists for the repository the command
 # runs in (the main checkout is the parent of the common git directory, so a
-# linked worktree finds it). First the payload must name flow-factory,
-# _flow_factory or /factory at all, in any case, so an ordinary command costs
-# one text match and nothing is resolved for it. A link to the factory
+# linked worktree finds it). First the payload must have factory text
+# (_tg_factory_text below): flow-factory, _flow_factory or /factory in any
+# case, also once quotes and backslashes are removed, or a pattern that
+# could match only names like the engine's. So an ordinary command costs a
+# text match or two and nothing is resolved for it. A link to the factory
 # directory under another name has no such text and is not seen here.
 #
 # The rules file is sourced and _tg_factory_rules is called with INPUT (the
@@ -622,18 +624,91 @@ _tg_in_factory() {
   [ -n "$rt" ] && [ -d "$top/$rt/factory" ]
 }
 
-# The names are matched in any case: a volume that ignores case reaches the
-# factory directory and the engine's files by any case of their names.
-case "$INPUT" in
-  *[Ff][Ll][Oo][Ww]-[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*|*_[Ff][Ll][Oo][Ww]_[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*|*/[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*)
-    if _tg_in_factory; then
-      # shellcheck source=lib/tier-factory.sh
-      if ! . "$SCRIPT_DIR/lib/tier-factory.sh" 2>/dev/null || ! declare -F _tg_factory_rules >/dev/null; then
-        _tg_deny "Flow is in a factory here, and its factory rules (hooks/scripts/lib/tier-factory.sh) could not be loaded, so this command, which names the factory, was not run. Reinstall the flow plugin."
-      fi
-      _tg_factory_rules
-    fi ;;
-esac
+# _tg_factory_text — the payload has factory text. The names are matched in
+# any case: a volume that ignores case reaches the factory directory and the
+# engine's files by any case of their names. Bash removes quotes and
+# backslashes from a word and expands a pattern in it before the program
+# runs, so when the plain match misses, each word that holds a quote, a
+# backslash or a pattern character is matched again with its quotes and
+# backslashes removed ("bin/flow-factory".sh, flow-factor\y.sh,
+# .flow/fac''tory), and a word that holds *, ?, [..] or {..} is read as a
+# pattern (each {..} as *): it counts when it could match flow-factory.sh,
+# _flow_factory.py or _flow_factory and matches none of x, x.sh and x.py.
+# So `bin/flow-fac*.sh` counts, and `*`, `*.sh` and `build/*`, which match
+# any name, do not: resolving the factory for them would slow every such
+# command, and a program word that is such a pattern is left to the
+# engine's own refusal (lib/tier-factory.sh's header). A payload with none
+# of those characters costs one more text match. Bash builtins only, except
+# one sed for a payload over 2 KB: bash 3.2's pattern substitution takes
+# time that grows with the square of the text, so a long text is cleaned
+# once and each short word is cleaned on its own.
+_tg_factory_text() {
+  local t w p words nc=0 r=1 f=0 b='\' re='^(.*)\{([^{}]*)\}(.*)$'
+  case "$INPUT" in
+    *[Ff][Ll][Oo][Ww]-[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*|*_[Ff][Ll][Oo][Ww]_[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*|*/[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*) return 0 ;;
+  esac
+  case "$INPUT" in *"'"*|*'\'*|*[\*\?\[]*|*[!:]\{*) ;; *) return 1 ;; esac
+  t="$INPUT"
+  # The payload is JSON: a quote that is not escaped ends a string, so it
+  # ends a word; an escaped backslash or quote is the command's own, which
+  # bash removes; the line end, tab and carriage return escapes end a word.
+  if [ "${#t}" -gt 2048 ]; then
+    t=$(printf '%s' "$t" | LC_ALL=C sed -e 's/\\\\//g' -e 's/\\"//g' -e 's/\\[ntr]/ /g' -e 's/"/ /g' -e "s/['\\\\]//g") || return 0
+    case "$t" in
+      *[Ff][Ll][Oo][Ww]-[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*|*_[Ff][Ll][Oo][Ww]_[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*|*/[Ff][Aa][Cc][Tt][Oo][Rr][Yy]*) return 0 ;;
+    esac
+  fi
+  case "$-" in *f*) f=1 ;; esac
+  set -f
+  local IFS=$' \t\n\r;&|<>()`=:'
+  words=($t)
+  shopt -q nocasematch && nc=1
+  shopt -s nocasematch
+  for w in ${words[@]+"${words[@]}"}; do
+    case "$w" in *[\"\'\\\*\?\[\{]*) ;; *) continue ;; esac
+    # A last part with no [..] or {..} and a character that is not one of
+    # the names' own (or a quote, a backslash, n for a JSON line end, or
+    # JSON's closing braces) cannot become a name: it is skipped before any
+    # substitution, unless the word has a folder.
+    p="${w##*/}"
+    case "$p" in
+      *[\[\{]*) ;;
+      *[!FfLlOoWwAaCcTtRrYySsHhPpNn._*?\"\'\\\},-]*)
+        # A quote or backslash in a folder name (.flow/fac''tory) still counts.
+        case "$w" in */*[\"\'\\]*|*[\"\'\\]*/*) ;; *) continue ;; esac ;;
+    esac
+    case "$w" in
+      *[\"\'\\]*)
+        w=${w//"$b$b"/}; w=${w//"$b\""/}
+        w=${w//"${b}n"/ }; w=${w//"${b}t"/ }; w=${w//"${b}r"/ }
+        w=${w//\"/ }; w=${w//\'/}; w=${w//"$b"/} ;;
+    esac
+    for w in $w; do
+      case "$w" in
+        *flow-factory*|*_flow_factory*|*/factory*) r=0; break 2 ;;
+        *[\*\?\[\{]*) ;;
+        *) continue ;;
+      esac
+      p="${w##*/}"
+      [ -n "$p" ] && [ "${#p}" -le 255 ] || continue
+      case "$p" in *\{*) while [[ $p =~ $re ]]; do p="${BASH_REMATCH[1]}*${BASH_REMATCH[3]}"; done ;; esac
+      [[ flow-factory.sh == $p || _flow_factory.py == $p || _flow_factory == $p ]] || continue
+      [[ x == $p || x.sh == $p || x.py == $p ]] && continue
+      r=0; break 2
+    done
+  done
+  [ "$nc" = 1 ] || shopt -u nocasematch
+  [ "$f" = 1 ] || set +f
+  return "$r"
+}
+
+if _tg_factory_text && _tg_in_factory; then
+  # shellcheck source=lib/tier-factory.sh
+  if ! . "$SCRIPT_DIR/lib/tier-factory.sh" 2>/dev/null || ! declare -F _tg_factory_rules >/dev/null; then
+    _tg_deny "Flow is in a factory here, and its factory rules (hooks/scripts/lib/tier-factory.sh) could not be loaded, so this command, which names the factory, was not run. Reinstall the flow plugin."
+  fi
+  _tg_factory_rules
+fi
 
 if ! command -v jq >/dev/null 2>&1; then
   # Without jq the payload cannot be parsed, so the text from the command key

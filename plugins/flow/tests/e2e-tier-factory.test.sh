@@ -203,6 +203,18 @@ for S in $TF_SUBS; do
     tf_expect deny "worker, $S, $FORM form"
   done
 done
+# Bash removes quotes and backslashes from the program word, and expands a
+# pattern in it, before it runs: each of these runs the script (plan 2.4
+# rule 1: every command naming either file but the two forms is denied).
+for C in "\"$TF_BIN/flow-factory\".sh cancel 7" "flow-factory.s''h cancel 7" "$TF_BIN/flow-factor\\y.sh cancel 7" \
+         "$TF_BIN/flow-fac*.sh cancel 7" "$TF_BIN/flow-factor?.sh cancel 7" "$TF_BIN/flow-fact{ory,}.sh cancel 7" \
+         "python3 $TF_BIN/_flow_factory.p''y cancel 7" "python3 -m _flow_fact''ory cancel 7" \
+         "\"$TF_BIN/flow-factory\".sh status" "$TF_BIN/flow-fac*.sh status" "$TF_BIN/flow-factor\\y.sh status"; do
+  tf_run FLOW_FACTORY_JOB=issue-7-j1 default "$C"
+  tf_expect deny "worker, a quoted, escaped or patterned script name: $C"
+done
+tf_run FLOW_FACTORY_JOB=issue-7-j1 default 'ls *.sh'
+tf_expect none "worker, a pattern that is not the program"
 tf_run FLOW_FACTORY_DIRECTIVE=issue-7-j1-intake-1 default 'flow-factory.sh cancel 7'
 tf_expect deny "FLOW_FACTORY_DIRECTIVE alone makes a worker"
 tf_run FLOW_FACTORY_DIRECTIVE=issue-7-j1-intake-1 default 'flow-factory.sh context --mode'
@@ -255,9 +267,58 @@ for C in "bash -o pipefail $TF_BIN/flow-factory.sh cancel 7" "bash -O extglob $T
          "python3 -Wignore -X dev -B $TF_BIN/_flow_factory.py cancel 7" "python3 -BW ignore $TF_BIN/_flow_factory.py cancel 7" \
          "python3 --check-hash-based-pycs never $TF_BIN/_flow_factory.py cancel 7" \
          "env PYTHONPATH=$TF_BIN python3 -m _flow_factory cancel 7" "python3 -m_flow_factory cancel 7" "python3 -Bm _flow_factory cancel 7" \
-         "env --split-string='flow-factory.sh cancel 7'" "python3.12 $TF_BIN/_flow_factory.py cancel 7"; do
+         "env --split-string='flow-factory.sh cancel 7'" "python3.12 $TF_BIN/_flow_factory.py cancel 7" \
+         "bash /dev/fd/0 cancel 7 < $TF_BIN/flow-factory.sh" "timeout 5 python3.12 -m _flow_factory cancel 7"; do
   tf_run auto "$C"
   tf_expect deny "auto mode, an interpreter option with a value: $C"
+done
+# Each wrapper runs the program after its own options, their values and its
+# own operands (timeout's duration, flock's file, chrt's priority, taskset's
+# mask, script's file), so the script there is a call. An abbreviated long
+# option (nice --adj, timeout --kill) leaves its number to be read as a
+# value, never as the program.
+for C in 'flock /tmp/l flow-factory.sh cancel 7' 'sudo -u x flow-factory.sh cancel 7' 'nice -n 5 flow-factory.sh cancel 7' \
+         'nice --adjustment 5 flow-factory.sh cancel 7' 'script -q f flow-factory.sh cancel 7' 'watch -n 2 flow-factory.sh cancel 7' \
+         'timeout -k 1 5 flow-factory.sh cancel 7' 'chrt -f 1 flow-factory.sh cancel 7' 'taskset -c 0 flow-factory.sh cancel 7' \
+         'sudo timeout 5 flow-factory.sh cancel 7' 'sudo -s flow-factory.sh cancel 7' 'env -i A=1 flow-factory.sh cancel 7' \
+         'stdbuf -oL flow-factory.sh cancel 7' 'ionice -c 3 flow-factory.sh cancel 7' 'caffeinate -i flow-factory.sh cancel 7' \
+         'xargs -n 1 flow-factory.sh cancel' 'parallel flow-factory.sh cancel ::: 7' "env -S 'flow-factory.sh cancel 7'" \
+         "env -S'flow-factory.sh cancel 7'" 'doas -u x flow-factory.sh cancel 7' 'command flow-factory.sh cancel 7' \
+         'nice --adj 5 flow-factory.sh cancel 7' 'timeout --kill 1 5 flow-factory.sh cancel 7'; do
+  tf_run auto "$C"
+  tf_expect deny "auto mode, a wrapper's program: $C"
+done
+# Bash removes quotes and backslashes from the program word and expands a
+# pattern in it before it runs (finding 0 of the third B9 review). A quoted
+# or escaped name reads as the script; a pattern that could match it cannot
+# be read, so it is denied in default mode too.
+TF_SPELLED=("\"$TF_BIN/flow-factory\".sh cancel 7" "flow-factory.s''h cancel 7" "$TF_BIN/flow-factor\\y.sh cancel 7" \
+            "python3 $TF_BIN/_flow_factory.p''y cancel 7" "python3 -m _flow_fact''ory cancel 7" "$TF_BIN/FLOW-\"FACTORY\".sh cancel 7")
+TF_PATTERNED=("$TF_BIN/flow-fac*.sh cancel 7" "$TF_BIN/flow-factor?.sh cancel 7" "$TF_BIN/flow-factor[y].sh cancel 7" \
+              "$TF_BIN/flow-fact{ory,}.sh cancel 7" "python3 $TF_BIN/_flow_fac*.py cancel 7" "source $TF_BIN/flow-fac*.sh cancel 7" \
+              "timeout 5 $TF_BIN/flow-fac*.sh cancel 7" "cat \"$TF_BIN/flow-factory\".sh | bash -s cancel 7" \
+              "bash -s cancel 7 < $TF_BIN/flow-fac*.sh" "python3 -m _flow_fac* cancel 7" "$TF_BIN/flow-fac*.sh status")
+for C in "${TF_SPELLED[@]}" "${TF_PATTERNED[@]}"; do
+  tf_run auto "$C"
+  tf_expect deny "auto mode, a quoted, escaped or patterned script name: $C"
+done
+for C in "${TF_SPELLED[@]}"; do
+  tf_run default "$C"
+  tf_expect ask "default mode, a quoted or escaped script name as the whole command: $C"
+done
+for C in "${TF_PATTERNED[@]}"; do
+  tf_run default "$C"
+  tf_expect deny "default mode, a patterned script name: $C"
+  e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "the deny text for: $C"
+done
+# Any later word of a person call that bash expands cannot be shown as it
+# will run, so it is denied in default mode too (design person_channels L30:
+# the ask shows the spec hash).
+for C in 'flow-factory.sh approve-spec 7 --spec-hash $H' 'flow-factory.sh cancel $N' 'flow-factory.sh cancel 7*' \
+         'flow-factory.sh feedback 7 "$X"' 'flow-factory.sh rework 7 *' "flow-factory.sh cancel '\$N'"; do
+  tf_run default "$C"
+  tf_expect deny "default mode, a later word bash expands: $C"
+  e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "the deny text for: $C"
 done
 tf_run FLOW_FACTORY_JOB=issue-7-j1 default "python3 -m _flow_factory cancel 7"
 tf_expect deny "worker: the engine run as a module"
@@ -365,7 +426,12 @@ for M in default auto; do
            'flow-factory.sh next --executor interactive' 'flow-factory.sh wait --max-seconds 5' \
            'flow-factory.sh question q1 --prompt' 'flow-factory.sh status' 'flow-factory.sh status --intent x' \
            'flow-factory.sh probe --environment' 'flow-factory.sh status --intent confirm' \
-           'flow-factory.sh question q1 --prompt "cancel it"' 'echo "flow-factory.sh cancel 7" > notes.txt'; do
+           'flow-factory.sh question q1 --prompt "cancel it"' 'echo "flow-factory.sh cancel 7" > notes.txt' \
+           "find . -name '*.md' | xargs grep -l flow-factory.sh" 'git ls-files | xargs wc -l bin/flow-factory.sh' \
+           'timeout 5 grep -rn --include=flow-factory.sh retry .' 'sudo rsync -a --exclude=_flow_factory.py a/ b/' \
+           'timeout 5 grep flow-factory.sh cancel' 'nice grep flow-factory.sh cancel' 'sudo grep flow-factory.sh cancel' \
+           'flock /tmp/l grep flow-factory.sh cancel' 'env grep flow-factory.sh cancel' 'xargs grep -l flow-factory.sh' \
+           'nice -n 5 grep flow-factory.sh cancel' "ls $TF_BIN/flow-fac*.sh" 'ls *.sh' "grep -n 'flow-factory.s* cancel' docs/"; do
     tf_run "$M" "$C"
     tf_expect none "$M mode, untiered: $C"
   done
@@ -534,21 +600,41 @@ for C in "flow-factory.sh con''firm x" 'flow-factory.sh "con"firm x' 'flow-facto
          "flow-factory.sh \$'\\x63onfirm' x" "flow-factory.sh answer NI-1 --te''xt yes" 'flow-factory.sh answer NI-1 --tex yes' \
          'flow-factory.sh question q1 --prompt "cancel it"' 'flow-factory.sh status; flow-factory.sh cancel 7' \
          'flow-factory.sh status && true' 'grep -n "flow-factory.sh reject" docs/' 'flow-factory.sh status $X' \
-         'flow-factory.sh status > out.txt' 'bash flow-factory.sh status' "python3 $TF_BIN/_flow_factory.py status"; do
+         'flow-factory.sh status > out.txt' 'bash flow-factory.sh status' "python3 $TF_BIN/_flow_factory.py status" \
+         "flow-factory.sh answer NI-1 --choice 1 {--text,yes}" 'flow-factory.sh answer NI-1 --choice 1 ?-text yes' \
+         "\"$TF_BIN/flow-factory\".sh cancel 7" "flow-factory.s''h cancel 7" "$TF_BIN/flow-factor\\y.sh cancel 7" \
+         "$TF_BIN/flow-fac*.sh cancel 7" "$TF_BIN/flow-factor?.sh cancel 7" "python3 $TF_BIN/_flow_factory.p''y cancel 7" \
+         "python3 -m _flow_fact''ory cancel 7" "$TF_BIN/flow-fac*.sh status" "bash -s cancel 7 < $TF_BIN/flow-fac*.sh"; do
   tf_run "PATH=$TF_NOJQ" default "$C"
   tf_expect deny "no jq, not a plain untiered command: $C"
 done
-# The deny shows the command as written: a value with an escaped quote is
-# not cut at that quote (plan 2.4: the terminal text names the command).
-tf_run "PATH=$TF_NOJQ" default 'flow-factory.sh question q1 --prompt "cancel it" --x'
-case "$(tf_reason)" in
-  *'--prompt \"cancel it\" --x'*) _e2e_result pass "no jq: the deny shows the whole command, past an escaped quote" ;;
-  *) _e2e_result fail "no jq: the deny shows the whole command, past an escaped quote (got: $(tf_reason))" ;;
-esac
+tf_run "PATH=$TF_NOJQ" default 'ls *.sh'
+tf_expect none "no jq: a pattern that is not the program"
+# The deny shows the command as written (plan 2.4: the terminal text names
+# the command): the JSON escapes \" and \\ are read back, and the value is
+# not cut at an escaped quote.
+for C in 'flow-factory.sh question q1 --prompt "cancel it" --x' 'flow-factory.sh "cancel" 7' 'flow-factory.sh can\cel 7'; do
+  tf_run "PATH=$TF_NOJQ" default "$C"
+  tf_expect deny "no jq, the deny text: $C"
+  e2e_expect_equal "$(tf_terminal "$C")" "$(tf_reason)" "no jq: the deny shows the whole command: $C"
+done
+# A JSON escape the hook does not read back without jq (\u), or two command
+# keys, leave the command unknown: the deny says so instead of showing JSON.
+TF_UNREAD_TEXT='run it in a terminal outside Claude Code: the command, which this hook could not read without jq'
+e2e_run_hook "PATH=$TF_NOJQ" "$TF_HOOK" "{\"session_id\":\"s-1\",\"cwd\":\"$E2E_REPO\",\"permission_mode\":\"default\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"flow-factory.sh can\\u0063el 7\"}}"
+tf_expect deny "no jq: a \\u escape in the command"
+e2e_expect_equal "$TF_UNREAD_TEXT" "$(tf_reason)" "no jq: the deny text for a \\u escape"
 # A payload with two command keys: jq reads the last one, so the first one
 # (here an untiered command) cannot be taken for the command.
 e2e_run_hook "PATH=$TF_NOJQ" "$TF_HOOK" "{\"session_id\":\"s-1\",\"cwd\":\"$E2E_REPO\",\"permission_mode\":\"default\",\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"flow-factory.sh status\",\"command\":\"flow-factory.sh cancel 7\"}}"
 tf_expect deny "no jq: a payload with two command keys"
+e2e_expect_equal "$TF_UNREAD_TEXT" "$(tf_reason)" "no jq: the deny text for two command keys"
+for C in "\"$TF_BIN/flow-factory\".sh status" "$TF_BIN/flow-fac*.sh status" "flow-factory.s''h context --mode"; do
+  tf_run "PATH=$TF_NOJQ" FLOW_FACTORY_JOB=issue-7-j1 default "$C"
+  tf_expect deny "no jq, worker: a quoted or patterned script name: $C"
+done
+tf_run "PATH=$TF_NOJQ" FLOW_FACTORY_JOB=issue-7-j1 default 'ls *.sh'
+tf_expect none "no jq, worker: a pattern that is not the program"
 tf_run "PATH=$TF_NOJQ" FLOW_FACTORY_JOB=issue-7-j1 default 'flow-factory.sh context --mode'
 tf_expect none "no jq, worker: context --mode"
 tf_run "PATH=$TF_NOJQ" FLOW_FACTORY_JOB=issue-7-j1 default 'flow-factory.sh status'
@@ -586,6 +672,11 @@ tf_run default "ls '$TF_F'"
 tf_expect deny "ordinary session, the folder itself in quotes"
 tf_run default "ls $E2E_REPO/.flow/factory2/"
 tf_expect none "a sibling folder whose name starts with factory"
+# Bash removes quotes and backslashes before the program sees the path.
+for C in "cat $E2E_REPO/.flow/fac''tory/jobs/issue-5/job.json" "cat $E2E_REPO/.flow/\"factory\"/jobs/issue-5/job.json" "cat $E2E_REPO/.flow/fact\\ory/x"; do
+  tf_run default "$C"
+  tf_expect deny "ordinary session, a quoted or escaped spelling of the folder: $C"
+done
 # The directory is compared by identity (device and inode), not spelling
 # (decision of 2026-11-19 on the B9 review): a .. path, a link to it and, on
 # a volume that ignores case, another case all reach it.
@@ -722,9 +813,20 @@ done
 # A JSON escape of / (a payload jq would read as .flow/factory/x.json).
 e2e_run_hook "PATH=$TF_NOJQ" "$TF_GUARD" "{\"cwd\":\"$E2E_REPO\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\".flow\\/factory\\/x.json\",\"content\":\"x\"}}"
 tf_expect deny "no jq: a path naming the factory with \\/ escapes"
-for P in .flow/factory2/x.json src/factory/x.json .flow//factory2/x.json; do
+for P in .flow/factory2/x.json src/factory/x.json .flow//factory2/x.json "$E2E_REPO/.flow/factory2/x.json" "$E2E_REPO/.flow/factory.bak/x.json"; do
   tf_guard "PATH=$TF_NOJQ" Write file_path "$P"
-  tf_expect none "no jq: a relative path naming another folder: $P"
+  tf_expect none "no jq: a path naming another folder: $P"
+done
+# A runtime directory that is a link to a folder whose name has capitals:
+# without jq the factory's physical path is matched in any case, as the
+# payload text is.
+mkdir -p "$E2E_DIR/Real/FlowData/factory/jobs"
+( _e2e_git_env; cd "$E2E_DIR" && git init -q linkrepo ) || _flow_assert_fail "$E2E_NAME: could not make the linked repository"
+ln -s "$E2E_DIR/Real/FlowData" "$E2E_DIR/linkrepo/.flow"
+TF_LP=$(cd "$E2E_DIR/Real/FlowData/factory" && pwd -P)
+for P in "$E2E_DIR/Real/FlowData/factory/jobs/x" "$TF_LP/jobs/x"; do
+  tf_guard "PATH=$TF_NOJQ" "FLOW_FACTORY_MAIN=$E2E_DIR/linkrepo" Write file_path "$P"
+  tf_expect deny "no jq, a linked runtime directory: the factory's physical path: $P"
 done
 # The directory is compared by identity (decision of 2026-11-19): on a
 # volume that ignores case, another case of a folder on the path is the
