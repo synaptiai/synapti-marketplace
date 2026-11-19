@@ -33,6 +33,14 @@ direct child with the result record on stdin instead, and the wrapper
 answers in shell. The launcher never sets revoked_at: only the engine
 revokes a lease.
 
+An intake judge directive (plan 1b, B11) is launched the same way, with no
+clone, io folder, template or stage budget: the launcher runs
+bin/flow-judge.sh --judge intake with the model (judges.intakeModel, else the
+probe record's) and timeout fixed at claim time, in an environment that
+judge_env builds anew, gives it intake_stdin(issue.md, fact sheet), and
+maps its reply with _flow_factory_intake.map_result into a judge_* or
+stage_failed pending event, charging the reply's total_cost_usd.
+
 Refusals print one line and exit 5 (plan 1a, 2.6), or exit 4 for report.
 Refusals from the probe gate, a missing prompt template, the stage budget
 and a judge or directive kind also set the directive's not_started_reason
@@ -81,6 +89,7 @@ import _flow_factory as ff
 from _flow_factory import Refused
 import _flow_factory_jobs as jobs
 import _flow_factory_git as fgit
+import _flow_factory_intake as intake
 import _flow_factory_schema as schema
 # The one start-time form every reader and writer of a lease compares.
 from _flow_factory_caller import lstart
@@ -113,6 +122,11 @@ GONE_AFTER_KILL_SECONDS = 30
 HEARTBEAT_LOCK_SECONDS = 5
 POLL_SECONDS = 0.2
 USAGE_LIMIT_PAUSE_SECONDS = 3600
+# The intake judge: the launcher's own limit is the judge's timeout plus
+# this margin (plan B11 step 2), and a reply longer than the limit is
+# malformed.
+JUDGE_MARGIN_SECONDS = 60
+JUDGE_REPLY_LIMIT = 4 * 1024 * 1024
 # The {reason} of resume.prompt.md, by the row that relaunched the stage
 # (the only rows that resume: 39, 39l, 44, 44r).
 RESUME_REASONS = {
@@ -304,6 +318,23 @@ def worker_env(base, *, record_interpreter, install, job, directive, paths, extr
     return env
 
 
+def judge_env(base, *, record_interpreter):
+    """The intake judge's environment, built from nothing as worker_env
+    builds the worker's (plan B11 step 2): the keep list and patterns from the
+    launcher's own environment (HOME among them), PATH through worker_path,
+    no never-passed name (CLAUDE_HOOK_GOAL_JUDGE_MODE among them, which would
+    make flow-judge.sh refuse) and none of the job variables: the judge is
+    not a worker and has no tools."""
+    env = {k: base[k] for k in KEEP_ENV_NAMES if k in base}
+    for k, v in base.items():
+        if KEEP_ENV_PATTERN.match(k):
+            env[k] = v
+    for k in NEVER_PASSED:
+        env.pop(k, None)
+    env["PATH"] = worker_path(record_interpreter, base.get("PATH", ""))
+    return env
+
+
 def worker_command(claude, *, install, job, directive, model):
     """The worker's claude -p argv (plan 2.10; no --max-turns, amendments
     A.6). The prompt goes on stdin."""
@@ -409,10 +440,15 @@ def cmd_launch(argv):
         # record: next starts launch with its output on /dev/null.
         try:
             kind = directive["kind"]
-            if kind != "worker":
+            # Phase 1b launches the intake judge; other judges and engine
+            # directives come later.
+            judge = kind == "judge" and stage == "intake"
+            if kind != "worker" and not judge:
                 return _not_started(paths, n, job_key, directive, "kind_not_built",
                                     f"FACTORY_REFUSED=kind_not_built directive={did} kind={kind}")
-            if not directive.get("session_id"):
+            # Every judge directive has a null session_id (create_directive):
+            # flow-judge.sh starts a session of its own.
+            if not judge and not directive.get("session_id"):
                 raise Refused(f"directive_unknown directive={did}")
             # The probe gate (T10, plan 2.12). A missing module refuses: an
             # unchecked record never launches.
@@ -430,49 +466,12 @@ def cmd_launch(argv):
             line = staleness.launch_gate(paths.fdir, kind, jobs.setting)
             if line:
                 return _not_started(paths, n, job_key, directive, "probes_stale", line)
-            plugin = ff.PLUGIN_ROOT
-            if not os.path.isfile(template_path(plugin, directive)):
-                return _not_started(paths, n, job_key, directive, "prompt_missing",
-                                    f"FACTORY_REFUSED=prompt_missing stage={stage}")
-            if _inside(plugin, paths.main) or _inside(plugin, job.get("worktree")):
-                raise Refused("plugin_inside_repository")
-            io_dir = job.get("io_dir")
-            if not isinstance(io_dir, str) or not os.path.isabs(io_dir) or os.path.islink(io_dir) \
-                    or not os.path.isdir(io_dir):
-                raise Refused(f"io_dir_missing directive={did}")
-            worktree = job.get("worktree")
-            if not isinstance(worktree, str) or not os.path.isabs(worktree) or os.path.islink(worktree) \
-                    or not os.path.isdir(worktree):
-                raise Refused(f"worktree_missing directive={did}")
-            if directive["start_mode"] == "resume" and not (job.get("sessions") or {}).get(stage):
-                raise Refused(f"resume_session_missing directive={did} stage={stage}")
-            budget = jobs.setting(f"flow.factory.worker.stages.{stage}.maxBudgetUsd")
-            if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
-                raise Refused(f"stage_budget_unset stage={stage}")
-            spent = (job.get("cost") or {}).get("stage_usd", {}).get(stage, 0)
-            allowance = jobs.turn_allowance(job)
-            limit = jobs.launch_limit(budget, spent, allowance)
-            if limit is None:
-                return _not_started(paths, n, job_key, directive, "stage_budget_exhausted",
-                                    jobs.stage_budget_line(stage, budget, spent, allowance))
-            model = _model(directive, record)
-            if not model:
-                raise Refused(f"model_unknown directive={did} next: set flow.factory.worker.model or "
-                              "run flow-factory.sh probe --platform")
-            # in/ first: a refusal there leaves the tree as it was, so a retry
-            # still finds the dirty tree and snapshots it.
-            try:
-                rewrite_in(paths, n, job)
-            except (OSError, JournalAtomicError) as e:
-                raise Refused(f"io_dir_unwritable directive={did} {getattr(e, 'strerror', None) or e}")
-            if directive["start_mode"] == "fresh":
-                snap = _fresh_tree(paths, n, job, did)
-                if snap:
-                    directive["snapshot_ref"] = snap
-            directive["started_at"] = _utc()
-            directive["max_budget_usd"] = _num(limit)
-            directive["model"] = model
-            _write_checked(_directive_path(paths, n, did), directive, None)
+            if judge:
+                _claim_judge(paths, n, did, directive, record)
+            else:
+                status = _claim_worker(paths, n, job_key, did, stage, directive, job, record)
+                if status is not None:
+                    return status
         except Refused as r:
             jobs.append_event(paths, n, {"type": "launch_not_started", "job": job_key, "directive": did,
                                          "reason": str(r).split()[0], "detail": str(r)})
@@ -480,6 +479,97 @@ def cmd_launch(argv):
     _spawn(interpreter, paths.fdir, did)
     _print(f"LAUNCHED directive={did}")
     return 0
+
+
+def _claim_worker(paths, n, job_key, did, stage, directive, job, record):
+    """The worker half of cmd_launch, under the job lock: the exit status of
+    a launch that is not started, else None once the directive is claimed.
+    A Refused goes to cmd_launch, which records it."""
+    plugin = ff.PLUGIN_ROOT
+    if not os.path.isfile(template_path(plugin, directive)):
+        return _not_started(paths, n, job_key, directive, "prompt_missing",
+                            f"FACTORY_REFUSED=prompt_missing stage={stage}")
+    if _inside(plugin, paths.main) or _inside(plugin, job.get("worktree")):
+        raise Refused("plugin_inside_repository")
+    io_dir = job.get("io_dir")
+    if not isinstance(io_dir, str) or not os.path.isabs(io_dir) or os.path.islink(io_dir) \
+            or not os.path.isdir(io_dir):
+        raise Refused(f"io_dir_missing directive={did}")
+    worktree = job.get("worktree")
+    if not isinstance(worktree, str) or not os.path.isabs(worktree) or os.path.islink(worktree) \
+            or not os.path.isdir(worktree):
+        raise Refused(f"worktree_missing directive={did}")
+    if directive["start_mode"] == "resume" and not (job.get("sessions") or {}).get(stage):
+        raise Refused(f"resume_session_missing directive={did} stage={stage}")
+    budget = jobs.setting(f"flow.factory.worker.stages.{stage}.maxBudgetUsd")
+    if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
+        raise Refused(f"stage_budget_unset stage={stage}")
+    spent = (job.get("cost") or {}).get("stage_usd", {}).get(stage, 0)
+    allowance = jobs.turn_allowance(job)
+    limit = jobs.launch_limit(budget, spent, allowance)
+    if limit is None:
+        return _not_started(paths, n, job_key, directive, "stage_budget_exhausted",
+                            jobs.stage_budget_line(stage, budget, spent, allowance))
+    model = _model(directive, record)
+    if not model:
+        raise Refused(f"model_unknown directive={did} next: set flow.factory.worker.model or "
+                      "run flow-factory.sh probe --platform")
+    # in/ first: a refusal there leaves the tree as it was, so a retry
+    # still finds the dirty tree and snapshots it.
+    try:
+        rewrite_in(paths, n, job)
+    except (OSError, JournalAtomicError) as e:
+        raise Refused(f"io_dir_unwritable directive={did} {getattr(e, 'strerror', None) or e}")
+    if directive["start_mode"] == "fresh":
+        snap = _fresh_tree(paths, n, job, did)
+        if snap:
+            directive["snapshot_ref"] = snap
+    directive["started_at"] = _utc()
+    directive["max_budget_usd"] = _num(limit)
+    directive["model"] = model
+    _write_checked(_directive_path(paths, n, did), directive, None)
+    return None
+
+
+def _judge_model(record):
+    """flow.factory.judges.intakeModel (user-only), else the probe record's
+    platform model (plan 2.5); never flow.factory.worker.model."""
+    m = jobs.setting("flow.factory.judges.intakeModel")
+    if isinstance(m, str) and m:
+        return m
+    keyed = ((record.get("groups") or {}).get("platform") or {}).get("keyed_on") or {}
+    m = keyed.get("model")
+    return m if isinstance(m, str) and m else None
+
+
+def _judge_timeout():
+    """flow.factory.worker.stages.intake.timeoutSeconds (user-only, a whole
+    number of at least 1), else 1800 (plan 2.5)."""
+    t = jobs.setting("flow.factory.worker.stages.intake.timeoutSeconds")
+    return t if isinstance(t, int) and not isinstance(t, bool) and t > 0 else 1800
+
+
+def issue_md_path(paths, n):
+    """J/in-copies/issue.md, which row 66i writes before the judge runs."""
+    return os.path.join(_job_dir(paths, n), "in-copies", "issue.md")
+
+
+def _claim_judge(paths, n, did, directive, record):
+    """Claim an intake judge directive (plan B11 step 2). It needs no clone,
+    io folder, prompt template or stage budget (the judge has no tools and
+    no --max-budget-usd); it needs issue.md. The model and timeout are fixed
+    here and written into the directive. Under the job lock."""
+    path = issue_md_path(paths, n)
+    if not os.path.isfile(path) or os.path.islink(path):
+        raise Refused(f"issue_md_missing directive={did}")
+    model = _judge_model(record)
+    if not model:
+        raise Refused(f"model_unknown directive={did} next: set flow.factory.judges.intakeModel or run "
+                      "flow-factory.sh probe --platform")
+    directive["started_at"] = _utc()
+    directive["model"] = model
+    directive["timeout_seconds"] = _judge_timeout()
+    _write_checked(_directive_path(paths, n, did), directive, None)
 
 
 def _fresh_tree(paths, n, job, did):
@@ -603,7 +693,8 @@ class Launcher:
         path = _lease_path(self.paths, self.n, self.did)
         if self.lease is None:
             now = _utc()
-            self.lease = {"directive": self.did, "kind": "worker", "host": socket.gethostname(),
+            kind = (self.directive or {}).get("kind") or "worker"
+            self.lease = {"directive": self.did, "kind": kind, "host": socket.gethostname(),
                           "launcher_pid": self.pid, "launcher_start": self.start, "started_at": now,
                           "heartbeat_at": now, "child_pid": None, "child_pgid": None, "child_start": None,
                           "revoked_at": None}
@@ -648,10 +739,14 @@ class Launcher:
             job = jobs.read_job(self.paths, self.n)
             if not isinstance(directive, dict) or not isinstance(job, dict) or not directive.get("started_at"):
                 raise Refused(f"directive_unknown directive={self.did}")
+            self.directive = directive
             self.write_lease()
         self.directive, self.job = directive, job
         record = _record(self.paths)
         self.interpreter = record.get("interpreter") or ""
+        if directive.get("kind") == "judge":
+            self.run_judge()
+            return
         plugin = ff.PLUGIN_ROOT
         stage = directive["stage"]
         extra = jobs.setting("flow.factory.worker.extraEnv") or []
@@ -692,6 +787,96 @@ class Launcher:
                              heartbeat_at=_utc())
         timed_out = self.watch(timeout, heartbeat, stage)
         self.finish(timed_out)
+
+    def run_judge(self):
+        """The intake judge (plan B11 step 2): bin/flow-judge.sh --judge
+        intake with the directive's model and timeout, in an environment
+        built from nothing (judge_env), its stdin intake_stdin(issue.md, fact
+        sheet), its stdout kept as results/<id>.reply.json. The launcher's
+        own limit is the timeout plus JUDGE_MARGIN_SECONDS, so flow-judge.sh's
+        timeout(1) fires first and this one only catches a hung
+        flow-judge.sh."""
+        directive, job = self.directive, self.job
+        heartbeat = jobs.setting("flow.factory.heartbeatSeconds")
+        heartbeat = heartbeat if isinstance(heartbeat, int) and not isinstance(heartbeat, bool) and heartbeat > 0 \
+            else 60
+        timeout = directive.get("timeout_seconds") or _judge_timeout()
+        try:
+            issue_md = _read_with_no_follow(issue_md_path(self.paths, self.n))
+        except (JournalAtomicError, UnicodeDecodeError) as e:
+            raise Refused(f"issue_md_unreadable directive={self.did} {e}")
+        stdin = intake.intake_stdin(issue_md, intake.fact_sheet(job))
+        env = judge_env(dict(os.environ), record_interpreter=self.interpreter)
+        cmd = [os.path.join(ff.BIN_DIR, "flow-judge.sh"), "--judge", "intake", "--model", directive["model"],
+               "--timeout-seconds", str(timeout)]
+        _real_dir(self.rdir)
+        prompt_path = os.path.join(self.rdir, self.did + ".prompt.md")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+        with os.fdopen(os.open(prompt_path, flags, 0o600), "wb") as f:
+            f.write(stdin)
+        self.stream = os.path.join(self.rdir, self.did + ".reply.json")
+        with open(prompt_path, "rb") as pin, \
+                os.fdopen(os.open(self.stream, flags, 0o600), "wb") as sout, \
+                os.fdopen(os.open(os.path.join(self.rdir, self.did + ".stderr.log"), flags, 0o600), "wb") as serr:
+            self.proc = subprocess.Popen(cmd, stdin=pin, stdout=sout, stderr=serr, cwd=self.paths.main, env=env,
+                                         start_new_session=True)
+        self.pgid = self.proc.pid
+        child_start = None
+        for _ in range(3):
+            child_start = lstart(self.proc.pid)
+            if child_start or self.proc.poll() is not None:
+                break
+            time.sleep(0.2)
+        with jobs.job_lock(self.paths, self.n):
+            self.write_lease(child_pid=self.proc.pid, child_pgid=self.pgid, child_start=child_start,
+                             heartbeat_at=_utc())
+        timed_out = self.watch(timeout + JUDGE_MARGIN_SECONDS, heartbeat, "intake")
+        self.finish(timed_out)
+
+    def finish_judge(self, timed_out):
+        """The judge's result (plan 5.3 "Judge reply"): map_result over its
+        stdout; a judge_* reply is written as outcome completed, event null
+        and the validated reply as judge, with a pending judge_* event; any
+        other stdout (a timeout included) as outcome error (timeout when the
+        launcher's own limit fired), event stage_failed, no judge, with a
+        pending stage_failed. The cost is the reply's total_cost_usd
+        whenever it is a number, a malformed reply's included; a reply with
+        no cost charges nothing. The judge has no session to resume, so none
+        is recorded. Applied in this process whether or not the recorded
+        interpreter is still there: the engine's shell report path cannot
+        carry a judge reply."""
+        try:
+            with open(self.stream, "rb") as f:
+                out = f.read(JUDGE_REPLY_LIMIT + 1)
+        except OSError:
+            out = b""
+        if len(out) > JUDGE_REPLY_LIMIT:
+            out = b""
+        event, judge = intake.map_result(out) if not timed_out else (intake.FAILED, None)
+        env = intake.reply_envelope(out) or {}
+        cost = ff.cost_number(env.get("total_cost_usd"))
+        charged = jobs.usd(cost) if cost is not None else None
+        charge = {"charged_usd": charged, "basis": "first_total" if charged is not None else None,
+                  "total_cost_usd": charged, "since_last_usd": None}
+
+        def typed(key, kinds):
+            v = env.get(key)
+            return v if isinstance(v, kinds) and not (kinds is not bool and isinstance(v, bool)) else None
+
+        failed = judge is None
+        outcome = ("timeout" if timed_out else "error") if failed else "completed"
+        record = {"directive": self.did, "outcome": outcome, "written_at": _utc(),
+                  "event": "stage_failed" if failed else None, "session_id": None,
+                  "num_turns": typed("num_turns", int), "api_error_status": None,
+                  "is_error": typed("is_error", bool), "permission_denials": typed("permission_denials", list),
+                  "terminal_reason": typed("terminal_reason", str), "charged_usd": _num(charged),
+                  "charge_basis": charge["basis"], "total_cost_usd": _num(charged), "since_last_usd": None}
+        if record["num_turns"] is not None and record["num_turns"] < 0:
+            record["num_turns"] = None
+        if not failed:
+            record["judge"] = judge
+        self.apply(record, charge, None, None, event, outcome)
+        self.applied = True
 
     def watch(self, timeout, heartbeat, stage):
         """Wait until claude has ended and its whole process group is gone,
@@ -744,6 +929,9 @@ class Launcher:
         return "completed", "stage_succeeded"
 
     def finish(self, timed_out):
+        if self.directive.get("kind") == "judge":
+            self.finish_judge(timed_out)
+            return
         directive, job = self.directive, self.job
         stage, mode = directive["stage"], directive["start_mode"]
         events = ff.stream_events(self.stream)
@@ -811,6 +999,9 @@ class Launcher:
             # charged() check reads it): it is not charged again.
             self.log(f"report already charged in job.json for {self.did}; not charged again")
             self.apply_done.add("job")
+        if "job" not in self.apply_done and charge["charged_usd"] is None:
+            # A judge reply with no cost: nothing to charge.
+            self.apply_done.update(("job", "charge_event"))
         if "job" not in self.apply_done:
             charged_usd = charge["charged_usd"]
             cost["usd_total"] = jobs.usd(cost.get("usd_total", 0)) + charged_usd
@@ -908,7 +1099,9 @@ class Launcher:
     def _bare_result(self):
         started = self.proc is not None
         charge = {"charged_usd": None, "basis": None}
-        if started:
+        # A judge has no budget limit to charge (its directive's
+        # max_budget_usd is null): nothing is charged.
+        if started and (self.directive or {}).get("kind") != "judge":
             job = jobs.read_job(self.paths, self.n)
             allowance = jobs.turn_allowance(job if isinstance(job, dict) else {})
             charge = jobs.charge_run(None, self.directive["start_mode"], None, self.directive["max_budget_usd"],

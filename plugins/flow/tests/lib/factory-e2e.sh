@@ -768,6 +768,40 @@ fe_worker_says() {
   printf 'worker stand-in: %s\n' "${*:-no knobs}" | _e2e_art
 }
 
+# fe_judge_says [--cost <usd>] <reply>... — the intake judge's replies, one
+# per launch: write judge-result beside the worker claude stand-in, line n
+# for launch n. Each <reply> is the judge's schema object, and the line
+# written is the claude CLI's --output-format json envelope around it, which
+# bin/flow-judge.sh prints unchanged (plan 2.7):
+# {"type":"result","subtype":"success","is_error":false,
+#  "structured_output":<reply>,"total_cost_usd":<usd>,"session_id":"judge-<n>"},
+# <usd> 0.01 unless --cost gives it.
+fe_judge_says() {
+  local cost=0.01 n=0 r line out=""
+  if [ "${1:-}" = --cost ]; then cost="$2"; shift 2; fi
+  for r in "$@"; do
+    n=$((n + 1))
+    if ! line=$(jq -cn --argjson r "$r" --argjson c "$cost" --arg s "judge-$n" \
+        '{type: "result", subtype: "success", is_error: false, structured_output: $r, total_cost_usd: $c,
+          session_id: $s}'); then
+      _e2e_result fail "fe_judge_says: reply $n is not JSON: $r"
+      return 1
+    fi
+    out="$out$line"$'\n'
+  done
+  printf '%s' "$out" > "$E2E_BIN/judge-result"
+  printf 'judge replies (fe_judge_says, cost %s):\n%s' "$cost" "$out" | _e2e_art
+}
+
+# fe_judge_raw <line>... — write the lines to judge-result unchanged, one per
+# launch, for replies fe_judge_says cannot express (not JSON, is_error true,
+# no structured_output, a structured_output that is not an object).
+fe_judge_raw() {
+  printf '%s\n' "$@" > "$E2E_BIN/judge-result"
+  printf 'judge replies (fe_judge_raw):\n' | _e2e_art
+  printf '%s\n' "$@" | _e2e_art
+}
+
 # fe_gh <key> <json | "hang <s>" | "fail <rc> <stderr>"> — the factory gh
 # stub's answer for one call (engine/gh describes the key).
 fe_gh() {
