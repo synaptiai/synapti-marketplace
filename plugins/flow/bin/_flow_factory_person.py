@@ -17,10 +17,12 @@ module's check: its argv and body are hashed and compared with the
 intent_recorded line in the events file beside it, never with the item's own
 sha256 field, and its status is read from the events lines. status --intent
 prints the INTENT line and the literal and body in <<<UNTRUSTED_INTENT>>>
-fences, every shown line starting "> " and every control character but tab
-shown as \\xNN. confirm <intent> shows the same on the terminal with its
-prompt (on stdout for the probe intent, which is refused without one), then
-acts by the job's state (plan 2.3): it releases a waiting_operator park on its pending intent
+fences, every shown line starting "> ", every control character but tab
+shown as \\xNN and every format character (Cf), U+2028 and U+2029 as
+\\u{xxxx} (_show; status's text status lines are shown the same way).
+confirm <intent> shows the same on the terminal with its prompt (on stdout
+for the probe intent, which is refused without one), then acts by the job's
+state (plan 2.3): it releases a waiting_operator park on its pending intent
 (INTENT_NOT_PENDING for any other item of the job), or, for a notice waiting
 for a confirm outside waiting_operator, appends the intent_confirmed line and
 only then saves the item confirmed (Q16). A probe-p9-<n> id is looked up only
@@ -64,6 +66,7 @@ import shlex
 import stat
 import tempfile
 import time
+import unicodedata
 from decimal import Decimal
 
 _BIN_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -182,14 +185,27 @@ def _read_item(path):
     return data if isinstance(data, dict) else None
 
 
+def _real_folder(path):
+    """True when path is a folder and not a symbolic link to one."""
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
 def _lookup_items(paths, folder, item):
     """[(n, job)] of every job whose J/<folder>/<item>.json names it in its
-    job field, by issue number."""
+    job field, by issue number. A J/<folder> that is a symbolic link is not
+    read, as the drain does not read a linked J/outbox (journal wave 2,
+    OUTBOX_UNREADABLE reason=symlink): its items are not found. A job folder
+    that is a symbolic link is refused by read_job (job_unreadable)."""
     if not ITEM_ID.match(item):
         return []
     pattern = os.path.join(glob.escape(paths.fdir), "jobs", "issue-*", folder, glob.escape(item) + ".json")
     out = []
     for path in glob.glob(pattern):
+        if not _real_folder(os.path.dirname(path)):
+            continue
         data = _read_item(path)
         key = data.get("job") if data else None
         m = JOB_KEY.match(key) if isinstance(key, str) else None
@@ -290,11 +306,22 @@ def _check_intent(where):
 
 
 def _show(text):
-    """text with every control character but tab shown as \\xNN, so a
-    carriage return or an escape sequence cannot hide or redraw what a
-    person is asked to approve."""
-    return "".join("\\x%02x" % ord(c) if (ord(c) < 32 and c != "\t") or 127 <= ord(c) < 160 else c
-                   for c in text)
+    """text with every control character but tab shown as \\xNN, and every
+    format character (Unicode category Cf: the bidi controls, zero-width
+    characters, the byte order mark) and the line and paragraph separators
+    U+2028 and U+2029 shown as \\u{xxxx}, so a carriage return, an escape
+    sequence, a reordering or an unseen character cannot hide or redraw
+    what a person is asked to approve."""
+    out = []
+    for c in text:
+        o = ord(c)
+        if (o < 32 and c != "\t") or 127 <= o < 160:
+            out.append("\\x%02x" % o)
+        elif unicodedata.category(c) == "Cf" or c in "\u2028\u2029":
+            out.append("\\u{%04x}" % o)
+        else:
+            out.append(c)
+    return "".join(out)
 
 
 def intent_block(where, item, recorded, body):
@@ -538,6 +565,10 @@ def _cmd_confirm(argv, iid, paths, table):
             raise Refused(f"job_unreadable job={again.folder}")
         if not isinstance(again, dict) or again.get("key") != job["key"]:
             raise Refused(f"job_unknown job={job['key']}")
+        # J/outbox may have been swapped for a link while the prompt waited;
+        # the save below would follow it out of the job folder.
+        if not _real_folder(os.path.dirname(where.path)):
+            raise Refused(f"intent_unknown intent={iid}")
         changed, item, _rec, _body, h = _check_intent(_Intent(iid, where.path, where.events, n, again))
         if changed is not None:
             print(changed.line)
@@ -997,9 +1028,12 @@ def _outbox_items(jdir):
     intent_dropped line, confirmed or pending_confirm with that line after
     the last intent_recorded line, else recorded. An item that does not
     read, is not named by its own id, or has no intent_recorded line is
-    left out: nothing can run it."""
+    left out: nothing can run it. So is every item of a J/outbox that is a
+    symbolic link, which the drain refuses (OUTBOX_UNREADABLE)."""
     outbox = os.path.join(jdir, "outbox")
     events = os.path.join(jdir, "events.jsonl")
+    if not _real_folder(outbox):
+        return []
     try:
         names = sorted(x for x in os.listdir(outbox) if x.endswith(".json"))
     except OSError:
@@ -1091,10 +1125,13 @@ def cmd_status(argv):
                "paused_until": until if isinstance(until, str) and until > ff.utc_now() else None}
         print(json.dumps(out, sort_keys=True))
         return 0
+    # The status lines carry text the engine read from a worker's clone (a
+    # nested repository's path); they are shown by the rule status --intent
+    # uses.
     for job in readable:
         print(_job_line(job))
     for line in lines:
-        print(line)
+        print(_show(line))
     return 0
 
 

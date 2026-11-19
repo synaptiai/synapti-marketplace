@@ -48,16 +48,21 @@
 #        file's own sha256 field (R31), or an item copied under another id
 #        passes; an unknown id, or a probe id looked up outside the P9 probe
 #        folder the interactive state names, is found; a body line forges the
-#        closing fence or hides text with a control character
+#        closing fence or hides text with a control character, a bidi
+#        control, a zero-width character or U+2028/U+2029; an item reached
+#        through a J/outbox that is a symbolic link is shown, listed or
+#        confirmed
 #   PS16 status counts sent writes as pending, misses a pending_confirm notice
 #        or a parked pending intent (R81)
 #   PS17 confirm releases a park with another item of the job (R68); a notice
 #        confirm goes through the table, so it is refused outside
 #        waiting_operator, or saves the item confirmed before its
 #        intent_confirmed line (R69, Q16); a changed item is asked about; a
-#        probe intent is confirmed, or is refused for the session first
+#        probe intent is confirmed, or is refused for the session first; a
+#        J/outbox linked while the prompt waits is written through
 #   PS18 answer NI-<k> needs --choice, resolves to one of two jobs that share
-#        the id, or is taken outside needs_info and needs_human (R11)
+#        the id, or is taken outside needs_info and needs_human (R11), or
+#        is read through a J/questions that is a symbolic link
 #   PS19 rebuild loses the 1b fields a transition or replayed line carries,
 #        the logged commands_seen and labels_set lists, or write_seq; takes
 #        head_sha from the clone (R52, carry item 1); or applies a field a
@@ -655,6 +660,21 @@ fe_job 11 build
 e2e_run_bin bin/flow-factory.sh status
 e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_line "PAUSED stage_budget_unset job=issue-11-j1 stage=build next: set flow.factory.worker.stages.build.maxBudgetUsd to a positive amount"
+
+fe_new ps9f-status-untrusted-path
+# Source: plan 2.6 status lines (the NESTED_REPOSITORY form of T11, as
+# ps9b). Inferred: the path names a folder in the worker's clone, which the
+# worker chose, so status shows it by the rule status --intent uses (a
+# control character as \xNN, a format character or U+2028/U+2029 as
+# \u{xxxx}) and an escape sequence or bidi control cannot redraw the line.
+e2e_describe "job 13 parked protected after a nested repository whose path holds an escape character and U+202E"
+ps_seed
+fe_job 13 needs_human "d['reason'] = 'protected'; d['blocked_stage'] = 'build'"
+ps_ev '{"type":"clone_config_changed","job":"issue-13-j1","time":"2026-11-16T00:20:00Z","pass":"p4","nested_repository":"s\u001b[2Ku\u202eb"}' 13
+ps_ev "$(ps_trans p4 stage_failed build 43x needs_human '[]' '[]' 13)" 13
+e2e_run_bin bin/flow-factory.sh status
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_line 'NESTED_REPOSITORY job=issue-13-j1 path=s\x1b[2Ku\u{202e}b'
 fi
 
 # ---------------------------------------------------------------- PS10, PS12
@@ -1155,6 +1175,81 @@ jq --arg p "$E2E_DIR/state/flow-factory/probe/P9-3/plugin" '.plugin = $p' "$PS_F
 mv "$E2E_DIR/i.json" "$PS_F/interactive.json"
 e2e_run_bin XDG_STATE_HOME="$E2E_DIR/state" bin/flow-factory.sh status --intent probe-p9-2
 e2e_expect_equal "3 INTENT_UNKNOWN=probe-p9-2" "$E2E_RC $E2E_OUT" "the interactive state names P9-3"
+
+fe_new ps15c-status-intent-format-characters
+# Source: plan 2.3 (the literal and the body are shown so a person can check
+# what they approve). Inferred: a character that changes how the text around
+# it is shown without being seen itself (every Unicode format character, the
+# bidi controls and zero-width characters among them, and the line and
+# paragraph separators U+2028 and U+2029) is shown as \u{xxxx} in lower-case
+# hex, as a control character is shown as \xNN; other non-ASCII text is shown
+# as it is. The expected lines are written out by hand, not by a copy of the
+# rule.
+e2e_describe "job 7 in needs_info with a comment notice in pending_confirm whose body holds U+202E, U+200B, U+2028, U+2029, U+2066 and U+FEFF next to plain accented and CJK text, and an intent whose argv element holds U+202E and U+200B; status --intent on each, and confirm of the first in a terminal with a wrong word"
+ps_seed
+fe_enable
+fe_job 7 needs_info
+ps_py "i = comment(7, '4', 'a\u202eb\u200bc\u2028d\u2029e\u2066f\ufeffg \u00e9\u65e5')
+mark(7, i, 'pending_confirm', 'intent_pending_confirm')
+k = record(7, '4', 'label_add', G.literal_label_add(REPO, 7, 'flow:a'), None, ['issueUpdate'], False)
+# The recorder takes only the engine's literal forms, so the argv element is
+# written by hand into the item and its intent_recorded line (the events file
+# is the record the check trusts, journal wave 2).
+argv = G.literal_label_add(REPO, 7, 'flow:a')[:-1] + ['x\u202ey\u200bz']
+put(7, dict(item(7, k), argv=argv, sha256=want(argv, b'')))
+ev = os.path.join(jd(7), 'events.jsonl')
+rows = [json.loads(x) for x in open(ev, encoding='utf-8') if x.strip()]
+for r in rows:
+    if r.get('type') == 'intent_recorded' and r.get('id') == k:
+        r['sha256'] = want(argv, b'')
+open(ev, 'w', encoding='utf-8').write(''.join(json.dumps(r) + '\n' for r in rows))
+print(i, k)"
+e2e_expect_equal "0 issue-7-j1-4-1 issue-7-j1-4-2" "$E2E_RC $E2E_OUT" "the two intents' ids"
+PS_BIDI=$(printf '\342\200\256')
+e2e_run_bin bin/flow-factory.sh status --intent issue-7-j1-4-1
+e2e_expect_equal 0 "$E2E_RC" "body intent exit status ($E2E_ERR)"
+e2e_expect_line '> a\u{202e}b\u{200b}c\u{2028}d\u{2029}e\u{2066}f\u{feff}g é日'
+e2e_expect_equal 0 "$(printf '%s\n' "$E2E_OUT" | grep -c "$PS_BIDI")" "lines holding a raw U+202E in the body intent's output"
+e2e_run_bin bin/flow-factory.sh status --intent issue-7-j1-4-2
+e2e_expect_equal 0 "$E2E_RC" "argv intent exit status ($E2E_ERR)"
+e2e_expect_line '> x\u{202e}y\u{200b}z'
+e2e_expect_equal 0 "$(printf '%s\n' "$E2E_OUT" | grep -c "$PS_BIDI")" "lines holding a raw U+202E in the argv intent's output"
+fe_person_terminal issue-8-j1 "$PS_W" confirm issue-7-j1-4-1
+e2e_expect_equal 4 "$E2E_RC" "confirm with a wrong word: exit status"
+e2e_expect_out '> a\u{202e}b\u{200b}c\u{2028}d\u{2029}e\u{2066}f\u{feff}g é日'
+e2e_expect_equal 0 "$(printf '%s\n' "$E2E_OUT" | grep -c "$PS_BIDI")" "terminal lines holding a raw U+202E"
+
+fe_new ps15d-intent-linked-outbox
+# Source: journal wave 2 (the drain gives OUTBOX_UNREADABLE reason=symlink
+# for a J/outbox that is a symbolic link, and nothing runs); plan 2.2 lookup
+# rule (an intent is looked up in J/outbox; any other case is
+# INTENT_UNKNOWN); plan 2.3 status --intent (3 INTENT_UNKNOWN=<id>); the
+# 1a refusal of an unknown confirm id (exit 5 FACTORY_REFUSED=intent_unknown
+# intent=<id>, PS6). Inferred: an item reached only through a linked J/outbox
+# is not found, so status lists nothing of it and confirm writes nothing.
+e2e_describe "job 10 in intake with a notice in pending_confirm; status --intent while J/outbox is a folder; then J/outbox moved out of the job folder and replaced by a symbolic link to it; status --intent, status, and confirm in a terminal"
+ps_seed
+fe_enable
+fe_job 10 intake
+ps_py "n = comment(10, '6', 'notice', state='prepare'); mark(10, n, 'pending_confirm', 'intent_pending_confirm'); print(n)"
+e2e_expect_equal "0 issue-10-j1-6-1" "$E2E_RC $E2E_OUT" "the notice's id"
+e2e_run_bin bin/flow-factory.sh status --intent issue-10-j1-6-1
+e2e_expect_equal 0 "$E2E_RC" "status --intent with a real J/outbox: exit status ($E2E_ERR)"
+mkdir -p "$E2E_DIR/elsewhere"
+mv "$PS_F/jobs/issue-10/outbox" "$E2E_DIR/elsewhere/outbox"
+ln -s "$E2E_DIR/elsewhere/outbox" "$PS_F/jobs/issue-10/outbox"
+e2e_run_bin bin/flow-factory.sh status --intent issue-10-j1-6-1
+e2e_expect_equal "3 INTENT_UNKNOWN=issue-10-j1-6-1" "$E2E_RC $E2E_OUT" "status --intent through the link"
+e2e_run_bin bin/flow-factory.sh status
+e2e_expect_equal 0 "$E2E_RC" "status exit status ($E2E_ERR)"
+e2e_expect_no_out "PENDING_CONFIRM job=issue-10-j1"
+e2e_expect_no_out "OUTBOX_PENDING job=issue-10-j1"
+fe_person_terminal issue-10-j1 "$PS_W" confirm issue-10-j1-6-1
+e2e_expect_equal 5 "$E2E_RC" "confirm through the link: exit status"
+e2e_expect_line "FACTORY_REFUSED=intent_unknown intent=issue-10-j1-6-1"
+e2e_expect_no_out "type the job key"
+e2e_expect_equal 0 "$(grep -c '"intent_confirmed"' "$PS_F/jobs/issue-10/events.jsonl")" "intent_confirmed lines"
+e2e_expect_equal pending_confirm "$(ps_jq "$E2E_DIR/elsewhere/outbox/issue-10-j1-6-1.json" .status)" "the linked item's status"
 fi
 
 # ---------------------------------------------------------------- PS16
@@ -1347,6 +1442,33 @@ fe_person_terminal issue-13-j1 "$PS_W" confirm issue-13-j1-6-1
 e2e_expect_equal 3 "$E2E_RC" "job 13 exit status"
 e2e_expect_line "EVENT_REFUSED=person_confirm state=cancelled"
 e2e_expect_equal 0 "$(grep -c '"intent_confirmed"' "$PS_F/jobs/issue-13/events.jsonl")" "intent_confirmed lines of job 13"
+
+fe_new ps17g-confirm-outbox-linked-at-prompt
+# Source: plan 2.3 confirm row (every check runs again under the job lock
+# before anything is written); journal wave 2 (the drain does not read a
+# linked J/outbox, OUTBOX_UNREADABLE reason=symlink); the 1a refusal of an
+# unknown confirm id (exit 5 FACTORY_REFUSED=intent_unknown intent=<id>).
+# Inferred: a J/outbox replaced by a link while the prompt waits is refused
+# the same way, and nothing is written through the link.
+e2e_describe "job 10 in intake with a notice in pending_confirm; confirm it in a terminal, and while the prompt waits move J/outbox out of the job folder and put a symbolic link to it in its place; then type the job key"
+ps_seed
+fe_enable
+fe_job 10 intake
+ps_py "n = comment(10, '6', 'notice', state='prepare'); mark(10, n, 'pending_confirm', 'intent_pending_confirm'); print(n)"
+e2e_expect_equal "0 issue-10-j1-6-1" "$E2E_RC $E2E_OUT" "the notice's id"
+( fe_person_terminal --delay 4 issue-10-j1 "$PS_W" confirm issue-10-j1-6-1 >/dev/null 2>&1 ) &
+PS_BG=$!
+fe_wait_for 10 "grep -q 'type the job key' '$E2E_DIR/terminal-1.out' 2>/dev/null"
+mkdir -p "$E2E_DIR/elsewhere"
+mv "$PS_F/jobs/issue-10/outbox" "$E2E_DIR/elsewhere/outbox"
+ln -s "$E2E_DIR/elsewhere/outbox" "$PS_F/jobs/issue-10/outbox"
+e2e_expect_equal no "$([ -f "$E2E_DIR/terminal-1.rc" ] && echo yes || echo no)" "confirm had ended before the link was made"
+wait "$PS_BG"
+e2e_expect_equal 5 "$(cat "$E2E_DIR/terminal-1.rc" 2>/dev/null)" "confirm exit status"
+E2E_OUT=$(tr -d '\r' < "$E2E_DIR/terminal-1.out")
+e2e_expect_line "FACTORY_REFUSED=intent_unknown intent=issue-10-j1-6-1"
+e2e_expect_equal 0 "$(grep -c '"intent_confirmed"' "$PS_F/jobs/issue-10/events.jsonl")" "intent_confirmed lines"
+e2e_expect_equal pending_confirm "$(ps_jq "$E2E_DIR/elsewhere/outbox/issue-10-j1-6-1.json" .status)" "the linked item's status"
 fi
 
 # ---------------------------------------------------------------- PS18
@@ -1395,6 +1517,25 @@ e2e_expect_equal 3 "$E2E_RC" "ambiguous exit status"
 e2e_expect_line "QUESTION_AMBIGUOUS=NI-1 jobs=issue-7-j1,issue-8-j1"
 e2e_expect_no_out "type the job key"
 e2e_expect_equal 1 "$(ps_pending_count 7)" "pending files of job 7 (the first answer only)"
+
+fe_new ps18b-answer-linked-questions
+# Source: the 1a refusal of an unknown question (exit 5
+# FACTORY_REFUSED=question_unknown qid=<id>, PS6). Inferred: answer looks
+# the question up as confirm looks an intent up, so a J/questions that is a
+# symbolic link is not read, as the drain does not read a linked J/outbox
+# (journal wave 2, OUTBOX_UNREADABLE reason=symlink).
+e2e_describe "job 7 in needs_info whose J/questions is a symbolic link to a folder outside the job folder holding NI-1; answer NI-1 --text in a terminal"
+ps_seed
+fe_enable
+fe_job 7 needs_info
+mkdir -p "$E2E_DIR/elsewhere/questions"
+printf '{"job":"issue-7-j1","id":"NI-1","text":"Which?","round":1}\n' > "$E2E_DIR/elsewhere/questions/NI-1.json"
+ln -s "$E2E_DIR/elsewhere/questions" "$PS_J/questions"
+fe_person_terminal issue-7-j1 "$PS_W" answer NI-1 --text "the first"
+e2e_expect_equal 5 "$E2E_RC" "exit status"
+e2e_expect_line "FACTORY_REFUSED=question_unknown qid=NI-1"
+e2e_expect_no_out "type the job key"
+e2e_expect_equal 0 "$(ps_pending_count 7)" "pending files of job 7"
 fi
 
 # ---------------------------------------------------------------- PS19
