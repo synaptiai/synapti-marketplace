@@ -38,7 +38,12 @@
 #        job's question is recorded
 #   IN9  the needs-human and tier-confirm notices do not carry the row that
 #        made them, the state they belong to, or the keys and how to change
-#        them; an unknown key is accepted
+#        them; an unknown key is accepted; a notice template that is missing,
+#        unreadable or not UTF-8 escapes as a bare OSError or decode error
+#        rather than the Refused the command module raises
+#        (template_unreadable), which the rows' callers catch, or an effect
+#        burns question ids, writes a question file or intake.json, or
+#        changes the job before it finds the template unreadable
 #   IN10 (trust_and_untrusted_text L30) the needs-info template does not ask
 #        for replies that start with the question id, or does not explain
 #        /flow-factory spec
@@ -64,6 +69,13 @@
 #        reply is anything but stage_failed
 #   LI5  (R24) a worker launched after a judge gets CLAUDE_HOOK_GOAL_JUDGE_MODE
 #   LI6  an intake judge launches with no in-copies/issue.md
+#   LI7  the launcher reads a judge reply of any size into memory, so a
+#        valid reply padded past JUDGE_REPLY_LIMIT (4 MiB) is applied as a
+#        judge_* result instead of a stage_failed one
+#   LI8  a hung flow-judge.sh that its own timeout(1) does not end runs on
+#        past the launcher's limit (the intake timeout plus the margin), or
+#        ends with an outcome other than timeout, a judge key, or a process
+#        left running
 #
 # Every expected value is written out by hand from the plan or design line
 # named in each scenario's description; none comes from the module.
@@ -497,6 +509,54 @@ e2e_expect_line "how True"
 e2e_expect_line "unknown key refused"
 e2e_expect_line "items 2"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
+
+in_module in9-template-unreadable intake
+e2e_describe "review finding on _template: a notice template that cannot be read is refused as the command module's _render refuses it, Refused('template_unreadable <path>: ...'), so the rows' callers, which catch Refused as EFFECT_FAILED, report it instead of crashing; on a plugin copy intake-accept, revouch-needed, needs-human and tier-confirm are removed, intake-needs-info has mode 000 and intake-reject is not UTF-8. Each of the six effects is refused with template_unreadable naming its template, and none leaves anything behind: no outbox item, no question id taken (no F/questions.json), no question file, no J/in-copies/intake.json, and the job unchanged (plan 2.2: an effect checks before it changes anything; Inferred for the template)"
+e2e_plugin_copy templates/factory/intake-reject.comment.md "$(printf 'bad \377\376 bytes')"
+IN_TD="$E2E_ACTIVE_PLUGIN/templates/factory"
+rm -f "$IN_TD/intake-accept.comment.md" "$IN_TD/revouch-needed.comment.md" "$IN_TD/needs-human.comment.md" "$IN_TD/tier-confirm.comment.md"
+chmod 000 "$IN_TD/intake-needs-info.comment.md"
+mkdir -p "$(fe_factory_dir)/jobs/issue-7/in-copies"
+printf '%s\n' '<<<UNTRUSTED_ISSUE_TITLE>>>' '> Add a port setting' '<<<END_UNTRUSTED_ISSUE_TITLE>>>' > "$(fe_factory_dir)/jobs/issue-7/in-copies/issue.md"
+in_py "
+A = $IN_ACCEPT
+N = $IN_NEEDS
+R = $IN_REJECT
+job = J()
+before = json.dumps(job, sort_keys=True)
+def attempt(name, template, f):
+    try:
+        f()
+        print('%s not refused' % name)
+    except jobs.Refused as e:
+        print('%s refused %s %s' % (name, str(e).split()[0], (template + '.comment.md') in str(e)))
+    except Exception as e:
+        print('%s raised %s' % (name, type(e).__name__))
+with jobs.job_lock(P, 7):
+    attempt('accept', 'intake-accept', lambda: I.effect_accept(P, job, A, repo=REPO))
+    attempt('needs_info', 'intake-needs-info', lambda: I.effect_needs_info(P, job, N, '2026-11-17T00:00:00Z', repo=REPO))
+    attempt('reject', 'intake-reject', lambda: I.effect_reject(P, job, R, repo=REPO))
+    attempt('revouch', 'revouch-needed', lambda: I.effect_revouch_notice(P, job, 31, repo=REPO))
+    attempt('needs_human', 'needs-human', lambda: I.effect_needs_human(P, job, repo=REPO, row='43a'))
+    attempt('tier_confirm', 'tier-confirm', lambda: I.effect_tier_confirm(P, job, ['push'], repo=REPO, row='40b'))
+print('items %d' % len(items()))
+print('counter %s' % os.path.exists(os.path.join(P.fdir, 'questions.json')))
+print('question files %s' % os.path.exists(os.path.join(JD, 'questions')))
+print('intake.json %s' % os.path.exists(os.path.join(JD, 'in-copies', 'intake.json')))
+print('job unchanged %s' % (json.dumps(job, sort_keys=True) == before))
+"
+chmod 600 "$IN_TD/intake-needs-info.comment.md"
+for IN_E in "accept refused template_unreadable True" "needs_info refused template_unreadable True" \
+    "reject refused template_unreadable True" "revouch refused template_unreadable True" \
+    "needs_human refused template_unreadable True" "tier_confirm refused template_unreadable True"; do
+  e2e_expect_line "$IN_E"
+done
+e2e_expect_line "items 0"
+e2e_expect_line "counter False"
+e2e_expect_line "question files False"
+e2e_expect_line "intake.json False"
+e2e_expect_line "job unchanged True"
+e2e_expect_equal 0 "$E2E_RC" "exit status"
 fi
 
 # ---------------------------------------------------------------- IN10
@@ -587,7 +647,9 @@ fi
 # directive as 1a's create_directive writes one (session_id, prompt_template,
 # timeout_seconds and allowed_tools null), and J/in-copies/issue.md. The
 # timeout stand-in logs its first argument and, while timeout-124 exists
-# beside it, exits 124 with no output.
+# beside it, exits 124 with no output; while timeout-hang exists it writes
+# its pid to timeout-hang-pid and becomes `sleep 120`, ignoring its
+# argument: a flow-judge.sh that hangs.
 li_seed() {
   e2e_repo main
   fe_record_link "${IN_RECORD_EDITS:-}"
@@ -605,6 +667,10 @@ ${1:-}"
 here=$(cd "$(dirname "$0")" && pwd)
 printf '%s\n' "$1" >> "$here/timeout-args.log"
 [ -f "$here/timeout-124" ] && exit 124
+if [ -f "$here/timeout-hang" ]; then
+  printf '%s\n' "$$" > "$here/timeout-hang-pid"
+  exec sleep 120
+fi
 shift
 exec "$@"
 STUB
@@ -788,4 +854,62 @@ e2e_expect_equal 5 "$E2E_RC" "launch exit status"
 e2e_expect_equal null "$(li_jq "$LI_J/directives/$IN_ID.json" .started_at)" "started_at"
 e2e_expect_equal 1 "$(jq -c 'select(.type == "launch_not_started" and .reason == "issue_md_missing")' "$LI_J/events.jsonl" | wc -l | tr -d ' ')" "launch_not_started events"
 e2e_expect_equal 0 "$(li_launches)" "claude launches"
+fi
+
+if in_run LI7; then
+fe_new li7-reply-over-cap
+e2e_describe "the launcher reads at most JUDGE_REPLY_LIMIT (4 MiB, 4194304 bytes) of a judge reply, which bounds its memory, and plan 5.3 'Judge reply' maps any stdout that is not a usable reply to stage_failed: a reply that is a valid ACCEPT envelope padded with 4194400 spaces inside the object (so jq still reads it as an ACCEPT) gives outcome error, event stage_failed, no judge key, a result that validates, and one pending stage_failed"
+li_seed
+{ printf '%s' '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.01,'
+  head -c 4194400 /dev/zero | tr '\0' ' '
+  printf '"structured_output":%s}\n' "$IN_ACCEPT"; } > "$E2E_BIN/judge-result"
+printf 'judge reply (written by hand): an ACCEPT envelope with 4194400 spaces after "total_cost_usd":0.01,\n' | _e2e_art
+li_launch
+e2e_expect_line "LAUNCHED directive=$IN_ID"
+# li_wait without its state dump: fe_art_state would pass the 4 MiB reply
+# file through the artifact's masking, which takes minutes on one line.
+fe_wait_for 60 "[ -f '$LI_J/results/$IN_ID.json' ]"
+IN_LP=$(jq -r '.launcher_pid // empty' "$LI_J/directives/$IN_ID.lease.json" 2>/dev/null)
+[ -n "$IN_LP" ] && fe_wait_for 10 "! kill -0 $IN_LP 2>/dev/null"
+IN_RP="$LI_J/results/$IN_ID.reply.json"
+IN_RP_SIZE=$(wc -c < "$IN_RP" 2>/dev/null | tr -d ' ')
+e2e_expect_equal yes "$([ "${IN_RP_SIZE:-0}" -gt 4194304 ] && echo yes || echo no)" "the kept reply is over 4 MiB"
+e2e_expect_equal ACCEPT "$(jq -r .structured_output.decision "$IN_RP" 2>/dev/null)" "the kept reply is a valid ACCEPT envelope"
+printf 'replaced after the two checks above so the state dump stays small: a %s-byte reply\n' "${IN_RP_SIZE:-0}" > "$IN_RP"
+fe_art_state 7
+IN_R="$LI_J/results/$IN_ID.json"
+e2e_expect_equal "error stage_failed false" "$(jq -r '"\(.outcome) \(.event) \(has("judge"))"' "$IN_R" 2>/dev/null)" "result of the oversized reply"
+e2e_expect_equal "[]" "$(li_result_valid "$IN_ID")" "result validates"
+e2e_expect_equal stage_failed "$(li_pending)" "pending events"
+e2e_expect_equal 1 "$(li_launches)" "claude launches"
+fi
+
+if in_run LI8; then
+fe_new li8-hung-judge
+e2e_describe "plan B11 step 2 and the table row 'flow-judge.sh hangs past the launcher's limit (the intake timeout plus 60 s)': with timeoutSeconds 1 in the user file and a plugin copy whose JUDGE_MARGIN_SECONDS is 1 (so the limit is 2 s rather than 61 s), a flow-judge.sh whose timeout(1) ignores its argument and hangs is stopped by the launcher at 2 s: SIGTERM to the group, the hung process gone, outcome timeout (finish_judge: 'timeout when the launcher's own limit fired'), event stage_failed, no judge key, a result that validates, one pending stage_failed, and no claude launch"
+li_seed
+E2E_ACTIVE_PLUGIN="$E2E_DIR/plugin"
+e2e_copy_plugin "$E2E_PLUGIN_DIR" "$E2E_ACTIVE_PLUGIN" || _flow_assert_fail "$E2E_NAME: cannot copy the plugin"
+sed 's/^JUDGE_MARGIN_SECONDS = 60$/JUDGE_MARGIN_SECONDS = 1/' "$E2E_PLUGIN_DIR/bin/_flow_factory_launch.py" > "$E2E_ACTIVE_PLUGIN/bin/_flow_factory_launch.py"
+printf 'plugin for this scenario: a copy with JUDGE_MARGIN_SECONDS = 60 changed to 1 in bin/_flow_factory_launch.py\n' | _e2e_art
+e2e_expect_equal 1 "$(grep -c '^JUDGE_MARGIN_SECONDS = 1$' "$E2E_ACTIVE_PLUGIN/bin/_flow_factory_launch.py")" "the copy's margin is 1"
+e2e_user_settings '{"flow":{"factory":{"enabled":true,"worker":{"stages":{"intake":{"timeoutSeconds":1}}}}}}'
+fe_judge_says "$IN_ACCEPT"
+: > "$E2E_BIN/timeout-hang"
+li_launch
+e2e_expect_line "LAUNCHED directive=$IN_ID"
+li_wait
+IN_HANG=$(cat "$E2E_BIN/timeout-hang-pid" 2>/dev/null)
+e2e_expect_equal yes "$([ -n "$IN_HANG" ] && echo yes || echo no)" "the hung timeout(1) started"
+e2e_expect_equal gone "$( [ -n "$IN_HANG" ] && kill -0 "$IN_HANG" 2>/dev/null && echo running || echo gone)" "the hung process after the run"
+e2e_expect_equal 1 "$(sed -n 1p "$E2E_BIN/timeout-args.log" 2>/dev/null)" "timeout argument"
+e2e_expect_equal 1 "$(grep -c 'stage timeout after 2 s' "$LI_J/results/$IN_ID.launcher.log" 2>/dev/null)" "launcher log: its own limit of 2 s fired"
+IN_R="$LI_J/results/$IN_ID.json"
+e2e_expect_equal "timeout stage_failed false" "$(jq -r '"\(.outcome) \(.event) \(has("judge"))"' "$IN_R" 2>/dev/null)" "result of the hung judge"
+e2e_expect_equal "[]" "$(li_result_valid "$IN_ID")" "result validates"
+e2e_expect_equal stage_failed "$(li_pending)" "pending events"
+e2e_expect_equal 0 "$(li_launches)" "claude launches"
+# Leave nothing running when an expectation above failed.
+if [ -n "$IN_HANG" ]; then kill "$IN_HANG" 2>/dev/null || true; fi
+rm -f "$E2E_BIN/timeout-hang"
 fi

@@ -156,12 +156,29 @@ def next_question_id(paths):
 
 # ---------------------------------------------------------------- notices
 
-def _template(name, values):
-    """templates/factory/<name>.comment.md with each {placeholder} filled in
-    one pass, so a value that holds a placeholder is not filled again."""
-    with open(os.path.join(TEMPLATES, name + ".comment.md"), encoding="utf-8") as f:
-        text = f.read()
+def _load_template(name):
+    """The text of templates/factory/<name>.comment.md. A file that is
+    missing, cannot be read or is not UTF-8 is refused as the command
+    module's _render refuses it (template_unreadable), so the rows' callers,
+    which catch Refused, report it. Each effect loads its template before it
+    changes anything."""
+    path = os.path.join(TEMPLATES, name + ".comment.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError) as e:
+        raise Refused(f"template_unreadable {path}: {' '.join(str(e).split())}")
+
+
+def _fill(text, values):
+    """Each {placeholder} of a loaded template filled in one pass, so a
+    value that holds a placeholder is not filled again."""
     return _PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), text)
+
+
+def _template(name, values):
+    """templates/factory/<name>.comment.md loaded and filled."""
+    return _fill(_load_template(name), values)
 
 
 def _notice(paths, job, row, body, state, repo, ref=None):
@@ -213,14 +230,15 @@ def effect_accept(paths, job, result, *, repo):
     state the row moves to (plan 2.2). Returns the two job fields for the
     transition line's fields."""
     _locked(job)
+    template = _load_template("intake-accept")
     inputs = _intake_inputs(paths, job)
     intake = {"risk": result["risk"], "surfaces": list(result["surfaces"]), "scope": result["scope"]}
     copies = os.path.join(jobs.job_dir(paths, job["issue"]), "in-copies")
     jobs._ensure(paths, copies)
     _write(os.path.join(copies, "intake.json"), result)
-    body = _template("intake-accept", {"scope": result["scope"], "risk": result["risk"],
-                                       "surfaces": ", ".join(result["surfaces"]) or "none named",
-                                       "criteria": _bullets(result["proposed_criteria"])})
+    body = _fill(template, {"scope": result["scope"], "risk": result["risk"],
+                            "surfaces": ", ".join(result["surfaces"]) or "none named",
+                            "criteria": _bullets(result["proposed_criteria"])})
     _notice(paths, job, "6", body, "prepare", repo)
     job["intake_inputs"] = inputs
     job["intake"] = intake
@@ -243,6 +261,7 @@ def effect_needs_info(paths, job, result, now, *, repo):
                         "round": old.get("round")})
     prev = old.get("round") if old else 0
     rnd = (prev if isinstance(prev, int) and not isinstance(prev, bool) and prev > 0 else 0) + 1
+    template = _load_template("intake-needs-info")
     qdir = os.path.join(jobs.job_dir(paths, job["issue"]), "questions")
     ids = []
     for text in questions:
@@ -250,7 +269,7 @@ def effect_needs_info(paths, job, result, now, *, repo):
         jobs._ensure(paths, qdir)
         _write(os.path.join(qdir, qid + ".json"), {"job": job["key"], "id": qid, "text": text, "round": rnd})
         ids.append((qid, text))
-    body = _template("intake-needs-info", {"questions": "\n".join(f"- {q}: {t}" for q, t in ids)})
+    body = _fill(template, {"questions": "\n".join(f"- {q}: {t}" for q, t in ids)})
     _notice(paths, job, "4", body, "needs_info", repo)
     return {"asked_at": now, "questions": [q for q, _ in ids], "round": rnd, "earlier": earlier}
 
