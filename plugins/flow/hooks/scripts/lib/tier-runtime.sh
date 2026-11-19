@@ -616,8 +616,17 @@ _tr_gh_api() {   # $@ = the arguments after api
   fi
   case "$method" in GET|HEAD) return 0 ;; esac
   # Matched by the end of the path.
-  local R='(^|/)'
-  if [[ "$ep" =~ ${R}pulls/[^/]+/merge/?$ ]] || [[ "$ep" =~ ${R}merges/?$ ]]; then
+  local R='(^|/)' under=0
+  # A path under git/refs/ or releases/ is a ref or a release, never an
+  # issue or a pull request, as tier-gate.sh reads it.
+  case "$ep" in */git/refs/*|*/releases/*) under=1 ;; esac
+  # One label removed by name. The name is read decoded, so a name with an
+  # encoded slash (area%2Fflow) is more than one part. Matched first, so a
+  # name that ends like another path (merges, releases, issues/6/comments)
+  # is still a label, as tier-gate.sh reads it.
+  if [ "$method" = DELETE ] && [ "$under" = 0 ] && [[ "$ep" =~ ${R}issues/[^/]+/labels/.+$ ]]; then
+    _tr_add issueUpdate "gh api DELETE $ep"
+  elif [[ "$ep" =~ ${R}pulls/[^/]+/merge/?$ ]] || [[ "$ep" =~ ${R}merges/?$ ]]; then
     case "$method" in PUT|POST|PATCH) _tr_add merge "gh api $method $ep" ;; esac
   elif [[ "$ep" =~ ${R}releases(/|$) ]] || [[ "$ep" =~ ${R}git/refs/tags(/|$) ]]; then
     _tr_add release "gh api $method $ep"
@@ -627,6 +636,12 @@ _tr_gh_api() {   # $@ = the arguments after api
     else
       case "$ref" in refs/tags/*) _tr_add release "gh api $method $ep ($ref)" ;; esac
     fi
+  elif [[ "$ep" =~ ${R}git/refs/ ]]; then
+    # A branch ref (a tag is matched above) is never an issue or a pull
+    # request, whatever its last parts read like
+    # (git/refs/heads/issues/5/labels). tier-gate.sh skips the same paths;
+    # a path under releases/ is matched above as a release, as it does.
+    :
   elif [[ "$ep" =~ ${R}pulls/?$ ]]; then
     [ "$method" = POST ] && _tr_add prCreate "gh api POST $ep"
   elif [[ "$ep" =~ ${R}issues/?$ ]]; then

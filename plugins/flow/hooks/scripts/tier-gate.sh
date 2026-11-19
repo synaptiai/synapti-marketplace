@@ -15,12 +15,12 @@
 #                      pr edit with a label, body, title or
 #                      reviewer flag; gh label create
 #   tiers.issueCreate  gh issue create                           default journal
-#
-# An issue edit that both assigns and labels (or sets a body or a title) is
-# issueAssign and issueUpdate at once, and asks or journals for each.
 #   tiers.merge        gh pr merge                               always confirm
 #   tiers.release      gh release create, edit, delete, upload   always confirm
 #                      and delete-asset, and a tag push
+#
+# An issue edit that both assigns and labels (or sets a body or a title) is
+# issueAssign and issueUpdate at once, and asks or journals for each.
 #
 # gh release edit publishes a draft (--draft=false) or moves a release's tag,
 # and delete removes a release (and its tag, with --cleanup-tag). upload and
@@ -55,10 +55,15 @@
 #     .../pulls/{n}/comments, .../pulls/{n}/comments/{id}/
 #     replies or .../pulls/{n}/requested_reviewers; PATCH
 #     or DELETE .../pulls/comments/{id}; POST, PUT or
-#     DELETE .../issues/{n}/labels; PATCH .../pulls/{n}
+#     DELETE .../issues/{n}/labels; DELETE
+#     .../issues/{n}/labels/{name}; PATCH .../pulls/{n}
 #     with a state, body or title field; PATCH
 #     .../issues/{n} (with an assignee field, issueAssign
 #     as well)                                            issueUpdate
+#   A path under .../git/refs/ is never an issue or a pull request, and one
+#   under .../releases/ never a write to an existing issue or pull
+#   request, whatever its last parts read like
+#   (.../git/refs/heads/issues/5/labels is not an issue's labels).
 #   graphql with mergePullRequest or
 #     enablePullRequestAutoMerge                          merge
 #     (disablePullRequestAutoMerge is not one)
@@ -1369,7 +1374,10 @@ _tg_api_keys() {   # $1 = method (POST, PUT, PATCH or DELETE)
   esac
   case "$m" in
     PUT|DELETE)
-      if [[ "$ep" =~ ${R}issues/[^/]+/labels$ ]]; then printf 'issueUpdate\n'; return 0; fi ;;
+      if [[ "$ep" =~ ${R}issues/[^/]+/labels$ ]]; then printf 'issueUpdate\n'; return 0; fi
+      # One label removed by name. The name is read decoded, so a name with
+      # an encoded slash (area%2Fflow) is more than one part.
+      if [ "$m" = DELETE ] && [[ "$ep" =~ ${R}issues/[^/]+/labels/.+$ ]]; then printf 'issueUpdate\n'; return 0; fi ;;
     PATCH)
       if [[ "$ep" =~ ${R}pulls/[^/]+$ ]]; then
         for fv in "${fields[@]+"${fields[@]}"}"; do
@@ -1398,6 +1406,8 @@ _tg_api_keys() {   # $1 = method (POST, PUT, PATCH or DELETE)
     case "$ep" in
       */releases/*/*) ;;
       */releases/*) [ "$m" = PATCH ] && { printf 'release\n'; return 0; } ;;
+      # A branch ref is never an issue (git/refs/heads/issues/5).
+      */git/refs/*) ;;
       */issues/*/*) ;;
       */issues/*)
         [ "$m" = PATCH ] && printf 'issueUpdate\n'
@@ -1436,6 +1446,9 @@ _tg_api_keys() {   # $1 = method (POST, PUT, PATCH or DELETE)
       esac ;;
     */pulls/*/merge|*/merges) printf 'merge\n' ;;
     */releases|*/releases/*/assets) printf 'release\n' ;;
+    # A branch ref is never an issue or a pull request, whatever its last
+    # parts read like (git/refs/heads/issues).
+    */git/refs/*) ;;
     */pulls) printf 'prCreate\n' ;;
     */issues) printf 'issueCreate\n' ;;
     */issues/*/assignees) printf 'issueAssign\n' ;;

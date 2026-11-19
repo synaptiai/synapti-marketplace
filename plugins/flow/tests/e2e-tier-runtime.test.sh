@@ -845,6 +845,16 @@ gh api -X PATCH /repos/o/r/pulls/7 -f title=x
 gh api -X POST repos/o/r/pulls/7/requested_reviewers -f reviewers[]=octocat
 gh api -X PATCH repos/o/r/issues/5 -f state=closed
 gh api -X PUT repos/o/r/issues/5/labels -f labels[]=bug
+gh api -X DELETE repos/o/r/issues/5/labels/bug
+gh api -X DELETE repos/o/r/issues/5/labels/bug/
+gh api --method DELETE /repos/o/r/issues/5/labels/needs%20review
+gh api -X DELETE repos/o/r/issues/5/labels/area%2Fflow
+gh api -X DELETE 'repos/o/r/issues/5/labels/bug?per_page=1'
+gh api -X DELETE https://api.github.com/repos/o/r/issues/5/labels/bug
+gh api -X DELETE 'repos/{owner}/{repo}/issues/5/labels/bug'
+gh api -X DELETE repos/o/r/issues/5/labels/issues%2F6%2Fcomments
+gh api -X DELETE repos/o/r/issues/5/labels/merges
+gh api -X DELETE repos/o/r/issues/5/labels/releases
 EOF
   for m in $TR_IU_GQL; do
     printf "gh api graphql -f query='mutation { %s(input: {}) { clientMutationId } }'\n" "$m"
@@ -891,3 +901,28 @@ for TR_C in \
   _tr_call 'bash m.sh'
   e2e_expect_equal 0 "$E2E_RC" "exit status for: $TR_C"
 done
+
+_tr_setup tr-issueupdate-refs-releases "W42 refs: tiers.issueUpdate, issueAssign, issueCreate and prCreate confirm, run from a script: a path under git/refs/ is a branch ref even when its last parts read like an issue's labels, comments or assignees, the issue itself, or the issue or pull request lists, and runs; a path under releases/ is a release, and is refused naming tiers.release only. The gate decides the same (tg-issueupdate-refs-releases)" '{"tiers":{"issueUpdate":"confirm","issueAssign":"confirm","issueCreate":"confirm","prCreate":"confirm"}}'
+for TR_C in \
+  'gh api -X DELETE repos/o/r/git/refs/heads/issues/5/labels' \
+  'gh api -X DELETE repos/o/r/git/refs/heads/issues/5/labels/bug' \
+  'gh api -X PATCH repos/o/r/git/refs/heads/issues/5 -f sha=abc' \
+  'gh api -X POST repos/o/r/git/refs/heads/issues/5/comments -f body=x' \
+  'gh api -X POST repos/o/r/git/refs/heads/issues -f sha=abc' \
+  'gh api -X POST repos/o/r/git/refs/heads/issues/5/assignees -f sha=abc' \
+  'gh api -X POST repos/o/r/git/refs/heads/pulls -f sha=abc'; do
+  printf '%s\n' "$TR_C" > "$E2E_REPO/m.sh"
+  TR_BEFORE=$(grep -c . "$E2E_DIR/gh-calls.log")
+  _tr_call 'bash m.sh'
+  e2e_expect_equal 0 "$E2E_RC" "exit status for: $TR_C"
+  e2e_expect_equal $((TR_BEFORE + 1)) "$(grep -c . "$E2E_DIR/gh-calls.log")" "gh ran: $TR_C"
+done
+TR_C='gh api -X DELETE repos/o/r/releases/1/issues/5/labels'
+printf '%s\n' "$TR_C" > "$E2E_REPO/m.sh"
+TR_BEFORE=$(grep -c . "$E2E_DIR/gh-calls.log")
+_tr_call 'bash m.sh'
+e2e_expect_equal 1 "$E2E_RC" "exit status for: $TR_C"
+e2e_expect_err "(tiers.release) needs your confirmation"
+e2e_expect_equal 0 "$(printf '%s' "$E2E_ERR" | grep -c issueUpdate)" "tiers.issueUpdate named for: $TR_C"
+e2e_expect_equal "$TR_BEFORE" "$(grep -c . "$E2E_DIR/gh-calls.log")" "gh did not run: $TR_C"
+e2e_expect_equal 0 "$(_tr_trail | grep -c 'auto-log')" "wrapper breadcrumbs"

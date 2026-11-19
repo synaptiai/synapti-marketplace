@@ -2894,6 +2894,16 @@ gh api -X PATCH /repos/o/r/pulls/7 -f title=x
 gh api -X POST repos/o/r/pulls/7/requested_reviewers -f reviewers[]=octocat
 gh api -X PATCH repos/o/r/issues/5 -f state=closed
 gh api -X PUT repos/o/r/issues/5/labels -f labels[]=bug
+gh api -X DELETE repos/o/r/issues/5/labels/bug
+gh api -X DELETE repos/o/r/issues/5/labels/bug/
+gh api --method DELETE /repos/o/r/issues/5/labels/needs%20review
+gh api -X DELETE repos/o/r/issues/5/labels/area%2Fflow
+gh api -X DELETE 'repos/o/r/issues/5/labels/bug?per_page=1'
+gh api -X DELETE https://api.github.com/repos/o/r/issues/5/labels/bug
+gh api -X DELETE 'repos/{owner}/{repo}/issues/5/labels/bug'
+gh api -X DELETE repos/o/r/issues/5/labels/issues%2F6%2Fcomments
+gh api -X DELETE repos/o/r/issues/5/labels/merges
+gh api -X DELETE repos/o/r/issues/5/labels/releases
 EOF
   for m in $TG_IU_GQL; do
     printf "gh api graphql -f query='mutation { %s(input: {}) { clientMutationId } }'\n" "$m"
@@ -2950,6 +2960,29 @@ if _want tg-issueupdate-not-forms; then
     _expect_silent_allow
     e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
   done
+  e2e_expect_equal "" "$(_tg_trail)" "trail files"
+  e2e_expect_clean_edges
+fi
+
+if _want tg-issueupdate-refs-releases; then
+  _tg_setup tg-issueupdate-refs-releases feature/issue-42-x '{"tiers":{"issueUpdate":"confirm","issueAssign":"confirm","issueCreate":"confirm","prCreate":"confirm"}}' \
+    "tiers.issueUpdate, issueAssign, issueCreate and prCreate confirm: a path under git/refs/ is a branch ref even when its last parts read like an issue's labels, comments or assignees, the issue itself, or the issue or pull request lists, and asks nothing; a path under releases/ is a release, and asks naming tiers.release only. The gh wrapper decides the same (tier-runtime W42 refs)"
+  for C in \
+    'gh api -X DELETE repos/o/r/git/refs/heads/issues/5/labels' \
+    'gh api -X DELETE repos/o/r/git/refs/heads/issues/5/labels/bug' \
+    'gh api -X PATCH repos/o/r/git/refs/heads/issues/5 -f sha=abc' \
+    'gh api -X POST repos/o/r/git/refs/heads/issues/5/comments -f body=x' \
+    'gh api -X POST repos/o/r/git/refs/heads/issues -f sha=abc' \
+    'gh api -X POST repos/o/r/git/refs/heads/issues/5/assignees -f sha=abc' \
+    'gh api -X POST repos/o/r/git/refs/heads/pulls -f sha=abc'; do
+    _tg_run "$C"
+    _expect_silent_allow
+    e2e_expect_equal "" "$E2E_ERR" "stderr for: $C"
+  done
+  C='gh api -X DELETE repos/o/r/releases/1/issues/5/labels'
+  _tg_run "$C"
+  _expect_ask "(tiers.release)"
+  case "$E2E_OUT" in *issueUpdate*) _e2e_result fail "only tiers.release is named for: $C" ;; *) _e2e_result pass "only tiers.release is named for: $C" ;; esac
   e2e_expect_equal "" "$(_tg_trail)" "trail files"
   e2e_expect_clean_edges
 fi
