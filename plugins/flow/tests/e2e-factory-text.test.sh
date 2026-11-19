@@ -816,7 +816,17 @@ _fe_world "legacy: no role_name, the legacy field says triage" '.permissions.leg
 fe_world_issue 21 "Issue 21" "body"
 fe_world_label 21 flow:factory wrt write 2026-11-18T10:00:00Z
 fe_world_pull 37 bump-deps 'ci[bot]' write "Closes #21"
-e2e_describe "T:creation row 1, all six conditions, from read_unjobbed's reads: 7 two write label events at T0 and T1 → label event at T1 by wrt2 (R3), allowed; 8 triage actor → allowed (design trust_and_untrusted_text L2: triage or higher); 9 read actor, 10 a Bot-type actor with write (R90), 11 a read actor after an earlier write one → refused; 12 closed, 18 label removed → refused; 13 an open PR from fix-13 by write saying Closes #13 → refused; 14 a PR saying Closes #140 and a factory-branch PR saying fixes #14 → allowed; 15 a fork PR by a read-only author → allowed; 16 a fork PR with the factory branch name by write → refused; 17 the in-progress label with no local job → refused, with a terminal local job → allowed; 19 ci[bot] with write, not listed → refused (R53); 20 an actor with only the legacy permission triage → refused (R55); 10 again with trustedBots [deploy-app] → allowed (R90). 7 with an open job, or a terminal job vouched at or after T1 → refused; vouched at T0 → allowed; a terminal job whose vouch_at is null or not a time → refused (row 1 condition 4 cannot be shown to hold, so creation fails closed: plan 3.1). A missing issue → None. The open pulls are read once per Permissions object, so once per sync however many issues it reads (plan 3.2 budget), and again by a new object. 21 an open PR saying Closes #21 by ci[bot] with write, not in trustedBots → allowed (Inferred: the bot rule of design person_channels item 5 applies to the PR author too, so an unlisted bot's role does not count); 13 with trustedPermission admin → still refused: row 1 condition 5 says write access or higher for the PR author, not the trust bar (design trust_and_untrusted_text L4 lets the setting raise only the trust bar)"
+# 22 and 23: an open PR from feature/issue-N-x saying Closes #N, by a
+# read-only author (22) and by a write author (23). The scenario reads each
+# as the stand-in serves it (head in this repository) and with its head
+# repository unreadable, as for a deleted fork.
+fe_world_issue 22 "Issue 22" "body"
+fe_world_label 22 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_pull 38 feature/issue-22-x rdr read "Closes #22"
+fe_world_issue 23 "Issue 23" "body"
+fe_world_label 23 flow:factory wrt write 2026-11-18T10:00:00Z
+fe_world_pull 39 feature/issue-23-x wrt write "Closes #23"
+e2e_describe "T:creation row 1, all six conditions, from read_unjobbed's reads: 7 two write label events at T0 and T1 → label event at T1 by wrt2 (R3), allowed; 8 triage actor → allowed (design trust_and_untrusted_text L2: triage or higher); 9 read actor, 10 a Bot-type actor with write (R90), 11 a read actor after an earlier write one → refused; 12 closed, 18 label removed → refused; 13 an open PR from fix-13 by write saying Closes #13 → refused; 14 a PR saying Closes #140 and a factory-branch PR saying fixes #14 → allowed; 15 a fork PR by a read-only author → allowed; 16 a fork PR with the factory branch name by write → refused; 17 the in-progress label with no local job → refused, with a terminal local job → allowed; 19 ci[bot] with write, not listed → refused (R53); 20 an actor with only the legacy permission triage → refused (R55); 10 again with trustedBots [deploy-app] → allowed (R90). 7 with an open job, or a terminal job vouched at or after T1 → refused; vouched at T0 → allowed; a terminal job whose vouch_at is null or not a time → refused (row 1 condition 4 cannot be shown to hold, so creation fails closed: plan 3.1). A missing issue → None. The open pulls are read once per Permissions object, so once per sync however many issues it reads (plan 3.2 budget), and again by a new object. 21 an open PR saying Closes #21 by ci[bot] with write, not in trustedBots → allowed (Inferred: the bot rule of design person_channels item 5 applies to the PR author too, so an unlisted bot's role does not count); 13 with trustedPermission admin → still refused: row 1 condition 5 says write access or higher for the PR author, not the trust bar (design trust_and_untrusted_text L4 lets the setting raise only the trust bar). 22 and 23 an open PR from feature/issue-N-x saying Closes #N: with its head in this repository → cross False and allowed for either author (the factory branch exemption); with head.repo null (a deleted fork) or head.repo without a full_name → cross True (Inferred, plan 3.1 fail closed: a head repository that cannot be read cannot be shown to be this repository), so the factory branch exemption no longer applies: 22 by a read-only author stays allowed (design trust_and_untrusted_text: a Closes PR blocks only when its author has write access or higher) and 23 by a write author is refused, as 16 is"
 read -r -d '' IS_CODE <<'PY' || true
 P = I.Permissions(gh, REPO, setting)
 NONE = {'open_job': False, 'terminal_vouch_at': []}
@@ -845,6 +855,23 @@ SET['flow.factory.trustedPermission'] = 'admin'
 P = I.Permissions(gh, REPO, setting)
 print('c 13 bar-admin %s' % I.creation_conditions(I.read_unjobbed(gh, REPO, 13, P, setting), NONE, setting))
 print('c 7 bar-admin %s' % I.creation_conditions(I.read_unjobbed(gh, REPO, 7, P, setting), NONE, setting))
+SET.clear()
+def head_repo_as(value):
+    """A gh whose open pulls read serves PRs 38 and 39 with head.repo set to value."""
+    def g(args):
+        ok, data = gh(args)
+        if ok and any(a.split('?')[0] == 'repos/flow-e2e/scratch/pulls' for a in args):
+            for page in data:
+                for p in page:
+                    if p.get('number') in (38, 39):
+                        p['head']['repo'] = value
+        return ok, data
+    return g
+for n, pull in ((22, 38), (23, 39)):
+    for tag, g in (('same-repo', gh), ('repo-null', head_repo_as(None)), ('repo-no-name', head_repo_as({}))):
+        u = I.read_unjobbed(g, REPO, n, I.Permissions(g, REPO, setting), setting)
+        pr = [p for p in u['closing_prs'] if p['number'] == pull][0]
+        print('c %d %s cross=%s %s' % (n, tag, pr['cross'], I.creation_conditions(u, NONE, setting)))
 print('done')
 PY
 is_py "$IS_CODE"
@@ -853,7 +880,9 @@ for IS_L in "7 True" "8 True" "9 False" "10 False" "11 False" "12 False" "13 Fal
             "16 False" "17 False" "18 False" "19 False" "20 False" "21 True" "10 listed True" "7 event at=2026-11-18T10:00:00Z actor=wrt2" "7 open-job False" \
             "7 terminal-at False" "7 terminal-after False" "7 terminal-before True" "17 local True" "999 None" \
             "7 terminal-null False" "7 terminal-garbage False" "7 terminal-null-and-before False" \
-            "pulls reads one object=1" "pulls reads two objects=2" "13 bar-admin False" "7 bar-admin True"; do
+            "pulls reads one object=1" "pulls reads two objects=2" "13 bar-admin False" "7 bar-admin True" \
+            "22 same-repo cross=False True" "22 repo-null cross=True True" "22 repo-no-name cross=True True" \
+            "23 same-repo cross=False True" "23 repo-null cross=True False" "23 repo-no-name cross=True False"; do
   e2e_expect_line "c $IS_L"
 done
 e2e_expect_line "done"
