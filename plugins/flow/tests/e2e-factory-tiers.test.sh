@@ -39,6 +39,13 @@
 #        state answers [] silently
 #   TR10 intent_key_not_confirm is true for a job with no pending intent, or
 #        reads only one key of a two-key intent
+#   TR11 a key no source sets reads as a value other than confirm; a
+#        cascade-resolve.sh that prints its answer but exits non-zero is
+#        believed, so the local and user files are read from what it printed
+#   TR12 confirm_writes called without fdir covers nothing, so a confirmed
+#        intent stops covering its kinds; a confirmed_intent that climbs out
+#        of the outbox ('../x'), an item whose id is not its file's name, or
+#        a job whose issue is not a whole number is taken as covering
 #
 # Every expected value is written out by hand from the design lines named in
 # each scenario's description; none comes from the module.
@@ -154,7 +161,7 @@ _flow_test_begin "factory tiers: an unresolved ref or no base counts as confirm;
 tr_start tr3-refs ''
 tr_file "~/.claude/settings.flow.json" '{"tiers": {"push": "confirm"}}'
 tr_file .claude/settings.flow.json '{"tiers": {"issueAssign": "confirm"}}'
-e2e_describe "origin/main has no project file (the working tree has one with issueAssign confirm, which is not read); the user file sets push confirm; the plugin default is journal. At origin/main: issueAssign journal, push confirm, base_problem None. At refs/remotes/origin/nope (never fetched) and with no base ref (None): issueAssign confirm (the project source counts as confirm, plan B7 step 2), with base_problem naming the case. base_ref of a job: main gives refs/remotes/origin/main; a missing base, an empty one, one starting with '-' and one holding '..' give None"
+e2e_describe "origin/main has no project file (the working tree has one with issueAssign confirm, which is not read); the user file sets push confirm; the plugin default is journal. At origin/main: issueAssign journal, push confirm, base_problem None. At refs/remotes/origin/nope (never fetched) and with no base ref (None): issueAssign confirm (the project source counts as confirm, plan B7 step 2), with base_problem naming the case. base_ref of a job: main gives refs/remotes/origin/main; a missing base, an empty one, one starting with '-', one holding '..' or ':', one ending in '.lock', one with a part starting with '.', one holding '//' and one of 201 characters give None (the module's branch-name rule); one of 200 characters gives its ref"
 read -r -d '' TR_CODE <<'PY' || true
 print('origin issueAssign %s push %s problem %s' % (R.resolve(M, BASE, 'issueAssign'), R.resolve(M, BASE, 'push'),
                                                    R.resolver(M, BASE).base_problem))
@@ -163,18 +170,21 @@ print('nope issueAssign %s problem %s' % (t('issueAssign'), t.base_problem))
 t = R.resolver(M, None)
 print('none issueAssign %s problem %s' % (t('issueAssign'), t.base_problem))
 print('base_ref main %s' % R.base_ref(job()))
-for tag, b in (('missing', None), ('empty', ''), ('dash', '-x'), ('dots', 'a..b'), ('colon', 'a:b')):
+for tag, b in (('missing', None), ('empty', ''), ('dash', '-x'), ('dots', 'a..b'), ('colon', 'a:b'),
+               ('lock', 'a.lock'), ('dot-part', 'a/.b'), ('double-slash', 'a//b'), ('long', 'a' * 201)):
     print('base_ref %s %s' % (tag, R.base_ref(job(base=b))))
 print('base_ref absent %s' % R.base_ref({'key': 'issue-7-j1'}))
+print('base_ref 200 %s' % (R.base_ref(job(base='a' * 200)) == 'refs/remotes/origin/' + 'a' * 200))
 PY
 tr_py "$TR_CODE"
 e2e_expect_line "origin issueAssign journal push confirm problem None"
 e2e_expect_line "nope issueAssign confirm problem ref_unresolved refs/remotes/origin/nope"
 e2e_expect_line "none issueAssign confirm problem no_base"
 e2e_expect_line "base_ref main refs/remotes/origin/main"
-for TR_N in missing empty dash dots colon absent; do
+for TR_N in missing empty dash dots colon lock dot-part double-slash long absent; do
   e2e_expect_line "base_ref $TR_N None"
 done
+e2e_expect_line "base_ref 200 True"
 
 _flow_test_begin "factory tiers: a source that cannot be read counts as confirm (TR4)"
 tr_start tr4-unreadable '{"tiers": {"push": "autonomous"}}'
@@ -331,7 +341,7 @@ e2e_expect_line "kinds-match True"
 
 _flow_test_begin "factory tiers: row 40b's and row 11's writes through the table; a sent confirmed intent covers its kinds, nothing else does (TR7, TR8)"
 tr_start tr8-confirmed ''
-e2e_describe "writes_for over the shipped table: row 40b from intake has no writes ([]), from approve the undo of ready ([issueUpdate] with issueUpdate at confirm). Row 11 from prepare with issueAssign and issueUpdate at confirm (plan 2.2, 'The confirmation of a released intent'): confirmed_intent naming a sent assign_label item gives []; a recorded one, a missing one, and a sent one whose job is another give [issueAssign, issueUpdate]; a sent label_add of flow:in-progress (the plugin's labels.inProgress) gives [issueAssign]; a sent label_add of flow:ready gives both"
+e2e_describe "writes_for over the shipped table: row 40b from intake has no writes ([]), from approve the undo of ready ([issueUpdate] with issueUpdate at confirm). Row 11 from prepare with issueAssign and issueUpdate at confirm (plan 2.2, 'The confirmation of a released intent'): confirmed_intent naming a sent assign_label item gives []; a recorded one, a missing one, and a sent one whose job is another give [issueAssign, issueUpdate]; a sent label_add of flow:in-progress (the plugin's labels.inProgress) gives [issueAssign]; a sent label_add of flow:ready gives both. Called with no fdir, the sent assign_label item in the main checkout's factory directory still gives [] (fdir defaults to it, as fetch_base's does). Each of these gives both keys, though a sent assign_label item for the job is there to be found if the guard were missing: confirmed_intent '../x' with such an item at jobs/issue-7/x.json; confirmed_intent issue-7-j1-11-6 whose file holds id issue-7-j1-11-1; and a job whose issue is the text '7'"
 read -r -d '' TR_CODE <<'PY' || true
 import _flow_factory_table as T
 rows = {r['id']: r for r in json.load(open(os.path.join(os.environ['CLAUDE_PLUGIN_ROOT'], 'references',
@@ -358,15 +368,28 @@ for tag, i in (('sent', 'issue-7-j1-11-1'), ('recorded', 'issue-7-j1-11-2'), ('m
                ('other-job', 'issue-7-j1-11-3'), ('label-in-progress', 'issue-7-j1-11-4'),
                ('label-ready', 'issue-7-j1-11-5'), ('null', None)):
     print('row11 %s %s' % (tag, R.confirm_writes(w11, job(confirmed_intent=i), both, F)))
+# A sent assign_label item for this job, one directory up from the outbox:
+# only the id's shape keeps '../x' from reaching it.
+d = {'id': '../x', 'job': 'issue-7-j1', 'row': '11', 'state_at_write': 'prepare', 'ref': None, 'kind': 'assign_label',
+     'blocking': True, 'key': ['issueAssign', 'issueUpdate'], 'argv': ['gh', 'issue', 'edit', '7'],
+     'body_file': None, 'sha256': '0' * 64, 'status': 'sent', 'effect': None}
+json.dump(d, open(os.path.join(F, 'jobs', 'issue-7', 'x.json'), 'w'))
+print('row11 dotdot %s' % R.confirm_writes(w11, job(confirmed_intent='../x'), both, F))
+# A sent assign_label item for this job whose id names another file.
+json.dump(dict(d, id='issue-7-j1-11-1'), open(os.path.join(out, 'issue-7-j1-11-6.json'), 'w'))
+print('row11 id-not-name %s' % R.confirm_writes(w11, job(confirmed_intent='issue-7-j1-11-6'), both, F))
+print('row11 issue-text %s' % R.confirm_writes(w11, job(issue='7', confirmed_intent='issue-7-j1-11-1'), both, F))
+print('row11 no-fdir %s' % R.confirm_writes(w11, job(confirmed_intent='issue-7-j1-11-1'), both))
 PY
 tr_py "$TR_CODE"
 e2e_expect_line "40b intake []"
 e2e_expect_line "40b approve ['issueUpdate']"
 e2e_expect_line "row11 sent []"
-for TR_N in recorded missing other-job label-ready null; do
+for TR_N in recorded missing other-job label-ready null dotdot id-not-name issue-text; do
   e2e_expect_line "row11 $TR_N ['issueAssign', 'issueUpdate']"
 done
 e2e_expect_line "row11 label-in-progress ['issueAssign']"
+e2e_expect_line "row11 no-fdir []"
 
 _flow_test_begin "factory tiers: the keys left on the path to ready, by stage, and a parked job's resume state (TR9)"
 tr_start tr9-path ''
@@ -452,3 +475,33 @@ e2e_expect_line "default journal"
 e2e_expect_line "user-autonomous journal"
 e2e_expect_line "user-confirm confirm"
 e2e_expect_line "plugin-file journal"
+
+_flow_test_begin "factory tiers: a key no source sets is confirm; a cascade-resolve.sh that exits 1 counts as confirm (TR11)"
+tr_start tr11-unset ''
+e2e_describe "plan B7 step 2 (fail closed): with no file setting anything, a key no source sets (noSuchKey, not in the plugin's settings.json either) resolves to confirm, with base_problem None and no problems, so the confirm comes from the empty case and not from a failed source. Then the plugin copy's cascade-resolve.sh prints the real script's answer for --repo-settings-paths and --user-settings-path and exits 1 (every other call runs the real script): issueAssign, journal everywhere else, gives confirm, with problems naming both calls as exited 1"
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('unset %s %s %s' % (t('noSuchKey'), t.base_problem, t.problems))
+print('assign %s' % t('issueAssign'))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "unset confirm None []"
+e2e_expect_line "assign journal"
+e2e_plugin_copy bin/cascade-resolve.sh '#!/usr/bin/env bash
+real="$(dirname "$0")/cascade-resolve-real.sh"
+case "${1:-}" in
+  --repo-settings-paths|--user-settings-path) "$real" "$@"; exit 1 ;;
+esac
+exec "$real" "$@"'
+cp "$E2E_PLUGIN_DIR/bin/cascade-resolve.sh" "$E2E_ACTIVE_PLUGIN/bin/cascade-resolve-real.sh" \
+  || _e2e_result fail "copied the real cascade-resolve.sh beside the stand-in"
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('failing %s %s' % (t('issueAssign'), t.base_problem))
+for p in t.problems:
+    print('problem %s' % p)
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "failing confirm None"
+e2e_expect_line "problem cascade-resolve.sh --repo-settings-paths: exited 1"
+e2e_expect_line "problem cascade-resolve.sh --user-settings-path: exited 1"

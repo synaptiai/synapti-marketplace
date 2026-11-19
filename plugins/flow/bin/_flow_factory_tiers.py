@@ -32,12 +32,13 @@ API:
   confirm_path_keys(main, base_ref, job, tiers=None, fdir=None) -> [key]
   tier_confirm_blocking(main, base_ref, job, tiers=None, fdir=None) -> bool
   intent_key_not_confirm(main, base_ref, job, tiers=None, fdir=None) -> bool
-  confirm_writes(writes, job, tiers, fdir) -> [key]
+  confirm_writes(writes, job, tiers, fdir=None) -> [key]
 
 main is the main checkout's top; fdir is the factory directory F (default:
 <main>/<runtime dir>/factory, which must exist, since the engine's git keeps
-its empty config there). Where a function takes tiers, a callable
-tiers(key) -> value, it is used in place of a new resolver.
+its empty config there; confirm_writes, which takes no main, finds the main
+checkout from the working directory). Where a function takes tiers, a
+callable tiers(key) -> value, it is used in place of a new resolver.
 """
 
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -354,9 +355,16 @@ def _covered(job, fdir):
     of labels.inProgress the in-progress label. Nothing when there is no such
     item, it is not sent, it belongs to another job, or it cannot be read."""
     iid = job.get("confirmed_intent")
-    if not iid or fdir is None or not isinstance(job.get("issue"), int):
+    if not iid or not isinstance(job.get("issue"), int):
         return set()
     if not re.fullmatch(r"issue-[0-9]+-j[0-9]+-[0-9a-z]+-[0-9]+", str(iid)):
+        return set()
+    try:
+        # The default is the main checkout's factory directory, found from
+        # the working directory; when it cannot be found nothing is covered.
+        if fdir is None:
+            fdir = _fdir(ff.main_checkout(), None)
+    except ff.Refused:
         return set()
     path = os.path.join(fdir, "jobs", f"issue-{job['issue']}", "outbox", f"{iid}.json")
     try:
@@ -380,10 +388,11 @@ def _covered(job, fdir):
     return set()
 
 
-def confirm_writes(writes, job, tiers, fdir):
+def confirm_writes(writes, job, tiers, fdir=None):
     """The keys of the given write kinds that resolve to confirm, each once,
     in the order of first use; the kinds the job's confirmed intent covers
-    are left out. ValueError for a kind the map does not hold."""
+    are left out. ValueError for a kind the map does not hold. fdir None
+    reads the confirmed intent from the main checkout's factory directory."""
     for w in writes:
         if w not in WRITE_KINDS:
             raise ValueError(f"no tier key for write kind {w!r}")

@@ -89,14 +89,19 @@
 #                         as it is in commit <ref> of the repository the
 #                         working directory is in, not from the working tree;
 #                         the local file, the user file and the plugin default
-#                         are read as without it, in the same order. The
-#                         factory engine reads its base-branch settings this
-#                         way, from origin/<base> after its own fetch. A ref
+#                         are read as without it, in the same order. For a
+#                         caller that must judge the settings a branch holds,
+#                         not the ones the working tree has. A ref
 #                         that `git rev-parse --verify <ref>^{commit}` cannot
 #                         resolve (outside a repository, none resolves) exits 3
 #                         with `cascade-resolve: ref_unresolved <ref>` on
 #                         stderr, whatever --default says. A ref that resolves
 #                         but has no project file reads as no project file.
+#                         The commit's entry is read only when it is a regular
+#                         file (mode 100644 or 100755); any other entry (a
+#                         symbolic link, a directory, a submodule) or a file
+#                         git cannot read exits 2 with an ERROR on stderr,
+#                         whatever --default says.
 #                         Not with --no-repo-settings, which reads no project
 #                         file at all, nor with the two path flags (exit 2).
 #   --scalar              accepted and ignored: refusing such a value IS the
@@ -112,7 +117,9 @@
 # Exit:
 #   0 — resolved a value (or returned the default; both are normal)
 #   2 — infrastructure error (jq missing, no expression provided, a leftover
-#       argument, or a refused value with no --default to fall back to)
+#       argument, a refused value with no --default to fall back to, or a
+#       --repo-settings-ref project file that is not a regular file or cannot
+#       be read)
 #   3 — --repo-settings-ref named a ref that does not resolve to a commit
 #
 # WHO MAY SET FLOW_STATE_DIR AND FLOW_USER_SETTINGS (and, through --user-env,
@@ -647,17 +654,44 @@ if [ "$SETTINGS_REF_SET" -eq 1 ]; then
   esac
   PROJECT_LABEL="$(printf '%s' "$SETTINGS_REF" | LC_ALL=C tr -d '\000-\037\177'):.claude/settings.flow.json"
   PROJECT_SETTINGS=""
-  if [ "$(git -C "$_cr_repo_top" cat-file -t "$_cr_commit:.claude/settings.flow.json" 2>/dev/null)" = blob ]; then
+  # The commit's entry for the file, from its tree: "<mode> <type> <id>\t<path>".
+  # Only a regular file is read. A symbolic link would be read as the text
+  # of its target, and a directory or submodule as no file, so a commit
+  # could hide its settings that way; each is refused instead. ls-tree's
+  # NUL-ended output goes through tr, since $(...) drops NUL bytes.
+  if ! _cr_entry=$(git -C "$_cr_repo_top" ls-tree -z --full-tree "$_cr_commit" -- .claude/settings.flow.json 2>/dev/null \
+                   | LC_ALL=C tr '\000' '\n'); then
+    echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL (git ls-tree failed)" >&2
+    exit 2
+  fi
+  _cr_entry="${_cr_entry%%$'\n'*}"
+  if [ -n "$_cr_entry" ]; then
+    _cr_meta="${_cr_entry%%$'\t'*}"
+    _cr_mode="${_cr_meta%% *}"
+    _cr_rest="${_cr_meta#* }"
+    _cr_type="${_cr_rest%% *}"
+    _cr_blob="${_cr_rest#* }"
+    case "$_cr_mode" in
+      100644|100755) ;;
+      *) _cr_type="" ;;
+    esac
+    if [ "${_cr_entry#*$'\t'}" != .claude/settings.flow.json ] || [ "$_cr_type" != blob ] ||
+       [ -z "$_cr_blob" ] || [ -n "${_cr_blob//[0-9a-f]/}" ]; then
+      echo "cascade-resolve: ERROR: $PROJECT_LABEL is not a regular file" >&2
+      exit 2
+    fi
     _cr_ref_tmp=$(mktemp -t cascade-resolve.ref.XXXXXX 2>/dev/null) || {
       echo "cascade-resolve: cannot make a temporary file for $PROJECT_LABEL" >&2
       exit 2
     }
     trap 'rm -f "$_cr_ref_tmp"' EXIT
-    if ! git -C "$_cr_repo_top" cat-file blob "$_cr_commit:.claude/settings.flow.json" > "$_cr_ref_tmp" 2>/dev/null; then
-      echo "cascade-resolve: WARN: failed to read $PROJECT_LABEL; skipping this source" >&2
-    else
-      PROJECT_SETTINGS="$_cr_ref_tmp"
+    # A file git cannot read is refused, not skipped: skipping would drop
+    # the commit's values from the cascade with only a warning.
+    if ! git -C "$_cr_repo_top" cat-file blob "$_cr_blob" > "$_cr_ref_tmp" 2>/dev/null; then
+      echo "cascade-resolve: ERROR: cannot read $PROJECT_LABEL" >&2
+      exit 2
     fi
+    PROJECT_SETTINGS="$_cr_ref_tmp"
   fi
 fi
 USER_SETTINGS="${_cr_user_home}/.claude/settings.flow.json"

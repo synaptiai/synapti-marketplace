@@ -1084,15 +1084,17 @@ OUT=$(cd "$D" && /bin/bash "$HELPER" --user-env PATH 2>&1); RC=$?
 assert_exit 2 "$RC" "any other variable is refused"
 
 # --- --repo-settings-ref <ref>: the project file read from a commit ----------
-# The factory engine reads base-branch settings from the main checkout's
-# origin/<base>, never from the working tree (design changed_files L3,
-# worktrees_ports_bootstrap_auth L51). Ways it can be wrong, written before
-# the code: the working-tree project file is read instead of the one at the
-# ref; the local file stops winning (the cascade's order must not change); an
-# unknown ref reads as "no project file" instead of failing; a ref that looks
-# like an option reaches git as one; a ref with no file is an error instead of
+# The flag reads the project file as it is in a commit, never from the
+# working tree. Ways it can be wrong, written before the code: the
+# working-tree project file is read instead of the one at the ref; the local
+# file stops winning (the cascade's order must not change); an unknown ref
+# reads as "no project file" instead of failing; a ref that looks like an
+# option reaches git as one; a ref with no file is an error instead of
 # reading as no project file; the flag is silently combined with
-# --no-repo-settings, which reads no project file at all.
+# --no-repo-settings, which reads no project file at all; the commit's entry
+# is read whatever it is (a symbolic link read as its target's text, a
+# directory read as no file) instead of only a regular file; a blob git cannot
+# read is skipped, so the project file's values silently drop out.
 _rsr_repo() {
   local d="$SCRATCH_ROOT/rsr-$1"
   mkdir -p "$d/.claude" "$d/home/.claude" "$d/plugins/flow"
@@ -1165,3 +1167,46 @@ assert_exit 2 "$RC" "the two flags together exit 2"
 OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref 2>/dev/null)
 RC=$?
 assert_exit 2 "$RC" "the flag with no value exits 2"
+
+_flow_test_begin "--repo-settings-ref: an entry at the ref that is not a regular file is refused"
+# The link's target text is JSON that would win (autonomous over the
+# plugin's journal), so reading it as its target shows as autonomous, exit 0.
+D=$(_rsr_repo link)
+(
+  cd "$D" && git rm -q .claude/settings.flow.json && mkdir -p .claude \
+    && ln -s '{"tiers": {"issueAssign": "autonomous"}}' .claude/settings.flow.json \
+    && git add .claude/settings.flow.json \
+    && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m link
+) >/dev/null 2>&1
+assert_equal "120000" "$(cd "$D" && git ls-tree main -- .claude/settings.flow.json | cut -c1-6)" "the ref holds a symbolic link"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a symbolic link at the ref exits 2"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "main:.claude/settings.flow.json is not a regular file" "$(cat "$D/err")" "stderr names the entry"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 2 "$RC" "a --default does not hide it"
+assert_equal "" "$OUT" "and prints nothing"
+D=$(_rsr_repo dir)
+(
+  cd "$D" && git rm -q .claude/settings.flow.json && mkdir -p .claude/settings.flow.json \
+    && printf '{}\n' > .claude/settings.flow.json/x && git add .claude/settings.flow.json/x \
+    && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m dir
+) >/dev/null 2>&1
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a directory at the ref exits 2"
+assert_contains "not a regular file" "$(cat "$D/err")" "stderr names it"
+
+_flow_test_begin "--repo-settings-ref: a project file git cannot read at the ref is refused, not skipped"
+# The working tree's file is gone too, so only the ref could give confirm;
+# skipping the source shows as the plugin's journal, exit 0.
+D=$(_rsr_repo noblob)
+BLOB=$(cd "$D" && git rev-parse main:.claude/settings.flow.json)
+rm -f "$D/.git/objects/${BLOB:0:2}/${BLOB:2}" "$D/.claude/settings.flow.json"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a missing blob exits 2, whatever --default says"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "cannot read main:.claude/settings.flow.json" "$(cat "$D/err")" "stderr names the file"
