@@ -30,9 +30,12 @@
 #        no terminal confirms; a `claude` ancestor is not seen (conflicts 2)
 #   PS8  a waiting tty prompt holds a lock, so next waits on it (A+7)
 #   PS9  status misses a job or a status line (AC10, C.5), prints a dead
-#        orphan group, or --json and --brief disagree with the text form
+#        orphan group, or --json and --brief disagree with the text form; or
+#        takes a directive reached through a J/directives that is a symbolic
+#        link as running, and so hides a spent budget
 #   PS10 context --mode gives on with a failed check, or invalid with every
-#        check holding
+#        check holding; or reads the lease through a J/directives that is a
+#        symbolic link
 #   PS11 the enabled gate covers the wrong subcommands (A.3)
 #   PS12 status from a worker's clone reads the clone's own factory folder
 #   PS13 a rebuilt job differs from the live one it replaces: a field a
@@ -66,7 +69,10 @@
 #   PS19 rebuild loses the 1b fields a transition or replayed line carries,
 #        the logged commands_seen and labels_set lists, or write_seq; takes
 #        head_sha from the clone (R52, carry item 1); or applies a field a
-#        line carries that no 1b handler writes (state)
+#        line carries that no 1b handler writes (state); or counts the items
+#        or directives of a J/outbox or J/directives that is a symbolic link;
+#        or reads the log of a job folder that is a symbolic link, or is
+#        reached through one, and asks the person before refusing it
 #
 # PS_ONLY=<id> (PS1 ... PS19) runs only that scenario.
 
@@ -675,6 +681,29 @@ ps_ev "$(ps_trans p4 stage_failed build 43x needs_human '[]' '[]' 13)" 13
 e2e_run_bin bin/flow-factory.sh status
 e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_line 'NESTED_REPOSITORY job=issue-13-j1 path=s\x1b[2Ku\u{202e}b'
+
+fe_new ps9g-status-linked-directives
+# Source: T11 worker_precheck and ps9b (budget 3.00 with 3.00 spent gives
+# PAUSED stage_budget_exhausted while no directive of the job is running);
+# journal wave 3 (a J/outbox that is a symbolic link is treated as not
+# found), applied here to J/directives. Inferred: a directive reached through
+# a linked J/directives is not running, as next's launch refuses that folder.
+# Job 12 is the control: the same directive in a real J/directives is
+# running, so no line.
+e2e_describe "jobs 11 and 12 in build with their 3.00 budget spent and directive build-1; job 11's J/directives is a symbolic link to a folder holding that directive, job 12's a real folder holding it"
+ps_seed
+ps_settings '.flow.factory.worker.stages.build.maxBudgetUsd = 3'
+for PS_N in 11 12; do
+  fe_job "$PS_N" build "d['cost'] = {'usd_total': 3, 'runs': [], 'stage_usd': {'build': 3}, 'dearest_turn_usd': 0}; d['directive'] = 'issue-$PS_N-j1-build-1'"
+done
+mkdir -p "$E2E_DIR/elsewhere/directives" "$PS_F/jobs/issue-12/directives"
+printf '{"id":"issue-11-j1-build-1"}\n' > "$E2E_DIR/elsewhere/directives/issue-11-j1-build-1.json"
+printf '{"id":"issue-12-j1-build-1"}\n' > "$PS_F/jobs/issue-12/directives/issue-12-j1-build-1.json"
+ln -s "$E2E_DIR/elsewhere/directives" "$PS_F/jobs/issue-11/directives"
+e2e_run_bin bin/flow-factory.sh status
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_line "PAUSED stage_budget_exhausted job=issue-11-j1 stage=build next: raise flow.factory.worker.stages.build.maxBudgetUsd or cancel the job"
+e2e_expect_no_out "stage_budget_exhausted job=issue-12-j1"
 fi
 
 # ---------------------------------------------------------------- PS10, PS12
@@ -745,6 +774,8 @@ ctx lease2 $(printf %q "$PS_WT") FLOW_FACTORY_DIRECTIVE=$D2
 ctx revoked $(printf %q "$PS_WT") FLOW_FACTORY_DIRECTIVE=$D3
 st status $(printf %q "$PS_WT")
 touch \"\$R/cases.done\"
+go linked
+ctx linked $(printf %q "$PS_WT")
 go end"
 PS_L7=$(fe_fake_launcher "$PS_F" "$D1" "$E2E_DIR/w7.sh")
 [ -n "$PS_L7" ] && fe_mask_pid "$PS_L7" launcher-7
@@ -752,6 +783,16 @@ jq --arg d "$D2" '.directive = $d' "$PS_J/directives/$D1.lease.json" > "$PS_J/di
 jq --arg d "$D3" '.directive = $d | .revoked_at = "2026-11-16T00:00:00Z"' "$PS_J/directives/$D1.lease.json" > "$PS_J/directives/$D3.lease.json"
 touch "$E2E_DIR/w/go-leases"
 fe_wait_for 90 "[ -e '$E2E_DIR/w/cases.done' ]"
+# The linked case: J/directives is swapped for a symbolic link to a copy of
+# it, lease included, so only the link makes the lease check fail; the real
+# folder is put back once the case has run.
+cp -Rp "$PS_J/directives" "$E2E_DIR/elsewhere-directives"
+mv "$PS_J/directives" "$E2E_DIR/directives.real"
+ln -s "$E2E_DIR/elsewhere-directives" "$PS_J/directives"
+touch "$E2E_DIR/w/go-linked"
+fe_wait_for 60 "[ -e '$E2E_DIR/w/linked.rc' ]"
+rm "$PS_J/directives"
+mv "$E2E_DIR/directives.real" "$PS_J/directives"
 ps_ctx_script "$E2E_DIR/w8.sh" "$PS_F/jobs/issue-8/directives/issue-8-j1-build-1.lease.json" "
 ctx notbelow $(printf %q "$PS_WT")"
 PS_L8=$(fe_fake_launcher "$PS_F" issue-8-j1-build-1 "$E2E_DIR/w8.sh")
@@ -759,7 +800,7 @@ PS_L8=$(fe_fake_launcher "$PS_F" issue-8-j1-build-1 "$E2E_DIR/w8.sh")
 fe_wait_for 60 "[ -e '$E2E_DIR/w/w8.sh.done' ]"
 touch "$E2E_DIR/w/go-end"
 fe_wait_for 30 "[ -e '$E2E_DIR/w/w7.sh.done' ]"
-for PS_TAG in on branch issue main directive cwd lease2 revoked notbelow status; do
+for PS_TAG in on branch issue main directive cwd lease2 revoked notbelow linked status; do
   printf -- '--- %s: rc %s\n%s\n--- stderr\n%s\n' "$PS_TAG" "$(cat "$E2E_DIR/w/$PS_TAG.rc" 2>/dev/null)" \
     "$(cat "$E2E_DIR/w/$PS_TAG.out" 2>/dev/null)" "$(cat "$E2E_DIR/w/$PS_TAG.err" 2>/dev/null)" | _e2e_art
 done
@@ -773,10 +814,14 @@ e2e_expect_equal "0 FACTORY_MODE=invalid" "$(ps_out directive)" "(b) FLOW_FACTOR
 e2e_expect_equal "0 FACTORY_MODE=invalid" "$(ps_out cwd)" "(b) the cwd is not the job clone"
 e2e_expect_equal "0 FACTORY_MODE=invalid" "$(ps_out revoked)" "(b) the lease is revoked"
 e2e_expect_equal "0 FACTORY_MODE=invalid" "$(ps_out notbelow)" "(b) not below the lease's claude pid"
+# Journal wave 3 (linked folders): a J/directives that is a symbolic link is
+# treated as not found, so its lease is not read. The copy behind the link
+# holds the same live lease, so a read through it would give on.
+e2e_expect_equal "0 FACTORY_MODE=invalid" "$(ps_out linked)" "(b) J/directives is a symbolic link to a copy holding the live lease"
 # Each case fails on its own check, so no case passes because another check
 # happens to fail.
 for PS_PAIR in branch:FLOW_FACTORY_BRANCH issue:FLOW_FACTORY_ISSUE main:main directive:lease cwd:toplevel \
-    revoked:lease notbelow:claude_ancestor; do
+    revoked:lease notbelow:claude_ancestor linked:lease; do
   e2e_expect_equal "flow-factory.sh context: check failed: ${PS_PAIR#*:}" "$(cat "$E2E_DIR/w/${PS_PAIR%%:*}.err" 2>/dev/null)" "(b) ${PS_PAIR%%:*}: the check named on stderr"
 done
 fi
@@ -1667,6 +1712,69 @@ e2e_expect_equal different "$([ "$PS_HEAD" = "$PS_A" ] && echo same || echo diff
 ps_ev '{"type":"pr_recorded","job":"issue-7-j1","time":"2026-11-16T00:11:00Z","pr":12,"head":"'"$PS_B"'"}'
 fe_person_terminal issue-7-j1 "$PS_W" rebuild 7
 e2e_expect_equal "$PS_B" "$(ps_jq "$PS_J/job.json" .head_sha)" "head_sha is the later pr_recorded line's head"
+
+fe_new ps19c-rebuild-linked-subfolders
+# Source: plan 2.2 (write_seq is the largest k of the job's intent_recorded
+# lines and J/outbox item ids; stage_launches and directive from the
+# directive files); journal wave 3 (a J/outbox that is a symbolic link is
+# treated as not found; the drain refuses it, OUTBOX_UNREADABLE
+# reason=symlink). Inferred: rebuild treats a linked J/outbox and a linked
+# J/directives as absent, so write_seq is the line's k 3, stage_launches is
+# empty and directive null; the k 5 item and the intake-2 directive behind
+# the links do not count.
+e2e_describe "job.json '{'; created -> queued -> intake (row 2); an intent_recorded line with k 3; J/outbox a symbolic link to a folder with item k 5; J/directives a symbolic link to a folder with directive intake-2; rebuild 7 in a terminal"
+ps_seed
+mkdir -p "$PS_J" "$E2E_DIR/elsewhere/outbox" "$E2E_DIR/elsewhere/directives"
+printf '{' > "$PS_J/job.json"
+ps_ev "$(ps_created "$(ps_record 7 queued)")"
+ps_ev "$(ps_trans p2 sync_tick queued 2 intake)"
+ps_ev '{"type":"intent_recorded","job":"issue-7-j1","time":"2026-11-16T00:15:00Z","id":"issue-7-j1-note-3","row":null,"kind":"comment","sha256":"'"$(printf '%064d' 0)"'"}'
+printf '{}\n' > "$E2E_DIR/elsewhere/outbox/issue-7-j1-note-5.json"
+printf '{"created_in_pass":"p2"}\n' > "$E2E_DIR/elsewhere/directives/issue-7-j1-intake-2.json"
+ln -s "$E2E_DIR/elsewhere/outbox" "$PS_J/outbox"
+ln -s "$E2E_DIR/elsewhere/directives" "$PS_J/directives"
+fe_person_terminal issue-7-j1 "$PS_W" rebuild 7
+e2e_expect_equal 0 "$E2E_RC" "rebuild exit status"
+e2e_expect_line "REBUILT job=issue-7-j1 state=intake"
+e2e_expect_equal 3 "$(ps_jq "$PS_J/job.json" .write_seq)" "write_seq (the k 5 item behind the J/outbox link does not count)"
+e2e_expect_equal "{} null" "$(ps_jq "$PS_J/job.json" '"\(.stage_launches | tojson) \(.directive)"')" "stage_launches and directive (the directive behind the J/directives link does not count)"
+
+fe_new ps19d-rebuild-linked-job
+# Source: status names a job folder that is a symbolic link UNREADABLE with
+# next: flow-factory.sh rebuild (read_job: a symlink is unreadable), and the
+# other person subcommands refuse it with job_unreadable. Inferred: rebuild
+# gives that line too, before it reads the log behind the link or asks.
+e2e_describe "J of issue 7 is a symbolic link to a folder holding a log (created -> queued) and job.json '{'; rebuild 7 in a terminal"
+ps_seed
+mkdir -p "$PS_F/jobs" "$E2E_DIR/elsewhere/issue-7"
+printf '{' > "$E2E_DIR/elsewhere/issue-7/job.json"
+ps_created "$(ps_record 7 queued)" > "$E2E_DIR/elsewhere/issue-7/events.jsonl"
+cp "$E2E_DIR/elsewhere/issue-7/events.jsonl" "$E2E_DIR/events.before"
+ln -s "$E2E_DIR/elsewhere/issue-7" "$PS_J"
+fe_person_terminal issue-7-j1 "$PS_W" rebuild 7
+e2e_expect_equal 5 "$E2E_RC" "rebuild exit status"
+e2e_expect_equal "FACTORY_REFUSED=job_unreadable job=issue-7" "$E2E_OUT" "the terminal shows the refusal and no prompt"
+e2e_expect_equal "{" "$(cat "$E2E_DIR/elsewhere/issue-7/job.json")" "job.json behind the link"
+e2e_expect_equal absent "$([ -e "$E2E_DIR/elsewhere/issue-7/job.json.bak" ] && echo present || echo absent)" "job.json.bak behind the link"
+e2e_expect_equal same "$(cmp -s "$E2E_DIR/events.before" "$E2E_DIR/elsewhere/issue-7/events.jsonl" && echo same || echo changed)" "events.jsonl behind the link"
+
+fe_new ps19e-rebuild-linked-jobs-folder
+# Source: read_job checks F/jobs with the repository directory rule before it
+# reads a job (factory_dir_refused, naming the link), and job_lock refuses the
+# same folder after the prompt. Inferred: rebuild checks it before it reads
+# the log or asks.
+e2e_describe "F/jobs is a symbolic link to a folder holding issue-7 with a log (created -> queued) and job.json '{'; rebuild 7 in a terminal"
+ps_seed
+mkdir -p "$E2E_DIR/elsewhere/jobs/issue-7"
+printf '{' > "$E2E_DIR/elsewhere/jobs/issue-7/job.json"
+ps_created "$(ps_record 7 queued)" > "$E2E_DIR/elsewhere/jobs/issue-7/events.jsonl"
+[ ! -d "$PS_F/jobs" ] || rmdir "$PS_F/jobs"
+ln -s "$E2E_DIR/elsewhere/jobs" "$PS_F/jobs"
+fe_person_terminal issue-7-j1 "$PS_W" rebuild 7
+e2e_expect_equal 5 "$E2E_RC" "rebuild exit status"
+e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c '^FACTORY_REFUSED=factory_dir_refused .*jobs')" "one factory_dir_refused line naming jobs"
+e2e_expect_no_out "type the job key"
+e2e_expect_equal absent "$([ -e "$E2E_DIR/elsewhere/jobs/issue-7/job.json.bak" ] && echo present || echo absent)" "job.json.bak behind the link"
 fi
 
 _flow_test_summary

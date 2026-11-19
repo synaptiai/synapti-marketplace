@@ -186,7 +186,10 @@ def _read_item(path):
 
 
 def _real_folder(path):
-    """True when path is a folder and not a symbolic link to one."""
+    """True when path is a folder and not a symbolic link to one. This
+    module reads J/outbox, J/questions and J/directives only through this
+    check and treats a linked folder as absent, as plan 2.2's lookup rule
+    treats a linked J/outbox (journal wave 3)."""
     try:
         return stat.S_ISDIR(os.lstat(path).st_mode)
     except OSError:
@@ -666,9 +669,13 @@ class _Replayed(object):
 
 
 def _directives(jdir, key):
-    """[(stage, k, created_in_pass number or -1)] of J/directives/<key>-<stage>-<k>.json."""
+    """[(stage, k, created_in_pass number or -1)] of J/directives/<key>-<stage>-<k>.json.
+    A J/directives that is a symbolic link is read as empty: next's launch
+    refuses that folder, so nothing behind it is the job's."""
     pat = re.compile(r"^" + re.escape(key) + r"-([a-z_]+)-([1-9][0-9]*)\.json$")
     out = []
+    if not _real_folder(os.path.join(jdir, "directives")):
+        return out
     try:
         names = os.listdir(os.path.join(jdir, "directives"))
     except OSError:
@@ -708,17 +715,20 @@ def _apply_fields(job, line):
 def _write_seq(jdir, key, lines):
     """The largest k of the job's intent ids issue-N-j<seq>-<row>-<k>, from
     its intent_recorded lines and its J/outbox item names, or None (plan
-    2.2 write_seq)."""
+    2.2 write_seq). The items of a J/outbox that is a symbolic link do not
+    count: the drain does not read that folder (OUTBOX_UNREADABLE)."""
     name = re.compile("^" + re.escape(key) + r"-[0-9a-z]+-([0-9]+)$")
     ks = []
     for line in lines:
         m = name.match(line.get("id") or "") if line.get("type") == "intent_recorded" else None
         if m and isinstance(line.get("id"), str):
             ks.append(int(m.group(1)))
-    try:
-        files = os.listdir(os.path.join(jdir, "outbox"))
-    except OSError:
-        files = []
+    files = []
+    if _real_folder(os.path.join(jdir, "outbox")):
+        try:
+            files = os.listdir(os.path.join(jdir, "outbox"))
+        except OSError:
+            pass
     for f in files:
         m = name.match(f[:-len(".json")]) if f.endswith(".json") else None
         if m:
@@ -889,6 +899,13 @@ def cmd_rebuild(argv):
     table = ftable.load_table()
     jdir = jobs.job_dir(paths, n)
     events_path = os.path.join(jdir, "events.jsonl")
+    # As read_job, before the log is read or the person asked: F/jobs reached
+    # through a symbolic link is refused (factory_dir_refused), and a job
+    # folder that is one is unreadable, the line the other person
+    # subcommands give and the one status's UNREADABLE line leads to.
+    jobs._check_dir(paths, os.path.dirname(jdir))
+    if os.path.islink(jdir):
+        raise Refused(f"job_unreadable job=issue-{n}")
     if not os.path.isdir(jdir) or not (os.path.lexists(events_path) or os.path.lexists(os.path.join(jdir, "job.json"))):
         raise Refused(f"job_unknown job={job_arg}")
     lines = _read_events(events_path) if os.path.lexists(events_path) else []
@@ -971,7 +988,11 @@ def _engine_lines(paths, table, found, state):
             continue
         key, st = job["key"], job["state"]
         jdir = jobs.job_dir(paths, n)
-        if table.states.get(st, {}).get("run_by") == "worker" and not fnext.directive_open(paths, n, job.get("directive")):
+        # A directive behind a J/directives that is a symbolic link is not
+        # running: next's launch refuses that folder.
+        if table.states.get(st, {}).get("run_by") == "worker" and not (
+                _real_folder(os.path.join(jdir, "directives"))
+                and fnext.directive_open(paths, n, job.get("directive"))):
             line = jobs.worker_budget_paused(key, st, jobs.setting(f"flow.factory.worker.stages.{st}.maxBudgetUsd"),
                                              job)
             if line:
@@ -1168,7 +1189,8 @@ def _context_check():
     top = ff.git_out(git, here, ["rev-parse", "--show-toplevel"])
     if not top or os.path.realpath(top[0]) != os.path.realpath(wt):
         return "toplevel"
-    lease = _read_item(os.path.join(jobs.job_dir(paths, n), "directives", did + ".lease.json"))
+    ddir = os.path.join(jobs.job_dir(paths, n), "directives")
+    lease = _read_item(os.path.join(ddir, did + ".lease.json")) if _real_folder(ddir) else None
     if not lease or lease.get("directive") != did or lease.get("revoked_at") is not None:
         return "lease"
     child, child_start = lease.get("child_pid"), lease.get("child_start")
