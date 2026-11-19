@@ -646,3 +646,54 @@ e2e_expect_out "Job issue-7-j1 is in state needs_info, where this command does n
 e2e_expect_line 'cmd 85 cancel raise=True trusted=True triage_only=False event=person_cancel args={} note=no'
 e2e_expect_line "unreadable refused pending_unreadable"
 e2e_expect_line "after pending 1 seen [81, 82, 83, 84]"
+
+# ---------------------------------------------------------------------------
+_flow_test_begin "factory commands: a status-note template that is missing or not UTF-8 is refused as template_unreadable and stores nothing (CM6, CM9)"
+# One scenario per way the template fails: missing (an OSError from open)
+# and not UTF-8 (a UnicodeDecodeError from read). Both must give the
+# refusal the intake module gives for its own templates.
+read -r -d '' CM_CODE <<'PY' || true
+job = J()
+before = json.dumps(job, sort_keys=True)
+def attempt(name, f):
+    try:
+        f()
+        print('%s not refused' % name)
+    except jobs.Refused as e:
+        print('%s refused %s names-template=%s' % (name, str(e).split()[0], 'status-note.comment.md' in str(e)))
+    except Exception as e:
+        print('%s raised %s' % (name, type(e).__name__))
+c = [c for c in scan(job) if c['comment_id'] == 91][0]
+attempt('command', lambda: store(job, c))
+p = perms()
+snap = I.read_issue(gh, REPO, 7, job, p)
+notes = C.label_notes(snap, job, 'flow:factory')
+print('label notes %d' % len(notes))
+for x in notes:
+    with jobs.job_lock(P, 7):
+        attempt('label', lambda: C.store_label_note(P, job, x, repo=REPO))
+print('items %d' % len(items()))
+print('seen %s lines %d' % (J().get('commands_seen'), len(events('commands_seen'))))
+print('job unchanged %s' % (json.dumps(J(), sort_keys=True) == before))
+PY
+for CM_HOW in missing not-utf8; do
+  cm_start "cm-template-$CM_HOW" ready
+  fe_world_perm tri triage
+  fe_world_label 7 flow:factory tri triage 2026-11-18T11:00:00Z unlabeled
+  cm_c 91 wrt write 2026-11-18T11:05:00Z '/flow-factory reject'
+  e2e_describe "review finding on _render: the status-note template that is $CM_HOW is refused as the intake module refuses its templates, Refused('template_unreadable <path>: ...'), so the rows' callers, which catch Refused, report it instead of crashing on an OSError or a UnicodeDecodeError. A trusted reject in ready gets a state note (design person_channels L15, T:events) and a removal of the queue label by triage after vouch_at gets a label note (L56, R56); both are refused with template_unreadable naming status-note.comment.md, and neither leaves anything behind: no outbox item, commands_seen unchanged with no commands_seen events line, so the next pass tries the comment again, and job.json unchanged (plan 2.2: an effect checks before it changes anything; Inferred for the template)"
+  if [ "$CM_HOW" = missing ]; then
+    e2e_plugin_copy templates/factory/status-note.comment.md "x"
+    rm -f "$E2E_ACTIVE_PLUGIN/templates/factory/status-note.comment.md"
+  else
+    e2e_plugin_copy templates/factory/status-note.comment.md "$(printf 'bad \377\376 bytes {what}')"
+  fi
+  cm_py "$CM_CODE"
+  e2e_expect_equal "0" "$E2E_RC" "exit status"
+  e2e_expect_line "command refused template_unreadable names-template=True"
+  e2e_expect_line "label notes 1"
+  e2e_expect_line "label refused template_unreadable names-template=True"
+  e2e_expect_line "items 0"
+  e2e_expect_line "seen None lines 0"
+  e2e_expect_line "job unchanged True"
+done

@@ -282,11 +282,15 @@ def _listed(paths, n, key, cid):
 
 
 def _render(what, reason):
+    """The status note's text. A template that is missing, cannot be read
+    or is not UTF-8 is refused (template_unreadable), as the intake module
+    refuses its own templates, so the rows' callers, which catch Refused,
+    report it. Each caller renders before it records anything."""
     try:
         with open(TEMPLATE, encoding="utf-8") as f:
             template = f.read()
-    except OSError as e:
-        raise jobs.Refused(f"template_unreadable {TEMPLATE}: {e}")
+    except (OSError, UnicodeDecodeError) as e:
+        raise jobs.Refused(f"template_unreadable {TEMPLATE}: {' '.join(str(e).split())}")
     values = {"what": what, "reason": reason}
     return PLACEHOLDER.sub(lambda m: values[m.group(1)], template)
 
