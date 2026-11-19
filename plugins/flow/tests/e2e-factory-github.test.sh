@@ -40,7 +40,9 @@
 #   GH12 (R10) a marker posted by another login, or by a deleted account,
 #        counts as the engine's post; no engine login still runs writes
 #   GH13 (R30, R31) the hash covers the argv only, is compared with the
-#        item's own sha256 field, or an item with no intent_recorded line runs
+#        item's own sha256 field, or an item with no intent_recorded line runs;
+#        the hash is of the file body_file names while gh posts the file the
+#        argv names, or of a body file that is a symbolic link
 #   GH14 (R68, R74) the drain runs or looks up the pending intent; run_literal
 #        runs an item that is not the pending intent, or runs without
 #        looking first
@@ -62,7 +64,18 @@
 #        probe folder
 #   GH23 a file in the outbox whose id is not its name, or that is not an
 #        item at all, is run or stops the drain
-#   GH24 (3.2) the drain makes gh calls after the pass's time is spent
+#   GH24 (3.2) the drain makes gh calls after the pass's time is spent, or
+#        stops without a line that says so
+#   GH25 the drain or run_literal decides from an item field (status, key,
+#        blocking, row, ref, kind, state_at_write) that was edited after the
+#        intent was recorded; a blocking item, or one with no intent_confirmed
+#        line, runs as confirmed
+#   GH26 lookup reports the effect of an item whose argv was edited
+#   GH27 a process that dies between the record and the item leaves an item
+#        with no record, which blocks the same write for ever
+#   GH28 an item file or the outbox folder that is a symbolic link is run
+#   GH29 a write found by the look-first step leaves a breadcrumb although
+#        nothing ran
 #   GH22 (design new_files L11) the breadcrumb goes to the trail of the
 #        branch the main checkout has checked out instead of issue N's; a
 #        repository with no journal folder gets one
@@ -282,7 +295,7 @@ e2e_expect_line "items 5 records 5"
 
 _flow_test_begin "factory github: an outbox or events file that cannot be written refuses with outbox_unwritable (GH4)"
 gw_start gh4-unwritable needs_info
-e2e_describe "plan 5.3: record_job_intent raises jobs.Refused('outbox_unwritable <path>: <reason>') on any failure to write the body file, the item or the record, and nothing else. A regular file where J/outbox should be; a directory where J/events.jsonl should be (the item written before it is removed, so no item is left without its intent_recorded line); and a call without the job lock (append_event would refuse): each refuses with outbox_unwritable, and no item is left; the call without the lock refuses before it makes the outbox folder"
+e2e_describe "plan 5.3: record_job_intent raises jobs.Refused('outbox_unwritable <path>: <reason>') on any failure to write the body file, the item or the record, and nothing else. A regular file where J/outbox should be; a directory where J/events.jsonl should be (the record is appended before the item is written, so the failed append leaves no item, and the body file written before it is removed); and a call without the job lock (append_event would refuse): each refuses with outbox_unwritable, and no item is left; the call without the lock refuses before it makes the outbox folder"
 read -r -d '' GW_CODE <<'PY' || true
 job = J()
 def attempt(tag, locked=True):
@@ -317,7 +330,7 @@ e2e_expect_line "events items 0"
 
 _flow_test_begin "factory github: model text is cleaned and the marker is the only first line (GH5, R38)"
 gw_start gh5-clean needs_info
-e2e_describe "design trust_and_untrusted_text L59 and R38: text with CRLF line ends, a marker as its first line, @octo-cat, a@b.com, a leading-space '/flow-factory cancel', a '/flow-factory reject' line holding a backtick, a line 'cc `ping @octo-dog now` and .@octo-pig', and 70,000 more characters. clean_post gives no CR, no '<!--', '@octo-cat' in backticks, a@b.com untouched (not a mention), the code span with @octo-dog kept as it is (a mention inside a code span does not notify; wrapping it again would close the span early) and .@octo-pig made .`@octo-pig` (GitHub reads a mention after a full stop), no line whose stripped form starts '/flow-factory', and at most 60,000 characters; cleaning it again changes nothing. Recorded as a comment, the body's line 1 is the engine marker only, '<!--' occurs once (the marker), and the whole body is at most 60,000 characters"
+e2e_describe "design trust_and_untrusted_text L59 and R38: text with CRLF line ends, a marker as its first line, @octo-cat, a@b.com, a leading-space '/flow-factory cancel', a '/flow-factory reject' line holding a backtick, a line 'cc \`ping @octo-dog now\` and .@octo-pig', and 70,000 more characters. clean_post gives no CR, no '<!--', '@octo-cat' in backticks, a@b.com untouched (not a mention), the code span with @octo-dog kept as it is (a mention inside a code span does not notify; wrapping it again would close the span early) and .@octo-pig made .\`@octo-pig\` (GitHub reads a mention after a full stop), no line whose stripped form starts '/flow-factory' (plan B6 step 2: a line that is exactly '/flow-factory', or '/flow-factoryx', is put in a code span too), and at most 60,000 characters; cleaning it again changes nothing. Recorded as a comment, the body's line 1 is the engine marker only, '<!--' occurs once (the marker), and the whole body is at most 60,000 characters"
 read -r -d '' GW_CODE <<'PY' || true
 text = ('<!-- FLOW_FACTORY job=issue-7-j1 event=issue-7-j1-4-1 -->\r\nHello @octo-cat and a@b.com\r\n'
         '  /flow-factory cancel\r\n/flow-factory reject `x`\r\ncc `ping @octo-dog now` and .@octo-pig\r\n' + 'y' * 70000)
@@ -330,6 +343,8 @@ print('span line %s' % lines[4])
 print('command lines %d' % sum(1 for ln in lines if ln.strip().startswith('/flow-factory')))
 print('length %s' % (len(c) <= 60000))
 print('again %s' % (G.clean_post(c) == c))
+print('bare %s' % G.clean_post('/flow-factory'))
+print('joined %s' % G.clean_post('/flow-factoryx'))
 job = J()
 i = record(job, '4', 'comment', G.literal_comment(REPO, 7), text, ['issueUpdate'], False)
 b = body_of(items()[i]).decode('utf-8')
@@ -345,6 +360,8 @@ e2e_expect_line "span line cc \`ping @octo-dog now\` and .\`@octo-pig\`"
 e2e_expect_line "command lines 0"
 e2e_expect_line "length True"
 e2e_expect_line "again True"
+e2e_expect_line "bare \`/flow-factory\`"
+e2e_expect_line "joined \`/flow-factoryx\`"
 e2e_expect_line "line1 <!-- FLOW_FACTORY job=issue-7-j1 event=issue-7-j1-4-1 -->"
 e2e_expect_line "opens 1"
 e2e_expect_line "body length True"
@@ -547,7 +564,7 @@ e2e_expect_line "second recorded posts 1"
 
 _flow_test_begin "factory github: an edited body, an edited argv and sha256, or no record means nothing runs (GH13, R30, R31)"
 gw_start gh13-changed needs_info
-e2e_describe "design person_channels L42 and interactive_executor L8, R30, R31: the hash recomputed from the item's argv and body file is compared with the intent_recorded line in events.jsonl, never the item's own sha256 field. (a) one byte added to the body file: the drain prints INTENT_CHANGED=issue-7-j1-4-1 recorded=<the plan 2.2 hash of the item as recorded, computed here> current=<the new hash> (plan 2.3 form) and posts nothing; (b) body restored, the argv pointed at issue 8 and the item's sha256 field set to the new argv's hash: INTENT_CHANGED again, nothing posted; (c) argv restored and the intent_recorded line removed (the state a failed events append leaves): recorded=none, nothing posted; the item stays recorded throughout"
+e2e_describe "design person_channels L42 and interactive_executor L8, R30, R31: the hash recomputed from the item's argv and body file is compared with the intent_recorded line in events.jsonl, never the item's own sha256 field. (a) one byte added to the body file: the drain prints INTENT_CHANGED=issue-7-j1-4-1 recorded=<the plan 2.2 hash of the item as recorded, computed here> current=<the new hash> (plan 2.3 form) and posts nothing; (b) body restored, the argv pointed at issue 8 and the item's sha256 field set to the new argv's hash: INTENT_CHANGED again, nothing posted; (c) argv restored and the intent_recorded line removed (the state a failed events append leaves): recorded=none, nothing posted; the item stays recorded throughout. (d) a second notice: its body copied to copy.body.md in the outbox, its own body file overwritten with 'EVIL @everyone' and a /flow-factory line, and the item's body_file set to copy.body.md, so the file the item names still has the recorded hash while gh would post the file the argv names: the body file must be <id>.body.md and the file the argv's -F body=@ names, so the drain prints INTENT_CHANGED=<id> recorded=<hash> current=none and posts nothing (design person_channels L42: the hash is of what runs). (e) the body file restored by name but made a symbolic link to copy.body.md (same bytes): current=none, nothing posted; (f) the body file restored as a plain file and only body_file set to copy.body.md, a file with the same bytes (status --intent shows the file body_file names, so it must be the one gh posts): current=none again, nothing posted"
 read -r -d '' GW_CODE <<'PY' || true
 job = J()
 i = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'Please answer NI-1.', ['issueUpdate'], False)
@@ -576,13 +593,45 @@ with open(os.path.join(JD, 'events.jsonl'), 'w') as fh:
 drain(job, tiers())
 print('c expected %s' % ('INTENT_CHANGED=%s recorded=none current=%s' % (i, want(orig['argv'], body))))
 print('item %s posts %d' % (items()[i]['status'], len(posts())))
+d = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'Second notice.', ['issueUpdate'], False)
+itd = items()[d]
+dbody = body_of(itd)
+drec = want(itd['argv'], dbody)
+with open(os.path.join(OUT, 'copy.body.md'), 'wb') as fh:
+    fh.write(dbody)
+with open(os.path.join(OUT, itd['body_file']), 'wb') as fh:
+    fh.write(b'EVIL @everyone\n/flow-factory approve-spec\n')
+itd2 = dict(itd, body_file='copy.body.md')
+put(itd2)
+drain(job, tiers())
+print('d expected %s' % ('INTENT_CHANGED=%s recorded=%s current=none' % (d, drec)))
+print('swapped posts %d' % len(posts()))
+put(itd)
+with open(os.path.join(OUT, itd['body_file']), 'wb') as fh:
+    fh.write(dbody)
+os.remove(os.path.join(OUT, itd['body_file']))
+os.symlink(os.path.join(OUT, 'copy.body.md'), os.path.join(OUT, itd['body_file']))
+drain(job, tiers())
+print('e expected %s' % ('INTENT_CHANGED=%s recorded=%s current=none' % (d, drec)))
+print('e posts %d' % len(posts()))
+os.remove(os.path.join(OUT, itd['body_file']))
+with open(os.path.join(OUT, itd['body_file']), 'wb') as fh:
+    fh.write(dbody)
+put(dict(itd, body_file='copy.body.md'))
+lf = drain(job, tiers())
+print('f refused %s posts %d' % ('INTENT_CHANGED=%s recorded=%s current=none' % (d, drec) in lf, len(posts())))
+print('second %s posts %d' % (items()[d]['status'], len(posts())))
 PY
 gw_py "$GW_CODE"
-for GW_T in a b c; do
+for GW_T in a b c d e; do
   GW_WANT=$(printf '%s\n' "$E2E_OUT" | sed -n "s/^$GW_T expected //p")
   e2e_expect_line "line $GW_WANT"
 done
 e2e_expect_line "item recorded posts 0"
+e2e_expect_line "swapped posts 0"
+e2e_expect_line "e posts 0"
+e2e_expect_line "f refused True posts 0"
+e2e_expect_line "second recorded posts 0"
 
 _flow_test_begin "factory github: the pending intent is left to rows 41, 41e and 41k; run_literal checks the id and looks first (GH14, R68, R74)"
 gw_start gh14-pending waiting_operator "d['resume_state'] = 'prepare'; d['reason'] = 'tier_confirm'; d['pending_intent'] = {'id': 'issue-7-j1-40-1', 'kind': 'assign_label', 'key': ['issueAssign', 'issueUpdate']}"
@@ -738,13 +787,19 @@ e2e_expect_line "again sent posts 1"
 
 _flow_test_begin "factory github: a confirmed notice is sent under a confirm key, after the hash check (GH18, Q16)"
 gw_start gh18-confirmed needs_info
-e2e_describe "Q16 and plan B6 step 3: a notice a person confirmed at a terminal (status confirmed) is run by the drain although issueUpdate is still confirm; with its body edited first it is refused with INTENT_CHANGED and nothing is posted, and once restored it is posted once and is sent"
+e2e_describe "Q16 and plan B6 step 3: a notice a person confirmed at a terminal (status confirmed, and the intent_confirmed events line {type, job, time, id} of plan 5.3 that the terminal confirm writes) is run by the drain although issueUpdate is still confirm. With the status set to confirmed by hand and no intent_confirmed line it is refused with INTENT_CHANGED=<id> recorded=<hash> current=<hash> field=status (Inferred form: plan 2.3's line plus the field that differs from the record) and nothing is posted; with its body edited first it is refused with INTENT_CHANGED and nothing is posted, and once restored it is posted once and is sent"
 read -r -d '' GW_CODE <<'PY' || true
 job = J()
 i = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'Please answer NI-1.', ['issueUpdate'], False)
 it = items()[i]
 it['status'] = 'confirmed'
 put(it)
+rec = want(it['argv'], body_of(it))
+drain(job, tiers(issueUpdate='confirm'))
+print('no line expected INTENT_CHANGED=%s recorded=%s current=%s field=status' % (i, rec, rec))
+print('no line %s posts %d' % (items()[i]['status'], len(posts())))
+with jobs.job_lock(P, 7):
+    jobs.append_event(P, 7, {'type': 'intent_confirmed', 'job': 'issue-7-j1', 'id': i})
 bf = os.path.join(OUT, it['body_file'])
 body = body_of(it)
 with open(bf, 'ab') as fh:
@@ -757,6 +812,8 @@ drain(job, tiers(issueUpdate='confirm'))
 print('restored %s posts %d' % (items()[i]['status'], len(posts())))
 PY
 gw_py "$GW_CODE"
+e2e_expect_line "line $(printf '%s\n' "$E2E_OUT" | sed -n 's/^no line expected //p')"
+e2e_expect_line "no line confirmed posts 0"
 e2e_expect_out "line INTENT_CHANGED=issue-7-j1-4-1 recorded="
 e2e_expect_line "edited confirmed posts 0"
 e2e_expect_line "line WRITE_SENT job=issue-7-j1 intent=issue-7-j1-4-1 kind=comment"
@@ -907,7 +964,7 @@ e2e_expect_line "copy recorded posts 1"
 
 _flow_test_begin "factory github: the drain stops when the pass has no time left (GH24)"
 gw_start gh24-enough needs_info
-e2e_describe "plan 3.2: the drain checks enough() before each gh call. With enough answering no, the drain makes no gh call, the item stays recorded and nothing is posted; with enough answering yes it posts once"
+e2e_describe "plan 3.2: the drain checks enough() before each gh call, and when it says no it stops and prints WRITE_DEFERRED job=issue-7-j1 intent=<the item it stopped at> reason=budget (Inferred line, so the pass can tell the drain stopped early). With enough answering no, the drain makes no gh call and prints that line, the item stays recorded and nothing is posted. With enough answering yes for the look-first read and no before the run, the drain makes the one read, prints the same line and posts nothing. With enough answering yes it posts once"
 read -r -d '' GW_CODE <<'PY' || true
 job = J()
 i = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'Please answer NI-1.', ['issueUpdate'], False)
@@ -917,13 +974,216 @@ with jobs.job_lock(P, 7):
 with open(os.path.join(BIN, 'fe-gh-calls.log')) as fh:
     print('gh calls %d' % len(fh.read().splitlines()))
 print('item %s posts %d' % (items()[i]['status'], len(posts())))
+answers = iter([True, False])
+open(os.path.join(BIN, 'fe-gh-calls.log'), 'w').close()
+with jobs.job_lock(P, 7):
+    print('read only %s' % G.drain(P, job, GH, tiers(), LOGIN, enough=lambda: next(answers)))
+with open(os.path.join(BIN, 'fe-gh-calls.log')) as fh:
+    print('read only gh calls %d' % len(fh.read().splitlines()))
+print('read only item %s posts %d' % (items()[i]['status'], len(posts())))
 with jobs.job_lock(P, 7):
     print('time %s' % G.drain(P, job, GH, tiers(), LOGIN, enough=lambda: True))
 print('item %s posts %d' % (items()[i]['status'], len(posts())))
 PY
 gw_py "$GW_CODE"
-e2e_expect_line "no time []"
+e2e_expect_line "no time ['WRITE_DEFERRED job=issue-7-j1 intent=issue-7-j1-4-1 reason=budget']"
 e2e_expect_line "gh calls 0"
 e2e_expect_line "item recorded posts 0"
+e2e_expect_line "read only ['WRITE_DEFERRED job=issue-7-j1 intent=issue-7-j1-4-1 reason=budget']"
+e2e_expect_line "read only gh calls 1"
+e2e_expect_line "read only item recorded posts 0"
 e2e_expect_line "time ['WRITE_SENT job=issue-7-j1 intent=issue-7-j1-4-1 kind=comment']"
 e2e_expect_line "item sent posts 1"
+
+_flow_test_begin "factory github: an edit to the item's recorded fields or status means nothing runs (GH25)"
+gw_start gh25-fields prepare
+e2e_describe "plan 2.2 and design person_channels L42: the intent_recorded line also holds the item's job, row, state_at_write, ref, kind, blocking and key (Inferred extension of the 2.2 line), and the drain, run_literal and lookup compare them with the item before they act on any of them, the drain's drop rule included. A blocking row-11 assign_label item (state_at_write spec, keys issueAssign and issueUpdate) with issueAssign confirm stays recorded (GH7). Each edit alone, then restored: status set to confirmed (a blocking item is never confirmed in the outbox, Q16 covers notices only, and there is no intent_confirmed line), key cut to [issueUpdate], blocking set to false, row set to 12, ref set to 5, kind set to label_add: each drain prints INTENT_CHANGED=<id> recorded=<hash> current=<hash> field=<that field> and posts nothing. With an intent_confirmed line for the blocking item, status confirmed is still refused (field=status). A row-6 notice under issueUpdate confirm becomes pending_confirm; its state_at_write edited to spec (another state than the job's prepare) gives field=state_at_write and the notice stays pending_confirm, not dropped by the edited value. On a cancelled job, with all keys journal, state_at_write edited to cancelled (so the item would pass as a write of the ending row): field=state_at_write, nothing posted. The same item as the job's pending intent, key edited: run_literal raises IntentChanged with field=key, and lookup raises ReadFailed whose text starts intent_changed"
+read -r -d '' GW_CODE <<'PY' || true
+job = J()
+i = record(job, '11', 'assign_label', G.literal_assign_label(REPO, 7, LOGIN, LABEL), None,
+           ['issueAssign', 'issueUpdate'], True, state='spec')
+orig = items()[i]
+rec = want(orig['argv'], b'')
+for field, value in (('status', 'confirmed'), ('key', ['issueUpdate']), ('blocking', False), ('row', '12'),
+                     ('ref', 5), ('kind', 'label_add')):
+    put(dict(orig, **{field: value}))
+    drain(job, tiers(issueAssign='confirm', issueUpdate='journal'))
+    print('%s expected INTENT_CHANGED=%s recorded=%s current=%s field=%s' % (field, i, rec, rec, field))
+    put(orig)
+print('after edits %s posts %d' % (items()[i]['status'], len(posts())))
+with jobs.job_lock(P, 7):
+    jobs.append_event(P, 7, {'type': 'intent_confirmed', 'job': 'issue-7-j1', 'id': i})
+put(dict(orig, status='confirmed'))
+drain(job, tiers(issueAssign='confirm', issueUpdate='journal'))
+print('lined expected INTENT_CHANGED=%s recorded=%s current=%s field=status' % (i, rec, rec))
+print('lined posts %d' % len(posts()))
+put(orig)
+nt = record(job, '6', 'comment', G.literal_comment(REPO, 7), 'Accepted.', ['issueUpdate'], False, state='prepare')
+drain(job, tiers(issueUpdate='confirm'))
+pend = items()[nt]
+nrec = want(pend['argv'], body_of(pend))
+put(dict(pend, state_at_write='spec'))
+drain(job, tiers(issueUpdate='confirm'))
+print('notice expected INTENT_CHANGED=%s recorded=%s current=%s field=state_at_write' % (nt, nrec, nrec))
+print('notice %s' % items()[nt]['status'])
+put(dict(orig, state_at_write='cancelled'))
+drain(dict(job, state='cancelled'), tiers())
+print('state_at_write expected INTENT_CHANGED=%s recorded=%s current=%s field=state_at_write' % (i, rec, rec))
+print('cancelled posts %d' % len(posts()))
+put(dict(orig, key=['issueUpdate']))
+parked = dict(job, state='waiting_operator', pending_intent={'id': i, 'kind': 'assign_label', 'key': ['issueAssign', 'issueUpdate']})
+try:
+    with jobs.job_lock(P, 7):
+        G.run_literal(P, parked, i, GH, LOGIN)
+    print('run_literal ran')
+except G.IntentChanged as e:
+    print('run_literal %s' % e.line)
+try:
+    print('lookup answered %s' % G.lookup(GH, parked, i, LOGIN))
+except G.ReadFailed as e:
+    print('lookup ReadFailed %s' % str(e).split(' ')[0])
+print('end posts %d' % len(posts()))
+PY
+gw_py "$GW_CODE"
+for GW_T in status key blocking row ref kind lined notice state_at_write; do
+  GW_WANT=$(printf '%s\n' "$E2E_OUT" | sed -n "s/^$GW_T expected //p")
+  e2e_expect_line "line $GW_WANT"
+done
+e2e_expect_line "after edits recorded posts 0"
+e2e_expect_line "notice pending_confirm"
+e2e_expect_line "lined posts 0"
+e2e_expect_line "cancelled posts 0"
+e2e_expect_line "run_literal $(printf '%s\n' "$E2E_OUT" | sed -n 's/^key expected //p')"
+e2e_expect_line "lookup ReadFailed intent_changed"
+e2e_expect_line "end posts 0"
+
+_flow_test_begin "factory github: lookup refuses an intent whose argv was edited (GH26)"
+gw_start gh26-lookup waiting_operator "d['resume_state'] = 'prepare'; d['reason'] = 'tier_confirm'; d['pending_intent'] = {'id': 'issue-7-j1-40-1', 'kind': 'assign_label', 'key': ['issueAssign', 'issueUpdate']}"
+fe_world_issue 8 "Another issue" "Not this job's issue."
+e2e_describe "plan 3.1 (intent_effect_observed) and design person_channels L42: the pending assign_label intent issue-7-j1-40-1 is for issue 7, and issue 8 has the engine as assignee and the in-progress label. With the argv edited to name issue 8, lookup raises ReadFailed whose text starts intent_changed (so row 41e's fact fails rather than reads true from another issue); restored, it returns None, since issue 7 has neither"
+read -r -d '' GW_CODE <<'PY' || true
+w = world()
+w['issues']['8']['assignees'] = [LOGIN]
+w['issues']['8']['labels'] = [LABEL]
+with open(os.environ['FE_WORLD'], 'w') as fh:
+    json.dump(w, fh)
+job = J()
+p = record(job, '40', 'assign_label', G.literal_assign_label(REPO, 7, LOGIN, LABEL), None,
+           ['issueAssign', 'issueUpdate'], True)
+orig = items()[p]
+put(dict(orig, argv=G.literal_assign_label(REPO, 8, LOGIN, LABEL)))
+try:
+    print('edited answered %s' % G.lookup(GH, job, p, LOGIN))
+except G.ReadFailed as e:
+    print('edited ReadFailed %s' % str(e).split(' ')[0])
+put(orig)
+print('restored %s' % G.lookup(GH, job, p, LOGIN))
+PY
+gw_py "$GW_CODE"
+e2e_expect_line "edited ReadFailed intent_changed"
+e2e_expect_line "restored None"
+
+_flow_test_begin "factory github: a process that dies between the record and the item leaves nothing that blocks the write (GH27)"
+gw_start gh27-die needs_info
+e2e_describe "plan 2.2 ('Dedupe before recording') and 5.2: the intent_recorded line is appended before the item file is written, so a process that dies between the two leaves a record with no item, never an item with no record. (1) The process dies inside the events append of an answer to comment 31: no item is left, and the next record_job_intent of the same kind, row and ref records it (one item, issue-7-j1-8u-1) and the drain posts it (WRITE_SENT, one post), with no INTENT_CHANGED line. (2) The process dies while writing the item of an answer to comment 32, after its record: no item; the next record_job_intent with another text gets the same id issue-7-j1-8u-2 (k counts items and write_seq, plan 2.2), its newer record is the one compared (the last intent_recorded line for an id), and the drain posts the new text once"
+read -r -d '' GW_CODE <<'PY' || true
+job = J()
+jobs.append_event = lambda *a, **k: os._exit(9)
+record(job, '8u', 'comment', G.literal_comment(REPO, 7), 'Retry needed.', ['issueUpdate'], False, ref=31)
+print('survived')
+PY
+gw_py "$GW_CODE"
+e2e_expect_no_line "survived"
+read -r -d '' GW_CODE <<'PY' || true
+print('left items %d records %d' % (len(items()), len(events('intent_recorded'))))
+job = J()
+i = record(job, '8u', 'comment', G.literal_comment(REPO, 7), 'Retry needed.', ['issueUpdate'], False, ref=31)
+print('id %s' % i)
+drain(job, tiers())
+print('posts %d' % len(posts()))
+PY
+gw_py "$GW_CODE"
+e2e_expect_line "left items 0 records 0"
+e2e_expect_line "id issue-7-j1-8u-1"
+e2e_expect_line "line WRITE_SENT job=issue-7-j1 intent=issue-7-j1-8u-1 kind=comment"
+e2e_expect_line "lines 1"
+e2e_expect_line "posts 1"
+read -r -d '' GW_CODE <<'PY' || true
+job = J()
+real_write = G._atomic_write
+def dying(path, *a, **k):
+    if path.endswith('.json'):
+        os._exit(9)
+    return real_write(path, *a, **k)
+G._atomic_write = dying
+record(job, '8u', 'comment', G.literal_comment(REPO, 7), 'Other reply.', ['issueUpdate'], False, ref=32)
+print('survived')
+PY
+gw_py "$GW_CODE"
+e2e_expect_no_line "survived"
+read -r -d '' GW_CODE <<'PY' || true
+print('left items %d records %d' % (len(items()), len(events('intent_recorded'))))
+job = J()
+i = record(job, '8u', 'comment', G.literal_comment(REPO, 7), 'Other reply, again.', ['issueUpdate'], False, ref=32)
+print('id %s' % i)
+drain(job, tiers())
+print('posts %d last %s' % (len(posts()), 'Other reply, again.' in posts()[-1]['body']))
+PY
+gw_py "$GW_CODE"
+e2e_expect_line "id issue-7-j1-8u-2"
+e2e_expect_line "line WRITE_SENT job=issue-7-j1 intent=issue-7-j1-8u-2 kind=comment"
+e2e_expect_line "lines 1"
+e2e_expect_line "posts 2 last True"
+
+_flow_test_begin "factory github: an item file or an outbox folder that is a symbolic link is not run (GH28)"
+gw_start gh28-links needs_info
+e2e_describe "plan 2.2 (the item is J/outbox/<id>.json) and the factory's no-symlink rule for its own files: (1) the item issue-7-j1-4-1.json moved out of the outbox and replaced by a symbolic link to it (same content): the drain prints OUTBOX_ITEM_INVALID job=issue-7-j1 file=issue-7-j1-4-1.json and posts nothing; (2) the whole J/outbox folder moved to J/outbox-real and J/outbox made a symbolic link to it: the drain reads nothing (no line) and posts nothing"
+read -r -d '' GW_CODE <<PY || true
+job = J()
+i = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'Please answer NI-1.', ['issueUpdate'], False)
+os.makedirs('$E2E_DIR/elsewhere')
+os.rename(os.path.join(OUT, i + '.json'), '$E2E_DIR/elsewhere/' + i + '.json')
+os.symlink('$E2E_DIR/elsewhere/' + i + '.json', os.path.join(OUT, i + '.json'))
+drain(job, tiers())
+print('item link posts %d' % len(posts()))
+os.remove(os.path.join(OUT, i + '.json'))
+os.rename('$E2E_DIR/elsewhere/' + i + '.json', os.path.join(OUT, i + '.json'))
+os.rename(OUT, os.path.join(JD, 'outbox-real'))
+os.symlink(os.path.join(JD, 'outbox-real'), OUT)
+drain(job, tiers())
+print('folder link posts %d' % len(posts()))
+PY
+gw_py "$GW_CODE"
+e2e_expect_line "line OUTBOX_ITEM_INVALID job=issue-7-j1 file=issue-7-j1-4-1.json"
+e2e_expect_line "item link posts 0"
+e2e_expect_line "lines 0"
+e2e_expect_line "folder link posts 0"
+
+_flow_test_begin "factory github: a write found by the look-first step leaves no breadcrumb (GH29)"
+gw_start gh29-found waiting_operator "d['resume_state'] = 'prepare'; d['reason'] = 'tier_confirm'; d['pending_intent'] = {'id': 'issue-7-j1-40-1', 'kind': 'assign_label', 'key': ['issueAssign', 'issueUpdate']}"
+gw_journal
+fe_world_comment 7 9 flow-e2e-engine write 2026-11-17T00:00:00Z "<!-- FLOW_FACTORY job=issue-7-j1 event=issue-7-j1-40-2 -->
+Waiting for a confirm."
+e2e_describe "design github_writes_and_tiers L50 ('journal: run, plus one breadcrumb') and stages L11: the breadcrumb goes with running the literal, so a write the look-first step finds is recorded with no run and no breadcrumb. With every key journal and a journal folder: the pending assign_label intent issue-7-j1-40-1, whose assignee and label are already on issue 7, run through run_literal with a tiers callable, is WRITE_SKIPPED found=flow:in-progress; the notice issue-7-j1-40-2, whose marker comment 9 the engine already posted, is WRITE_SKIPPED found=9 by the drain; nothing is posted and issue 7's trail has no breadcrumb"
+read -r -d '' GW_CODE <<'PY' || true
+w = world()
+w['issues']['7']['assignees'] = [LOGIN]
+w['issues']['7']['labels'] = [LABEL]
+with open(os.environ['FE_WORLD'], 'w') as fh:
+    json.dump(w, fh)
+job = J()
+p = record(job, '40', 'assign_label', G.literal_assign_label(REPO, 7, LOGIN, LABEL), None,
+           ['issueAssign', 'issueUpdate'], True)
+n = record(job, '40', 'comment', G.literal_comment(REPO, 7), 'Waiting for a confirm.', ['issueUpdate'], False)
+lines = []
+with jobs.job_lock(P, 7):
+    G.run_literal(P, job, p, GH, LOGIN, tiers=tiers(), lines=lines)
+print('run_literal %s' % lines)
+drain(job, tiers())
+print('posts %d' % len(posts()))
+PY
+gw_py "$GW_CODE"
+e2e_expect_line "run_literal ['WRITE_SKIPPED job=issue-7-j1 intent=issue-7-j1-40-1 found=flow:in-progress']"
+e2e_expect_line "line WRITE_SKIPPED job=issue-7-j1 intent=issue-7-j1-40-2 found=9"
+e2e_expect_line "posts 0"
+e2e_expect_equal "0" "$(gw_trail)" "breadcrumbs in issue 7's trail"

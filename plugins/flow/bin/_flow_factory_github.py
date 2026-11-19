@@ -5,10 +5,16 @@ Every write the engine makes follows four steps: look first (for the
 engine's marker, or for the effect itself), record the intent, resolve its
 tier keys, and run it with the real gh. An intent is an outbox item,
 J/outbox/<id>.json (schemas/v1/factory-outbox.schema.json), plus an
-intent_recorded line in J/events.jsonl written before anything runs. The
-line's sha256 is what every later check compares with, never the item's own
-sha256 field, so an edit to the item or its body file after it was recorded
-is refused with INTENT_CHANGED.
+intent_recorded line in J/events.jsonl written before the item and before
+anything runs. The line holds the sha256 and the item's job, row,
+state_at_write, ref, kind, blocking and key; every later check compares the
+item with the line, never with the item's own sha256 field, so an edit to
+the item or its body file after it was recorded is refused with
+INTENT_CHANGED (with field=<name> when a field differs). The body that is
+hashed is the file gh posts, the one the argv's -F body=@ names; since the
+argv is hashed too, only the J/outbox/<id>.body.md the record wrote can
+match, and body_file must name that file. A confirmed item runs only when it
+is a notice and an intent_confirmed line names its id.
 
 The literals are fixed forms (see the literal_* builders): gh api calls for
 comments, labels and the PR close, and gh issue edit for the assignment and
@@ -33,6 +39,7 @@ API:
   drain(paths, job, gh_real, tiers, login, enough=None) -> [status line]
   run_literal(paths, job, id, gh_real, login, tiers=None, lines=None) -> effect
   lookup(gh_real, job, id, login, paths=None) -> effect or None
+  check_item(events_path, item) -> None or IntentChanged
   IntentNotPending, IntentChanged (both jobs.Refused, with .line), ReadFailed
 
 record_job_intent, drain and run_literal need the job's lock (the caller
@@ -77,6 +84,9 @@ POST_LIMIT = 60000
 CRUMB = os.path.join(ff.PLUGIN_ROOT, "bin", "flow-tier-crumb.sh")
 # Per gh call, as Pass.gh bounds its own calls.
 GH_TIMEOUT = 15
+# The item fields the intent_recorded line holds besides the hash; the drain,
+# run_literal and lookup act on none of them until they equal the line's.
+RECORD_FIELDS = ("job", "row", "state_at_write", "ref", "kind", "blocking", "key")
 
 _ROW = re.compile(r"^[0-9]+[a-z]*$")
 _REPO = r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"
@@ -98,11 +108,14 @@ class IntentNotPending(Refused):
 
 
 class IntentChanged(Refused):
-    """The hash of the item's literal and body is not the recorded one."""
+    """The item is not the one recorded: its hash differs, or, with field,
+    that field differs from the intent_recorded line (or the item says
+    confirmed with no intent_confirmed line, field status)."""
 
-    def __init__(self, iid, recorded, current):
-        self.line = f"INTENT_CHANGED={iid} recorded={recorded or 'none'} current={current or 'none'}"
-        super().__init__(f"intent_changed {iid} recorded={recorded or 'none'} current={current or 'none'}")
+    def __init__(self, iid, recorded, current, field=None):
+        tail = f" recorded={recorded or 'none'} current={current or 'none'}" + (f" field={field}" if field else "")
+        self.line = f"INTENT_CHANGED={iid}{tail}"
+        super().__init__(f"intent_changed {iid}{tail}")
 
 
 class ReadFailed(Exception):
@@ -303,9 +316,12 @@ def _save(path, item):
 
 
 def _write_intent(outbox, events_path, iid, mark, fields, argv, body, append):
-    """Write the body file, the item and the intent_recorded line, in that
-    order; a failure removes what was written and raises outbox_unwritable
-    naming the file that could not be written."""
+    """Write the body file, the intent_recorded line and the item, in that
+    order, so a process that dies part way leaves a record with no item
+    (which nothing reads, and the same write is recorded again) and never an
+    item with no record (which would stop the same write being recorded
+    again and could never run). A failure removes the body file and raises
+    outbox_unwritable naming the file that could not be written."""
     text, body_bytes, body_file, body_path = None, b"", None, None
     if fields["kind"] == "comment":
         _need(isinstance(body, str), "a comment needs its text")
@@ -328,16 +344,14 @@ def _write_intent(outbox, events_path, iid, mark, fields, argv, body, append):
             where = body_path
             _atomic_write(body_path, text)
             made.append(body_path)
+        where = events_path
+        line = {"type": "intent_recorded", "job": fields["job"], "time": ff.utc_now(), "id": iid, "sha256": sha}
+        line.update({f: fields[f] for f in RECORD_FIELDS if f != "job"})
+        append(line)
         where = item_path
         _atomic_write(item_path, json.dumps(item, indent=1, sort_keys=True) + "\n", exclusive=True)
-        made.append(item_path)
-        where = events_path
-        append({"type": "intent_recorded", "job": fields["job"], "time": ff.utc_now(), "id": iid,
-                "row": fields["row"], "kind": fields["kind"], "sha256": sha})
         return item
     except (OSError, JournalAtomicError, Refused) as e:
-        # An item without its intent_recorded line could never run, and
-        # would stop the same write being recorded again: remove it.
         for p in made:
             try:
                 os.remove(p)
@@ -422,9 +436,10 @@ def record_probe_intent(folder, n, argv, body):
 
 
 # the hash check --------------------------------------------------------------
-def _recorded_sha(events_path, iid):
-    """The sha256 of the last intent_recorded line for iid, or None."""
-    sha = None
+def _recorded(events_path, iid):
+    """(the last intent_recorded line for iid or None, whether an
+    intent_confirmed line names iid)."""
+    rec, confirmed = None, False
     try:
         with open(events_path, encoding="utf-8") as f:
             for ln in f:
@@ -432,40 +447,81 @@ def _recorded_sha(events_path, iid):
                     d = json.loads(ln)
                 except ValueError:
                     continue
-                if isinstance(d, dict) and d.get("type") == "intent_recorded" and d.get("id") == iid:
-                    sha = d.get("sha256")
+                if not isinstance(d, dict) or d.get("id") != iid:
+                    continue
+                if d.get("type") == "intent_recorded":
+                    rec = d
+                elif d.get("type") == "intent_confirmed":
+                    confirmed = True
     except (OSError, UnicodeDecodeError):
-        return None
-    return sha if isinstance(sha, str) else None
+        return None, False
+    return rec, confirmed
 
 
-def _current_sha(outbox, item):
-    """The hash of the item's argv and body file now, or None when the body
-    file cannot be read (a symbolic link, missing, outside the outbox)."""
-    body = b""
+def _body(item):
+    """The bytes the literal posts: b"" for a write with no body. A
+    comment's body is read from the file its argv names after -F body=@,
+    the file gh posts; body_file must be <id>.body.md, and the argv path
+    is part of the hash, so a recorded hash matches only when that path is
+    the J/outbox/<id>.body.md the record wrote. None when body_file is
+    another name, the file is a symbolic link or cannot be read."""
     bf = item.get("body_file")
-    if bf is not None:
-        path = os.path.join(outbox, bf)
-        if os.path.isabs(bf) or ".." in bf.split("/") or os.path.islink(path):
-            return None
-        try:
-            with open(path, "rb") as f:
-                body = f.read()
-        except OSError:
-            return None
+    if item.get("kind") != "comment":
+        return b"" if bf is None else None
+    try:
+        path = _target("comment", item.get("argv"))["body"]
+    except ValueError:
+        return None
+    if bf != f"{item.get('id')}.body.md" or os.path.islink(path):
+        return None
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _current_sha(item):
+    """The hash of the item's argv and of the body gh would post, or None."""
     argv = item.get("argv")
     if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
         return None
-    return intent_digest(argv, body)
+    body = _body(item)
+    return None if body is None else intent_digest(argv, body)
 
 
-def _check_hash(outbox, events_path, item):
-    """None when the recorded hash equals the current one, else IntentChanged."""
-    recorded = _recorded_sha(events_path, item.get("id"))
-    current = _current_sha(outbox, item)
+def _same(a, b):
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
+def check_item(events_path, item):
+    """None when the item is the one its intent_recorded line records and may
+    be acted on, else the IntentChanged to report: the hash of the argv and
+    the posted body differs from the line's (or either is missing); a field
+    of RECORD_FIELDS differs from the line's (field=<name>); or the status is
+    confirmed on a blocking item, or with no intent_confirmed line (Q16
+    confirms notices only, field=status)."""
+    iid = item.get("id")
+    rec, confirmed = _recorded(events_path, iid)
+    recorded = rec.get("sha256") if rec is not None and isinstance(rec.get("sha256"), str) else None
+    current = _current_sha(item)
     if recorded is None or current is None or recorded != current:
-        return IntentChanged(item.get("id"), recorded, current)
+        return IntentChanged(iid, recorded, current)
+    for f in RECORD_FIELDS:
+        if f not in rec or not _same(rec[f], item.get(f)):
+            return IntentChanged(iid, recorded, current, field=f)
+    if item.get("status") == "confirmed" and (item.get("blocking") is not False or not confirmed):
+        return IntentChanged(iid, recorded, current, field="status")
     return None
+
+
+def _valid(path, iid, job_key):
+    """The item at path when it reads, validates, is named by its own id and
+    belongs to job_key; else None."""
+    item = _read_json(path)
+    if item is None or item.get("id") != iid or item.get("job") != job_key or schema.validate(item, OUTBOX_SCHEMA):
+        return None
+    return item
 
 
 # gh --------------------------------------------------------------------------
@@ -578,15 +634,19 @@ def _sent(paths, n, path, item, effect):
 def drain(paths, job, gh_real, tiers, login, enough=None):
     """Run the job's unsent outbox items (plan 2.2 'Who runs an item', B6
     step 3) and return the status lines. Never touches the job's pending
-    intent. On a terminal job only the items of that state run and every
-    other unsent item is dropped; a pending_confirm notice whose job has
-    left its state is dropped. Every item is checked against its recorded
-    hash first; then the effect is looked for; then the keys decide: all
-    autonomous or journal runs it (one breadcrumb per journal key), any
-    confirm leaves a blocking item recorded and makes a notice
-    pending_confirm. A confirmed notice runs whatever its keys say.
-    enough, when given, is asked before every gh call; when it says no the
-    drain stops and the rest waits for the next pass (plan 3.2)."""
+    intent. Every unsent item is first checked against its intent_recorded
+    line (check_item), so every later decision reads recorded values. On a
+    terminal job only the items of that state run and every other unsent
+    item is dropped; a pending_confirm notice whose job has left its state
+    is dropped. Then the effect is looked for, and a write found is recorded
+    with no run and no breadcrumb (design github_writes_and_tiers L50: the
+    breadcrumb goes with the run). Then the keys decide: all autonomous or
+    journal runs it (one breadcrumb per journal key), any confirm leaves a
+    blocking item recorded and makes a notice pending_confirm. A confirmed
+    notice runs whatever its keys say. enough, when given, is asked before
+    every gh call; when it says no the drain prints WRITE_DEFERRED for the
+    item it stopped at and stops, and the rest waits for the next pass
+    (plan 3.2)."""
     n, job_key, state = job["issue"], job["key"], job.get("state")
     jobs._need_job_lock(n)
     if not isinstance(login, str) or not login:
@@ -599,25 +659,27 @@ def drain(paths, job, gh_real, tiers, login, enough=None):
     pending = job.get("pending_intent")
     pending_id = pending.get("id") if isinstance(pending, dict) else None
     lines = []
-    for _, path, item in _job_items(outbox, job_key):
+    for _, path, _ in _job_items(outbox, job_key):
         name = os.path.basename(path)
-        if item is None or item.get("id") != name[:-len(".json")] or item.get("job") != job_key \
-                or schema.validate(item, OUTBOX_SCHEMA):
+        item = _valid(path, name[:-len(".json")], job_key)
+        if item is None:
             lines.append(f"OUTBOX_ITEM_INVALID job={job_key} file={name}")
             continue
         status, iid = item["status"], item["id"]
         if status not in ("recorded", "pending_confirm", "confirmed") or iid == pending_id:
+            continue
+        changed = check_item(events_path, item)
+        if changed:
+            lines.append(changed.line)
             continue
         at = item["state_at_write"]
         if (state in TERMINAL and at != state) or (status == "pending_confirm" and at != state):
             _save(path, dict(item, status="dropped"))
             lines.append(f"WRITE_DROPPED job={job_key} intent={iid} state_at_write={at} state={state}")
             continue
-        changed = _check_hash(outbox, events_path, item)
-        if changed:
-            lines.append(changed.line)
-            continue
+        deferred = f"WRITE_DEFERRED job={job_key} intent={iid} reason=budget"
         if enough is not None and not enough():
+            lines.append(deferred)
             break
         try:
             effect = _look(gh_real, item, login, paths.main)
@@ -634,6 +696,7 @@ def drain(paths, job, gh_real, tiers, login, enough=None):
                 lines.append(f"PENDING_CONFIRM job={job_key} intent={iid} kind={item['kind']}")
             continue
         if enough is not None and not enough():
+            lines.append(deferred)
             break
         effect, why = _run(gh_real, item, paths.main)
         if effect is None:
@@ -662,10 +725,10 @@ def run_literal(paths, job, iid, gh_real, login, tiers=None, lines=None):
     jdir = jobs.job_dir(paths, n)
     outbox = os.path.join(jdir, "outbox")
     path = os.path.join(outbox, f"{iid}.json")
-    item = _read_json(path)
-    if item is None or item.get("id") != iid or item.get("job") != job_key or schema.validate(item, OUTBOX_SCHEMA):
+    item = _valid(path, iid, job_key)
+    if item is None:
         raise Refused(f"intent_unknown {iid}")
-    changed = _check_hash(outbox, os.path.join(jdir, "events.jsonl"), item)
+    changed = check_item(os.path.join(jdir, "events.jsonl"), item)
     if changed:
         raise changed
     if not isinstance(login, str) or not login:
@@ -691,8 +754,9 @@ def run_literal(paths, job, iid, gh_real, login, tiers=None, lines=None):
 def lookup(gh_real, job, iid, login, paths=None):
     """The effect of the job's intent iid when it is on GitHub, else None.
     Raises ReadFailed when a read does not answer, the item cannot be read,
-    or login is not a login. paths defaults to the main checkout found from
-    the working directory."""
+    the item is not the one recorded ('intent_changed ...', check_item), or
+    login is not a login. paths defaults to the main checkout found from the
+    working directory."""
     if paths is not None:
         fdir, cwd = paths.fdir, paths.main
     else:
@@ -704,8 +768,12 @@ def lookup(gh_real, job, iid, login, paths=None):
     n = job.get("issue")
     if not isinstance(n, int) or isinstance(n, bool) or n < 1 or not isinstance(iid, str) or "/" in iid:
         raise ReadFailed("item_unreadable")
-    item = _read_json(os.path.join(fdir, "jobs", f"issue-{n}", "outbox", f"{iid}.json"))
-    if item is None or item.get("id") != iid or item.get("job") != job.get("key") \
-            or schema.validate(item, OUTBOX_SCHEMA):
+    jdir = os.path.join(fdir, "jobs", f"issue-{n}")
+    outbox = os.path.join(jdir, "outbox")
+    item = _valid(os.path.join(outbox, f"{iid}.json"), iid, job.get("key"))
+    if item is None:
         raise ReadFailed("item_unreadable")
+    changed = check_item(os.path.join(jdir, "events.jsonl"), item)
+    if changed:
+        raise ReadFailed(str(changed))
     return _look(gh_real, item, login, cwd)
