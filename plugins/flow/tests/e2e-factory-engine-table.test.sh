@@ -907,7 +907,7 @@ e2e_expect_line "rebuild-shaped calls: 11 texts, 11 unchanged"
 _flow_test_begin "factory table: every text of phase 1b is disposed of as plan B13's table says (TB19)"
 fe_new tb19-effect-disposition
 e2e_repo main
-e2e_describe "the 41 texts of the old ('deferred', '1b') group: 38 handled by the named handler and 3 moved to phase 1e (plan B13 table, Q11); the four job handlers are in JOB_HANDLERS and the ten caller handlers in CALLER_HANDLERS; no ('deferred', '1b') group is left in the module source (a grep, no jq)"
+e2e_describe "the 41 texts of the old ('deferred', '1b') group: 38 handled by the named handler and 3 moved to phase 1e (plan B13 table, Q11); the four job handlers are in JOB_HANDLERS and the nine caller handlers in CALLER_HANDLERS; no ('deferred', '1b') group is left in the module source (a grep, no jq)"
 read -r -d '' TB_CODE <<'PY' || true
 WANT = {
     'pr_close': ['close a factory PR through the outbox', 'close any PR through the outbox'],
