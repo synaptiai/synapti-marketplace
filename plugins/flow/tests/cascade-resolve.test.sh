@@ -1243,3 +1243,64 @@ RC=$?
 assert_exit 2 "$RC" "a missing blob exits 2, whatever --default says"
 assert_equal "" "$OUT" "nothing on stdout"
 assert_contains "cannot read main:.claude/settings.flow.json" "$(cat "$D/err")" "stderr names the file"
+
+# _rsr_retree <dir> <keep> <path>... — commit main with issueAssign confirm at
+# each <path>, keeping the exact .claude/settings.flow.json when <keep> is 1.
+# The paths reach git through its index alone: on a file system that ignores
+# case, git add can record a case-variant name under the name already tracked.
+_rsr_retree() {
+  local d="$1" keep="$2"; shift 2
+  (
+    cd "$d" || exit 1
+    blob=$(printf '{"tiers": {"issueAssign": "confirm"}}\n' | git hash-object -w --stdin) || exit 1
+    [ "$keep" = 1 ] || git rm -q --cached .claude/settings.flow.json || exit 1
+    for p in "$@"; do git update-index --add --cacheinfo "100644,$blob,$p" || exit 1; done
+    git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m retree
+  ) >/dev/null 2>&1
+}
+
+_flow_test_begin "--repo-settings-ref: a project file named only by case or Unicode folding is refused"
+# A checkout on a file system that ignores case (macOS by default) finds each
+# of these as .claude/settings.flow.json, whose confirm then applies; git
+# lists them under their own names, so reading the commit as having no
+# project file shows as the plugin's journal, exit 0. The long s (ſ) folds
+# to s on APFS (probed 2026-11-19).
+for P in .Claude/settings.flow.json .claude/Settings.flow.json .claude/ſettings.flow.json; do
+  D=$(_rsr_repo "case-$(printf '%s' "$P" | cksum | cut -d' ' -f1)")
+  _rsr_retree "$D" 0 "$P"
+  LS=$(cd "$D" && git ls-tree -r -z --name-only main | tr '\000' '\n')
+  assert_equal "$P" "$(printf '%s\n' "$LS" | grep -Fx -- "$P")" "main holds $P under that name"
+  assert_equal "" "$(printf '%s\n' "$LS" | grep -Fx -- .claude/settings.flow.json)" "and nothing under the exact name"
+  OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+  RC=$?
+  assert_exit 2 "$RC" "$P at the ref exits 2"
+  assert_equal "" "$OUT" "nothing on stdout for $P"
+  assert_contains "case-insensitive file system" "$(cat "$D/err")" "stderr says why for $P"
+done
+# The exact file beside a case variant: which one a checkout finds is up to
+# the file system, so the commit is refused.
+D=$(_rsr_repo case-both)
+_rsr_retree "$D" 1 .CLAUDE/settings.flow.json
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "the exact file beside .CLAUDE/settings.flow.json exits 2"
+assert_contains "case-insensitive file system" "$(cat "$D/err")" "stderr says why"
+
+_flow_test_begin "--repo-settings-ref: names that are not ASCII and fold to nothing on the path are read past"
+D=$(_rsr_repo case-unrelated)
+_rsr_retree "$D" 1 café.txt .claude/naïve.json
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "confirm" "$OUT" "the project file's value"
+assert_exit 0 "$RC" "exit 0"
+assert_equal "" "$(cat "$D/err")" "and no warning"
+# With no python3 to compare them, such names refuse the commit: they could
+# fold to the expected name.
+NOPY="$SCRATCH_ROOT/nopy-bin"; mkdir -p "$NOPY"
+for b in bash sh env git jq mktemp tr cut rm cat readlink dirname basename uname; do
+  T=$(command -v "$b" 2>/dev/null) && ln -sf "$T" "$NOPY/$b"
+done
+OUT=$(cd "$D" && PATH="$NOPY" HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$NOPY/bash" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "without python3 a name that is not ASCII exits 2"
+assert_contains "no Python interpreter is installed to compare it" "$(cat "$D/err")" "stderr names what is missing"

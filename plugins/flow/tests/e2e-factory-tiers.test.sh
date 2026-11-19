@@ -50,6 +50,11 @@
 #        one, or a file) is read as "no project file", since git lists no
 #        .claude/settings.flow.json under it, so the project source drops out
 #        instead of counting as confirm
+#   TR14 a project file at the base ref named .Claude/settings.flow.json,
+#        .claude/Settings.flow.json or .claude/ſettings.flow.json is read as
+#        "no project file", since git matches names exactly, while a checkout
+#        on a file system that ignores case finds it; or an unrelated name
+#        that is not ASCII is refused along with them
 #
 # Every expected value is written out by hand from the design lines named in
 # each scenario's description; none comes from the module.
@@ -542,3 +547,53 @@ print('file %s %s' % (t('issueAssign'), 'not a directory' in (t.base_problem or 
 PY
 tr_py "$TR_CODE"
 e2e_expect_line "file confirm True"
+
+# tr_tree <json> <path>... — commit main with the project file removed and
+# <json> written at each <path>, through git's index alone: on a file system
+# that ignores case, git add can record a case-variant name under the name
+# already tracked, so the paths are given to git exactly as written. The
+# working tree is left as it was; the engine reads origin/main only. Every
+# entry an earlier call made (.CLAUDE among them) leaves the index first.
+tr_tree() {
+  local json="$1"; shift
+  (
+    _e2e_git_env
+    cd "$E2E_REPO" || exit 1
+    blob=$(printf '%s\n' "$json" | git hash-object -w --stdin) || exit 1
+    git rm -q -r --cached --ignore-unmatch -- ':(icase).claude' café.txt || exit 1
+    for p in "$@"; do git update-index --add --cacheinfo "100644,$blob,$p" || exit 1; done
+    git commit -q -m "settings at $*" || exit 1
+  ) || _e2e_result fail "tr_tree committed $*"
+  printf 'committed main with %s at: %s\n' "$json" "$*" | _e2e_art
+  fe_origin_local
+}
+
+_flow_test_begin "factory tiers: a project file named only by case or Unicode folding counts as confirm (TR14)"
+tr_start tr14-case ''
+e2e_describe "plan B7 step 2 (fail closed): a checkout on a file system that ignores case (macOS by default) finds .claude/settings.flow.json under .Claude/settings.flow.json, .claude/Settings.flow.json or .claude/ſettings.flow.json (the long s folds to s; probed on APFS 2026-11-19), but git lists those under their own names. Each holds issueAssign confirm; every other source gives journal. Reading the commit as having no project file gives journal; the engine refuses the source, so issueAssign is confirm and base_problem says the name matches only on a case-insensitive file system. The same holds when the exact file sits beside .CLAUDE/settings.flow.json. The exact file with issueAssign journal beside unrelated names that are not ASCII (café.txt at the top, .claude/naïve.json) reads journal with no problem"
+for TR_P in .Claude/settings.flow.json .claude/Settings.flow.json .claude/ſettings.flow.json; do
+  tr_tree '{"tiers": {"issueAssign": "confirm"}}' "$TR_P"
+  TR_LS=$(cd "$E2E_REPO" && git ls-tree -r -z --name-only main | tr '\0' '\n')
+  e2e_expect_equal "$TR_P" "$(printf '%s\n' "$TR_LS" | grep -Fx -- "$TR_P")" "main's entry under $TR_P"
+  e2e_expect_equal "" "$(printf '%s\n' "$TR_LS" | grep -Fx -- .claude/settings.flow.json)" "main's entry under the exact name"
+  read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('variant %s %s' % (t('issueAssign'), 'case-insensitive file system' in (t.base_problem or '')))
+PY
+  tr_py "$TR_CODE"
+  e2e_expect_line "variant confirm True"
+done
+tr_tree '{"tiers": {"issueAssign": "confirm"}}' .claude/settings.flow.json .CLAUDE/settings.flow.json
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('both %s %s' % (t('issueAssign'), 'case-insensitive file system' in (t.base_problem or '')))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "both confirm True"
+tr_tree '{"tiers": {"issueAssign": "journal"}}' .claude/settings.flow.json café.txt .claude/naïve.json
+read -r -d '' TR_CODE <<'PY' || true
+t = R.resolver(M, BASE)
+print('unrelated %s %s' % (t('issueAssign'), t.base_problem))
+PY
+tr_py "$TR_CODE"
+e2e_expect_line "unrelated journal None"

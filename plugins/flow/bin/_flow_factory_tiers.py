@@ -58,6 +58,7 @@ import json
 import re
 import subprocess
 import time
+import unicodedata
 
 import _flow_factory as ff
 import _flow_factory_git as fgit
@@ -104,8 +105,9 @@ WRITE_KINDS = {
 
 # A branch name the engine fetches and reads: letters, digits, '.', '_',
 # '-' and '/', not starting with '-' or '/', with no '..', '//' or '@{', not
-# ending in '/', '.' or '.lock', and no part starting with '.'. A name git
-# would allow beyond this is refused, which reads as confirm.
+# ending in '/' or '.', no part starting with '.', and no part ending in
+# '.lock'. A name git would allow beyond this is refused, which reads as
+# confirm.
 _BRANCH = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/-]*$")
 
 
@@ -219,6 +221,41 @@ def _user_path(main):
     return out or None
 
 
+def _folded(name):
+    """name as a file system that ignores case and normalisation compares
+    it: full Unicode case folding, so the long s (U+017F) reads as s and the
+    ligature U+FB02 as fl, as APFS was found to do."""
+    return unicodedata.normalize("NFD", unicodedata.normalize("NFD", name).casefold())
+
+
+def _entry_named(F, main, tree, name, label, ref):
+    """The [mode, type, id] of the entry called name in tree, listing the
+    whole tree; None when there is none. git matches names exactly, but a
+    checkout on a file system that ignores case (macOS by default) finds
+    .Claude or Settings.flow.json under the expected name, so the commit
+    would read as having no project file while a checkout of it has one.
+    Any other entry whose name folds to name is refused instead; with it
+    beside the exact entry, which one a checkout finds is up to the file
+    system. The expected names are ASCII, so a difference in Unicode
+    normalisation alone cannot match them; _folded normalises anyway."""
+    rc, out, err = fgit.git(F, ["ls-tree", "-z", "--full-tree", tree], main)
+    if rc != 0:
+        raise _Unreadable(f"project: git ls-tree {ff.exit_text(rc, ff.first_text(err))}")
+    found = None
+    for entry in out.split("\0"):
+        if not entry:
+            continue
+        meta, _, path = entry.partition("\t")
+        fields = meta.split(" ")
+        if len(fields) != 3 or not re.fullmatch(r"[0-9a-f]{40,64}", fields[2]):
+            raise _Unreadable(f"project: git ls-tree printed an entry it should not at {ref}")
+        if path == name:
+            found = fields
+        elif _folded(path) == name:
+            raise _Unreadable(f"project: an entry at {ref} is named {label} only on a case-insensitive file system")
+    return found
+
+
 def _project_at(main, ref, fdir):
     """The tiers of the project file in commit ref, through the engine's git
     in the main checkout; {} when the commit has no such file. Returns
@@ -232,33 +269,26 @@ def _project_at(main, ref, fdir):
         commit = out.strip()
         if rc != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
             return {}, f"ref_unresolved {ref}"
-        # Each directory on the path must be a directory (mode 040000) at the
-        # commit. A .claude that is a symbolic link to a directory, a file or
-        # a submodule leaves git no .claude/settings.flow.json to list, so the
-        # commit would read as having no project file while a checkout of it
-        # still finds one through the link; it is refused instead.
+        # Each tree on the path is listed in full and its entry picked by
+        # name (_entry_named). Each directory on the path must be a directory
+        # (mode 040000) at the commit. A .claude that is a symbolic link to a
+        # directory, a file or a submodule leaves git no
+        # .claude/settings.flow.json to list, so the commit would read as
+        # having no project file while a checkout of it still finds one
+        # through the link; it is refused instead.
         parts = PROJECT_PATH.split("/")
-        for i in range(1, len(parts)):
-            parent = "/".join(parts[:i])
-            rc, out, err = fgit.git(F, ["ls-tree", "-z", "--full-tree", commit, "--", parent], main)
-            if rc != 0:
-                raise _Unreadable(f"project: git ls-tree {ff.exit_text(rc, ff.first_text(err))}")
-            entry = out.split("\0")[0]
-            if not entry:
+        tree = commit
+        for i, part in enumerate(parts[:-1]):
+            fields = _entry_named(F, main, tree, part, "/".join(parts[:i + 1]), ref)
+            if fields is None:
                 return {}, None
-            meta, _, path = entry.partition("\t")
-            fields = meta.split(" ")
-            if path != parent or len(fields) != 3 or fields[0] != "040000" or fields[1] != "tree":
-                raise _Unreadable(f"project: {parent} at {ref} is not a directory")
-        rc, out, err = fgit.git(F, ["ls-tree", "-z", "--full-tree", commit, "--", PROJECT_PATH], main)
-        if rc != 0:
-            raise _Unreadable(f"project: git ls-tree {ff.exit_text(rc, ff.first_text(err))}")
-        entry = out.split("\0")[0]
-        if not entry:
+            if fields[0] != "040000" or fields[1] != "tree":
+                raise _Unreadable(f"project: {'/'.join(parts[:i + 1])} at {ref} is not a directory")
+            tree = fields[2]
+        fields = _entry_named(F, main, tree, parts[-1], PROJECT_PATH, ref)
+        if fields is None:
             return {}, None
-        meta, _, path = entry.partition("\t")
-        fields = meta.split(" ")
-        if path != PROJECT_PATH or len(fields) != 3 or fields[1] != "blob" or fields[0] not in ("100644", "100755"):
+        if fields[1] != "blob" or fields[0] not in ("100644", "100755"):
             raise _Unreadable(f"project: {PROJECT_PATH} at {ref} is not a regular file")
         rc, out, err = fgit.git(F, ["cat-file", "blob", fields[2]], main)
         if rc != 0:
