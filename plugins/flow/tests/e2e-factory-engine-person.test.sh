@@ -1469,6 +1469,63 @@ E2E_OUT=$(tr -d '\r' < "$E2E_DIR/terminal-1.out")
 e2e_expect_line "FACTORY_REFUSED=intent_unknown intent=issue-10-j1-6-1"
 e2e_expect_equal 0 "$(grep -c '"intent_confirmed"' "$PS_F/jobs/issue-10/events.jsonl")" "intent_confirmed lines"
 e2e_expect_equal pending_confirm "$(ps_jq "$E2E_DIR/elsewhere/outbox/issue-10-j1-6-1.json" .status)" "the linked item's status"
+
+fe_new ps17h-confirm-notice-body-edited-at-prompt
+# Source: plan 2.3 confirm row (every check runs again under the job lock
+# before anything is written; on mismatch confirm refuses, exit 3
+# INTENT_CHANGED=<id> recorded=<h> current=<h>); plan 2.2 (the hash over the
+# argv and the body bytes); design person_channels L42 and R30 (a confirm is
+# never raised for an edited item). The hashes come from the plan 2.2 formula.
+e2e_describe "job 10 in intake with a notice in pending_confirm; confirm it in a terminal, and while the prompt waits add a byte to its body file; then type the job key"
+ps_seed
+fe_enable
+fe_job 10 intake
+ps_py "n = comment(10, '6', 'notice', state='prepare'); mark(10, n, 'pending_confirm', 'intent_pending_confirm')
+it = item(10, n); b = body_of(10, n)
+print(n, want(it['argv'], b), want(it['argv'], b + b'x'))"
+read -r PS_N PS_H PS_H2 <<<"$E2E_OUT"
+e2e_expect_equal issue-10-j1-6-1 "$PS_N" "the notice's id"
+( fe_person_terminal --delay 4 issue-10-j1 "$PS_W" confirm issue-10-j1-6-1 >/dev/null 2>&1 ) &
+PS_BG=$!
+fe_wait_for 10 "grep -q 'type the job key' '$E2E_DIR/terminal-1.out' 2>/dev/null"
+printf 'x' >> "$PS_F/jobs/issue-10/outbox/issue-10-j1-6-1.body.md"
+e2e_expect_equal no "$([ -f "$E2E_DIR/terminal-1.rc" ] && echo yes || echo no)" "confirm had ended before the body was edited"
+wait "$PS_BG"
+e2e_expect_equal 3 "$(cat "$E2E_DIR/terminal-1.rc" 2>/dev/null)" "confirm exit status"
+E2E_OUT=$(tr -d '\r' < "$E2E_DIR/terminal-1.out")
+e2e_expect_line "INTENT_CHANGED=issue-10-j1-6-1 recorded=$PS_H current=$PS_H2"
+e2e_expect_no_out "CONFIRMED intent="
+e2e_expect_equal 0 "$(grep -c '"intent_confirmed"' "$PS_F/jobs/issue-10/events.jsonl")" "intent_confirmed lines"
+e2e_expect_equal pending_confirm "$(ps_jq "$PS_F/jobs/issue-10/outbox/issue-10-j1-6-1.json" .status)" "the item's status"
+e2e_expect_equal 0 "$(ps_pending_count 10)" "pending files"
+
+fe_new ps17i-confirm-release-argv-edited-at-prompt
+# Source: as ps17h, for plan 2.3 confirm case 1 (a job parked by row 40 on
+# its intent: person_confirm stored as a pending event, T:41); the edit is to
+# the item's argv, which the plan 2.2 hash covers. A write with no body
+# hashes b"".
+e2e_describe "job 7 parked by row 40 on its assign_label intent P; confirm P in a terminal, and while the prompt waits add an element to P's argv; then type the job key"
+ps_seed
+fe_enable
+fe_job 7 prepare
+ps_assign 7
+ps_waiting 7 issue-7-j1-40-1
+ps_py "it = item(7, 'issue-7-j1-40-1')
+print(want(it['argv'], b''), want(it['argv'] + ['--extra'], b''))"
+read -r PS_H PS_H2 <<<"$E2E_OUT"
+( fe_person_terminal --delay 4 issue-7-j1 "$PS_W" confirm issue-7-j1-40-1 >/dev/null 2>&1 ) &
+PS_BG=$!
+fe_wait_for 10 "grep -q 'type the job key' '$E2E_DIR/terminal-1.out' 2>/dev/null"
+jq -c '.argv += ["--extra"]' "$PS_J/outbox/issue-7-j1-40-1.json" > "$E2E_DIR/edited.json" \
+  && cat "$E2E_DIR/edited.json" > "$PS_J/outbox/issue-7-j1-40-1.json"
+e2e_expect_equal no "$([ -f "$E2E_DIR/terminal-1.rc" ] && echo yes || echo no)" "confirm had ended before the argv was edited"
+wait "$PS_BG"
+e2e_expect_equal 3 "$(cat "$E2E_DIR/terminal-1.rc" 2>/dev/null)" "confirm exit status"
+E2E_OUT=$(tr -d '\r' < "$E2E_DIR/terminal-1.out")
+e2e_expect_line "INTENT_CHANGED=issue-7-j1-40-1 recorded=$PS_H current=$PS_H2"
+e2e_expect_no_out "RAISED person_confirm"
+e2e_expect_equal 0 "$(ps_pending_count 7)" "pending files"
+e2e_expect_equal waiting_operator "$(ps_jq "$PS_J/job.json" .state)" "state"
 fi
 
 # ---------------------------------------------------------------- PS18
