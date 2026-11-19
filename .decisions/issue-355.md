@@ -390,3 +390,61 @@ Choices:
 Open, for later tasks:
 - **R7 is not closed by B4.** The revouch handler (B13/B14) knows the retry comment's time. It must compare that time with `snapshot["edits"]["comment:<id>"]`, so a reply edited between the retry and the re-vouching sync is not trusted.
 - **Real GitHub has not been checked.** The GraphQL query text, and whether `userContentEdits` can be null, are still to be checked against it; the B15 probes or a person run can check them.
+
+### GitHub writes (B6, `bin/_flow_factory_github.py`, `bin/flow-tier-crumb.sh`)
+
+These signatures differ from plan 5.3. The plan's B6 line now points here.
+- **`record_job_intent(paths, job, row, kind, argv, body, key, blocking, ref=None, state=None, *, repo)`.**
+  - `state` is state_at_write and defaults to `job["state"]`.
+  - `repo` is required: the pass's owner/name, compared ignoring case. The literal must target that repository and the job's issue, or the job's pr for `pr_close`.
+  - It cleans a comment body and adds the engine marker itself, so callers pass plain text.
+  - It returns None for a `pr_close` on a job with no pr.
+  - The dedupe reads the `intent_recorded` lines whose items still exist, never the item fields.
+- **`drain(paths, job, gh_real, tiers, login, enough=None)`.** `enough()` is asked before every gh call. When it answers no, the drain prints `WRITE_DEFERRED job= intent= reason=budget` and stops.
+- **`run_literal(paths, job, id, gh_real, login, tiers=None, lines=None)`.** `tiers` writes the breadcrumbs, and `lines` collects `WRITE_SKIPPED`.
+- **`lookup(gh_real, job, id, login, paths=None)`.** It checks the item against the events file first and raises `ReadFailed` on any mismatch, so the fact fails rather than reads true.
+- **New entry points:**
+  - `check_item(events_path, item)`: B12's `confirm` and `status --intent` use it, never their own hash.
+  - `sent_item(job_dir, id, job_key)`: B7's `_covered` uses it.
+  - `drop_intent(paths, job, id)`: B14 step 7 uses it for every table drop.
+- **Literal forms:**
+  - comment: `gh api --method POST repos/O/R/issues/N/comments -F body=@<abs J/outbox/<id>.body.md>`. When the comment is run, gh gets exactly the hashed bytes on standard input (`-F body=@-`); the stored literal keeps the path.
+  - label_add: `gh api --method POST .../labels -f labels[]=X`.
+  - label_remove: `gh api --method DELETE .../labels/<percent-encoded X>`.
+  - assign_label: `gh issue edit N --repo O/R --add-assignee L --add-label X`.
+  - pr_close: `gh api --method PATCH repos/O/R/pulls/N -f state=closed`.
+
+**The events file is the record.** The item file can be edited, so each status it holds must be backed by an events line. Every line is appended before the item is saved.
+
+| Status | Backed by | Written by |
+|---|---|---|
+| recorded | the last `intent_recorded` line for the id. It carries job, row, kind, state_at_write, ref, blocking, key and sha256, and every field must match the item | `_write_intent`: body file, then the line, then the item |
+| pending_confirm | `intent_pending_confirm` of the same job, after the last record. Notices only | the drain |
+| confirmed | `intent_confirmed` of the same job, after the last record. Notices only | B12's terminal `confirm`, which must append the line before it saves the item |
+| dropped | `intent_dropped` | `drop_intent` and the drain |
+| sent | `write_recorded`. The line decides: an item it names is never run again and is saved as sent whatever the file says | `_sent` |
+
+- A file status with no line behind it is refused with `INTENT_CHANGED=<id> ... field=<name>`, and nothing runs.
+- A `recorded` file that has a park or confirm line is acted on by the line, so a process death between the line and the save does not leave a stuck item.
+- A confirmed notice is sent even after its job leaves state_at_write; only a terminal state drops it. A person confirmed it (Q16).
+- The events file itself is the root of trust: an edited or appended events line is outside what these checks can catch.
+
+**Status lines added to plan 2.3:**
+- `WRITE_SENT`, `WRITE_DROPPED`, `WRITE_FAILED` (the reason starts `lookup:` when the read failed) and `WRITE_DEFERRED`;
+- `OUTBOX_ITEM_INVALID` and `OUTBOX_UNREADABLE reason=symlink|not_a_folder|unlisted`;
+- an ` field=<name>` suffix on `INTENT_CHANGED`.
+
+**Other choices:**
+- **Breadcrumb.** One breadcrumb is written per journal key after a run. A write found by the look-first step gets none (design github_writes_and_tiers L50: "run, plus one breadcrumb"). `flow-tier-crumb.sh` writes into issue N's trail whatever branch is checked out.
+- **`clean_post`:**
+  - `<!--` becomes `< !--`;
+  - mentions go into code spans;
+  - a `/flow-factory` line goes into a code span longer than any backtick run in it;
+  - the 60,000-character cap is applied last.
+- **Probe items.** `record_probe_intent` refuses a missing probe folder, and a folder, outbox or events file that is a symbolic link.
+- **Timeout.** `GH_TIMEOUT` is 15 s per gh call.
+
+**Open for later tasks:**
+- B14 must pass `repo` to `record_job_intent`.
+- B14 must drop through `drop_intent`.
+- B12 must write `intent_confirmed` before it saves the item.
