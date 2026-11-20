@@ -37,11 +37,43 @@
 #        pending_changes writes no events.jsonl line for it, so rebuild
 #        cannot restore the field; or the line's entry differs from the one
 #        job.json holds
+#   NX32 a linked J/sync is read or unlinked through
+#   NX33 a linked J/results or J/archive (or archive entry) is read through
+#   NX34 row 41e runs the write when the effect is gone by the handler
+#   NX35 a decision whose later effect fails leaves its earlier writes to send
+#   NX36 the crash-case replay is not run first, or a failed replay holds back
+#        the job's other events
+#   NX37 a pass with no sync has no engine login, or one that cannot read it
+#        drains or records with none (R95)
+#   NX38 labels.priorityHigh does not order the launches
+#   NX39 a needs-info round reuses a notice id, posts twice, or drops a reply
+#        that already counted (R25, R98)
+#   NX40 a malformed judge reply raises intake_round (R21)
+#   NX41 row 9 fires before round 3, or not at it
+#   NX42 github_change is taken before person_answer (R59)
+#   NX43 row 47 does not re-vouch (R62)
+#   NX44 a queue label re-add counts as a re-vouch (R64)
+#   NX45 the comment facts do not reach the decision (R67)
+#   NX46 a stored comment command runs twice after a lost commands_seen (R78)
+#   NX47 an edit of a trusted spec comment is not an untrusted edit (R86)
+#   NX48 an issue fact or a sync-reading handler is used with no sync (R88)
+#   NX49 a stored event's arguments do not reach its handler or replay (R89)
+#   NX50 a bot actor is trusted without trustedBots (R90)
+#   NX51 dependency lines are matched loosely (R76)
+#   NX52 53b and 51b do not apply through the shipped wrapper
+#   NX53 /flow-factory reject in needs_human does not reject (T:48)
+#   NX54 row 66i takes an issue set whose digest does not match
+#   NX55 an NI answer given at row 44 is lost
+#   NX56 a 1b field is not rebuilt (R36)
+#   NX57 an OS error in an effect escapes the pass
+#   NX58 a comment answer is fenced twice, or the engine's notice is a reply
+#        (R102)
+#   NX59 the round limit is not met by a reply, or met with none (R98)
 #
 # Amounts are compared in whole cents through jq. Elapsed times go to stdout,
 # not to the artifacts, so the artifacts stay the same from run to run.
 #
-# NX_ONLY=<id> (NX1 ... NX17, NXAC7, NXAC8) runs only that scenario.
+# NX_ONLY=<id> (NX1 ... NX59, NXAC7, NXAC8, NX12b) runs only that scenario.
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -816,8 +848,6 @@ e2e_expect_equal "refs/flow-factory/issue-7/branch refs/flow-factory/issue-7/sna
 fi
 
 # ---------------------------------------------------------------- NX-AC8
-if nx_run NXAC8; then
-_flow_test_begin "next: the shell's pending report is applied only from the lease's launcher (NX-AC8, AC8, R26, RM4)"
 # nxac8_setup [job edits] [directive edits] [worker result] — T7 LA16(b): the
 # recorded interpreter is a link the test removes while the worker sleeps, so
 # the launcher reports through the shell and leaves a pending-report line.
@@ -840,6 +870,9 @@ ${1:-}"
   nx_wait_launcher_gone "$D1"
   ln -sfn "$(fe_python)" "$E2E_DIR/py/python3.14"
 }
+
+if nx_run NXAC8; then
+_flow_test_begin "next: the shell's pending report is applied only from the lease's launcher (NX-AC8, AC8, R26, RM4)"
 
 fe_new nxac8a-shell-report-applied
 # Source: execution_model L9; plan 2.4 report rule; T:20 (stage_succeeded in build -> open_pr).
@@ -986,6 +1019,9 @@ e2e_expect_equal "66i 6" "$(nx_rows)" "rows after pass 2"
 e2e_expect_equal prepare "$(nx_jq "$NX_J/job.json" .state)" "state"
 e2e_expect_equal "low one setting" "$(nx_jq "$NX_J/job.json" '"\(.intake.risk) \(.intake.scope)"')" "job.json intake"
 e2e_expect_equal yes "$([ -f "$NX_J/in-copies/intake.json" ] && echo yes || echo no)" "in-copies/intake.json"
+# Source: plan R89 (row 6 from a judge ACCEPT reply with given risk, surfaces
+# and scope -> in-copies/intake.json equals those three fields).
+e2e_expect_equal '{"risk":"low","scope":"one setting","surfaces":["config"]}' "$(jq -cS '{risk, surfaces, scope}' "$NX_J/in-copies/intake.json" 2>/dev/null)" "in-copies/intake.json holds the reply's risk, surfaces and scope (R89)"
 e2e_expect_equal 1 "$(fe_world_posts | jq -r 'select(.method == "POST" and (.path | endswith("/issues/7/comments"))) | .path' | grep -c .)" "the intake notice posted once"
 fi
 
@@ -1047,6 +1083,98 @@ nx_no_confirm() {
 }
 NX_ACCEPT='{"decision":"ACCEPT","risk":"low","surfaces":[],"scope":"s","proposed_criteria":["c"],"questions":[],"reason":"r"}'
 
+# ---------------------------------------------------------------- B14 helpers (NX32 to NX56)
+NX_TERM='{"unvouched_session_action": false}'
+# nx_pend <seq> <event> <args json> [facts json] [channel] — a stored person
+# event of job 7 written by hand, as the person subcommands store it.
+nx_pend() {
+  mkdir -p "$NX_J/pending"
+  jq -n --arg e "$2" --argjson a "$3" --argjson f "${4:-$NX_TERM}" --arg c "${5:-terminal}" '{event: $e, args: $a,
+    channel: $c, caller: {pid: 4242, start: "Mon Nov 16 00:00:00 2026", ancestry: [4242, 1]}, facts: $f,
+    raised_at: "2026-11-16T00:00:00Z"}' > "$NX_J/pending/$(printf '%020d' "$1")-$2.json"
+}
+# nx_nosync — the next pass has no sync: the default syncIntervalSeconds (60)
+# and state.json last_sync_at set to now.
+nx_nosync() {
+  nx_settings 'del(.flow.factory.syncIntervalSeconds)'
+  fe_py "import _flow_factory_jobs as jobs, _flow_factory as ff
+p = jobs.resolve()
+with jobs.global_lock(p, timeout=5):
+    s = jobs.read_state(p)
+    s['last_sync_at'] = ff.utc_now()
+    jobs.write_state(p, s)"
+}
+# nx_later <seconds> — the UTC time that many seconds from now, for a comment
+# that must come after a needs-info round's asked_at (the decision's now).
+nx_later() { perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(time + $ARGV[0]))' "$1"; }
+# nx_digest <items json> — plan 5.3's issue_digest, computed here by hand: the
+# sha256 of the compact JSON of the items, non-ASCII kept.
+nx_digest() {
+  python3 -I -c 'import hashlib, json, sys
+print(hashlib.sha256(json.dumps(json.loads(sys.argv[1]), separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest())' "$1"
+}
+# nx_questions <NI id>... — the question records J/questions/<id>.json.
+nx_questions() {
+  mkdir -p "$NX_J/questions"
+  local q
+  for q in "$@"; do
+    jq -n --arg q "$q" '{job: "issue-7-j1", id: $q, text: "Which port?", round: 1}' > "$NX_J/questions/$q.json"
+  done
+}
+# nx_created — job 7's created line, recording job.json as it is now, so
+# rebuild has a start (as PS13 writes it).
+nx_created() {
+  mkdir -p "$NX_J"
+  jq -c '{type: "created", job: .key, time: "2026-11-16T00:00:00Z", pass: "p0", row: "1", event: "issue_labelled",
+    from: null, to: .state, stay: false, effects_applied: [], effects_deferred: [], attempt: 0, channel: "engine",
+    caller: {pid: 4242, start: "Mon Nov 16 00:00:00 2026", ancestry: [4242, 1]}, record: .}' "$NX_J/job.json" >> "$NX_J/events.jsonl"
+}
+# nx_rebuild_compare <what> — job.json replaced by '{', `rebuild 7` in a
+# terminal, then every field compared with the live job.json, null and absent
+# alike, less updated_at and head_sha (PS13) and the fields only a sync
+# writes (issue_digest, sync_seen, priority_high: plan 2.2 "not restored").
+nx_rebuild_compare() {
+  local norm='del(.updated_at, .head_sha, .issue_digest, .sync_seen, .priority_high) | with_entries(select(.value != null))'
+  cp "$NX_J/job.json" "$E2E_DIR/live.json"
+  printf '{' > "$NX_J/job.json"
+  fe_person_terminal issue-7-j1 "$E2E_ACTIVE_PLUGIN/bin/flow-factory.sh" rebuild 7
+  e2e_expect_equal 0 "$E2E_RC" "rebuild exit status"
+  jq -S "$norm" "$E2E_DIR/live.json" > "$E2E_DIR/live.norm"
+  jq -S "$norm" "$NX_J/job.json" > "$E2E_DIR/rebuilt.norm" 2>/dev/null
+  printf -- '--- live and rebuilt job.json, normalized, diff\n%s\n' "$(diff "$E2E_DIR/live.norm" "$E2E_DIR/rebuilt.norm")" | _e2e_art
+  e2e_expect_equal "" "$(diff "$E2E_DIR/live.norm" "$E2E_DIR/rebuilt.norm" | grep '^[<>]' | tr '\n' ';')" "fields that differ between the live and the rebuilt job ($1)"
+}
+# nx_wait_job_result — wait for the result of job 7's current directive.
+nx_wait_job_result() {
+  local d
+  d=$(nx_jq "$NX_J/job.json" '.directive // empty')
+  [ -n "$d" ] && fe_wait_for 45 "[ -f '$NX_J/results/$d.json' ]"
+  return 0
+}
+# nx_comments_with <text> — comments posted to issue 7 whose body holds text.
+nx_comments_with() {
+  fe_world_posts | jq -r 'select(.method == "POST" and (.path | endswith("/issues/7/comments"))) | .body // ""' \
+    | grep -cF -- "$1"
+}
+NX_HUMAN="needs a person to look at it"
+# nx_world_labels — issue 7's labels on the world, as one JSON line.
+nx_world_labels() { jq -c '.issues["7"].labels' "$FE_WORLD"; }
+# nx_queued_blocked — job 7 queued, its body naming the open issue 3 as a
+# blocker, so row 2 does not move it (T:2, dependency_open).
+nx_queued_blocked() {
+  nx_base queued
+  fe_world_issue 7 "Add a port setting" "The service needs a port setting.
+Blocked by #3"
+  fe_world_issue 3 "A blocker" "Still open."
+}
+# nx_wrapper_next — `next` through the shipped wrapper (W: no seam).
+nx_wrapper_next() {
+  e2e_run_bin bin/flow-factory.sh next --executor headless
+  nx_protocol "$E2E_OUT"
+}
+NX_NEEDS_INFO1="d['needs_info'] = {'asked_at': '2026-11-16T00:30:00Z', 'questions': ['NI-1'], 'round': 1, 'earlier': []}"
+
+
 # ---------------------------------------------------------------- NX18
 if nx_run NX18; then
 _flow_test_begin "next: an outsider's edit after the vouch moves an intake job by row 51b (NX18, R100)"
@@ -1064,6 +1192,10 @@ e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_equal 51b "$(nx_rows)" "rows"
 e2e_expect_equal "needs_human untrusted_edit" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state and reason"
 e2e_expect_err_lacks "Traceback"
+# Source: plan B14 step 8 (on entry to needs_human the needs-human notice and
+# a label_add of labels.needsHuman, posted by the drain of the same pass).
+e2e_expect_equal 1 "$(fe_world_posts | jq -r 'select(.method == "POST" and (.path | endswith("/issues/7/comments"))) | .body // ""' | grep -cF 'needs a person to look at it')" "one needs-human comment"
+e2e_expect_equal '["flow:needs-human"]' "$(jq -c '.issues["7"].labels' "$FE_WORLD")" "the needs-human label"
 fe_new nx18b-no-edit
 e2e_describe "control: the same world with no edit"
 nx_base intake
@@ -1145,15 +1277,21 @@ fe_new nx21-row-11
 # intent, gh issue edit with --add-assignee <engine login> and --add-label
 # <labels.inProgress>, key issueAssign and issueUpdate; the drain of the
 # same pass runs it); settings.json (issueAssign journal by default).
-e2e_describe "job 7 in prepare with a completed stage result; plugin default tiers; one pass"
+e2e_describe "job 7 in prepare with a completed stage result; plugin default tiers; a committed .decisions/ folder; one pass"
 nx_base prepare
 nx_stage_result prepare
+( cd "$E2E_REPO" && mkdir -p .decisions && printf '# journal\n' > .decisions/README.md \
+  && git add .decisions/README.md && git commit -q -m journal ) || _e2e_result fail "committed .decisions/"
 nx_next
 e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_equal 11 "$(nx_rows)" "rows"
 e2e_expect_equal spec "$(nx_jq "$NX_J/job.json" .state)" "state"
 e2e_expect_equal 1 "$(find "$NX_J/outbox" -name '*-11-*.json' | grep -c .)" "outbox items of row 11"
 e2e_expect_equal '["flow-e2e-engine"] ["flow:in-progress"]' "$(jq -c '.issues["7"] | .assignees, .labels' "$FE_WORLD" | tr '\n' ' ' | sed 's/ $//')" "the issue's assignees and labels on the world"
+# Source: plan R75 (the item is sent, and the trail holds one breadcrumb per
+# journal key, two in all); plan 5.3 breadcrumb rule.
+e2e_expect_equal sent "$(cat "$NX_J/outbox/"*-11-*.json | jq -r .status)" "the item is sent"
+e2e_expect_equal "1 1" "$(cat "$E2E_REPO"/.decisions/auto-log/issue-7.*.md 2>/dev/null | grep -c 'tiers.issueAssign (journal, factory engine)') $(cat "$E2E_REPO"/.decisions/auto-log/issue-7.*.md 2>/dev/null | grep -c 'tiers.issueUpdate (journal, factory engine)')" "one breadcrumb for issueAssign and one for issueUpdate (R75)"
 fi
 
 # ---------------------------------------------------------------- NX22
@@ -1384,8 +1522,9 @@ fe_new nx29-row-8-labels
 # plan B14 step 8 (on leaving needs_info, a label_remove for each label in
 # labels_set, recorded with the row, posted by the drain of the same pass;
 # a labels_set line follows the change); plan 2.2 (labels_set).
-e2e_describe "job 7 in needs_info asking NI-1 at 00:30, labels_set [flow:needs-info] and the label on the issue; comment 201 by maintainer (write) naming NI-1 at 01:00; one pass"
+e2e_describe "job 7 in needs_info asking NI-1 at 00:30, labels_set [flow:needs-info] and the label on the issue; comment 201 by maintainer (write) naming NI-1 at 01:00; one pass; then a second pass"
 nx_base needs_info "d['needs_info'] = {'asked_at': '2026-11-16T00:30:00Z', 'questions': ['NI-1'], 'round': 1, 'earlier': []}; d['labels_set'] = ['flow:needs-info']"
+fe_judge_says "$NX_ACCEPT"
 fe_world_comment 7 201 maintainer write 2026-11-16T01:00:00Z "NI-1: use port 8080"
 jq '.issues["7"].labels += ["flow:needs-info"]' "$FE_WORLD" > "$FE_WORLD.t" && mv "$FE_WORLD.t" "$FE_WORLD"
 nx_next
@@ -1395,6 +1534,12 @@ e2e_expect_equal "intake true" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.baseline
 e2e_expect_equal "[201]" "$(jq -c 'select(.type == "answer_comments") | .comments' "$NX_J/events.jsonl")" "the answer comment ids in events.jsonl"
 e2e_expect_equal "[]" "$(jq -c 'select(.type == "labels_set") | .labels_set' "$NX_J/events.jsonl")" "the labels_set line"
 e2e_expect_equal 1 "$(fe_world_posts | jq -r 'select(.method == "DELETE") | .path' | grep -c '/issues/7/labels/flow%3Aneeds-info$')" "the label removed on GitHub"
+# Source: plan R63 (a second pass removes nothing).
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 2 exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(fe_world_posts | jq -r 'select(.method == "DELETE") | .path' | grep -c '/issues/7/labels/')" "no second label removal (R63)"
+e2e_expect_equal 1 "$(jq -c 'select(.type == "labels_set")' "$NX_J/events.jsonl" | grep -c .)" "no second labels_set line"
+nx_wait_job_result
 fi
 
 # ---------------------------------------------------------------- NX30
@@ -1452,6 +1597,1029 @@ e2e_expect_equal dropped "$(nx_jq "$NX_J/outbox/issue-7-j1-40-1.json" .status)" 
 nx_settings '.tiers.issueAssign = "journal"'
 nx_next
 e2e_expect_equal "[]" "$(jq -c '.issues["7"].assignees' "$FE_WORLD")" "the dropped write never runs"
+fi
+
+# ---------------------------------------------------------------- NX32
+if nx_run NX32; then
+_flow_test_begin "next: a linked J/sync is never read or unlinked through (NX32, journal wave 4 linked job folders)"
+fe_new nx32a-linked-sync-66i
+# Source: the task rule "a linked J/ folder is refused at every read" (journal
+# wave 4, linked job folders); plan 3.1 "Row 66i" (a set that cannot be read
+# is issue_set_stale, reported as EFFECT_FAILED, and nothing is launched).
+e2e_describe "job 7 in intake; a pass with no sync; J/sync is a link to an outside folder holding an issue set whose digest is the hand-computed digest of its items and job.json's issue_digest"
+NX_ITEMS='[["title","Add a port setting"],["body","The service needs a port setting."]]'
+NX_D=$(nx_digest "$NX_ITEMS")
+nx_base intake "d['issue_digest'] = '$NX_D'"
+fe_judge_says "$NX_ACCEPT"
+nx_nosync
+mkdir -p "$E2E_DIR/outside-sync"
+jq -n --argjson i "$NX_ITEMS" --arg d "$NX_D" '{synced_at: "2026-11-16T00:00:00Z", items: $i, others: [], digest: $d}' > "$E2E_DIR/outside-sync/issue-set.json"
+ln -s "$E2E_DIR/outside-sync" "$NX_J/sync"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=66i issue_set_stale"')" "the EFFECT_FAILED line"
+e2e_expect_equal "" "$(nx_rows)" "rows"
+e2e_expect_equal 0 "$(nx_launches)" "claude launches"
+e2e_expect_equal absent "$([ -e "$NX_J/in-copies/issue.md" ] && echo present || echo absent)" "in-copies/issue.md"
+fe_new nx32b-linked-sync-8r
+# Source: the same rule for the unlink (plan 2.2: rows that re-vouch delete
+# J/sync/issue-set.json; never a file outside J/); T:8r (needs_info,
+# person_retry -> intake).
+e2e_describe "job 7 in needs_info; a stored terminal retry; J/sync is a link to an outside folder holding issue-set.json; one pass with a sync"
+nx_base needs_info "$NX_NEEDS_INFO1"
+mkdir -p "$E2E_DIR/outside-sync"
+printf '{"items": [], "others": [], "digest": "x"}\n' > "$E2E_DIR/outside-sync/issue-set.json"
+ln -s "$E2E_DIR/outside-sync" "$NX_J/sync"
+nx_pend 1 person_retry '{}'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 8r "$(nx_rows)" "rows"
+e2e_expect_equal present "$([ -f "$E2E_DIR/outside-sync/issue-set.json" ] && echo present || echo absent)" "the outside issue-set.json is still there"
+e2e_expect_equal 0 "$(nx_launches)" "claude launches"
+fi
+
+# ---------------------------------------------------------------- NX33
+if nx_run NX33; then
+_flow_test_begin "next: a linked J/results or J/archive is never read through (NX33, journal wave 4 linked job folders)"
+fe_new nx33a-linked-results-replay
+# Source: plan B14 step 10 (a missing or unreadable result gives the replay
+# result=None); journal wave 4 (a linked J/results is treated as absent,
+# _result_present); plan B13 table (row 6's intake_record needs the judge
+# reply, judge_result_missing without one); B14 step 10 (a failed replay keeps
+# held_result and confirmed_intent).
+e2e_describe "job 7 in intake with held_result judge_accept naming directive issue-7-j1-intake-1 and confirmed_intent set (the crash case); J/results is a link to a folder holding that directive's result with an ACCEPT judge reply; a pass with no sync"
+nx_base intake "d['held_result'] = {'event': 'judge_accept', 'args': {'directive': 'issue-7-j1-intake-1'}, 'channel': 'launcher', 'caller': {'pid': 4242, 'start': 'Mon Nov 16 00:00:00 2026', 'ancestry': [4242, 1]}, 'facts': {}}; d['confirmed_intent'] = 'issue-7-j1-40-1'"
+nx_nosync
+mkdir -p "$E2E_DIR/outside-results"
+jq -n --argjson j "$NX_ACCEPT" '{directive: "issue-7-j1-intake-1", outcome: "completed", written_at: "2026-11-16T00:00:00Z",
+  event: null, session_id: null, num_turns: null, api_error_status: null, is_error: null, permission_denials: null,
+  terminal_reason: null, charged_usd: null, charge_basis: null, total_cost_usd: null, since_last_usd: null, judge: $j}' \
+  > "$E2E_DIR/outside-results/issue-7-j1-intake-1.json"
+ln -s "$E2E_DIR/outside-results" "$NX_J/results"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=6 judge_result_missing"')" "the replay fails: no result read through the link"
+e2e_expect_equal "intake judge_accept issue-7-j1-40-1" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.held_result.event) \(.confirmed_intent)"')" "state, and held_result and confirmed_intent kept"
+e2e_expect_equal absent "$([ -e "$NX_J/in-copies/intake.json" ] && echo present || echo absent)" "in-copies/intake.json"
+
+# nx33_creation <archive: entry|folder|plain> — job 7 cancelled as
+# issue-7-j2, vouched at 2026-11-16; an archived job j1 vouched at 2026-11-15
+# (before the new label); the issue labelled again at 2026-11-17 by write
+# access.
+nx33_creation() {
+  nx_base cancelled "d['key'] = 'issue-7-j2'"
+  fe_world_label 7 flow:factory maintainer write 2026-11-17T00:00:00Z
+  mkdir -p "$E2E_DIR/outside/j1"
+  jq -n '{key: "issue-7-j1", issue: 7, state: "cancelled", vouch_at: "2026-11-15T00:00:00Z"}' > "$E2E_DIR/outside/j1/job.json"
+  case "$1" in
+    entry) mkdir -p "$NX_J/archive"; ln -s "$E2E_DIR/outside/j1" "$NX_J/archive/j1" ;;
+    folder) ln -s "$E2E_DIR/outside" "$NX_J/archive" ;;
+    plain) mkdir -p "$NX_J/archive/j1"; cp "$E2E_DIR/outside/j1/job.json" "$NX_J/archive/j1/job.json" ;;
+  esac
+}
+fe_new nx33b-archive-plain
+# Source: creation row 1's fifth condition (every terminal job's vouch_at is
+# before the label; plan B4 creation_conditions); the control for nx33c/d.
+e2e_describe "control: the archived job j1 is a plain folder; one pass creates issue-7-j3"
+nx33_creation plain
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "issue-7-j3 queued" "$(nx_jq "$NX_J/job.json" '"\(.key) \(.state)"')" "a new job is created"
+fe_new nx33c-archive-entry-linked
+# Source: plan B4 creation_conditions (an unreadable archived job gives None,
+# a vouch at or after the label, so creation waits); the linked-folder rule.
+e2e_describe "archive/j1 is a link to the outside folder; one pass"
+nx33_creation entry
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "issue-7-j2 cancelled" "$(nx_jq "$NX_J/job.json" '"\(.key) \(.state)"')" "no job is created"
+fe_new nx33d-archive-folder-linked
+e2e_describe "J/archive is a link to the outside folder; one pass"
+nx33_creation folder
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "issue-7-j2 cancelled" "$(nx_jq "$NX_J/job.json" '"\(.key) \(.state)"')" "no job is created"
+e2e_expect_equal 0 "$(nx_line_count 'FACTORY_REFUSED')" "creation waits before any write (no FACTORY_REFUSED line)"
+e2e_expect_equal "j1" "$(ls "$E2E_DIR/outside" | tr '\n' ' ' | sed 's/ $//')" "nothing written in the outside folder"
+
+fe_new nx33e-linked-results-stream
+# Source: 1a's charge of a run its launcher can no longer charge (basis
+# limit_plus_turn; the session from the run's stream, else the directive's);
+# the linked-folder rule (no stream read through a linked J/results).
+e2e_describe "job 7 in build with a current directive whose launcher and child are gone; a stored person_cancel; J/results is a link to a folder holding the directive's stream, whose init names session outside-session"
+e2e_repo main
+fe_record
+fe_enable
+fe_job 7 build "d['directive'] = 'issue-7-j1-build-1'; d['holds_slot'] = True"
+NX_F=$(fe_factory_dir); NX_J="$NX_F/jobs/issue-7"; NX_FIX=""
+fe_directive issue-7-j1-build-1 "d['max_budget_usd'] = 0.5"
+NX_DEAD=$(_fe_in_scratch sh -c 'echo $$')
+jq -n --argjson p "$NX_DEAD" '{directive: "issue-7-j1-build-1", kind: "worker", host: "h", launcher_pid: $p,
+  launcher_start: "Mon Nov 16 00:00:00 2026", started_at: "2026-11-16T00:00:00Z", heartbeat_at: "2026-11-16T00:00:00Z",
+  child_pid: $p, child_pgid: $p, child_start: null, revoked_at: null}' > "$NX_J/directives/issue-7-j1-build-1.lease.json"
+nx_pend 1 person_cancel '{}'
+mkdir -p "$E2E_DIR/outside-results"
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"outside-session"}' > "$E2E_DIR/outside-results/issue-7-j1-build-1.stream.jsonl"
+ln -s "$E2E_DIR/outside-results" "$NX_J/results"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "cancelled 1 limit_plus_turn" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.cost.runs | length) \(.cost.runs[0].basis)"')" "cancelled, the lost run charged once"
+e2e_expect_equal 0 "$(grep -c outside-session "$NX_J/job.json" "$NX_J/events.jsonl" | awk -F: '{s += $2} END {print s}')" "no session id read through the link"
+
+fe_new nx33e2-linked-stream-file
+e2e_describe "as nx33e, with J/results a folder and only the directive's stream file a link to the outside copy"
+e2e_repo main
+fe_record
+fe_enable
+fe_job 7 build "d['directive'] = 'issue-7-j1-build-1'; d['holds_slot'] = True"
+NX_F=$(fe_factory_dir); NX_J="$NX_F/jobs/issue-7"; NX_FIX=""
+fe_directive issue-7-j1-build-1 "d['max_budget_usd'] = 0.5"
+NX_DEAD=$(_fe_in_scratch sh -c 'echo $$')
+jq -n --argjson p "$NX_DEAD" '{directive: "issue-7-j1-build-1", kind: "worker", host: "h", launcher_pid: $p,
+  launcher_start: "Mon Nov 16 00:00:00 2026", started_at: "2026-11-16T00:00:00Z", heartbeat_at: "2026-11-16T00:00:00Z",
+  child_pid: $p, child_pgid: $p, child_start: null, revoked_at: null}' > "$NX_J/directives/issue-7-j1-build-1.lease.json"
+nx_pend 1 person_cancel '{}'
+mkdir -p "$E2E_DIR/outside-stream" "$NX_J/results"
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"outside-session"}' > "$E2E_DIR/outside-stream/issue-7-j1-build-1.stream.jsonl"
+ln -s "$E2E_DIR/outside-stream/issue-7-j1-build-1.stream.jsonl" "$NX_J/results/issue-7-j1-build-1.stream.jsonl"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "cancelled 1" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.cost.runs | length)"')" "cancelled, the lost run charged once"
+e2e_expect_equal 0 "$(grep -c outside-session "$NX_J/job.json" "$NX_J/events.jsonl" | awk -F: '{s += $2} END {print s}')" "no session id read through the linked stream file"
+
+fe_new nx33f-linked-results-report
+# Source: 1a plan 2.4 report rule (a pending-report line is applied only when
+# its result can be written; every other line is report_refused); the
+# linked-folder rule (no result written or read through a linked J/results).
+e2e_describe "as NX-AC8a: the launcher's shell pending-report line; then J/results is moved out and replaced by a link to it; one pass"
+nxac8_setup
+mv "$NX_J/results" "$E2E_DIR/outside-reports"
+ln -s "$E2E_DIR/outside-reports" "$NX_J/results"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "report_refused" and .reason == "results_linked"')" "the report refused for the link"
+e2e_expect_equal build "$(nx_jq "$NX_J/job.json" .state)" "state"
+e2e_expect_equal absent "$([ -e "$E2E_DIR/outside-reports/$D1.json" ] && echo present || echo absent)" "no result written through the link"
+fe_new nx33g-linked-stream-report
+e2e_describe "as nx33f, with J/results a folder and only the directive's stream file replaced by a link to a copy outside"
+nxac8_setup
+mkdir -p "$E2E_DIR/outside-stream"
+mv "$NX_J/results/$D1.stream.jsonl" "$E2E_DIR/outside-stream/$D1.stream.jsonl"
+ln -s "$E2E_DIR/outside-stream/$D1.stream.jsonl" "$NX_J/results/$D1.stream.jsonl"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_ev_count 7 '.type == "report_refused" and .reason == "results_linked"')" "the report refused for the linked stream"
+e2e_expect_equal build "$(nx_jq "$NX_J/job.json" .state)" "state"
+fi
+
+# ---------------------------------------------------------------- NX34
+if nx_run NX34; then
+_flow_test_begin "next: row 41e records the observed effect and never runs the write (NX34, T:41e)"
+fe_new nx34-41e-record-only
+# Source: T:41e (waiting_operator, github_change, intent_effect_observed true
+# -> resume state; effects "record the observed effect", replay): no effect
+# runs the write. The intent's keys still resolve to confirm (tiers
+# issueAssign confirm), so running it would be a write no person confirmed.
+# An effect gone before the handler looks is not observed: the decision
+# fails (EFFECT_FAILED) and the job stays parked.
+e2e_describe "job 7 parked by row 40 (tiers.issueAssign confirm); a person adds the assignee and the label on GitHub; in the next pass the world drops both right after the read that computes intent_effect_observed (the second read of the issue in the pass: the sync's is the first)"
+nx_base prepare
+nx_stage_result prepare
+nx_settings '.tiers.issueAssign = "confirm"'
+nx_next
+e2e_expect_equal 40 "$(nx_rows)" "rows after the park"
+jq '.issues["7"].assignees = ["flow-e2e-engine"] | .issues["7"].labels = ["flow:in-progress"]' "$FE_WORLD" > "$FE_WORLD.t" && mv "$FE_WORLD.t" "$FE_WORLD"
+mv "$E2E_BIN/gh" "$E2E_BIN/gh-stub"
+cat > "$E2E_BIN/gh" <<'SH'
+#!/bin/bash
+# The gh stand-in, except that the second read of issue 7 drops its
+# assignees and labels on the world after it answers.
+here=$(cd "$(dirname "$0")" && pwd)
+if [ "$*" = "api repos/flow-e2e/scratch/issues/7" ]; then
+  n=$(( $(cat "$here/nx34-issue-reads" 2>/dev/null || echo 0) + 1 ))
+  printf '%s\n' "$n" > "$here/nx34-issue-reads"
+  "$here/gh-stub" "$@"
+  rc=$?
+  if [ "$n" = 2 ]; then
+    jq '.issues["7"].assignees = [] | .issues["7"].labels = []' "$FE_WORLD" > "$FE_WORLD.t" && mv "$FE_WORLD.t" "$FE_WORLD"
+  fi
+  exit "$rc"
+fi
+exec "$here/gh-stub" "$@"
+SH
+chmod +x "$E2E_BIN/gh"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted (the write is not run)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=41e effect_not_observed issue-7-j1-40-1"')" "the EFFECT_FAILED line"
+e2e_expect_equal "waiting_operator issue-7-j1-40-1" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.pending_intent.id)"')" "still parked on its intent"
+e2e_expect_equal recorded "$(nx_jq "$NX_J/outbox/issue-7-j1-40-1.json" .status)" "the item is not sent"
+fe_new nx34b-41e-observed
+# Source: T:41e (record the observed effect, then replay); plan 2.2 (the item
+# becomes sent with a write_recorded line, WRITE_SKIPPED, and the replayed row
+# 11 records nothing for the kinds the confirmed item covers).
+e2e_describe "control: as nx34, with the assignee and the label left on the world"
+nx_base prepare
+nx_stage_result prepare
+nx_settings '.tiers.issueAssign = "confirm"'
+nx_next
+jq '.issues["7"].assignees = ["flow-e2e-engine"] | .issues["7"].labels = ["flow:in-progress"]' "$FE_WORLD" > "$FE_WORLD.t" && mv "$FE_WORLD.t" "$FE_WORLD"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "40 41e 11" "$(nx_rows)" "rows"
+e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted"
+e2e_expect_equal 1 "$(nx_line_count '"WRITE_SKIPPED job=issue-7-j1 intent=issue-7-j1-40-1 found=flow:in-progress"')" "the WRITE_SKIPPED line"
+e2e_expect_equal "spec sent 1" "$(printf '%s %s %s' "$(nx_jq "$NX_J/job.json" .state)" "$(nx_jq "$NX_J/outbox/issue-7-j1-40-1.json" .status)" "$(find "$NX_J/outbox" -name '*.json' | grep -c .)")" "state, the item sent, one item"
+fi
+
+# ---------------------------------------------------------------- NX35
+if nx_run NX35; then
+_flow_test_begin "next: a decision whose later effect fails leaves none of its writes to send (NX35, B14 step 8)"
+fe_new nx35-no-orphan-writes
+# Source: plan B14 step 8 (on leaving needs_info a label_remove, on entry to
+# needs_human the needs-human notice); B14 step 9 (a failed handled effect
+# reports EFFECT_FAILED and the job does not move); plan 2.2 "Dropped items"
+# (a write of a move that was not made must never be sent).
+e2e_describe "a plugin copy without templates/factory/needs-human.comment.md; job 7 in needs_info with labels_set [flow:needs-info] and the label on the issue; an outsider edits the body after the vouch (row 51b to needs_human); one pass"
+nx_base needs_info "$NX_NEEDS_INFO1; d['labels_set'] = ['flow:needs-info']"
+jq '.issues["7"].labels += ["flow:needs-info"]' "$FE_WORLD" > "$FE_WORLD.t" && mv "$FE_WORLD.t" "$FE_WORLD"
+e2e_plugin_copy templates/factory/needs-human.comment.md 'placeholder'
+rm -f "$E2E_ACTIVE_PLUGIN/templates/factory/needs-human.comment.md"
+fe_world_perm outsider read
+fe_world_edit issue:7 outsider 2026-11-16T01:00:00Z
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=51b ')" "the EFFECT_FAILED line"
+e2e_expect_equal needs_info "$(nx_jq "$NX_J/job.json" .state)" "the job does not move"
+e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted"
+e2e_expect_equal '["flow:needs-info"]' "$(nx_world_labels)" "the needs-info label stays"
+e2e_expect_equal "" "$(cat "$NX_J/outbox/"*.json 2>/dev/null | jq -r 'select(.status != "dropped") | .id' | tr '\n' ' ' | sed 's/ $//')" "outbox items of the failed decision not dropped"
+fe_new nx35b-intent-kept
+# Source: T:51bw (drop the pending intent, then needs_human); B14 step 9 (a
+# decision that fails does not move the job); plan 2.2 "Dropped items" (a
+# dropped intent can never run, so it is dropped only by a move that is made).
+e2e_describe "the same plugin copy; job 7 parked by row 40 (tiers.issueAssign confirm); an outsider edits the body (row 51bw); one pass"
+nx_base prepare
+nx_stage_result prepare
+nx_settings '.tiers.issueAssign = "confirm"'
+e2e_plugin_copy templates/factory/needs-human.comment.md 'placeholder'
+rm -f "$E2E_ACTIVE_PLUGIN/templates/factory/needs-human.comment.md"
+nx_next
+e2e_expect_equal 40 "$(nx_rows)" "rows after the park"
+fe_world_perm outsider read
+fe_world_edit issue:7 outsider 2026-11-16T01:00:00Z
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=51bw ')" "the EFFECT_FAILED line"
+e2e_expect_equal "waiting_operator issue-7-j1-40-1 recorded 0" "$(printf '%s %s %s' "$(nx_jq "$NX_J/job.json" '"\(.state) \(.pending_intent.id)"')" "$(nx_jq "$NX_J/outbox/issue-7-j1-40-1.json" .status)" "$(nx_ev_count 7 '.type == "intent_dropped" and .id == "issue-7-j1-40-1"')")" "still parked, its intent not dropped"
+fe_new nx35c-answer-not-written
+# Source: T:9a (needs_info, person_answer, intake_rounds_exhausted -> needs_human;
+# record the answer); B14 step 9 (a decision that fails does not apply, so the
+# answer is not recorded and the stored event is tried again).
+e2e_describe "the same plugin copy; job 7 in needs_info at intake_round 3 asking NI-1; a stored terminal answer NI-1; one pass"
+nx_base needs_info "$NX_NEEDS_INFO1; d['intake_round'] = 3"
+nx_questions NI-1
+e2e_plugin_copy templates/factory/needs-human.comment.md 'placeholder'
+rm -f "$E2E_ACTIVE_PLUGIN/templates/factory/needs-human.comment.md"
+nx_pend 1 person_answer '{"qid": "NI-1", "text": "use port 8080"}'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=9a ')" "the EFFECT_FAILED line"
+e2e_expect_equal "needs_info absent 1" "$(printf '%s %s %s' "$(nx_jq "$NX_J/job.json" .state)" "$([ -e "$NX_J/answers.json" ] && echo present || echo absent)" "$(find "$NX_J/pending" -name '*.json' | grep -c .)")" "state, no answers file, the answer kept for the next pass"
+fi
+
+# ---------------------------------------------------------------- NX35d
+if nx_run NX35; then
+fe_new nx35d-labels-line-deferred
+# Source: plan 2.2 (labels_set is restored by rebuild from the last labels_set
+# line, written whenever the list changes); B14 step 9 (a decision that fails
+# does not apply), so a failed decision writes no labels_set line.
+e2e_describe "job 7 in needs_info at intake_round 3 asking NI-1, with labels_set [flow:needs-info]; no question record for NI-1, so recording the answer fails; a stored terminal answer NI-1 (row 9a); one pass"
+nx_base needs_info "$NX_NEEDS_INFO1; d['intake_round'] = 3; d['labels_set'] = ['flow:needs-info']"
+nx_pend 1 person_answer '{"qid": "NI-1", "text": "use port 8080"}'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=9a ')" "the EFFECT_FAILED line"
+e2e_expect_equal "needs_info 0" "$(nx_jq "$NX_J/job.json" .state) $(nx_ev_count 7 '.type == "labels_set"')" "state, and no labels_set line"
+fi
+
+# ---------------------------------------------------------------- NX57
+if nx_run NX57; then
+_flow_test_begin "next: an effect that fails with an OS error reports EFFECT_FAILED and does not move the job (NX57, carry item 2)"
+fe_new nx57-os-error
+# Source: plan B14 step 9 (a failure of a handled caller effect after
+# kill_current: job.json keeps the kill's fields and the pass reports
+# EFFECT_FAILED); T:8r (re-vouch deletes J/sync/issue-set.json, plan 2.2).
+e2e_describe "job 7 in needs_info; J/sync holds issue-set.json and cannot be written (mode 555), so the delete fails; a stored terminal retry; one pass"
+nx_base needs_info "$NX_NEEDS_INFO1"
+mkdir -p "$NX_J/sync"
+printf '{"items": [], "others": [], "digest": "x"}\n' > "$NX_J/sync/issue-set.json"
+chmod 555 "$NX_J/sync"
+nx_pend 1 person_retry '{}'
+nx_next
+chmod 755 "$NX_J/sync"
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=8r ')" "the EFFECT_FAILED line"
+e2e_expect_equal "needs_info 1" "$(nx_jq "$NX_J/job.json" .state) $(find "$NX_J/pending" -name '*.json' | grep -c .)" "state, and the retry kept"
+fi
+
+# ---------------------------------------------------------------- NX58
+if nx_run NX58; then
+_flow_test_begin "next: a comment answer is one answer, and the engine's own notice is never a reply (NX58, R102)"
+fe_new nx58a-comment-answer
+# Source: plan R102's E half (a needs_info job with NI-1 and a trusted
+# /flow-factory answer NI-1 use port 8080 comment -> row 8a and no row 8 line;
+# J/answers.json holds the text; at the next row 66i in-copies/issue.md holds
+# one ANSWER fence for NI-1 and no COMMENT fence for that comment, and
+# baseline_digest equals the hand computation of plan 5.3).
+e2e_describe "job 7 in needs_info asking NI-1 at 00:30; comment 901 by maintainer (write) '/flow-factory answer NI-1 use port 8080' at 01:00; the judge answers ACCEPT; two passes"
+nx_base needs_info "$NX_NEEDS_INFO1"
+nx_questions NI-1
+fe_world_comment 7 901 maintainer write 2026-11-16T01:00:00Z "/flow-factory answer NI-1 use port 8080"
+fe_judge_says "$NX_ACCEPT"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 1 exit status ($E2E_ERR)"
+e2e_expect_equal 8a "$(nx_rows)" "rows after pass 1 (no row 8)"
+e2e_expect_equal '[{"qid":"NI-1","text":"use port 8080"}]' "$(jq -c 'map({qid, text})' "$NX_J/answers.json" 2>/dev/null)" "answers.json"
+nx_next
+e2e_expect_equal "8a 66i" "$(nx_rows)" "rows after pass 2"
+e2e_expect_equal "1 0" "$(grep -c '^<<<UNTRUSTED_ISSUE_ANSWER qid=NI-1>>>$' "$NX_J/in-copies/issue.md") $(grep -c '^<<<UNTRUSTED_ISSUE_COMMENT id=901>>>$' "$NX_J/in-copies/issue.md")" "one ANSWER fence, no COMMENT fence for 901"
+e2e_expect_equal "$(nx_digest '[["title","Add a port setting"],["body","The service needs a port setting."],["answer","NI-1","use port 8080"]]')" "$(nx_jq "$NX_J/job.json" .baseline_digest)" "baseline_digest is the hand computation"
+nx_wait_job_result
+fe_new nx58b-engine-notice
+# Source: plan R102's E half (a needs_info job whose world holds only the
+# engine's needs-info notice for NI-1 after asked_at, posted by the world's
+# engine_login with role write -> no row 8 line, no row 8u notice posted, the
+# job stays in needs_info); plan 5.3 Engine marker.
+e2e_describe "job 7 in needs_info asking NI-1 at 00:30; comment 902 by flow-e2e-engine (write) whose first line is the engine marker and whose body names NI-1, at 00:31; one pass"
+nx_base needs_info "$NX_NEEDS_INFO1"
+fe_world_comment 7 902 flow-e2e-engine write 2026-11-16T00:31:00Z "<!-- FLOW_FACTORY job=issue-7-j1 event=issue-7-j1-4-1 -->
+The factory needs more information. NI-1: Which port?"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "" "$(nx_rows)" "rows"
+e2e_expect_equal "needs_info 0" "$(nx_jq "$NX_J/job.json" .state) $(fe_world_posts | grep -c .)" "state, and nothing posted"
+fi
+
+# ---------------------------------------------------------------- NX59
+if nx_run NX59; then
+_flow_test_begin "next: at the round limit a trusted reply parks by row 9, and no reply leaves the job (NX59, R98)"
+# Source: plan R98 (E: at the round limit, a trusted reply naming a current id
+# -> row 9; with no comment after that round's T:4 -> no row 9); T:9; plan
+# 5.3 issue_digest (the baseline is the hand computation over the issue with
+# no reply, so only a reply changes it).
+for NX_CASE in reply none; do
+  fe_new "nx59-$NX_CASE"
+  e2e_describe "job 7 in needs_info at intake_round 3 asking NI-1 at 00:30; baseline_digest the hand-computed digest of the title and body; $([ "$NX_CASE" = reply ] && echo 'comment 903 by maintainer naming NI-1 at 01:00' || echo 'no comment'); one pass"
+  nx_base needs_info "$NX_NEEDS_INFO1; d['intake_round'] = 3; d['baseline_pending'] = False; d['baseline_digest'] = '$(nx_digest '[["title","Add a port setting"],["body","The service needs a port setting."]]')'"
+  [ "$NX_CASE" = reply ] && fe_world_comment 7 903 maintainer write 2026-11-16T01:00:00Z "NI-1: use port 8080"
+  nx_next
+  e2e_expect_equal 0 "$E2E_RC" "$NX_CASE: exit status ($E2E_ERR)"
+  e2e_expect_equal "$([ "$NX_CASE" = reply ] && echo '9 needs_human' || echo ' needs_info')" "$(nx_rows) $(nx_jq "$NX_J/job.json" .state)" "$NX_CASE: rows and state"
+done
+fi
+
+# ---------------------------------------------------------------- NX36
+if nx_run NX36; then
+_flow_test_begin "next: a replay the process did not finish runs first in the next pass, and one that fails does not hold back the job's events (NX36, B14 step 10)"
+fe_new nx36a-replay-crash
+# Source: plan B14 test plan "the replay crash case" (job.json written by hand
+# in prepare with held_result and confirmed_intent set and a sent item -> the
+# next pass replays first: spec, one item, a replayed line); plan 2.2 (the
+# confirmed item's kinds leave BWC, and row 11 records nothing for them).
+e2e_describe "job 7 in prepare with held_result stage_succeeded, confirmed_intent issue-7-j1-40-1, and that assign_label item recorded and sent (the assignee and label on the world); one pass"
+nx_base prepare
+fe_py "import os, _flow_factory_jobs as jobs, _flow_factory_github as g
+p = jobs.resolve()
+with jobs.job_lock(p, 7, timeout=5):
+    j = jobs.read_job(p, 7)
+    argv = g.literal_assign_label('flow-e2e/scratch', 7, 'flow-e2e-engine', 'flow:in-progress')
+    iid = g.record_job_intent(p, j, '40', 'assign_label', argv, None, ['issueAssign', 'issueUpdate'], True,
+                              state='waiting_operator', repo='flow-e2e/scratch')
+    path = os.path.join(jobs.job_dir(p, 7), 'outbox', iid + '.json')
+    g._sent(p, 7, path, g._valid(path, iid, j['key']), {'label': 'flow:in-progress'})
+    j['held_result'] = {'event': 'stage_succeeded', 'args': {'directive': 'issue-7-j1-prepare-1'}, 'channel': 'launcher',
+                        'caller': {'pid': 4242, 'start': 'Mon Nov 16 00:00:00 2026', 'ancestry': [4242, 1]}, 'facts': {}}
+    j['confirmed_intent'] = iid
+    jobs.write_job(p, j)"
+jq '.issues["7"].assignees = ["flow-e2e-engine"] | .issues["7"].labels = ["flow:in-progress"]' "$FE_WORLD" > "$FE_WORLD.t" && mv "$FE_WORLD.t" "$FE_WORLD"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 11 "$(nx_rows)" "rows (the replay applies row 11)"
+e2e_expect_equal "spec null null" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.held_result) \(.confirmed_intent)"')" "state and the cleared fields"
+e2e_expect_equal 1 "$(find "$NX_J/outbox" -name '*.json' | grep -c .)" "outbox items (no second intent)"
+e2e_expect_equal "issue-7-j1-40-1 applied" "$(jq -r 'select(.type == "replayed") | "\(.intent) \(.outcome)"' "$NX_J/events.jsonl")" "one replayed line"
+fe_new nx36b-replay-fails
+# Source: plan B14 step 10 (on failed or blocked the replay keeps
+# held_result and confirmed_intent, and the next pass retries it before the
+# events of event_order: so the events still run); T:53 (person_cancel ->
+# cancelled); T:11's write needs the engine login (5.3), which fails here.
+e2e_describe "job 7 in prepare with held_result stage_succeeded and confirmed_intent naming an intent that was never sent; gh api user fails, so row 11's write cannot be recorded; a stored terminal person_cancel; one pass"
+nx_base prepare "d['held_result'] = {'event': 'stage_succeeded', 'args': {}, 'channel': 'launcher', 'caller': {'pid': 4242, 'start': 'Mon Nov 16 00:00:00 2026', 'ancestry': [4242, 1]}, 'facts': {}}; d['confirmed_intent'] = 'issue-7-j1-40-1'"
+fe_world_knob list_fails '["user"]'
+nx_pend 1 person_cancel '{}'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=11 engine_login_unknown"')" "the replay failed"
+e2e_expect_equal 53 "$(nx_rows)" "rows (the cancel applied after the failed replay)"
+e2e_expect_equal cancelled "$(nx_jq "$NX_J/job.json" .state)" "state"
+fe_new nx36c-replay-fails-no-launch
+# Source: plan B14 step 10 (a failed replay keeps held_result and
+# confirmed_intent and is retried by the next pass): the stage whose result is
+# held is not launched again meanwhile (Inferred: the held result is applied
+# before any launch).
+e2e_describe "as nx36b with no stored event, under a seam giving prepare's directive a body (a launch would make a directive at once); one pass"
+nx_base prepare "d['held_result'] = {'event': 'stage_succeeded', 'args': {}, 'channel': 'launcher', 'caller': {'pid': 4242, 'start': 'Mon Nov 16 00:00:00 2026', 'ancestry': [4242, 1]}, 'facts': {}}; d['confirmed_intent'] = 'issue-7-j1-40-1'"
+jq '.bodies = {"directive:prepare": "succeeded"}' "$FE_FIXTURES/seam/ordinary.json" > "$E2E_DIR/prepare-body.json"
+NX_FIX="$E2E_DIR/prepare-body.json"
+fe_world_knob list_fails '["user"]'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=11 engine_login_unknown"')" "the replay failed"
+e2e_expect_equal "prepare null stage_succeeded" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.directive) \(.held_result.event)"')" "no launch, the held result kept"
+e2e_expect_equal "" "$(nx_rows)" "rows"
+fi
+
+# ---------------------------------------------------------------- NX37
+if nx_run NX37; then
+_flow_test_begin "next: the engine login is read in a pass with no sync, and a pass that cannot read it says so and records nothing (NX37, R95)"
+fe_new nx37a-login-no-sync
+# Source: plan R95 (a pass with no sync: row 11, the world issue's assignee is
+# the world's engine_login and labels.inProgress is on it, the assign_label
+# item is sent, and a second drain posts nothing); plan 3.2 item 1. Inferred:
+# the pass with no sync comes from state.json last_sync_at, as NX24's, in
+# place of a first pass that syncs.
+e2e_describe "job 7 in prepare with a completed stage result; the engine login flow-e2e-robot; a pass with no sync; then a second pass"
+nx_base prepare
+nx_world flow-e2e-robot
+fe_world_issue 7 "Add a port setting" "The service needs a port setting."
+nx_stage_result prepare
+nx_nosync
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 1 exit status ($E2E_ERR)"
+e2e_expect_equal 11 "$(nx_rows)" "rows"
+e2e_expect_equal '["flow-e2e-robot"] ["flow:in-progress"]' "$(jq -c '.issues["7"] | .assignees, .labels' "$FE_WORLD" | tr '\n' ' ' | sed 's/ $//')" "the assignee is the world's engine login, and the label is on"
+e2e_expect_equal sent "$(cat "$NX_J/outbox/"*-11-*.json | jq -r .status)" "the item is sent"
+NX_P=$(fe_world_posts | grep -c .)
+nx_next
+e2e_expect_equal "$NX_P" "$(fe_world_posts | grep -c .)" "a second drain posts nothing"
+fe_new nx37b-login-fails
+# Source: plan R95 (with gh api user failing: ENGINE_LOGIN_UNKNOWN, EFFECT_FAILED
+# with engine_login_unknown, no outbox item, the job still in prepare; with
+# the read restored the next pass applies row 11).
+e2e_describe "as nx37a, with gh api user failing (list_fails user) in the first pass and answering in the second"
+nx_base prepare
+nx_stage_result prepare
+nx_nosync
+fe_world_knob list_fails '["user"]'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 1 exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"ENGINE_LOGIN_UNKNOWN next: check gh auth status in ')" "the ENGINE_LOGIN_UNKNOWN line"
+e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=11 engine_login_unknown"')" "the EFFECT_FAILED line"
+e2e_expect_equal "prepare 0" "$(printf '%s %s' "$(nx_jq "$NX_J/job.json" .state)" "$(find "$NX_J/outbox" -name '*.json' 2>/dev/null | grep -c .)")" "state and outbox items"
+fe_world_knob list_fails '[]'
+nx_next
+e2e_expect_equal 11 "$(nx_rows)" "rows after the read is restored"
+fe_new nx37c-no-drain-without-login
+# Source: plan B14 step 5 (ENGINE_LOGIN_UNKNOWN and no drain when the login
+# cannot be read; 5.2).
+e2e_describe "job 7 in needs_human with one recorded notice in its outbox; gh api user fails; one pass"
+nx_base needs_human "d['reason'] = 'attempts_exhausted'"
+fe_py "import _flow_factory_jobs as jobs, _flow_factory_github as g
+p = jobs.resolve()
+with jobs.job_lock(p, 7, timeout=5):
+    j = jobs.read_job(p, 7)
+    g.record_job_intent(p, j, 'note', 'comment', g.literal_comment('flow-e2e/scratch', 7), 'a note', ['issueUpdate'],
+                        False, repo='flow-e2e/scratch')
+    jobs.write_job(p, j)"
+fe_world_knob list_fails '["user"]'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count '"ENGINE_LOGIN_UNKNOWN next: check gh auth status in ')" "the ENGINE_LOGIN_UNKNOWN line"
+e2e_expect_equal 0 "$(nx_line_count 'WRITE_FAILED')" "no drain ran (no WRITE_FAILED line)"
+e2e_expect_equal 0 "$(nx_line_count 'ENGINE_LOGIN_UNKNOWN job=')" "no drain ran (B6's drain, called with no login, would print ENGINE_LOGIN_UNKNOWN job=<key>)"
+e2e_expect_equal recorded "$(cat "$NX_J/outbox/"*.json | jq -r .status)" "the item is still recorded"
+fi
+
+# ---------------------------------------------------------------- NX38
+if nx_run NX38; then
+_flow_test_begin "next: a job with labels.priorityHigh launches before a lower-numbered one (NX38, design stages L35)"
+fe_new nx38-priority
+# Source: design stages L35 and plan 3.2 (scanned is sorted labels.priorityHigh
+# first, then issue number, for phase B and phase C); T:66i, T:66w (no slot:
+# no launch); conventions.slots (a launch takes the one slot of concurrency 1).
+e2e_describe "jobs 7 and 9 in intake; issue 9 carries flow:priority-high; concurrency 1; one pass"
+nx_base intake
+fe_world_issue 9 "Another setting" "The service needs a host setting."
+jq '.issues["9"].labels = ["flow:priority-high"]' "$FE_WORLD" > "$FE_WORLD.t" && mv "$FE_WORLD.t" "$FE_WORLD"
+fe_job 9 intake "d['vouch_at'] = '2026-11-16T00:00:00Z'"
+fe_judge_says "$NX_ACCEPT"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "issue-9-j1-intake-1 null" "$(printf '%s %s' "$(jq -r .directive "$NX_F/jobs/issue-9/job.json")" "$(nx_jq "$NX_J/job.json" .directive)")" "the directives of jobs 9 and 7"
+fe_wait_for 45 "[ -f '$NX_F/jobs/issue-9/results/issue-9-j1-intake-1.json' ]"
+fi
+
+# ---------------------------------------------------------------- NX39
+if nx_run NX39; then
+_flow_test_begin "next: needs-info rounds post one notice each, keep every counted reply in the spec-input set, and survive a rebuild (NX39, R25, R98)"
+fe_new nx39-rounds
+# Source: plan R25 (needs_info -> intake -> needs_info gives two notices; two
+# drains in one round give one; round 1's notice sent, then rebuild, then
+# round 2 -> a second notice with a larger k, posted, not WRITE_SKIPPED);
+# plan R98's E half (round 1 asks NI-1 and NI-2; R1 naming NI-1 -> row 8;
+# R2 naming NI-2 added while the job waits in intake -> no row 50, row 66i
+# takes the baseline over a set holding R1 and R2; round 2 asks NI-3; a pass
+# with no new comment -> no row 8e or 9 line, issue_digest equals
+# baseline_digest; a reply naming NI-3 -> row 8, and the next issue.md fences
+# R1, R2 and that reply); T:4, T:8, T:66i.
+e2e_describe "job 7 in intake; the judge answers NEEDS_INFO (two questions), NEEDS_INFO (one), ACCEPT; replies 301 (NI-1), 302 (NI-2) and 303 (NI-3) by maintainer (write), each after the round's asked_at; rebuild between rounds"
+nx_base intake
+nx_created
+fe_judge_says '{"decision":"NEEDS_INFO","risk":"low","surfaces":[],"scope":"s","proposed_criteria":[],"questions":["Which port?","Which host?"],"reason":"r"}' \
+  '{"decision":"NEEDS_INFO","risk":"low","surfaces":[],"scope":"s","proposed_criteria":[],"questions":["Which user?"],"reason":"r"}' \
+  "$NX_ACCEPT"
+nx_next
+nx_wait_job_result
+nx_next
+e2e_expect_equal "needs_info [\"NI-1\",\"NI-2\"]" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.needs_info.questions | tojson)"')" "round 1"
+e2e_expect_equal 1 "$(nx_comments_with 'needs more information')" "round 1's notice posted"
+nx_next
+e2e_expect_equal 1 "$(nx_comments_with 'needs more information')" "a second drain in round 1 posts no second notice"
+fe_world_comment 7 301 maintainer write "$(nx_later 3600)" "NI-1: use port 8080"
+nx_next
+e2e_expect_equal intake "$(nx_jq "$NX_J/job.json" .state)" "row 8 to intake"
+fe_world_comment 7 302 maintainer write "$(nx_later 3600)" "NI-2: host example.org"
+nx_rebuild_compare "after rows 4 and 8"
+nx_next
+nx_wait_job_result
+e2e_expect_equal 2 "$(grep -cE '^<<<UNTRUSTED_ISSUE_COMMENT id=(301|302)>>>$' "$NX_J/in-copies/issue.md")" "issue.md fences R1 and R2"
+nx_next
+e2e_expect_equal "66i 4 8 66i 4" "$(nx_rows)" "rows (no row 50)"
+e2e_expect_equal "needs_info [\"NI-3\"]" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.needs_info.questions | tojson)"')" "round 2"
+e2e_expect_equal 2 "$(nx_comments_with 'needs more information')" "round 2's notice posted"
+NX_K=$(cat "$NX_J/outbox/"*.json | jq -r 'select(.row == "4" and .kind == "comment") | .id' | sed 's/.*-4-//' | sort -n | tr '\n' ' ' | sed 's/ $//')
+e2e_expect_equal yes "$(set -- $NX_K; [ "$#" = 2 ] && [ "$2" -gt "$1" ] && echo yes || echo "no ($NX_K)")" "the round 2 notice has a larger k"
+e2e_expect_equal 0 "$(nx_line_count 'WRITE_SKIPPED')" "round 2's notice is posted, not skipped"
+nx_next
+e2e_expect_equal "66i 4 8 66i 4" "$(nx_rows)" "a pass with no new comment: no row 8e or 9"
+e2e_expect_equal "$(nx_jq "$NX_J/job.json" .issue_digest)" "$(nx_jq "$NX_J/job.json" .baseline_digest)" "issue_digest equals baseline_digest"
+fe_world_comment 7 303 maintainer write "$(nx_later 3600)" "NI-3: user bob"
+nx_next
+nx_next
+nx_wait_job_result
+e2e_expect_equal "66i 4 8 66i 4 8 66i" "$(nx_rows)" "rows"
+e2e_expect_equal 3 "$(grep -cE '^<<<UNTRUSTED_ISSUE_COMMENT id=(301|302|303)>>>$' "$NX_J/in-copies/issue.md")" "issue.md fences R1, R2 and R3"
+fi
+
+# ---------------------------------------------------------------- NX40
+if nx_run NX40; then
+_flow_test_begin "next: three malformed judge replies end in row 43a with intake_round unchanged, and one needs-human comment (NX40, R21, AC4)"
+fe_new nx40-malformed-judge
+# Source: plan R21 (three malformed results -> three judge launches, then row
+# 43a, intake_round unchanged; T:39's effect is attempt += 1 only); plan 5.3
+# Judge reply (a stdout that is not one JSON value maps to stage_failed); B14
+# step 8 (on entry to needs_human, the needs-human notice and a label_add of
+# labels.needsHuman, posted by the drain of the same pass).
+e2e_describe "job 7 in intake; the judge stand-in prints 'not json' three times; passes until the job leaves intake"
+nx_base intake
+fe_judge_raw 'not json' 'not json' 'not json'
+for NX_I in 1 2 3 4 5 6 7 8; do
+  nx_next
+  [ "$(nx_jq "$NX_J/job.json" .state)" = intake ] || break
+  nx_wait_job_result
+done
+e2e_expect_equal 3 "$(nx_launches)" "judge launches"
+e2e_expect_equal "43a needs_human attempts_exhausted" "$(printf '%s %s' "$(nx_rows | tr ' ' '\n' | tail -n 1)" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')")" "the last row, state and reason"
+e2e_expect_equal 0 "$(nx_jq "$NX_J/job.json" '.intake_round // 0')" "intake_round"
+e2e_expect_equal 1 "$(nx_comments_with "$NX_HUMAN")" "one needs-human comment"
+e2e_expect_equal '["flow:needs-human"]' "$(nx_world_labels)" "the needs-human label"
+fi
+
+# ---------------------------------------------------------------- NX41
+if nx_run NX41; then
+_flow_test_begin "next: an issue change at round 3 parks by row 9 with one needs-human comment; at round 2 it is row 8e (NX41, T:9, T:8e)"
+fe_new nx41a-exhausted
+# Source: T:9 (needs_info, github_change, issue_changed and
+# intake_rounds_exhausted -> needs_human, reason needs_info_exhausted);
+# T:facts.intake_rounds_exhausted (intake_round has reached
+# flow.factory.intake.maxRounds, default 3); plan B13 (issue_changed: the
+# issue_digest differs from baseline_digest, baseline_pending false); B14
+# step 8 (one needs-human comment and the label).
+e2e_describe "job 7 in needs_info with intake_round 3 and a baseline_digest the issue no longer has; one pass"
+nx_base needs_info "$NX_NEEDS_INFO1; d['intake_round'] = 3; d['baseline_digest'] = 'a' * 64; d['baseline_pending'] = False"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 9 "$(nx_rows)" "rows"
+e2e_expect_equal "needs_human needs_info_exhausted" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state and reason"
+e2e_expect_equal 1 "$(nx_comments_with "$NX_HUMAN")" "one needs-human comment"
+e2e_expect_equal '["flow:needs-human"]' "$(nx_world_labels)" "the needs-human label"
+fe_new nx41b-not-exhausted
+e2e_describe "control: the same at intake_round 2"
+nx_base needs_info "$NX_NEEDS_INFO1; d['intake_round'] = 2; d['baseline_digest'] = 'a' * 64; d['baseline_pending'] = False"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 8e "$(nx_rows)" "rows"
+e2e_expect_equal "intake 3" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.intake_round)"')" "state and intake_round (T:8e intake_round += 1)"
+fi
+
+# ---------------------------------------------------------------- NX42
+if nx_run NX42; then
+_flow_test_begin "next: a comment answer and an outsider edit in one pass: row 8a first, then row 51b (NX42, R59)"
+fe_new nx42-answer-then-edit
+# Source: plan R59 (a trusted /flow-factory answer NI-1 comment and an outsider
+# body edit in one pass: row 8a moves the job to intake, person_answer before
+# github_change; the next pass raises github_change and row 51b parks it);
+# T:event_order.
+e2e_describe "job 7 in needs_info asking NI-1; comment 401 by maintainer '/flow-factory answer NI-1 use port 8080' and an outsider body edit, both at 01:00; two passes"
+nx_base needs_info "$NX_NEEDS_INFO1"
+nx_questions NI-1
+fe_world_comment 7 401 maintainer write 2026-11-16T01:00:00Z "/flow-factory answer NI-1 use port 8080"
+fe_world_perm outsider read
+fe_world_edit issue:7 outsider 2026-11-16T01:00:00Z
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 1 exit status ($E2E_ERR)"
+e2e_expect_equal 8a "$(nx_rows)" "rows after pass 1"
+e2e_expect_equal '[{"qid":"NI-1","text":"use port 8080"}]' "$(jq -c 'map({qid, text})' "$NX_J/answers.json" 2>/dev/null)" "answers.json"
+nx_next
+e2e_expect_equal "8a 51b" "$(nx_rows)" "rows after pass 2"
+e2e_expect_equal "needs_human untrusted_edit" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state and reason"
+fi
+
+# ---------------------------------------------------------------- NX43
+if nx_run NX43; then
+_flow_test_begin "next: a retry after needs-info exhaustion re-vouches and restarts the rounds (NX43, R62, T:47)"
+fe_new nx43-row-47
+# Source: T:47 (needs_human, person_retry, reason_needs_info_exhausted ->
+# intake; re-vouch, intake_round = 0, set baseline_pending); plan R62 (vouch_at
+# = now and baseline_pending set by the same handlers as T:9r and T:8; the
+# transition line's fields carry vouch_at).
+e2e_describe "job 7 in needs_human, reason needs_info_exhausted, intake_round 3; a stored terminal retry; one pass with a sync"
+nx_base needs_human "d['reason'] = 'needs_info_exhausted'; d['intake_round'] = 3"
+nx_pend 1 person_retry '{}'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 47 "$(nx_rows)" "rows"
+e2e_expect_equal "intake 0 true" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.intake_round) \(.baseline_pending)"')" "state, intake_round, baseline_pending"
+e2e_expect_equal moved "$(nx_jq "$NX_J/job.json" 'if .vouch_at == "2026-11-16T00:00:00Z" then "kept" else "moved" end')" "vouch_at moved to now"
+e2e_expect_equal "$(nx_jq "$NX_J/job.json" .vouch_at)" "$(jq -r 'select(.type == "transition") | .fields.vouch_at' "$NX_J/events.jsonl")" "the 47 line's fields carry vouch_at"
+fi
+
+# ---------------------------------------------------------------- NX44
+if nx_run NX44; then
+_flow_test_begin "next: a queue label removed by triage and re-added by write access leaves the needs_human job as it was (NX44, R64)"
+fe_new nx44-label-readded
+# Source: plan R64 (queue label removed by triage: a status note and no
+# cancel; re-added by write access: state needs_human, vouch_at unchanged,
+# untrusted_edit still true); T:creation (row 1 refuses while a non-terminal
+# job exists); T:45v (needs_human, person_feedback, untrusted_edit true:
+# refuse, the untrusted edit needs a trusted retry first), which shows
+# untrusted_edit is still true.
+e2e_describe "job 7 in intake, labelled flow:factory by maintainer; an outsider edits the body (row 51b); then triager removes the label, then maintainer adds it again; then a stored person_feedback"
+nx_base intake
+fe_world_label 7 flow:factory maintainer write 2026-11-16T00:00:00Z
+fe_world_perm outsider read
+fe_world_edit issue:7 outsider 2026-11-16T01:00:00Z
+nx_next
+e2e_expect_equal 51b "$(nx_rows)" "rows after the edit"
+fe_world_label 7 flow:factory triager triage 2026-11-16T02:00:00Z unlabeled
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status after the removal ($E2E_ERR)"
+e2e_expect_equal "needs_human 51b" "$(printf '%s %s' "$(nx_jq "$NX_J/job.json" .state)" "$(nx_rows)")" "no cancel after the removal"
+e2e_expect_equal 1 "$(nx_comments_with 'did not act on the removal of the label `flow:factory` by triager')" "the status note for the removal (R64)"
+fe_world_label 7 flow:factory maintainer write 2026-11-16T03:00:00Z
+nx_next
+e2e_expect_equal "issue-7-j1 needs_human 2026-11-16T00:00:00Z 51b" "$(printf '%s %s' "$(nx_jq "$NX_J/job.json" '"\(.key) \(.state) \(.vouch_at)"')" "$(nx_rows)")" "key, state, vouch_at and rows after the re-add"
+nx_pend 1 person_feedback '{"text": "more"}'
+nx_next
+e2e_expect_equal 1 "$(printf '%s\n' "$E2E_OUT" | grep -c 'the untrusted edit needs a trusted retry first')" "row 45v refuses: untrusted_edit is still true"
+e2e_expect_equal needs_human "$(nx_jq "$NX_J/job.json" .state)" "state"
+fi
+
+# ---------------------------------------------------------------- NX45
+if nx_run NX45; then
+_flow_test_begin "next: a retry from triage with no untrusted reply waiting is row 8t, through the shipped wrapper (NX45, R67)"
+fe_new nx45-row-8t
+# Source: plan R67 (W: a triage /flow-factory retry comment on a needs_info job
+# with no untrusted reply waiting -> row 8t, state unchanged; with
+# retry_by_triage_only read as false, row 8r would apply); T:8t.
+e2e_describe "job 7 in needs_info asking NI-1; comment 501 by triager (triage) '/flow-factory retry' at 01:00; one pass through the shipped wrapper"
+nx_base needs_info "$NX_NEEDS_INFO1"
+fe_world_comment 7 501 triager triage 2026-11-16T01:00:00Z "/flow-factory retry"
+nx_wrapper_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 8t "$(nx_rows)" "rows"
+e2e_expect_equal "needs_info 2026-11-16T00:00:00Z" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.vouch_at)"')" "state and vouch_at unchanged"
+fi
+
+# ---------------------------------------------------------------- NX46
+if nx_run NX46; then
+_flow_test_begin "next: a stored comment command whose commands_seen entry was lost runs once (NX46, R78)"
+fe_new nx46-store-crash
+# Source: plan R78 (W: the crash state written by hand: a pending file with
+# channel comment:12 and a job.json whose commands_seen lacks 12; one pass ->
+# one transition line for that command, commands_seen holds 12, no second
+# pending file); design person_channels L78 (one action per comment).
+e2e_describe "job 7 queued with an open blocker; comment 12 by maintainer '/flow-factory cancel'; a pending person_cancel with channel comment:12 already stored; commands_seen empty; one pass through the shipped wrapper"
+nx_queued_blocked
+fe_world_comment 7 12 maintainer write 2026-11-16T01:00:00Z "/flow-factory cancel"
+mkdir -p "$NX_J/pending"
+jq -n '{event: "person_cancel", args: {}, channel: "comment:12",
+  caller: {pid: 4242, start: "Mon Nov 16 00:00:00 2026", ancestry: [4242, 1]},
+  facts: {unvouched_session_action: false, via_comment: true, retry_by_triage_only: false},
+  comment: {id: 12, author: "maintainer", permission: "write", created_at: "2026-11-16T01:00:00Z"},
+  raised_at: "2026-11-16T01:00:00Z"}' > "$NX_J/pending/00000000000000000001-person_cancel.json"
+nx_wrapper_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 53 "$(nx_rows)" "one transition line"
+e2e_expect_equal "[12]" "$(jq -c 'select(.type == "commands_seen") | .commands_seen' "$NX_J/events.jsonl" | tail -n 1)" "commands_seen holds 12"
+e2e_expect_equal 0 "$(find "$NX_J/pending" -name '*.json' 2>/dev/null | grep -c .)" "no pending file left"
+fi
+
+# ---------------------------------------------------------------- NX47
+if nx_run NX47; then
+_flow_test_begin "next: an untrusted edit of a trusted spec comment parks an intake job by row 51b with one needs-human comment (NX47, R86, B14 step 8)"
+fe_new nx47-spec-comment-edit
+# Source: plan R86's E half (row 51b from intake after an untrusted edit to a
+# trusted /flow-factory spec comment); T:facts.untrusted_edit; B14 step 8.
+e2e_describe "job 7 in intake; comment 601 by maintainer '/flow-factory spec use port 8080' at 00:30, edited by outsider (read) at 01:00; one pass"
+nx_base intake
+fe_world_comment 7 601 maintainer write 2026-11-16T00:30:00Z "/flow-factory spec use port 8080"
+fe_world_perm outsider read
+fe_world_edit comment:601 outsider 2026-11-16T01:00:00Z
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 51b "$(nx_rows)" "rows"
+e2e_expect_equal "needs_human untrusted_edit" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state and reason"
+e2e_expect_equal 1 "$(nx_comments_with "$NX_HUMAN")" "one needs-human comment"
+fi
+
+# ---------------------------------------------------------------- NX48
+if nx_run NX48; then
+_flow_test_begin "next: an issue fact is never taken in a pass with no sync (NX48, R88)"
+fe_new nx48a-blocked-no-sync
+# Source: plan R88 (E, default syncIntervalSeconds: a queued job whose body has
+# Blocked by #3, #3 open: pass 1 syncs and the job stays queued; pass 2
+# within 60 s has no sync and the job is still queued with no row 2 line).
+e2e_describe "job 7 queued, Blocked by #3 with #3 open; the default sync interval; two passes"
+nx_queued_blocked
+nx_settings 'del(.flow.factory.syncIntervalSeconds)'
+nx_next
+e2e_expect_equal "queued " "$(nx_jq "$NX_J/job.json" .state) $(nx_rows)" "pass 1: queued, no rows"
+nx_next
+e2e_expect_equal "queued " "$(nx_jq "$NX_J/job.json" .state) $(nx_rows)" "pass 2 (no sync): queued, no rows"
+fe_new nx48b-retry-waits-for-sync
+# Source: plan R88 (E: a needs_human job parked by row 51b and a terminal
+# retry stored in a pass with no sync: the pending file stays, no transition
+# line, vouch_at unchanged; then syncIntervalSeconds 0 and one more pass:
+# row 44d applies and vouch_at moves); T:44d.
+e2e_describe "job 7 in needs_human, reason untrusted_edit, with an outsider body edit on the world; a stored terminal retry; a pass with no sync; then a pass with a sync"
+nx_base needs_human "d['reason'] = 'untrusted_edit'"
+fe_world_perm outsider read
+fe_world_edit issue:7 outsider 2026-11-16T01:00:00Z
+nx_pend 1 person_retry '{}'
+nx_nosync
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 1 exit status ($E2E_ERR)"
+e2e_expect_equal " 1 2026-11-16T00:00:00Z" "$(nx_rows) $(find "$NX_J/pending" -name '*.json' | grep -c .) $(nx_jq "$NX_J/job.json" .vouch_at)" "no rows, the retry kept, vouch_at unchanged"
+nx_settings '.flow.factory.syncIntervalSeconds = 0'
+nx_next
+e2e_expect_equal 44d "$(nx_rows)" "row 44d after a synced pass"
+e2e_expect_equal "intake moved" "$(nx_jq "$NX_J/job.json" '"\(.state) \(if .vouch_at == "2026-11-16T00:00:00Z" then "kept" else "moved" end)"')" "state and vouch_at"
+fi
+
+# ---------------------------------------------------------------- NX49
+if nx_run NX49; then
+_flow_test_begin "next: a stored event's arguments reach its handler and its replay (NX49, R89)"
+fe_new nx49a-answer-text
+# Source: plan R89 (row 8a from a terminal answer NI-1 --text whose text has
+# two inner spaces and a $ -> answers.json holds that text byte for byte);
+# T:8a.
+e2e_describe "job 7 in needs_info asking NI-1; a stored terminal person_answer NI-1 with text 'use  port \$8080'; one pass"
+nx_base needs_info "$NX_NEEDS_INFO1"
+nx_questions NI-1
+nx_pend 1 person_answer '{"qid": "NI-1", "text": "use  port $8080"}'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 8a "$(nx_rows)" "rows"
+e2e_expect_equal 'use  port $8080' "$(jq -r '.[0].text' "$NX_J/answers.json" 2>/dev/null)" "answers.json holds the text byte for byte"
+fe_new nx49b-held-args
+# Source: plan R89 (row 40 from a pending stage_succeeded whose args are
+# {"directive": D} -> the T:40 line's fields.held_result.args is {"directive":
+# D}; then a terminal confirm and row 41 -> the replayed line's args is
+# {"directive": D}, and row 41 ran the intent the confirm's args.intent names).
+e2e_describe "job 7 in prepare with a completed stage result; tiers.issueAssign confirm; pass 1 parks by row 40; a stored terminal person_confirm naming the pending intent; pass 2"
+nx_base prepare
+nx_stage_result prepare
+nx_settings '.tiers.issueAssign = "confirm"'
+nx_next
+e2e_expect_equal '{"directive":"issue-7-j1-prepare-1"}' "$(jq -c 'select(.type == "transition" and .row == "40") | .fields.held_result.args' "$NX_J/events.jsonl")" "the 40 line's held_result.args"
+nx_pend 9 person_confirm '{"intent": "issue-7-j1-40-1"}'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 2 exit status ($E2E_ERR)"
+e2e_expect_equal "40 41 11" "$(nx_rows)" "rows"
+e2e_expect_equal '{"directive":"issue-7-j1-prepare-1"}' "$(jq -c 'select(.type == "replayed") | .args' "$NX_J/events.jsonl")" "the replayed line's args"
+e2e_expect_equal "sent issue-7-j1-40-1" "$(jq -r 'select(.type == "write_recorded") | "sent \(.id)"' "$NX_J/events.jsonl")" "row 41 ran the confirmed intent"
+e2e_expect_equal '["flow-e2e-engine"]' "$(jq -c '.issues["7"].assignees' "$FE_WORLD")" "the assignment on the world"
+fi
+
+# ---------------------------------------------------------------- NX50
+if nx_run NX50; then
+_flow_test_begin "next: bot actors are untrusted unless listed (NX50, R90)"
+fe_new nx50a-bot-cancel-wrapper
+# Source: plan R90 (W, B14: ci[bot] with role write, not in trustedBots,
+# commenting /flow-factory cancel on a queued job through next -> no pending
+# event, job queued, UNTRUSTED_COMMAND).
+e2e_describe "job 7 queued with an open blocker; comment 701 by ci[bot] (write) '/flow-factory cancel'; one pass through the shipped wrapper"
+nx_queued_blocked
+fe_world_comment 7 701 'ci[bot]' write 2026-11-16T01:00:00Z "/flow-factory cancel"
+nx_wrapper_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_line_count 'UNTRUSTED_COMMAND job=issue-7-j1 comment=701 author=ci[bot]')" "the UNTRUSTED_COMMAND line"
+e2e_expect_equal "queued 0" "$(nx_jq "$NX_J/job.json" .state) $(find "$NX_J/pending" -name '*.json' 2>/dev/null | grep -c .)" "queued, no pending event"
+fe_new nx50b-triage-bot-retry
+# Source: plan R90 (E, B14: the triage-bot retry in needs_info with an
+# untrusted reply waiting -> no pending event, job in needs_info).
+e2e_describe "job 7 in needs_info asking NI-1; comment 702 by outsider (read) 'NI-1: port 9090'; comment 703 by helper-app (type Bot, triage) '/flow-factory retry'; one pass"
+nx_base needs_info "$NX_NEEDS_INFO1"
+fe_world_comment 7 702 outsider read 2026-11-16T01:00:00Z "NI-1: port 9090"
+fe_world_comment 7 703 helper-app triage 2026-11-16T01:10:00Z "/flow-factory retry"
+fe_world_actor_type helper-app Bot
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "needs_info 0" "$(nx_jq "$NX_J/job.json" .state) $(find "$NX_J/pending" -name '*.json' 2>/dev/null | grep -c .)" "needs_info, no pending event"
+e2e_expect_equal 0 "$(nx_rows | tr ' ' '\n' | grep -c '^8[rt]$')" "no row 8r or 8t"
+fe_new nx50c-bot-close
+# Source: plan R90 (E, B14: the bot close in intake -> row 53u, not 53b);
+# T:53u (untrusted_close -> needs_human, reason issue_closed_untrusted); B14
+# step 8 (one needs-human comment).
+e2e_describe "job 7 in intake; ci[bot] (write) closes the issue at 01:00; one pass"
+nx_base intake
+fe_world_close 7 'ci[bot]' write 2026-11-16T01:00:00Z
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal 53u "$(nx_rows)" "rows"
+e2e_expect_equal "needs_human issue_closed_untrusted" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.reason)"')" "state and reason"
+e2e_expect_equal 1 "$(nx_comments_with "$NX_HUMAN")" "one needs-human comment"
+fi
+
+# ---------------------------------------------------------------- NX51
+if nx_run NX51; then
+_flow_test_begin "next: dependency lines through next (NX51, R76)"
+# Source: plan R76 (Depends on #3 with #3 closed not_planned -> dependency_open
+# false, row 2 applies; See #3 and Depends on o/other#3 only -> ignored, row
+# 2; Depends on #3 with the read of #3 failing -> no fact, no row 2); T:2.
+for NX_CASE in closed ignored readfails; do
+  fe_new "nx51-$NX_CASE"
+  e2e_describe "job 7 queued; dependency case $NX_CASE; one pass"
+  nx_base queued
+  case "$NX_CASE" in
+    closed) fe_world_issue 7 "Add a port setting" "Depends on #3"; fe_world_issue 3 "Dropped" "x" closed
+            jq '.issues["3"].state_reason = "not_planned"' "$FE_WORLD" > "$FE_WORLD.t" && mv "$FE_WORLD.t" "$FE_WORLD"; NX_EXP=2 ;;
+    ignored) fe_world_issue 7 "Add a port setting" "See #3
+Depends on o/other#3"; fe_world_issue 3 "Open" "x"; NX_EXP=2 ;;
+    readfails) fe_world_issue 7 "Add a port setting" "Depends on #3"; fe_world_issue 3 "Open" "x"
+               fe_world_knob list_fails '["repos/flow-e2e/scratch/issues/3"]'; NX_EXP="" ;;
+  esac
+  nx_next
+  e2e_expect_equal 0 "$E2E_RC" "$NX_CASE: exit status ($E2E_ERR)"
+  e2e_expect_equal "$NX_EXP" "$(nx_rows)" "$NX_CASE: rows"
+done
+fi
+
+# ---------------------------------------------------------------- NX52
+if nx_run NX52; then
+_flow_test_begin "next: a trusted close cancels and an outsider edit parks, from queued and intake, through the shipped wrapper (NX52, T:53b, T:51b)"
+# Source: T:53b (github_change, cancel_signal -> cancelled); T:51b
+# (untrusted_edit -> needs_human); plan B14 test plan W "53b and 51b from
+# queued and intake".
+for NX_CASE in queued:53b intake:53b queued:51b intake:51b; do
+  NX_S=${NX_CASE%%:*}; NX_R=${NX_CASE#*:}
+  fe_new "nx52-$NX_S-$NX_R"
+  e2e_describe "job 7 in $NX_S; $([ "$NX_R" = 53b ] && echo 'maintainer (write) closes the issue' || echo 'outsider (read) edits the body') at 01:00; one pass through the shipped wrapper"
+  if [ "$NX_S" = queued ]; then nx_queued_blocked; else nx_base intake; fi
+  if [ "$NX_R" = 53b ]; then
+    fe_world_close 7 maintainer write 2026-11-16T01:00:00Z; NX_TO=cancelled
+  else
+    fe_world_perm outsider read; fe_world_edit issue:7 outsider 2026-11-16T01:00:00Z; NX_TO=needs_human
+  fi
+  nx_wrapper_next
+  e2e_expect_equal 0 "$E2E_RC" "$NX_CASE: exit status ($E2E_ERR)"
+  e2e_expect_equal "$NX_R $NX_TO" "$(nx_rows) $(nx_jq "$NX_J/job.json" .state)" "$NX_CASE: row and state"
+done
+fi
+
+# ---------------------------------------------------------------- NX53
+if nx_run NX53; then
+_flow_test_begin "next: /flow-factory reject in needs_human rejects the job, through the shipped wrapper (NX53, T:48)"
+fe_new nx53-reject
+# Source: T:48 (needs_human, person_reject, unvouched_session_action false ->
+# rejected); design person_channels (a trusted command comment raises the
+# person event through the comment channel).
+e2e_describe "job 7 in needs_human; comment 801 by maintainer (write) '/flow-factory reject' at 01:00; one pass through the shipped wrapper"
+nx_base needs_human "d['reason'] = 'attempts_exhausted'"
+fe_world_comment 7 801 maintainer write 2026-11-16T01:00:00Z "/flow-factory reject"
+nx_wrapper_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "48 rejected comment:801" "$(nx_rows) $(nx_jq "$NX_J/job.json" .state) $(jq -r 'select(.type == "transition") | .channel' "$NX_J/events.jsonl")" "row, state and channel"
+# Source: T:48 and T:42 ("close any PR through the outbox"); plan 2.2 (a
+# pr_close item, run by the drain of the same pass: the job ended in that
+# state, so the item's state_at_write is it).
+for NX_CASE in needs_human:48 waiting_operator:42; do
+  fe_new "nx53-pr-${NX_CASE#*:}"
+  e2e_describe "job 7 in ${NX_CASE%%:*} with PR 12 open on the world; a stored terminal person_reject; one pass"
+  nx_base "${NX_CASE%%:*}" "d['reason'] = 'attempts_exhausted' if d['state'] == 'needs_human' else 'write_confirm'; d['pr'] = 12; d['head_sha'] = 'a' * 40"
+  fe_world_pull 12 feature/issue-7-x-2 flow-e2e-engine write "Closes #7"
+  nx_pend 1 person_reject '{}'
+  nx_next
+  e2e_expect_equal 0 "$E2E_RC" "${NX_CASE}: exit status ($E2E_ERR)"
+  e2e_expect_equal "${NX_CASE#*:} rejected" "$(nx_rows) $(nx_jq "$NX_J/job.json" .state)" "${NX_CASE}: row and state"
+  e2e_expect_equal "1 sent" "$(cat "$NX_J/outbox/"*.json 2>/dev/null | jq -r --arg r "${NX_CASE#*:}" 'select(.row == $r and .kind == "pr_close") | .status' | sort | uniq -c | awk '{print $1, $2}')" "${NX_CASE}: one pr_close item, sent"
+  e2e_expect_equal closed "$(jq -r '.pulls[] | select(.number == 12) | .state' "$FE_WORLD")" "${NX_CASE}: the PR closed on the world"
+done
+fi
+
+# ---------------------------------------------------------------- NX54
+if nx_run NX54; then
+_flow_test_begin "next: row 66i refuses an issue set whose digest does not match (NX54, R8, B14 step 6)"
+# Source: plan B14 step 6 (the set's digest must equal both digest(items) and
+# job.json's issue_digest; a mismatch raises issue_set_stale, reported as
+# EFFECT_FAILED, and nothing is launched).
+NX_ITEMS='[["title","Add a port setting"],["body","The service needs a port setting."]]'
+NX_D=$(nx_digest "$NX_ITEMS")
+for NX_CASE in job items; do
+  fe_new "nx54-$NX_CASE"
+  e2e_describe "job 7 in intake; a pass with no sync; J/sync/issue-set.json whose digest $([ "$NX_CASE" = job ] && echo 'equals its items but not job.json issue_digest' || echo 'equals job.json issue_digest but not its items')"
+  if [ "$NX_CASE" = job ]; then nx_base intake "d['issue_digest'] = 'b' * 64"; else nx_base intake "d['issue_digest'] = 'c' * 64"; NX_D=$(printf 'c%.0s' $(seq 64)); fi
+  fe_judge_says "$NX_ACCEPT"
+  nx_nosync
+  mkdir -p "$NX_J/sync"
+  jq -n --argjson i "$NX_ITEMS" --arg d "$NX_D" '{synced_at: "2026-11-16T00:00:00Z", items: $i, others: [], digest: $d}' > "$NX_J/sync/issue-set.json"
+  nx_next
+  e2e_expect_equal 0 "$E2E_RC" "$NX_CASE: exit status ($E2E_ERR)"
+  e2e_expect_equal 1 "$(nx_line_count '"EFFECT_FAILED job=issue-7-j1 row=66i issue_set_stale"')" "$NX_CASE: the EFFECT_FAILED line"
+  e2e_expect_equal 0 "$(nx_launches)" "$NX_CASE: claude launches"
+done
+fi
+
+# ---------------------------------------------------------------- NX55
+if nx_run NX55; then
+_flow_test_begin "next: an NI answer given in needs_human by row 44 reaches the answers file (NX55, journal wave 3)"
+fe_new nx55-row-44-answer
+# Source: journal wave 3 (row 44, needs_human person_answer with no guard,
+# records no answer in its effects; an NI answer given there must still reach
+# the answers file before the job resumes); T:44 (-> blocked_stage).
+e2e_describe "job 7 in needs_human, blocked_stage intake, asking NI-1; a stored terminal person_answer NI-1 'use port 8080'; one pass with a sync"
+nx_base needs_human "d['reason'] = 'attempts_exhausted'; d['blocked_stage'] = 'intake'; $NX_NEEDS_INFO1"
+nx_questions NI-1
+nx_pend 1 person_answer '{"qid": "NI-1", "text": "use port 8080"}'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "44 intake" "$(nx_rows) $(nx_jq "$NX_J/job.json" .state)" "row and state"
+e2e_expect_equal '[{"qid":"NI-1","text":"use port 8080"}]' "$(jq -c 'map({qid, text})' "$NX_J/answers.json" 2>/dev/null)" "answers.json"
+fi
+
+# ---------------------------------------------------------------- NX56
+if nx_run NX56; then
+_flow_test_begin "next: the rows 4, 6, 8r, 40 and 40b leave job.json equal to its rebuild (NX56, R36)"
+fe_new nx56a-rebuild-4-8r-6-40
+# Source: plan R36 (rebuild after rows 4, 6, 8r, 40, 40b -> job.json equal to
+# the pre-rebuild file, sync fields excluded, which shows the transition
+# lines' fields and the LOGGED_LISTS lines carry every 1b field); 1a AC10.
+e2e_describe "job 7 in intake with a created line; the judge answers NEEDS_INFO then ACCEPT; a terminal retry; the prepare directive's body under the seam; tiers.issueAssign confirm before prepare's result; passes until row 40; then rebuild"
+nx_base intake
+nx_created
+jq '.bodies = {"directive:prepare": "succeeded"}' "$FE_FIXTURES/seam/ordinary.json" > "$E2E_DIR/prepare-body.json"
+NX_FIX="$E2E_DIR/prepare-body.json"
+fe_judge_says '{"decision":"NEEDS_INFO","risk":"low","surfaces":[],"scope":"s","proposed_criteria":[],"questions":["Which port?"],"reason":"r"}' "$NX_ACCEPT"
+nx_next
+nx_wait_job_result
+nx_next
+e2e_expect_equal needs_info "$(nx_jq "$NX_J/job.json" .state)" "row 4"
+nx_pend 1 person_retry '{}'
+nx_next
+nx_next
+nx_wait_job_result
+nx_next
+e2e_expect_equal prepare "$(nx_jq "$NX_J/job.json" .state)" "row 6"
+nx_settings '.tiers.issueAssign = "confirm"'
+for NX_I in 1 2 3; do
+  nx_next
+  [ "$(nx_jq "$NX_J/job.json" .state)" = waiting_operator ] && break
+done
+e2e_expect_equal 40 "$(nx_rows | tr ' ' '\n' | tail -n 1)" "the last row"
+e2e_expect_equal 1 "$(nx_rows | tr ' ' '\n' | grep -c '^8r$')" "row 8r ran"
+nx_rebuild_compare "rows 4, 8r, 6 and 40"
+fe_new nx56b-rebuild-40b
+e2e_describe "job 7 in intake with a created line; tiers.issueAssign confirm and the seam copy with executor_can_confirm false; one pass (row 40b); then rebuild"
+nx_base intake
+nx_created
+nx_settings '.tiers.issueAssign = "confirm"'
+nx_no_confirm
+nx_next
+e2e_expect_equal 40b "$(nx_rows)" "rows"
+nx_rebuild_compare "row 40b"
 fi
 
 # ---------------------------------------------------------------- NX17

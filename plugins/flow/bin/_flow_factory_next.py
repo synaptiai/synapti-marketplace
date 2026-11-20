@@ -174,6 +174,14 @@ def _read_json(path):
         return None
 
 
+def _linked_dir(path):
+    """Whether the job folder entry at path is a symbolic link, or something
+    other than a folder: such a J/sync, J/results or J/archive (or an entry
+    of J/archive) is never read through or written through (journal wave 4,
+    linked job folders)."""
+    return os.path.islink(path) or (os.path.lexists(path) and not os.path.isdir(path))
+
+
 def _write_json(path, data, def_name):
     """Validate against the directive schema (def_name, or the top level
     for None) and replace the file atomically."""
@@ -532,28 +540,39 @@ class Pass:
         """The vouch_at of every terminal job of issue n: the current
         job.json when it is terminal, and each archived one (creation row 1's
         fifth condition). An unreadable archived job gives None, which the
-        condition reads as a vouch at or after the label."""
+        condition reads as a vouch at or after the label. A linked J/archive,
+        or a linked archive/jN, is read as one unreadable job: nothing is read
+        through the link, and creation waits."""
         out = []
         if isinstance(existing, dict) and self.table.kind(existing.get("state")) == "terminal":
             out.append(existing.get("vouch_at"))
+        names = self._archive_names(n)
+        if names is None:
+            return out + [None]
         adir = os.path.join(jobs.job_dir(self.paths, n), "archive")
-        try:
-            names = sorted(os.listdir(adir))
-        except OSError:
-            names = []
-        for name in names:
+        for name in sorted(names):
             if not (name.startswith("j") and name[1:].isdigit()):
+                continue
+            if _linked_dir(os.path.join(adir, name)):
+                out.append(None)
                 continue
             old = _read_json(os.path.join(adir, name, "job.json"))
             out.append(old.get("vouch_at") if isinstance(old, dict) else None)
         return out
 
-    def _archive_seq(self, n):
+    def _archive_names(self, n):
+        """The names in J/archive ([] when there is none); None when J/archive
+        is a link or not a folder."""
         adir = os.path.join(jobs.job_dir(self.paths, n), "archive")
+        if _linked_dir(adir):
+            return None
         try:
-            names = os.listdir(adir)
+            return os.listdir(adir)
         except OSError:
-            return 0
+            return []
+
+    def _archive_seq(self, n):
+        names = self._archive_names(n) or []
         seqs = [int(x[1:]) for x in names if x.startswith("j") and x[1:].isdigit()]
         return max(seqs, default=0)
 
@@ -698,6 +717,11 @@ class Pass:
                         current = jobs.read_job(self.paths, n)
                         if not isinstance(current, dict) or current.get("state") not in due_states:
                             continue
+                        if isinstance(current.get("held_result"), dict) and current.get("confirmed_intent"):
+                            # A held result whose replay failed or was blocked
+                            # waits for the next pass's replay (B14 step 10):
+                            # the stage it finished is not launched again.
+                            continue
                         jp = JobPass(self, n, current, holds=holds, open_jobs=open_jobs)
                         did = jp.launch_due()
                 if did:
@@ -788,6 +812,11 @@ class Pass:
             except Refused as r:
                 if not str(r).startswith("lock_timeout"):
                     self.status("other", f"FACTORY_REFUSED={r} job=issue-{n}")
+        if self._login is None:
+            # The pass read the login and the read failed (a row's write
+            # needed it): say so even when no job had an item to drain
+            # (plan R95, Inferred: the line names the pass, not an item).
+            self.status("other", f"ENGINE_LOGIN_UNKNOWN next: check gh auth status in {self.paths.main}")
         for n, job in jobs.jobs(self.paths):
             if not isinstance(job, dict) or job.get("state") != "waiting_operator":
                 continue
@@ -1149,6 +1178,7 @@ class JobPass:
         handlers = [h for h, _ in to_run]
         leaving = new["state"] != self.job["state"]
         killed = False
+        before = self.outbox_ids()
         try:
             if "kill" in handlers or leaving:
                 self.kill_current(new)
@@ -1166,17 +1196,11 @@ class JobPass:
             # nothing, and its stored event is dropped (B6's line).
             self.refuse(e.line)
             return "refused"
-        except (fgit.GitFailed, fgit.CloneConfigChanged, Refused, ValueError) as e:
-            if killed or "snapshot" in handlers:
-                # The kill and the snapshot happened; keep their fields, not
-                # the move (B14 step 9).
-                kept = dict(self.job)
-                for f in ("cost", "last_session_total", "sessions", "orphan_groups", "snapshots"):
-                    if f in new:
-                        kept[f] = new[f]
-                kept["updated_at"] = ff.utc_now()
-                jobs.write_job(self.paths, kept)
-                self.job = kept
+        except (fgit.GitFailed, fgit.CloneConfigChanged, Refused, ValueError, OSError) as e:
+            # No write of a decision that did not apply may be sent: every
+            # outbox item this decision recorded is dropped (B14 step 7).
+            self.drop_recorded(before)
+            self.keep_kill(new, killed or "snapshot" in handlers)
             self.p.status("other", f"EFFECT_FAILED job={self.key} row={d.row} {' '.join(str(e).split())}")
             return "failed"
         if launch is not None:
@@ -1199,6 +1223,39 @@ class JobPass:
         if "replay" in handlers:
             self.replay()
         return "applied"
+
+    def keep_kill(self, new, kept_any):
+        """After a decision that did not apply: write job.json with the
+        fields kill_current and the snapshot set (cost, last_session_total,
+        sessions, orphan_groups, snapshots), not the move (B14 step 9)."""
+        if not kept_any:
+            return
+        kept = dict(self.job)
+        for f in ("cost", "last_session_total", "sessions", "orphan_groups", "snapshots"):
+            if f in new:
+                kept[f] = new[f]
+        kept["updated_at"] = ff.utc_now()
+        jobs.write_job(self.paths, kept)
+        self.job = kept
+
+    def outbox_ids(self):
+        """The intent ids of the items in J/outbox now ([] when there is no
+        readable outbox folder)."""
+        odir = os.path.join(self.jdir, "outbox")
+        try:
+            return {x[:-len(".json")] for x in os.listdir(odir) if x.endswith(".json")}
+        except OSError:
+            return set()
+
+    def drop_recorded(self, before):
+        """Drop every outbox item recorded since `before` (the ids there when
+        the decision started), the caller handlers' and the intake module's
+        alike: the decision did not apply, so its writes must never run."""
+        for iid in sorted(self.outbox_ids() - before):
+            try:
+                fgithub.drop_intent(self.paths, self.job, iid)
+            except (Refused, ValueError, OSError) as e:
+                self.p.status("other", f"WRITE_NOT_DROPPED job={self.key} intent={iid} {' '.join(str(e).split())}")
 
     # 1b caller handlers (plan B13 table, B14 steps 6 to 8) ---------------------
     def repo(self):
@@ -1223,7 +1280,32 @@ class JobPass:
         field a handler sets goes into the line's fields (plan 2.2)."""
         fields = line.setdefault("fields", {})
         frm, to = d.state, new["state"]
-        done = set()
+        # The parked-state notices first: they only record outbox items, and
+        # a failure there must come before any step that cannot be undone
+        # (the answers file, a write run, a dropped intent, the labels_set
+        # line), so a decision that fails leaves nothing but items
+        # drop_recorded drops. The dropped intent and the labels_set line come
+        # last, after every handler ran.
+        labels_line = self.parked_notices(d, new, frm, to) if frm != to else None
+        names = set(h for h, _ in to_run) | set(ftable.EFFECTS[e][1] for e in d.effects
+                                               if ftable.EFFECTS[e][0] == "handled")
+        args = ctx.args or {}
+        # Row 44 (needs_human, person_answer, no guard) records no answer in
+        # its effects; an NI answer given there must still reach the answers
+        # file before the job resumes (journal wave 3, open for B14).
+        row44 = d.row == "44" and d.event == "person_answer" and "answer" not in names \
+            and isinstance(args.get("qid"), str) and args["qid"].startswith("NI-") and isinstance(args.get("text"), str)
+        answers = "answer" in names or row44
+        if "revouch" in names or (answers and (d.row in ANSWER_FILE_ROWS or d.event == "person_answer")):
+            # A spec-input source changes outside the sync, so the issue set
+            # goes (plan 2.2). Before the answers file is written: deleting
+            # it early only makes row 66i wait for the next sync. Never
+            # through a linked J/sync: the file there is not the job's, and
+            # row 66i refuses a linked J/sync anyway.
+            sdir = os.path.join(self.jdir, "sync")
+            path = os.path.join(sdir, "issue-set.json")
+            if not _linked_dir(sdir) and os.path.lexists(path):
+                os.unlink(path)
         for h, effect in to_run:
             if h not in CALLER_1B:
                 continue
@@ -1234,7 +1316,6 @@ class JobPass:
                                 NOTICE_KEY, False, state=to)
             elif h == "answer":
                 self.effect_answer(d, ctx, new)
-                done.add("answer")
             elif h == "notice":
                 self.effect_notice(d, ctx, new, fields)
             elif h == "intake_record":
@@ -1248,25 +1329,13 @@ class JobPass:
                 self.effect_hold(d, ctx, new, fields)
             elif h == "write":
                 self.effect_write(d, new, fields)
-        # Row 44 (needs_human, person_answer, no guard) records no answer in
-        # its effects; an NI answer given there must still reach the answers
-        # file before the job resumes (journal wave 3, open for B14).
-        if d.row == "44" and d.event == "person_answer" and "answer" not in done:
-            qid = (ctx.args or {}).get("qid")
-            if isinstance(qid, str) and qid.startswith("NI-") and isinstance((ctx.args or {}).get("text"), str):
-                fintake.effect_answer(self.paths, new, qid, ctx.args["text"])
-                done.add("answer")
-        names = set(h for h, _ in to_run) | set(ftable.EFFECTS[e][1] for e in d.effects
-                                               if ftable.EFFECTS[e][0] == "handled")
+        if row44:
+            fintake.effect_answer(self.paths, new, args["qid"], args["text"])
         old_pi = self.job.get("pending_intent")
         if "intent_clear" in names and isinstance(old_pi, dict) and new.get("pending_intent") is None:
             fgithub.drop_intent(self.paths, new, old_pi.get("id"))
-        if "revouch" in names or ("answer" in done and (d.row in ANSWER_FILE_ROWS or d.event == "person_answer")):
-            path = os.path.join(self.jdir, "sync", "issue-set.json")
-            if os.path.lexists(path):
-                os.unlink(path)
-        if frm != to:
-            self.parked_notices(d, new, frm, to)
+        if labels_line is not None:
+            jobs.append_event(self.paths, self.n, labels_line)
 
     def judge(self, ctx):
         judge = (ctx.result or {}).get("judge") if isinstance(ctx.result, dict) else None
@@ -1311,8 +1380,11 @@ class JobPass:
         """Row 66i (B14 step 6): issue.md and baseline_digest from the
         persisted issue set, never from the sync's memory; a missing set, or
         one whose digest is not its items' or job.json's issue_digest, is
-        issue_set_stale."""
-        data = _read_json(os.path.join(self.jdir, "sync", "issue-set.json"))
+        issue_set_stale, and so is a J/sync that is a link or not a folder."""
+        sdir = os.path.join(self.jdir, "sync")
+        if _linked_dir(sdir):
+            raise Refused("issue_set_stale")
+        data = _read_json(os.path.join(sdir, "issue-set.json"))
         if not isinstance(data, dict) or not isinstance(data.get("items"), list):
             raise Refused("issue_set_stale")
         dig = data.get("digest")
@@ -1368,16 +1440,48 @@ class JobPass:
         pi = self.job.get("pending_intent")
         iid = (self.ctx_args.get("intent") if d.row == "41" else (pi or {}).get("id"))
         lines = []
-        # Row 41e saw the effect this pass: run_literal looks first and
-        # records it as found, with nothing run (Inferred: one path for the
-        # three rows, B6's look-first).
-        fgithub.run_literal(self.paths, dict(self.job, write_seq=new.get("write_seq")), iid, gh_real, self.login(),
-                            tiers=lambda k: self.tiers()(k), lines=lines)
+        if d.row == "41e":
+            # T:41e records the observed effect; it never runs the write,
+            # whose keys may still resolve to confirm.
+            self.observe_intent(iid, gh_real, lines)
+        else:
+            fgithub.run_literal(self.paths, dict(self.job, write_seq=new.get("write_seq")), iid, gh_real,
+                                self.login(), tiers=lambda k: self.tiers()(k), lines=lines)
         for line in lines:
             self.p.status("other", line)
         for f, v in (("confirmed_intent", iid), ("pending_intent", None), ("pending_keys", None)):
             new[f] = v
             fields[f] = v
+
+    def observe_intent(self, iid, gh_real, lines):
+        """Row 41e: record the pending intent's effect as found on GitHub,
+        as run_literal records a found effect, and run nothing. An item a
+        write_recorded line names is taken as sent; an effect no longer seen
+        raises Refused("effect_not_observed"), so the decision fails and the
+        job stays parked."""
+        pi = self.job.get("pending_intent")
+        if not isinstance(pi, dict) or iid != pi.get("id"):
+            raise fgithub.IntentNotPending(iid, pi.get("id") if isinstance(pi, dict) else None)
+        path = os.path.join(self.jdir, "outbox", f"{iid}.json")
+        item = fgithub._valid(path, iid, self.key)
+        if item is None:
+            raise Refused(f"intent_unknown {iid}")
+        changed, _, h = fgithub._checked(os.path.join(self.jdir, "events.jsonl"), item)
+        if changed:
+            raise changed
+        if h["sent"]:
+            fgithub._resent(path, item, h)
+            return
+        if h["dropped"]:
+            raise Refused(f"intent_dropped {iid}")
+        try:
+            effect = fgithub._look(gh_real, item, self.login(), self.paths.main)
+        except fgithub.ReadFailed as e:
+            raise Refused(f"write_failed {iid}: lookup: {e}") from e
+        if not effect:
+            raise Refused(f"effect_not_observed {iid}")
+        fgithub._sent(self.paths, self.n, path, item, effect)
+        lines.append(f"WRITE_SKIPPED job={self.key} intent={iid} found={fgithub._found_text(effect)}")
 
     def parked_notices(self, d, new, frm, to):
         """B14 step 8: on entry to needs_info a label_add of labels.needsInfo;
@@ -1385,7 +1489,8 @@ class JobPass:
         labels.needsHuman; on entry to waiting_operator with reason
         tier_confirm the tier-confirm notice; on leaving needs_info or
         needs_human a label_remove of each label in labels_set. Notices,
-        never blocking, under issueUpdate, recorded for the row."""
+        never blocking, under issueUpdate, recorded for the row. Returns the
+        labels_set line when the list changed, else None."""
         repo = self.repo()
         labels = [x for x in new.get("labels_set") or [] if isinstance(x, str)]
         changed = False
@@ -1408,8 +1513,9 @@ class JobPass:
             changed = True
         if changed:
             new["labels_set"] = labels
-            jobs.append_event(self.paths, self.n, {"type": "labels_set", "job": self.key, "time": ff.utc_now(),
-                                                   "labels_set": list(labels)})
+            # Appended by caller_effects once every other effect ran.
+            return {"type": "labels_set", "job": self.key, "time": ff.utc_now(), "labels_set": list(labels)}
+        return None
 
     def replay(self):
         """B14 step 10: decide held_result's event once in the resume state,
@@ -1426,9 +1532,15 @@ class JobPass:
         facts = held.get("facts") if isinstance(held.get("facts"), dict) else {}
         v = facts.get("unvouched_session_action")
         self.unvouched = v if isinstance(v, bool) else True
-        result = _read_json(_result_path(self.paths, self.n, args["directive"])) \
-            if isinstance(args.get("directive"), str) and args["directive"] else None
-        self.moved = False
+        did = args.get("directive")
+        # Never through a linked J/results (_result_present): a missing or
+        # linked result gives None.
+        result = _read_json(_result_path(self.paths, self.n, did)) \
+            if isinstance(did, str) and did and _result_present(self.paths, self.n, did) else None
+        # moved, after the replay, says whether this job moved in the pass:
+        # by the row that released the park (the replay inside apply), or by
+        # the replayed decision itself.
+        moved_before, self.moved = self.moved, False
         outcome = self.decide(held["event"], held.get("channel"), held.get("caller"), args=args, facts=facts,
                               result=result if isinstance(result, dict) else None)
         if outcome in ("applied", "nomove", "refused"):
@@ -1438,7 +1550,7 @@ class JobPass:
                 "type": "replayed", "job": self.key, "time": ff.utc_now(), "intent": intent, "event": held["event"],
                 "args": args, "outcome": outcome, "fields": {"held_result": None, "confirmed_intent": None}})
             self.job = new
-        self.moved = True
+        self.moved = moved_before or self.moved
         return outcome
 
     def row_status_lines(self, job, row):
@@ -1546,8 +1658,11 @@ class JobPass:
             "dearest_turn_usd": cost.get("dearest_turn_usd", 0)})
 
     def stream_session(self, did, directive):
-        stream = os.path.join(self.jdir, "results", did + ".stream.jsonl")
-        init = ff.init_event(ff.stream_events(stream)) or {}
+        rdir = os.path.join(self.jdir, "results")
+        stream = os.path.join(rdir, did + ".stream.jsonl")
+        # Never through a linked J/results, or a linked stream file.
+        linked = _linked_dir(rdir) or os.path.islink(stream)
+        init = {} if linked else ff.init_event(ff.stream_events(stream)) or {}
         sid = init.get("session_id") if isinstance(init.get("session_id"), str) else None
         if directive.get("kind") != "worker":
             return None
@@ -1632,7 +1747,9 @@ class JobPass:
     def events(self):
         p = self.p
         # A release whose replay did not finish (the process died between
-        # the release and the replayed line): replay first (B14 step 10).
+        # the release and the replayed line, or the replay failed or was
+        # blocked): replay first, then the events of event_order unless the
+        # replay moved the job (B14 step 10).
         if self.job.get("state") != "waiting_operator" and isinstance(self.job.get("held_result"), dict) \
                 and self.job.get("confirmed_intent"):
             self.replay()
@@ -1816,6 +1933,11 @@ class JobPass:
                 if why is None and (line.get("caller_pid") != lease.get("launcher_pid")
                                     or line.get("caller_start") != lease.get("launcher_start")):
                     why = "not_launcher"
+                if why is None and (_linked_dir(os.path.join(self.jdir, "results")) or os.path.islink(
+                        os.path.join(self.jdir, "results", did + ".stream.jsonl"))):
+                    # The result and the stream would be read and written
+                    # through the link.
+                    why = "results_linked"
                 if why is None and os.path.lexists(_result_path(self.paths, self.n, did)):
                     why = "result_exists"
                 if why is not None:

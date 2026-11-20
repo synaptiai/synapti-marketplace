@@ -12,6 +12,10 @@
 # Ways it can be wrong, written down before the checks:
 #   EN1  a row is never driven: an id below the table's full count (its rows
 #        plus creation row 1) has no passing scenario
+#   EN1b a row that runs a 1b handler lands in its target without the
+#        handler's effect: the answer, the re-vouch in the line's fields, the
+#        status note, the dropped intent, baseline_pending in the fields, the
+#        PR close item, the sent intent or the needs-human notice
 #   EN2  a stay row or a self-move is "covered" by its end state alone; so
 #        each scenario asserts the transition line of the pass that applied
 #        the witness's event, whose event is the witness's event (the first
@@ -282,6 +286,68 @@ en_expect_witness() {
   e2e_expect_equal 0 "$got" "SEAM_MISSING lines for the witness pair"
 }
 
+# en_expect_effects <witness json> <pass id> — the 1b caller and job handler
+# effects of the witness's row, read from the row's effect texts in the table
+# (plan B14 test plan: each of the rows that run a 1b handler asserts its
+# handler's effect: the outbox item, the field in the line's fields, or the
+# answer). Only a row that applied is checked.
+en_expect_effects() {
+  local w="$1" p="$2" n id e line effects j item
+  n=$(jq -r .issue <<<"$w"); id=$(jq -r .id <<<"$w"); e=$(jq -r .event <<<"$w")
+  j="$EN_F/jobs/issue-$n"
+  line=$(en_line "$n" "$p" "$e")
+  [ -n "$line" ] || return 0
+  effects=$(jq -c --arg id "$id" '[.rows[] | select(.id == $id) | .effects[]] | .[0:]' "$EN_TABLE")
+  # Source: T:8a, 9a, 44v, 44u, 44w, 44x, 44q ("record the answer"), and
+  # journal wave 3 for row 44: the stored answer's qid and text (witness
+  # PERSON_ARGS) are in the answers file.
+  if jq -e 'any(.[]; test("^record the answer($| in the job)"))' <<<"$effects" >/dev/null || [ "$id" = 44 ]; then
+    e2e_expect_equal '[{"qid":"NI-1","text":"use port 8080"}]' "$(jq -c 'map({qid, text})' "$j/answers.json" 2>/dev/null)" "row $id: the answer in answers.json"
+  fi
+  # Source: T:8 ("record the answer comment ids in events.jsonl").
+  if jq -e 'any(.[]; test("^record the answer comment ids"))' <<<"$effects" >/dev/null; then
+    e2e_expect_equal 1 "$(jq -c 'select(.type == "answer_comments")' "$j/events.jsonl" | grep -c .)" "row $id: one answer_comments line"
+  fi
+  # Source: T:8r, 9r, 44c, 44d, 47, 44r ("re-vouch"): vouch_at = now, carried
+  # in the line's fields (plan 2.2).
+  if jq -e 'any(.[]; test("^re-vouch"))' <<<"$effects" >/dev/null; then
+    e2e_expect_equal "moved $(en_job "$n" .vouch_at)" "$(jq -r 'if .fields.vouch_at == "2026-11-16T00:00:00Z" or .fields.vouch_at == null then "kept" else "moved" end + " " + (.fields.vouch_at // "none")' <<<"$line")" "row $id: vouch_at moved, in the line's fields"
+  fi
+  # Source: the rows whose refusal text plan B13's table hands to refuse_note
+  # (8t, 44t, 41n, 44u, 44z, 45z, 45v, 45w): a status note recorded in the
+  # outbox for the row.
+  if case " 8t 44t 41n 44u 44z 45z 45v 45w " in *" $id "*) true ;; *) false ;; esac; then
+    e2e_expect_equal 1 "$(cat "$j/outbox/"*.json 2>/dev/null | jq -r --arg r "$id" 'select(.row == $r and .kind == "comment") | .id' | grep -c .)" "row $id: one status note in the outbox"
+  fi
+  # Source: T:50, 51w, 51bw, 52wp, 53uw ("drop the pending intent"), plan 2.2
+  # "Dropped items": the seeded pending intent gets an intent_dropped line
+  # and its item is dropped.
+  if jq -e 'any(.[]; test("drop the pending intent"))' <<<"$effects" >/dev/null && [ "$(jq -r '.seed.pending_intent // empty' <<<"$w")" != "" ]; then
+    item="issue-$n-j1-40-1"
+    e2e_expect_equal "1 dropped" "$(jq -c --arg i "$item" 'select(.type == "intent_dropped" and .id == $i)' "$j/events.jsonl" | grep -c .) $(jq -r .status "$j/outbox/$item.json" 2>/dev/null)" "row $id: the pending intent dropped"
+  fi
+  # Source: the rows with "set baseline_pending" (B13 baseline handler): the
+  # line's fields carry baseline_pending true.
+  if jq -e 'any(.[]; . == "set baseline_pending")' <<<"$effects" >/dev/null; then
+    e2e_expect_equal true "$(jq -r '.fields.baseline_pending' <<<"$line")" "row $id: baseline_pending in the line's fields"
+  fi
+  # Source: T:19, 42, 48, 53, 53b ("close ... PR through the outbox"): one
+  # pr_close item when the job has a PR, none without.
+  if jq -e 'any(.[]; test("PR through the outbox"))' <<<"$effects" >/dev/null; then
+    e2e_expect_equal "$(if [ "$(jq -r '.seed.job.pr // empty' <<<"$w")" != "" ]; then echo 1; else echo 0; fi)" "$(cat "$j/outbox/"*.json 2>/dev/null | jq -r --arg r "$id" 'select(.row == $r and .kind == "pr_close") | .id' | grep -c .)" "row $id: pr_close items"
+  fi
+  # Source: T:41, 41e, 41k (run, or record the observed effect of, the
+  # pending intent; plan 2.2: the item becomes sent).
+  case "$id" in 41|41e|41k)
+    e2e_expect_equal sent "$(jq -r .status "$j/outbox/issue-$n-j1-40-1.json" 2>/dev/null)" "row $id: the pending intent's item is sent" ;;
+  esac
+  # Source: plan B14 step 8: on entry to needs_human, one needs-human notice
+  # recorded for the row.
+  if [ "$(jq -r '.expect.to // empty' <<<"$w")" = needs_human ]; then
+    e2e_expect_equal 1 "$(cat "$j/outbox/"*.json 2>/dev/null | jq -r --arg r "$id" 'select(.row == $r and .kind == "comment" and .state_at_write == "needs_human") | .id' | grep -c .)" "row $id: one needs-human notice"
+  fi
+}
+
 EN_FAILS_BEFORE=0
 en_mark() { EN_FAILS_BEFORE=$FLOW_TEST_FAIL; }
 en_passed() { [ "$FLOW_TEST_FAIL" = "$EN_FAILS_BEFORE" ]; }
@@ -326,6 +392,7 @@ while IFS= read -r EN_W; do
   fe_e "$E2E_DIR/fixture.json" next --executor headless
   e2e_expect_equal 0 "$E2E_RC" "next exit status ($(printf '%s' "$E2E_OUT$E2E_ERR" | tr '\n' ' ' | cut -c1-300))"
   en_expect_witness "$EN_W" "$(en_pass)"
+  en_expect_effects "$EN_W" "$(en_pass)"
   EN_JL=$(jq -r '.seed.judge_launch // empty' <<<"$EN_W")
   if [ -n "$EN_JL" ]; then
     # Plan B14 step 11: row 66i launches the intake judge for real; its
