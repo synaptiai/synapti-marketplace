@@ -69,16 +69,55 @@ BUILT_1A = (
     "reason_needs_info_exhausted", "round_limit_reached", "pr_exists", "pr_merged_by_person",
     "pr_closed_by_person", "foreign_head_change",
 )
+# Plan 1b (B13, B14 step 0): the facts phase 1b builds. A witness gives each
+# one through the inputs the engine reads: the gh stand-in's world (the issue
+# facts), job.json fields, the stored event's facts, or a settings file (the
+# tier facts and the confirm input of blocking_write_confirm), never the seam.
+BUILT_1B = (
+    "issue_changed", "untrusted_edit", "needs_info_answer", "untrusted_needs_info_answer",
+    "intake_rounds_exhausted", "cancel_signal", "untrusted_close", "via_comment", "retry_by_triage_only",
+    "tier_confirm_blocking", "park_tier_confirm", "intent_effect_observed", "intent_key_not_confirm",
+    "pending_intent_stale", "dependency_open", "creation_allowed",
+)
+# The issue facts: read from the sync's issue reads, so a pair that reads one
+# needs a world for the gh stand-in (plan 3.1).
+ISSUE_FACTS = ("untrusted_edit", "needs_info_answer", "untrusted_needs_info_answer", "cancel_signal",
+               "untrusted_close", "dependency_open")
+# Journal wave 1, Tiers: the keys of the blocking writes left on the path to
+# ready from each state.
+PATH_KEYS = {}
+for _s in ("intake", "prepare"):
+    PATH_KEYS[_s] = ("issueAssign", "issueUpdate", "push", "prCreate")
+for _s in ("spec", "build", "open_pr"):
+    PATH_KEYS[_s] = ("push", "prCreate", "issueUpdate")
+for _s in ("gate", "review", "rework", "sync", "resolve"):
+    PATH_KEYS[_s] = ("push", "issueUpdate")
+for _s in ("ready", "approve"):
+    PATH_KEYS[_s] = ("issueUpdate",)
+# Plan 5.3, write kind to tier key (PR create or edit is prCreate with no PR).
+WRITE_KEYS = {"assignment": "issueAssign", "in-progress label": "issueUpdate", "push": "push",
+              "PR create or edit": "prCreate", "review marker": "issueUpdate", "resolution marker": "issueUpdate",
+              "replies": "issueUpdate", "ready mark": "issueUpdate", "undo of ready": "issueUpdate"}
+VOUCH_AT = "2026-11-16T00:00:00Z"
+# The id record_job_intent gives the first intent a fresh job records for
+# row 40 (plan 2.2: issue-N-j<seq>-<row>-<k>, k = 1).
+INTENT_ID = "issue-%d-j1-40-1"
+# An intake judge reply that passes plan 5.3's output schema, per decision.
+JUDGE = {
+    "judge_accept": {"decision": "ACCEPT", "risk": "low", "surfaces": ["config"], "scope": "one setting",
+                     "proposed_criteria": ["the port is read from the settings file"], "questions": [],
+                     "reason": "clear"},
+    "judge_needs_info": {"decision": "NEEDS_INFO", "risk": "low", "surfaces": [], "scope": "unclear",
+                         "proposed_criteria": [], "questions": ["Which port?"], "reason": "a port is not named"},
+    "judge_reject": {"decision": "REJECT", "risk": "high", "surfaces": [], "scope": "none",
+                     "proposed_criteria": [], "questions": [], "reason": "out of scope"},
+}
 # Plan 2.11 seam kind 3: the built facts a seam may give.
 SEAM_BUILT = ("group_gone", "unvouched_session_action")
 # Plan 3.2, through plan 2.11: the phase that builds each unbuilt fact, for the
 # fence's expected line. Only the facts a fence scenario can name are needed;
 # the test checks the one it uses against the engine's output.
 UNBUILT_PHASE = {
-    "1b": ("issue_changed", "untrusted_edit", "needs_info_answer", "untrusted_needs_info_answer",
-           "intake_rounds_exhausted", "cancel_signal", "untrusted_close", "via_comment", "retry_by_triage_only",
-           "tier_confirm_blocking", "park_tier_confirm", "intent_effect_observed", "intent_key_not_confirm",
-           "pending_intent_stale", "dependency_open", "creation_allowed"),
     "1c": ("interactive_presence", "held_question", "executor_can_confirm", "failure_needs_person"),
     "1d": ("spec_approval_required", "spec_change_needs_approval", "approval_matches_current",
            "spec_rounds_exhausted"),
@@ -101,8 +140,10 @@ ISSUE = 7
 HEAD = "a" * 40
 FOREIGN_HEAD = "b" * 40
 PR = 12
-# The arguments a person subcommand stores with its event (plan T13 seeds).
-PERSON_ARGS = {"person_answer": {"qid": "q1"}, "person_confirm": {"intent": "i1"}}
+# The arguments a person subcommand stores with its event (plan T13 seeds;
+# plan B14 step 11: a current NI id with text, and the pending intent's id).
+PERSON_ARGS = {"person_answer": {"qid": "NI-1", "text": "use port 8080"},
+               "person_confirm": {"intent": INTENT_ID % ISSUE}}
 
 
 def load(path):
@@ -116,7 +157,7 @@ def load(path):
 
 def unbuilt_facts(data, c):
     derived = {c.bw_fact, c.pk["fact"] if c.pk else None}
-    return set(f for f in data["facts"] if f not in BUILT_1A and f not in derived)
+    return set(f for f in data["facts"] if f not in BUILT_1A and f not in BUILT_1B and f not in derived)
 
 
 def reads(data, c, state, event):
@@ -234,7 +275,24 @@ def derived_inputs(c, rows, state, a):
     top0 = c.top_rows(rows, a0)
     if a.get(pkf):
         return {"prepush_fails": True}
-    return {"confirm_keys": list(c.writes_for(top0[0], state))}
+    # The confirm input comes from the tier keys of the winner's writes, set
+    # to confirm in a settings file (plan 3.3); the seam gives none.
+    return {}
+
+
+def confirm_tiers(c, rows, state, a):
+    """{tier key: "confirm"} for each write of the row that wins with
+    blocking_write_confirm false, when the witness needs it true (plan 3.3,
+    witness.py)."""
+    bwf = c.bw_fact
+    if not a.get(bwf):
+        return {}
+    a0 = dict(a)
+    a0[bwf] = False
+    if c.pk:
+        a0[c.pk["fact"]] = False
+    top0 = c.top_rows(rows, a0)
+    return {WRITE_KEYS[w]: "confirm" for w in c.writes_for(top0[0], state)}
 
 
 def candidates(data, c):
@@ -284,6 +342,7 @@ def witness(data, c, rows, row, state, event, a, rd, issue=ISSUE):
          "assignment": read_a,
          "unbuilt": {f: v for f, v in read_a.items() if f in unbuilt},
          "built": {f: v for f, v in read_a.items() if f in BUILT_1A},
+         "built_1b": {f: v for f, v in read_a.items() if f in BUILT_1B},
          "derived_inputs": derived_inputs(c, rows, state, a),
          "built_inputs": {}}
     run_by = data["states"][state].get("run_by")
@@ -358,7 +417,8 @@ def witness(data, c, rows, row, state, event, a, rd, issue=ISSUE):
             "orphan": read_a.get("orphan_group_alive") is True,
             "stale_probes": read_a.get("probes_stale") is True,
             "pending": None, "directive": None, "result": None, "lease": False,
-            "bodies": {}, "worker_launch": False}
+            "bodies": {}, "worker_launch": False, "judge_launch": None, "issue_md": False,
+            "world": None, "tiers": {}, "pending_intent": None, "question": None}
     if event == "github_change":
         guard = row.get("guard", {}) if row is not None else a
         names = [f for f, v in guard.items() if v is True and f in rd and f not in JOB_FACTS
@@ -367,13 +427,22 @@ def witness(data, c, rows, row, state, event, a, rd, issue=ISSUE):
             names = ["issue_changed"]
         job["pending_changes"] = names
     elif person:
-        seed["pending"] = {"event": event, "channel": "terminal", "args": PERSON_ARGS.get(event, {}),
-                           "facts": {"unvouched_session_action": bool(read_a.get("unvouched_session_action", False))}}
+        args = {"intent": INTENT_ID % issue} if event == "person_confirm" else PERSON_ARGS.get(event, {})
+        seed["pending"] = {"event": event, "channel": "terminal", "args": args,
+                           "facts": {"unvouched_session_action": bool(read_a.get("unvouched_session_action", False)),
+                                     "via_comment": bool(read_a.get("via_comment", False)),
+                                     "retry_by_triage_only": bool(read_a.get("retry_by_triage_only", False))}}
     elif event.startswith("judge_") or event in ("stage_succeeded", "stage_failed"):
         seed["directive"] = {"id": did, "kind": run_by, "stage": state, "max_budget_usd": 0.5}
         ok = event != "stage_failed"
         seed["result"] = {"outcome": "completed" if ok else "error",
                           "event": event if event in ("stage_succeeded", "stage_failed") else None}
+        if event in JUDGE and state == "intake":
+            # Rows 4, 5 and 6 read the judge reply from the result file (plan
+            # 5.3 Context); row 6 reads the comment and answer ids from the
+            # issue.md the judge read (B14 step 11).
+            seed["result"]["judge"] = JUDGE[event]
+            seed["issue_md"] = event == "judge_accept"
         seed["pending"] = {"event": event, "channel": "launcher", "args": {"directive": did}, "facts": {}}
         job["directive"] = did
         job["holds_slot"] = job.get("holds_slot", True)
@@ -391,9 +460,14 @@ def witness(data, c, rows, row, state, event, a, rd, issue=ISSUE):
                 # A worker runs in the job clone (the launcher's cwd).
                 seed["worker_launch"] = True
                 seed["clone"] = True
+            elif run_by == "judge" and state == "intake":
+                # The intake judge is launched for real (B14 step 11): the
+                # sync writes the issue set row 66i reads, and the judge
+                # stand-in answers ACCEPT.
+                seed["judge_launch"] = JUDGE["judge_accept"]
             else:
-                seed["bodies"] = {"%s:%s" % (run_by, state): "judge_accept" if run_by == "judge" and state == "intake"
-                                  else "judge_approve" if run_by == "judge" else "succeeded"}
+                seed["bodies"] = {"%s:%s" % (run_by, state): "judge_approve" if run_by == "judge" else "succeeded"}
+    seed_1b(c, rows, row, state, event, read_a, job, seed, a)
     # sync_tick needs nothing beyond the state: the pass raises it in every
     # state where it occurs.
     w["seed"] = seed
@@ -407,6 +481,58 @@ def witness(data, c, rows, row, state, event, a, rd, issue=ISSUE):
         w["fixture"]["bodies"] = seed["bodies"]
     w["to_text"] = "refused" if row is None else "stay" if expect.get("stay") else expect["to"]
     return w
+
+
+def seed_1b(c, rows, row, state, event, a, job, seed, full):
+    """The inputs of the 1b facts the witness reads (plan 3.3, witness.py):
+    seed["world"] for the gh stand-in when the pair reads an issue fact or
+    needs GitHub (the sync of row 66i, a pending intent's lookup and run);
+    seed["tiers"] for the settings file; job.json fields for the facts the
+    table computes; seed["pending_intent"] and seed["question"] for the
+    records the caller handlers read."""
+    tiers = confirm_tiers(c, rows, state, full)
+    world = None
+    if set(a) & set(ISSUE_FACTS) or seed.get("judge_launch"):
+        world = {}
+    if "needs_info_answer" in a or "untrusted_needs_info_answer" in a or event == "person_answer":
+        job["needs_info"] = {"asked_at": "2026-11-16T00:30:00Z", "questions": ["NI-1"], "round": 1, "earlier": []}
+        seed["question"] = "NI-1"
+    if "issue_changed" in a:
+        if a["issue_changed"]:
+            job.update(baseline_pending=False, baseline_digest="0" * 64, issue_digest="1" * 64)
+        else:
+            job["baseline_pending"] = True
+    if "intake_rounds_exhausted" in a:
+        job["intake_round"] = 3 if a["intake_rounds_exhausted"] else 0
+    if state == "waiting_operator" and "park_tier_confirm" in a:
+        job["reason"] = "tier_confirm" if a["park_tier_confirm"] else "write_confirm"
+    if a.get("tier_confirm_blocking"):
+        path = state if state != "waiting_operator" else job.get("resume_state")
+        keys = PATH_KEYS.get(path, PATH_KEYS["intake"])
+        tiers[keys[-1]] = "confirm"
+    intent = state == "waiting_operator" and a.get("park_tier_confirm") is not True and (
+        set(a) & {"intent_effect_observed", "intent_key_not_confirm", "pending_intent_stale"}
+        or event == "person_confirm")
+    if intent:
+        kind = "comment" if a.get("pending_intent_stale") else "assign_label"
+        seed["pending_intent"] = {"kind": kind, "observed": bool(a.get("intent_effect_observed"))}
+        if a.get("intent_key_not_confirm") is False:
+            tiers["issueUpdate" if kind == "comment" else "issueAssign"] = "confirm"
+        if a.get("pending_intent_stale"):
+            changes = list(job.get("pending_changes") or [])
+            if "foreign_head_change" not in changes:
+                job["pending_changes"] = changes + ["foreign_head_change"]
+        world = world if world is not None else {}
+    if world is not None:
+        world.update({"untrusted_edit": bool(a.get("untrusted_edit")),
+                      "trusted_reply": bool(a.get("needs_info_answer")),
+                      "untrusted_reply": bool(a.get("untrusted_needs_info_answer")),
+                      "cancel": bool(a.get("cancel_signal")), "untrusted_close": bool(a.get("untrusted_close")),
+                      "blocker_open": bool(a.get("dependency_open")),
+                      "observed": bool(a.get("intent_effect_observed"))})
+        job["vouch_at"] = VOUCH_AT
+    seed["world"] = world
+    seed["tiers"] = tiers
 
 
 def best_per(cands, keyfn):

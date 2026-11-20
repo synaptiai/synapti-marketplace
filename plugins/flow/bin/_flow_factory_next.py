@@ -73,6 +73,7 @@ except OSError:
     _flow_cwd = None
 sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpath(p) != _flow_cwd]
 
+import hashlib
 import json
 import signal
 import subprocess
@@ -92,6 +93,11 @@ import _flow_factory_schema as schema
 import _flow_factory_git as fgit
 import _flow_factory_caller as fcaller
 import _flow_factory_staleness as staleness
+import _flow_factory_issue as fissue
+import _flow_factory_text as ftext
+import _flow_factory_tiers as ftiers
+import _flow_factory_github as fgithub
+import _flow_factory_intake as fintake
 # Through the module, never a from-import: the test entry point wraps
 # choose and choose_creation on the module.
 import _flow_factory_table as ftable
@@ -120,6 +126,17 @@ BODY_OUTCOMES = {
     "judge_escalate": ("completed", None, "judge_escalate"),
 }
 DEFAULT_TIMEOUT_SECONDS = 1800
+# The 1b caller handlers next runs in JobPass.apply (plan B13 table, B14 step 7).
+CALLER_1B = ("pr_close", "answer", "notice", "refuse_note", "issue_md", "intake_record", "hold_intent", "write")
+# Rows whose handlers change a spec-input source outside the sync, so
+# J/sync/issue-set.json is deleted with them (plan 2.2, B14 step 7).
+ANSWER_FILE_ROWS = ("8a", "9a", "44v", "44u", "44w", "44x", "44q", "44")
+# The parked states whose entry and exit move a label (B14 step 8).
+LABELLED_PARKS = {"needs_info": "needsInfo", "needs_human": "needsHuman"}
+LABEL_DEFAULTS = {"inProgress": "flow:in-progress", "needsInfo": "flow:needs-info", "needsHuman": "flow:needs-human",
+                  "ready": "flow:ready", "specReview": "flow:spec-review", "priorityHigh": "flow:priority-high"}
+NOTICE_KEY = ["issueUpdate"]
+ASSIGN_KEY = ["issueAssign", "issueUpdate"]
 
 # The status line groups, in the order `next` prints them (plan 2.6, T11
 # Output): the probe lines first, then the rest.
@@ -251,6 +268,12 @@ def launcher_running(pid, start):
     return True, not stat.startswith("T")
 
 
+def label_name(name):
+    """flow.factory.labels.<name>, read user-only, else its default."""
+    v = jobs.setting(f"flow.factory.labels.{name}", LABEL_DEFAULTS[name])
+    return v if isinstance(v, str) and v else LABEL_DEFAULTS[name]
+
+
 def _me():
     pid = os.getpid()
     return {"pid": pid, "start": fcaller.lstart(pid) or "", "ancestry": [pid, os.getppid()]}
@@ -282,6 +305,18 @@ class Pass:
         # A usage limit a shell report brought in: state.json paused_until,
         # written under the global lock after Phase B.
         self.pending_pause = None
+        # The 1b sync's reads, kept in memory for this pass only (plan 3.2):
+        # {n: {"snapshot": B4's snapshot}} for each job whose reads all
+        # answered. A job with no entry has no issue facts this pass.
+        self.issue_sync = {}
+        self.perms = None
+        self.default_branch = None
+        # Per-pass values read the first time they are needed (plan 3.2
+        # item 1): False until read, then the value or None.
+        self._login = False
+        self._repo = False
+        # The tier resolver of each job, after its base fetch (B14 step 3).
+        self.tier_memo = {}
 
     # time and settings ---------------------------------------------------
     def left(self):
@@ -337,6 +372,24 @@ class Pass:
                         and self.table.kind(j.get("state")) != "terminal" and j.get("state") != "queued")
         return holds, open_jobs
 
+    # per-pass values ------------------------------------------------------
+    def repo(self):
+        """The owner/name the sync and the writes name, read once per pass."""
+        if self._repo is False:
+            git = ff.which_real("git")
+            self._repo = ff.gh_default_repo(git) if git else None
+        return self._repo
+
+    def engine_login(self):
+        """The engine's own login, read with `gh api user` the first time
+        anything in the pass needs it and kept for the rest of the pass only;
+        None when the read failed (plan 3.2 item 1)."""
+        if self._login is False:
+            ok, data = self.gh(["api", "user"])
+            login = data.get("login") if ok and isinstance(data, dict) else None
+            self._login = login if isinstance(login, str) and login else None
+        return self._login
+
     # sync ------------------------------------------------------------------
     def gh(self, args):
         """(ok, parsed JSON) of one gh call within the time left. The first
@@ -365,8 +418,7 @@ class Pass:
     def sync(self):
         if not self.sync_due or not self.enough():
             return
-        git = ff.which_real("git")
-        repo = ff.gh_default_repo(git) if git else None
+        repo = self.repo()
         if not repo:
             self.status("sync", f"PAUSED sync_repo_unknown next: run gh repo set-default in {self.paths.main}")
             return
@@ -392,17 +444,25 @@ class Pass:
             foreign = isinstance(head, str) and isinstance(known, str) and head != known
             self.fresh_changes[n] = [f for f, v in (("pr_merged_by_person", merged), ("pr_closed_by_person", closed),
                                                     ("foreign_head_change", foreign)) if v]
+        # The 1b issue reads (plan 3.2 items 4 and 5): read only, kept in
+        # memory, written per job in phase B under its lock. A job whose
+        # reads do not all answer gets no entry, so its issue facts wait for
+        # a later pass (plan 3.1); the sync then counts as incomplete.
+        self.perms = fissue.Permissions(self.gh, repo, jobs.setting)
+        issues_complete = self.read_issues(repo)
         if complete and self.enough():
             label = quote(str(self.setting("flow.factory.label", "flow:factory")), safe=":")
             # --paginate --slurp: every page, as a list of pages.
             ok, pages = self.gh(["api", "--paginate", "--slurp",
                                  f"repos/{repo}/issues?labels={label}&state=open&per_page=100"])
             if ok and isinstance(pages, list) and all(isinstance(pg, list) for pg in pages):
-                self.create_jobs([i for pg in pages for i in pg])
+                if not self.create_jobs(repo, [i for pg in pages for i in pg]):
+                    complete = False
             else:
                 complete = False
         else:
             complete = False
+        complete = complete and issues_complete
         if not complete and self.sync_error:
             # A sync that ran out of time says nothing; one that GitHub
             # refused says why, every pass, until it completes.
@@ -414,20 +474,79 @@ class Pass:
                 state["last_sync_at"] = ff.utc_now()
                 jobs.write_state(self.paths, state)
 
+    def read_issues(self, repo):
+        """B4's reads for every non-terminal job, kept in self.issue_sync.
+        False when the engine login could not be read (no job gets an entry,
+        plan 3.2 item 1) or the time ran out before a job (later jobs wait
+        for the next pass). A job whose own reads failed gets no entry, so
+        its issue facts wait (plan 3.1), and the failure is reported by the
+        sync_failed line; it does not hold back last_sync_at, so one job's
+        unreadable issue does not make every pass sync again (Inferred)."""
+        login = self.engine_login()
+        if login is None:
+            return False
+        for n, job in self.scanned:
+            if not isinstance(job, dict) or self.table.kind(job.get("state")) == "terminal":
+                continue
+            if not self.enough():
+                return False
+            first, self.sync_error = self.sync_error, None
+            snap = fissue.read_issue(self.gh, repo, n, job, self.perms)
+            why, self.sync_error = self.sync_error, first
+            if snap is not None:
+                self.issue_sync[n] = {"snapshot": snap}
+            else:
+                self.status("sync", f"ISSUE_READ_FAILED job={job.get('key')} {why or 'the answer was not usable'}")
+        return True
+
     # creation (row 1) ------------------------------------------------------
-    def create_jobs(self, issues):
+    def create_jobs(self, repo, issues):
+        """Creation row 1 for each labelled open issue; False when a read
+        it needed did not answer (the issue waits for the next sync)."""
+        complete = True
         for item in issues:
             if not self.enough():
-                return
+                return False
             if not isinstance(item, dict) or "pull_request" in item:
                 continue
             n = item.get("number")
             if not isinstance(n, int) or isinstance(n, bool) or n < 1:
                 continue
             try:
-                self.create_one(n, item)
+                if self.create_one(repo, n, item) is False:
+                    complete = False
             except Refused as r:
                 self.status("other", f"FACTORY_REFUSED={r} job=issue-{n}")
+        return complete
+
+    def base_branch(self, repo):
+        """default_branch of `gh api repos/O/R`, read once per sync (the base
+        of a job created in this pass); None when the read failed."""
+        if self.default_branch is None:
+            ok, data = self.gh(["api", f"repos/{repo}"])
+            b = data.get("default_branch") if ok and isinstance(data, dict) else None
+            self.default_branch = b if ftiers.base_ref({"base": b}) else None
+        return self.default_branch
+
+    def terminal_vouches(self, n, existing):
+        """The vouch_at of every terminal job of issue n: the current
+        job.json when it is terminal, and each archived one (creation row 1's
+        fifth condition). An unreadable archived job gives None, which the
+        condition reads as a vouch at or after the label."""
+        out = []
+        if isinstance(existing, dict) and self.table.kind(existing.get("state")) == "terminal":
+            out.append(existing.get("vouch_at"))
+        adir = os.path.join(jobs.job_dir(self.paths, n), "archive")
+        try:
+            names = sorted(os.listdir(adir))
+        except OSError:
+            names = []
+        for name in names:
+            if not (name.startswith("j") and name[1:].isdigit()):
+                continue
+            old = _read_json(os.path.join(adir, name, "job.json"))
+            out.append(old.get("vouch_at") if isinstance(old, dict) else None)
+        return out
 
     def _archive_seq(self, n):
         adir = os.path.join(jobs.job_dir(self.paths, n), "archive")
@@ -444,24 +563,33 @@ class Pass:
         except (AttributeError, IndexError, ValueError):
             return 0
 
-    def create_one(self, n, item):
+    def create_one(self, repo, n, item):
         existing = jobs.read_job(self.paths, n)
         if isinstance(existing, jobs.Unreadable):
-            return
+            return None
         if isinstance(existing, dict) and self.table.kind(existing.get("state")) != "terminal":
-            return
+            return None
         seq = max(self._archive_seq(n), self._key_seq(existing.get("key")) if isinstance(existing, dict) else 0) + 1
         key = f"issue-{n}-j{seq}"
-        ctx = ftable.Context(built={}, setting=jobs.setting, pass_id=self.pass_id, channel="engine", caller=self.me,
+        unjobbed = fissue.read_unjobbed(self.gh, repo, n, self.perms, jobs.setting)
+        if unjobbed is None:
+            return False
+        local = {"open_job": False, "terminal_vouch_at": self.terminal_vouches(n, existing)}
+        ctx = ftable.Context(built={ftable.CREATION_FACT: lambda: fissue.creation_conditions(unjobbed, local,
+                                                                                               jobs.setting)},
+                             setting=jobs.setting, pass_id=self.pass_id, channel="engine", caller=self.me,
                              now=ff.utc_now())
         d = ftable.choose_creation(self.table, key, ctx)
         if isinstance(d, ftable.Blocked):
             self.status("blocked", f"BLOCKED_UNBUILT job={key} state=none event=issue_labelled fact={d.fact} "
                                    f"phase={d.phase}")
-            return
+            return None
         if not isinstance(d, ftable.Winner):
-            return
-        updated = item.get("updated_at") if _epoch(item.get("updated_at")) is not None else None
+            return None
+        base = self.base_branch(repo)
+        if base is None:
+            return False
+        label = unjobbed["label_event"]
         with jobs.global_lock(self.paths, timeout=self.lock_wait()):
             with jobs.job_lock(self.paths, n, timeout=self.lock_wait()):
                 again = jobs.read_job(self.paths, n)
@@ -476,7 +604,8 @@ class Pass:
                 job = {"apiVersion": "flow.synapti.ai/v1", "kind": "FlowFactoryJob", "key": key, "issue": n,
                        "state": d.to, "attempt": 0, "stage_launches": {}, "sessions": {}, "holds_slot": False,
                        "directive": None, "cost": {"usd_total": 0, "runs": [], "stage_usd": {}, "dearest_turn_usd": 0},
-                       "created_at": now, "updated_at": now, "vouch_at": updated}
+                       "created_at": now, "updated_at": now, "vouch_at": label["created_at"],
+                       "vouch_event_id": label["id"], "base": base}
                 jobs.write_job(self.paths, job)
                 jobs.append_event(self.paths, n, {
                     "type": "created", "job": key, "pass": self.pass_id, "row": d.row, "event": d.event,
@@ -503,6 +632,23 @@ class Pass:
             self.env_failed = bool(self.state.get("env_failed_check"))
 
     # phase B ---------------------------------------------------------------
+    def order(self):
+        """scanned sorted once per pass, after the sync: labels.priorityHigh
+        first, then issue number (design stages L35, plan 3.2). The label is
+        this pass's sync's where the job has an entry, else job.json's
+        priority_high, which the last completed sync wrote."""
+        high = label_name("priorityHigh")
+
+        def key(item):
+            n, job = item
+            entry = self.issue_sync.get(n)
+            if entry is not None:
+                prio = high in (entry["snapshot"].get("labels") or [])
+            else:
+                prio = isinstance(job, dict) and job.get("priority_high") is True
+            return (0 if prio else 1, n)
+        self.scanned = sorted(self.scanned, key=key)
+
     def phase_b(self):
         self.holds, self.open_jobs = self.counts(self.scanned)
         for n, job in self.scanned:
@@ -520,6 +666,7 @@ class Pass:
                     if not isinstance(current, dict):
                         continue
                     jp = JobPass(self, n, current)
+                    jp.sync_writes()
                     jp.events()
                     if jp.moved:
                         self.moved.add(n)
@@ -594,27 +741,72 @@ class Pass:
                     return "wait"
         return "idle"
 
-    def orphan_and_outbox_lines(self):
+    def orphan_lines(self):
         for n, job in jobs.jobs(self.paths):
             if not isinstance(job, dict):
                 continue
             for entry in job.get("orphan_groups") or []:
                 if orphan_alive(entry):
                     self.status("orphan", f"ORPHAN_GROUP job={job['key']} pgid={entry['pgid']} stage={entry['stage']}")
+
+    # the outbox drain (B14 step 5) -----------------------------------------
+    def drain(self):
+        """Between phase B and phase C: each job with an outbox, terminal
+        jobs included, under its own job lock (never the global lock), runs
+        B6's drain with the pass's engine login and the job's tier memo. A
+        job left when the time runs out is drained in the next pass. Then
+        the park lines of plan 2.3 for each job in waiting_operator."""
+        gh_real = ff.which_real("gh")
+        login = None
+        for n, job in jobs.jobs(self.paths):
+            if not isinstance(job, dict):
+                continue
             odir = os.path.join(jobs.job_dir(self.paths, n), "outbox")
             try:
-                items = [x for x in os.listdir(odir) if x.endswith(".json")]
+                has = any(x.endswith(".json") for x in os.listdir(odir))
             except OSError:
-                items = []
-            if items:
-                self.status("other", f"OUTBOX_PENDING job={job['key']} items={len(items)}")
+                has = False
+            if not has:
+                continue
+            if not self.enough():
+                break
+            if login is None:
+                login = self.engine_login()
+                if login is None or not gh_real:
+                    self.status("other", "ENGINE_LOGIN_UNKNOWN next: check gh auth status in "
+                                         f"{self.paths.main}" if login is None else "PAUSED gh_not_found")
+                    break
+            try:
+                with jobs.job_lock(self.paths, n, timeout=self.lock_wait()):
+                    current = jobs.read_job(self.paths, n)
+                    if not isinstance(current, dict):
+                        continue
+                    jp = JobPass(self, n, current)
+                    for line in fgithub.drain(self.paths, current, gh_real, lambda k, jp=jp: jp.tiers()(k), login,
+                                              enough=self.enough):
+                        self.status("other", line)
+            except Refused as r:
+                if not str(r).startswith("lock_timeout"):
+                    self.status("other", f"FACTORY_REFUSED={r} job=issue-{n}")
+        for n, job in jobs.jobs(self.paths):
+            if not isinstance(job, dict) or job.get("state") != "waiting_operator":
+                continue
+            pi = job.get("pending_intent")
+            if isinstance(pi, dict):
+                self.status("other", f"WAITING_OPERATOR job={job['key']} intent={pi.get('id')} kind={pi.get('kind')} "
+                                     f"keys={','.join(pi.get('key') or [])} next: flow-factory.sh confirm "
+                                     f"{pi.get('id')} in a terminal, or change the key")
+            elif job.get("reason") == "tier_confirm":
+                self.status("other", f"WAITING_OPERATOR job={job['key']} reason=tier_confirm "
+                                     f"keys={','.join(job.get('pending_keys') or [])} next: change the key, or "
+                                     f"confirm from an interactive executor in default mode")
 
     def output(self):
         try:
             self.lines["probe"] = staleness.status_lines(self.paths.fdir, jobs.setting) + self.lines["probe"]
         except Refused as r:
             self.status("probe", f"FACTORY_REFUSED={r}")
-        self.orphan_and_outbox_lines()
+        self.orphan_lines()
         word = self.final_word()
         for g in GROUPS:
             for line in self.lines[g]:
@@ -630,6 +822,18 @@ _result_path = jobs.result_path
 _report_path = jobs.report_path
 
 
+def _result_present(paths, n, did):
+    """Whether the directive's result file is there: a regular file in a
+    J/results that is not a symbolic link. A linked J/results, or a result
+    that is itself a link, is treated as absent, so a link cannot mark a
+    directive finished (journal wave 4, linked job folders)."""
+    path = _result_path(paths, n, did)
+    rdir = os.path.dirname(path)
+    if os.path.islink(rdir) or os.path.islink(path):
+        return False
+    return os.path.lexists(path)
+
+
 def directive_open(paths, n, did):
     """Whether the job's current directive is still running or about to: it
     exists, has no result, its lease (when there is one) is not revoked, and
@@ -641,7 +845,7 @@ def directive_open(paths, n, did):
         return False
     if directive.get("not_started_reason"):
         return False
-    if os.path.lexists(_result_path(paths, n, did)):
+    if _result_present(paths, n, did):
         return False
     lease = _read_json(_lease_path(paths, n, did))
     if isinstance(lease, dict) and lease.get("revoked_at") is not None:
@@ -668,6 +872,12 @@ class JobPass:
         self._clone_event = False
         self.group_gone = True
         self.unvouched = True
+        # The stored pending event's facts and raise time, for the
+        # via_comment and retry_by_triage_only callables and the re-vouch
+        # input (B14 step 4); empty for an engine event.
+        self.pending_facts = {}
+        self.event_at = None
+        self.ctx_args = {}
         self.blocked = set()
 
     # facts -------------------------------------------------------------
@@ -735,12 +945,140 @@ class JobPass:
             jobs.append_event(self.paths, self.n, dict({"type": "clone_config_changed", "job": self.key,
                                                         "pass": self.p.pass_id}, **ev))
 
-    def built(self):
+    # 1b fact inputs (plan 5.3 Fact inputs, B14 steps 0 and 3) ----------------
+    def tiers(self):
+        """The job's tier resolver for this pass: the first call fetches
+        origin/<base> into the main checkout (design worker_github_access
+        L10), then reads the four sources once. A job with no base, a failed
+        fetch or a ref that does not resolve reads the project source as
+        confirm (plan 3.1), with one status line."""
+        memo = self.p.tier_memo
+        if self.n not in memo:
+            base = self.job.get("base")
+            ref = ftiers.base_ref(self.job)
+            shown = base if isinstance(base, str) and base else "-"
+            if ref is None:
+                self.p.status("other", f"BASE_REF_UNRESOLVED job={self.key} ref=origin/{shown}")
+            else:
+                ok, why = ftiers.fetch_base(self.paths.main, base, self.paths.fdir)
+                if not ok:
+                    self.p.status("other", f"BASE_FETCH_FAILED job={self.key} ref=origin/{base} {why}")
+                    ref = None
+            t = ftiers.resolver(self.paths.main, ref, self.paths.fdir)
+            if ref is not None and str(t.base_problem or "").startswith("ref_unresolved"):
+                self.p.status("other", f"BASE_REF_UNRESOLVED job={self.key} ref=origin/{base}")
+            memo[self.n] = t
+        return memo[self.n]
+
+    def confirm_writes(self, writes):
+        """Context.confirm_writes: B7's confirm keys of the winner's writes,
+        through the job's tier memo."""
+        return ftiers.confirm_writes(list(writes), self.job, self.tiers(), fdir=self.paths.fdir)
+
+    def issue_facts(self):
+        entry = self.p.issue_sync.get(self.n)
+        if entry is None:
+            raise FactFailed(f"no issue sync for {self.key} in this pass")
+        return fissue.facts(entry["snapshot"], self.job, jobs.setting)
+
+    def revouch_input(self, snapshot, waiting):
+        """ctx.sync["revouch"]: the sha256 of each waiting untrusted reply
+        (plan 5.3 Context), less a reply edited at or after the time of the
+        event being applied, or edited at a time that cannot be read (R7:
+        the person vouched for the text as it was when they asked)."""
+        floor = _epoch(self.event_at) if self.event_at else None
+        edits = snapshot.get("edits") if isinstance(snapshot.get("edits"), dict) else {}
+        bodies = {c.get("id"): c.get("body") for c in snapshot.get("comments") or []}
+        created = {c.get("id"): c.get("created_at") for c in snapshot.get("comments") or []}
+        out = {}
+        for cid in waiting:
+            body = bodies.get(cid)
+            if not isinstance(body, str):
+                continue
+            if self.event_at is not None:
+                # A reply posted at or after the retry was not seen by the
+                # person who retried, so it is not re-vouched either
+                # (Inferred, the same reading as R7).
+                at = _epoch(created.get(cid))
+                late = floor is None or at is None or at >= floor
+                for e in edits.get(f"comment:{cid}") or []:
+                    at = _epoch(e.get("edited_at")) if isinstance(e, dict) else None
+                    if floor is None or at is None or at >= floor:
+                        late = True
+                if late:
+                    continue
+            out[str(cid)] = ftext.body_sha256(body)
+        return out
+
+    def sync_values(self):
+        """ctx.sync for one decision (plan 5.3 Context): a dict in every
+        decision; revouch, answers and untrusted_replies only when the job
+        has a complete issue-sync entry this pass."""
+        sync = {"pending_keys": None}
+        entry = self.p.issue_sync.get(self.n)
+        if entry is not None:
+            trusted, untrusted = fissue.needs_info_answers(entry["snapshot"], self.job)
+            sync["answers"] = list(trusted)
+            sync["untrusted_replies"] = list(untrusted)
+            sync["revouch"] = self.revouch_input(entry["snapshot"], untrusted)
+        return sync
+
+    def built_1b(self, sync):
+        job = self.job
+
+        def issue_fact(name):
+            return lambda: bool(self.issue_facts()[name])
+
+        def pending_bool(name):
+            def f():
+                v = self.pending_facts.get(name) if isinstance(self.pending_facts, dict) else None
+                return v if isinstance(v, bool) else False
+            return f
+
+        def tier_confirm_blocking():
+            try:
+                keys = ftiers.confirm_path_keys(self.paths.main, None, self.job, tiers=self.tiers())
+            except ValueError as e:
+                raise FactFailed(str(e)) from e
+            # Row 40b's pending_keys handler reads the keys found in this
+            # decision (plan 5.3 Context).
+            sync["pending_keys"] = list(keys)
+            return bool(keys)
+
+        def intent_key_not_confirm():
+            if not isinstance(self.job.get("pending_intent"), dict):
+                return False
+            return ftiers.intent_key_not_confirm(self.paths.main, None, self.job, tiers=self.tiers())
+
+        def intent_effect_observed():
+            pi = self.job.get("pending_intent")
+            if not isinstance(pi, dict):
+                return False
+            login = self.p.engine_login()
+            gh_real = ff.which_real("gh")
+            if login is None or not gh_real:
+                raise FactFailed("engine login unknown" if login is None else "gh not found")
+            try:
+                return fgithub.lookup(gh_real, self.job, pi.get("id"), login, paths=self.paths) is not None
+            except fgithub.ReadFailed as e:
+                raise FactFailed(f"lookup {e}") from e
+
+        out = {f: issue_fact(f) for f in ("untrusted_edit", "needs_info_answer", "untrusted_needs_info_answer",
+                                           "cancel_signal", "untrusted_close", "dependency_open")}
+        out.update({"via_comment": pending_bool("via_comment"),
+                    "retry_by_triage_only": pending_bool("retry_by_triage_only"),
+                    "tier_confirm_blocking": tier_confirm_blocking,
+                    "intent_key_not_confirm": intent_key_not_confirm,
+                    "intent_effect_observed": intent_effect_observed})
+        del job
+        return out
+
+    def built(self, sync=None):
         job = self.job
         concurrency = self.p.num("concurrency", 1, 1)
         max_open = self.p.num("maxOpenJobs", 5, 1)
         changes = job.get("pending_changes") or []
-        return {
+        return dict(self.built_1b(sync if sync is not None else {"pending_keys": None}), **{
             "probes_stale": lambda: bool(self.p.platform()["stale"]),
             "clone_config_changed": lambda: self.clone_facts()[0],
             "tree_dirty": lambda: self.clone_facts()[1],
@@ -753,19 +1091,29 @@ class JobPass:
             "pr_merged_by_person": lambda: "pr_merged_by_person" in changes,
             "pr_closed_by_person": lambda: "pr_closed_by_person" in changes,
             "foreign_head_change": lambda: "foreign_head_change" in changes,
-        }
+        })
 
-    def ctx(self, channel, caller):
-        return ftable.Context(built=self.built(), setting=jobs.setting, pass_id=self.p.pass_id, channel=channel,
-                              caller=caller, now=ff.utc_now())
+    def ctx(self, channel, caller, args=None, facts=None, result=None):
+        """The one place next builds a job's Context: every 1b callable,
+        confirm_writes and ctx.sync in every decision (plan 5.3)."""
+        sync = self.sync_values()
+        return ftable.Context(built=self.built(sync), setting=jobs.setting, pass_id=self.p.pass_id,
+                              channel=channel, caller=caller, now=ff.utc_now(), confirm_writes=self.confirm_writes,
+                              sync=sync, args=dict(args or {}), facts=dict(facts or {}), result=result)
 
     # deciding and applying -----------------------------------------------
-    def decide(self, event, channel="engine", caller=None):
+    def decide(self, event, channel="engine", caller=None, args=None, facts=None, result=None):
         """Choose and apply one event. Returns "applied", "nomove", "blocked",
         "refused" or "failed" (a fact or an effect could not be run; nothing
         changed)."""
         state = self.job["state"]
-        ctx = self.ctx(channel, caller)
+        if facts is None:
+            # An engine event: no stored record, so no comment facts and no
+            # event time.
+            self.event_at = None
+        self.pending_facts = facts if isinstance(facts, dict) else {}
+        self.ctx_args = dict(args or {})
+        ctx = self.ctx(channel, caller, args, facts, result)
         try:
             d = ftable.choose(self.p.table, self.job, event, ctx)
         except FactFailed:
@@ -800,16 +1148,36 @@ class JobPass:
             return "refused"
         handlers = [h for h, _ in to_run]
         leaving = new["state"] != self.job["state"]
+        killed = False
         try:
             if "kill" in handlers or leaving:
                 self.kill_current(new)
-            for h, _ in to_run:
+                killed = True
+            for h, e in to_run:
                 if h == "snapshot":
                     self.snapshot(new, d.row)
                 elif h == "reset":
                     self.reset()
-        except (fgit.GitFailed, fgit.CloneConfigChanged) as e:
-            self.p.status("other", f"EFFECT_FAILED job={self.key} row={d.row} {e}")
+            # Carry item 2: the handled caller effects run inside the same
+            # try, after kill_current, so a failure keeps what the kill did.
+            self.caller_effects(d, ctx, new, line, to_run)
+        except fgithub.IntentNotPending as e:
+            # R68: a confirm that names another intent is refused, runs
+            # nothing, and its stored event is dropped (B6's line).
+            self.refuse(e.line)
+            return "refused"
+        except (fgit.GitFailed, fgit.CloneConfigChanged, Refused, ValueError) as e:
+            if killed or "snapshot" in handlers:
+                # The kill and the snapshot happened; keep their fields, not
+                # the move (B14 step 9).
+                kept = dict(self.job)
+                for f in ("cost", "last_session_total", "sessions", "orphan_groups", "snapshots"):
+                    if f in new:
+                        kept[f] = new[f]
+                kept["updated_at"] = ff.utc_now()
+                jobs.write_job(self.paths, kept)
+                self.job = kept
+            self.p.status("other", f"EFFECT_FAILED job={self.key} row={d.row} {' '.join(str(e).split())}")
             return "failed"
         if launch is not None:
             launch(new)
@@ -828,7 +1196,250 @@ class JobPass:
         self.job = new
         if leaving:
             self.moved = True
+        if "replay" in handlers:
+            self.replay()
         return "applied"
+
+    # 1b caller handlers (plan B13 table, B14 steps 6 to 8) ---------------------
+    def repo(self):
+        repo = self.p.repo()
+        if not repo:
+            raise Refused("repository_unknown")
+        return repo
+
+    def login(self):
+        login = self.p.engine_login()
+        if login is None:
+            raise Refused("engine_login_unknown")
+        return login
+
+    def record(self, new, row, kind, argv, body, key, blocking, ref=None, state=None):
+        return fgithub.record_job_intent(self.paths, new, row, kind, argv, body, list(key), blocking, ref=ref,
+                                         state=state, repo=self.repo())
+
+    def caller_effects(self, d, ctx, new, line, to_run):
+        """Run the 1b caller handlers of the decision on new, under the job
+        lock, before job.json and the transition line are written; each
+        field a handler sets goes into the line's fields (plan 2.2)."""
+        fields = line.setdefault("fields", {})
+        frm, to = d.state, new["state"]
+        done = set()
+        for h, effect in to_run:
+            if h not in CALLER_1B:
+                continue
+            if h == "pr_close":
+                pr = new.get("pr")
+                if isinstance(pr, int) and not isinstance(pr, bool) and pr >= 1:
+                    self.record(new, d.row, "pr_close", fgithub.literal_pr_close(self.repo(), pr), None,
+                                NOTICE_KEY, False, state=to)
+            elif h == "answer":
+                self.effect_answer(d, ctx, new)
+                done.add("answer")
+            elif h == "notice":
+                self.effect_notice(d, ctx, new, fields)
+            elif h == "intake_record":
+                judge = self.judge(ctx)
+                fields.update(fintake.effect_accept(self.paths, new, judge, repo=self.repo()))
+            elif h == "refuse_note":
+                self.effect_refuse_note(d, ctx, new, effect)
+            elif h == "issue_md":
+                self.effect_issue_md(new, fields)
+            elif h == "hold_intent":
+                self.effect_hold(d, ctx, new, fields)
+            elif h == "write":
+                self.effect_write(d, new, fields)
+        # Row 44 (needs_human, person_answer, no guard) records no answer in
+        # its effects; an NI answer given there must still reach the answers
+        # file before the job resumes (journal wave 3, open for B14).
+        if d.row == "44" and d.event == "person_answer" and "answer" not in done:
+            qid = (ctx.args or {}).get("qid")
+            if isinstance(qid, str) and qid.startswith("NI-") and isinstance((ctx.args or {}).get("text"), str):
+                fintake.effect_answer(self.paths, new, qid, ctx.args["text"])
+                done.add("answer")
+        names = set(h for h, _ in to_run) | set(ftable.EFFECTS[e][1] for e in d.effects
+                                               if ftable.EFFECTS[e][0] == "handled")
+        old_pi = self.job.get("pending_intent")
+        if "intent_clear" in names and isinstance(old_pi, dict) and new.get("pending_intent") is None:
+            fgithub.drop_intent(self.paths, new, old_pi.get("id"))
+        if "revouch" in names or ("answer" in done and (d.row in ANSWER_FILE_ROWS or d.event == "person_answer")):
+            path = os.path.join(self.jdir, "sync", "issue-set.json")
+            if os.path.lexists(path):
+                os.unlink(path)
+        if frm != to:
+            self.parked_notices(d, new, frm, to)
+
+    def judge(self, ctx):
+        judge = (ctx.result or {}).get("judge") if isinstance(ctx.result, dict) else None
+        if not isinstance(judge, dict):
+            raise Refused("judge_result_missing")
+        return judge
+
+    def effect_answer(self, d, ctx, new):
+        if d.row == "8":
+            ids = list((ctx.sync or {}).get("answers") or [])
+            jobs.append_event(self.paths, self.n, {"type": "answer_comments", "job": self.key, "pass": self.p.pass_id,
+                                                   "comments": ids})
+            return
+        args = ctx.args or {}
+        fintake.effect_answer(self.paths, new, args.get("qid"), args.get("text") if isinstance(args.get("text"), str)
+                              else "")
+
+    def effect_notice(self, d, ctx, new, fields):
+        repo = self.repo()
+        if d.row == "4":
+            needs_info = fintake.effect_needs_info(self.paths, new, self.judge(ctx), ctx.now, repo=repo)
+            new["needs_info"] = needs_info
+            fields["needs_info"] = needs_info
+        elif d.row == "5":
+            fintake.effect_reject(self.paths, new, self.judge(ctx), repo=repo)
+        elif d.row == "8u":
+            for cid in (ctx.sync or {}).get("untrusted_replies") or []:
+                fintake.effect_revouch_notice(self.paths, new, cid, repo=repo)
+                self.p.status("other", f"REVOUCH_NEEDED job={self.key} comment={cid}")
+        # Row 6's notice is posted by effect_accept with its record.
+
+    def effect_refuse_note(self, d, ctx, new, effect):
+        ch = ctx.channel if isinstance(ctx.channel, str) else ""
+        ref = int(ch.split(":", 1)[1]) if ch.startswith("comment:") and ch.split(":", 1)[1].isdigit() else None
+        text = effect[len("refuse: "):] if effect.startswith("refuse: ") else effect
+        self.p.status("refused", f"EVENT_REFUSED={d.event} job={self.key} row={d.row} {text}")
+        body = f"Job {self.key} did not act on {d.event.replace('_', ' ')}: {text}"
+        self.record(new, d.row, "comment", fgithub.literal_comment(self.repo(), self.n), body, NOTICE_KEY, False,
+                    ref=ref, state=new["state"])
+
+    def effect_issue_md(self, new, fields):
+        """Row 66i (B14 step 6): issue.md and baseline_digest from the
+        persisted issue set, never from the sync's memory; a missing set, or
+        one whose digest is not its items' or job.json's issue_digest, is
+        issue_set_stale."""
+        data = _read_json(os.path.join(self.jdir, "sync", "issue-set.json"))
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            raise Refused("issue_set_stale")
+        dig = data.get("digest")
+        try:
+            ok = dig == ftext.digest(data["items"]) and dig == new.get("issue_digest")
+            text = ftext.render_issue_md(data["items"], data.get("others") or [])
+        except (ValueError, TypeError):
+            ok = False
+        if not ok:
+            raise Refused("issue_set_stale")
+        copies = os.path.join(self.jdir, "in-copies")
+        jobs._ensure(self.paths, copies)
+        try:
+            _atomic_write(os.path.join(copies, "issue.md"), text)
+        except JournalAtomicError as e:
+            raise Refused(f"issue_md_unwritable {e.summary}") from e
+        new["baseline_digest"] = dig
+        fields["baseline_digest"] = dig
+
+    def assign_literal(self):
+        return fgithub.literal_assign_label(self.repo(), self.n, self.login(), label_name("inProgress"))
+
+    def effect_hold(self, d, ctx, new, fields):
+        """Row 40: the blocking write of the row that would have applied,
+        as one pending intent, and the held event (plan 2.2). In 1b the only
+        such write is prepare's assignment and in-progress label."""
+        facts = dict(d.facts, **{ftable.BWC: False})
+        under = ftable._decide(self.p.table, d.state, d.event, facts)
+        writes = list(under.writes) if isinstance(under, ftable.Winner) else []
+        if not set(writes) & {"assignment", "in-progress label"}:
+            raise Refused(f"intent_kind_not_built writes={','.join(writes) or 'none'}")
+        iid = self.record(new, "40", "assign_label", self.assign_literal(), None, ASSIGN_KEY, True,
+                          state=new["state"])
+        pi = {"id": iid, "kind": "assign_label", "key": list(ASSIGN_KEY)}
+        held = {"event": d.event, "args": dict(ctx.args or {}), "channel": ctx.channel, "caller": ctx.caller,
+                "facts": dict(ctx.facts or {})}
+        for f, v in (("pending_intent", pi), ("held_result", held)):
+            new[f] = v
+            fields[f] = v
+
+    def effect_write(self, d, new, fields):
+        gh_real = ff.which_real("gh")
+        if d.row == "11":
+            ci = new.get("confirmed_intent")
+            if ci:
+                item = fgithub.sent_item(self.jdir, ci, self.key)
+                if isinstance(item, dict) and item.get("kind") == "assign_label":
+                    return
+            self.record(new, "11", "assign_label", self.assign_literal(), None, ASSIGN_KEY, True, state=new["state"])
+            return
+        if d.row not in ("41", "41e", "41k"):
+            raise Refused(f"write_row_not_built row={d.row}")
+        pi = self.job.get("pending_intent")
+        iid = (self.ctx_args.get("intent") if d.row == "41" else (pi or {}).get("id"))
+        lines = []
+        # Row 41e saw the effect this pass: run_literal looks first and
+        # records it as found, with nothing run (Inferred: one path for the
+        # three rows, B6's look-first).
+        fgithub.run_literal(self.paths, dict(self.job, write_seq=new.get("write_seq")), iid, gh_real, self.login(),
+                            tiers=lambda k: self.tiers()(k), lines=lines)
+        for line in lines:
+            self.p.status("other", line)
+        for f, v in (("confirmed_intent", iid), ("pending_intent", None), ("pending_keys", None)):
+            new[f] = v
+            fields[f] = v
+
+    def parked_notices(self, d, new, frm, to):
+        """B14 step 8: on entry to needs_info a label_add of labels.needsInfo;
+        on entry to needs_human the needs-human notice and a label_add of
+        labels.needsHuman; on entry to waiting_operator with reason
+        tier_confirm the tier-confirm notice; on leaving needs_info or
+        needs_human a label_remove of each label in labels_set. Notices,
+        never blocking, under issueUpdate, recorded for the row."""
+        repo = self.repo()
+        labels = [x for x in new.get("labels_set") or [] if isinstance(x, str)]
+        changed = False
+        if frm in LABELLED_PARKS:
+            for label in labels:
+                self.record(new, d.row, "label_remove", fgithub.literal_label_remove(repo, self.n, label), None,
+                            NOTICE_KEY, False, state=to)
+            changed = bool(labels)
+            labels = []
+        if to == "needs_human":
+            fintake.effect_needs_human(self.paths, new, repo=repo, row=d.row)
+        elif to == "waiting_operator" and new.get("reason") == "tier_confirm" and new.get("pending_keys"):
+            fintake.effect_tier_confirm(self.paths, new, list(new["pending_keys"]), repo=repo, row=d.row)
+        if to in LABELLED_PARKS:
+            label = label_name(LABELLED_PARKS[to])
+            self.record(new, d.row, "label_add", fgithub.literal_label_add(repo, self.n, label), None, NOTICE_KEY,
+                        False, state=to)
+            if label not in labels:
+                labels.append(label)
+            changed = True
+        if changed:
+            new["labels_set"] = labels
+            jobs.append_event(self.paths, self.n, {"type": "labels_set", "job": self.key, "time": ff.utc_now(),
+                                                   "labels_set": list(labels)})
+
+    def replay(self):
+        """B14 step 10: decide held_result's event once in the resume state,
+        with the held channel, caller and facts, without the directive,
+        result-file and charge checks (they ran when it first arrived); on
+        applied, nomove or refused clear held_result and confirmed_intent
+        with a replayed line; on failed or blocked keep both for the next
+        pass."""
+        held = self.job.get("held_result")
+        intent = self.job.get("confirmed_intent")
+        if not isinstance(held, dict) or not intent or not isinstance(held.get("event"), str):
+            return None
+        args = held.get("args") if isinstance(held.get("args"), dict) else {}
+        facts = held.get("facts") if isinstance(held.get("facts"), dict) else {}
+        v = facts.get("unvouched_session_action")
+        self.unvouched = v if isinstance(v, bool) else True
+        result = _read_json(_result_path(self.paths, self.n, args["directive"])) \
+            if isinstance(args.get("directive"), str) and args["directive"] else None
+        self.moved = False
+        outcome = self.decide(held["event"], held.get("channel"), held.get("caller"), args=args, facts=facts,
+                              result=result if isinstance(result, dict) else None)
+        if outcome in ("applied", "nomove", "refused"):
+            new = dict(self.job, held_result=None, confirmed_intent=None, updated_at=ff.utc_now())
+            jobs.write_job(self.paths, new)
+            jobs.append_event(self.paths, self.n, {
+                "type": "replayed", "job": self.key, "time": ff.utc_now(), "intent": intent, "event": held["event"],
+                "args": args, "outcome": outcome, "fields": {"held_result": None, "confirmed_intent": None}})
+            self.job = new
+        self.moved = True
+        return outcome
 
     def row_status_lines(self, job, row):
         if row == "43g":
@@ -948,7 +1559,7 @@ class JobPass:
         exists, no pending-report line from this lease's launcher holds the
         launcher's own report, no charge for the directive is recorded, and
         claude was started (the lease names a child)."""
-        if self.charged(new, did) or os.path.lexists(_result_path(self.paths, self.n, did)):
+        if self.charged(new, did) or _result_present(self.paths, self.n, did):
             return
         if lease.get("child_pid") is None:
             return
@@ -965,9 +1576,68 @@ class JobPass:
         stage = directive.get("stage") or self.job["state"]
         self.add_charge(new, did, stage, self.stream_session(did, directive), charge, None)
 
+    # the sync's writes (B14 step 1, plan 3.2) ---------------------------------
+    def sync_writes(self):
+        """Under the job lock, before load_pending, for a job with a complete
+        issue-sync entry: B5's commands stored (and commands_seen), the
+        label-removal notes, then J/sync/issue-set.json and job.json's
+        issue_digest and priority_high, from the snapshot with the answers
+        file read now."""
+        entry = self.p.issue_sync.get(self.n)
+        if entry is None:
+            return
+        import _flow_factory_commands as fcommands
+        snap = entry["snapshot"]
+        try:
+            repo, login = self.repo(), self.login()
+            for cmd in fcommands.scan(snap, self.job, self.p.perms, login, self.p.table):
+                for line in fcommands.store(self.paths, self.job, cmd, repo=repo, caller=self.p.me):
+                    self.p.status("sync", line)
+            label = jobs.setting("flow.factory.label", "flow:factory")
+            for note in fcommands.label_notes(snap, self.job, label):
+                fcommands.store_label_note(self.paths, self.job, note, repo=repo)
+            answers = _read_json(os.path.join(self.jdir, "answers.json")) \
+                if os.path.lexists(os.path.join(self.jdir, "answers.json")) else []
+            if not isinstance(answers, list):
+                raise Refused(f"answers_unreadable {os.path.join(self.jdir, 'answers.json')}")
+            data = ftext.issue_set(dict(snap, answers=[{"qid": a.get("qid"), "text": a.get("text")}
+                                                       for a in answers if isinstance(a, dict)]),
+                                   self.job.get("needs_info"), self.job.get("revouched_replies"))
+            sdir = os.path.join(self.jdir, "sync")
+            jobs._ensure(self.paths, sdir)
+            _atomic_write(os.path.join(sdir, "issue-set.json"),
+                          json.dumps(dict(data, synced_at=ff.utc_now()), sort_keys=True, ensure_ascii=False) + "\n")
+        except (Refused, ValueError, JournalAtomicError) as e:
+            self.p.status("sync", f"SYNC_WRITE_FAILED job={self.key} {' '.join(str(e).split())}")
+            return
+        high = label_name("priorityHigh") in (snap.get("labels") or [])
+        if self.job.get("issue_digest") != data["digest"] or self.job.get("priority_high") is not high:
+            self.job = dict(self.job, issue_digest=data["digest"], priority_high=high, updated_at=ff.utc_now())
+            jobs.write_job(self.paths, self.job)
+
+    def sync_fingerprint(self):
+        """sync_seen's value (plan 3.1, the github_change raise rule): a
+        sha256 over the job's state, the 1b issue facts, issue_digest and the
+        ids of the comments and events observed; None with no entry."""
+        entry = self.p.issue_sync.get(self.n)
+        if entry is None:
+            return None
+        snap = entry["snapshot"]
+        data = {"state": self.job.get("state"), "facts": self.issue_facts(), "issue_digest": self.job.get("issue_digest"),
+                "comments": sorted(c.get("id") for c in snap.get("comments") or [] if isinstance(c.get("id"), int)),
+                "events": sorted(e.get("id") for e in snap.get("events") or [] if isinstance(e.get("id"), int))}
+        return hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
+
     # the events ----------------------------------------------------------
     def events(self):
         p = self.p
+        # A release whose replay did not finish (the process died between
+        # the release and the replayed line): replay first (B14 step 10).
+        if self.job.get("state") != "waiting_operator" and isinstance(self.job.get("held_result"), dict) \
+                and self.job.get("confirmed_intent"):
+            self.replay()
+            if self.moved:
+                return
         # The sync's new changes join pending_changes first.
         fresh = p.fresh_changes.get(self.n) or []
         changes = list(self.job.get("pending_changes") or [])
@@ -979,6 +1649,9 @@ class JobPass:
                                                    "added": added, "pending_changes": changes + added})
         pending = self.load_pending()
         order = self.p.table.data["event_order"]
+        seen = self.sync_fingerprint()
+        live = seen is not None and seen != self.job.get("sync_seen") and \
+            self.job["state"] in p.table.events.get("github_change", {}).get("occurs_in", [])
         github_raised = False
         pf = p.table.pass_first
         if pf.get("event") == "github_change" and all(
@@ -989,9 +1662,14 @@ class JobPass:
             if self.moved:
                 return
             if event == "github_change":
-                if not github_raised and self.job.get("pending_changes"):
+                if not github_raised and (self.job.get("pending_changes") or live):
                     github_raised = True
-                    self.run_engine_event("github_change")
+                    outcome = self.run_engine_event("github_change")
+                    if outcome in ("applied", "nomove") and seen is not None:
+                        # Stored only once github_change was evaluated
+                        # (plan 3.1); a moved job re-raises in its new state.
+                        self.job = dict(self.job, sync_seen=seen, updated_at=ff.utc_now())
+                        jobs.write_job(self.paths, self.job)
             elif event == "lease_expired":
                 self.apply_reports()
                 if not self.moved:
@@ -1008,7 +1686,8 @@ class JobPass:
 
     def run_engine_event(self, event):
         self.unvouched = True
-        self.decide(event, "engine", None)
+        self.event_at = None
+        return self.decide(event, "engine", None)
 
     def load_pending(self):
         """{event: [(name, record)]} of J/pending, seq order; a file that
@@ -1045,17 +1724,23 @@ class JobPass:
         if is_result:
             did = args.get("directive")
             why = self.directive_check(did)
-            if why is None and not os.path.lexists(_result_path(self.paths, self.n, did)):
+            if why is None and not _result_present(self.paths, self.n, did):
                 why = "no_result"
             if why is not None:
                 self.report_refused(did, why, name)
                 jobs.drop_pending(self.paths, self.n, name)
                 return
             self.charge_from_result(did)
-        facts = rec.get("facts") or {}
+        facts = rec.get("facts") if isinstance(rec.get("facts"), dict) else {}
         v = facts.get("unvouched_session_action")
         self.unvouched = v if isinstance(v, bool) else True
-        outcome = self.decide(event, rec.get("channel"), rec.get("caller"))
+        # The event's own time, for the re-vouch input (R7): the comment's
+        # creation for a comment command, else when it was stored.
+        comment = rec.get("comment") if isinstance(rec.get("comment"), dict) else {}
+        self.event_at = comment.get("created_at") or rec.get("raised_at")
+        result = _read_json(_result_path(self.paths, self.n, args.get("directive"))) if is_result else None
+        outcome = self.decide(event, rec.get("channel"), rec.get("caller"), args=args, facts=facts,
+                              result=result if isinstance(result, dict) else None)
         if outcome in ("applied", "nomove", "refused"):
             jobs.drop_pending(self.paths, self.n, name)
 
@@ -1188,7 +1873,8 @@ class JobPass:
         event = record.get("event")
         if event in STAGE_EVENTS:
             self.unvouched = True
-            if self.decide(event, "launcher", None) in ("failed", "blocked"):
+            if self.decide(event, "launcher", None, args={"directive": did, "outcome": record.get("outcome")},
+                           facts={}, result=record) in ("failed", "blocked"):
                 caller = {"pid": line["caller_pid"], "start": line["caller_start"], "ancestry": []}
                 jobs.store_pending(self.paths, self.n, event, {"directive": did, "outcome": record.get("outcome")},
                                    "launcher", caller, {})
@@ -1269,6 +1955,8 @@ class JobPass:
         if kind != "worker":
             body = (seam or {}).get("bodies", {}).get(f"{kind}:{state}")
         self.unvouched = True
+        self.pending_facts = {}
+        self.event_at = None
         ctx = self.ctx("engine", None)
         try:
             d = ftable.choose(self.p.table, self.job, "launch_due", ctx)
@@ -1285,7 +1973,10 @@ class JobPass:
             line = self.worker_precheck(state)
             if line:
                 return None
-        elif body is None:
+        elif body is None and not (kind == "judge" and state == "intake"):
+            # The intake judge is launched for real (B14 step 11); other
+            # judges and engine directives keep the seam body until their
+            # phase.
             sys.stderr.write(f"SEAM_MISSING=bodies:{kind}:{state} state={state} event=launch_due\n")
             return None
         made = {}
@@ -1455,8 +2146,10 @@ def cmd_next(argv):
     # here, before any job is touched.
     p.platform()
     p.sync()
+    p.order()
     p.environment()
     p.phase_b()
+    p.drain()
     if p.pending_pause:
         with jobs.global_lock(paths, timeout=p.lock_wait()):
             state = jobs.read_state(paths)

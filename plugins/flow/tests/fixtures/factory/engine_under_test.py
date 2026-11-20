@@ -12,7 +12,7 @@ reads nothing from the environment; the fixture comes only from --fixtures.
 The fixture is a JSON object with at most these keys (plan 2.11):
   unbuilt          {"<job key or *>": {fact: bool}}, unbuilt facts only
   default_unbuilt  bool, the value of every unbuilt fact the fixture does not name
-  derived_inputs   {"confirm_keys": [write kinds], "prepush_fails": bool}
+  derived_inputs   {"prepush_fails": bool}
   built_inputs     {"group_gone": bool, "unvouched_session_action": bool}
   bodies           {"<kind>:<stage>": outcome}
 Any other key, or a fact under unbuilt or built_inputs that the seam may not

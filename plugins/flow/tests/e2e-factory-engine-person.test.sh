@@ -1044,7 +1044,14 @@ fe_mask_found "$(ps13c_fields "$E2E_DIR/live.json")"
 e2e_expect_equal "$(ps13c_fields "$E2E_DIR/live.json" | tr '\n' ';')" "$(ps13c_fields "$PS_J/job.json" | tr '\n' ';')" \
   "rebuilt orphan_groups; snapshots; pending_changes; state equal the live job's"
 # Held: the retry returns the job to build, and row 43g holds the launch while
-# the orphan group lives.
+# the orphan group lives. (needs_human, person_retry) reads untrusted_edit, an
+# issue fact, so the retry waits for a pass whose sync read issue 7 (plan 3.1,
+# "A pass with no sync entry"; B14 step 0): a world with issue 7 and a sync in
+# every pass.
+fe_world_new flow-e2e-engine flow-e2e/scratch
+fe_gh --version 'gh version 2.101.0 (2026-09-15)'
+fe_world_issue 7 "Issue seven" "The body."
+ps_settings '.flow.factory.syncIntervalSeconds = 0'
 fe_person_terminal issue-7-j1 "$PS_W" retry 7
 e2e_expect_line "RAISED person_retry job=issue-7-j1"
 fe_e ordinary.json next --executor headless

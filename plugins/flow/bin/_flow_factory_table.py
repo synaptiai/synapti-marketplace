@@ -893,6 +893,10 @@ def set_seam(seam):
     bodies = seam.get("bodies", {})
     if not isinstance(bodies, dict) or not all(isinstance(v, str) for v in bodies.values()):
         raise ValueError("seam bodies is not {kind:stage: outcome}")
+    if "judge:intake" in bodies:
+        # The intake judge is launched for real in 1b (plan B14 step 11); a
+        # seam body would skip the launch and the judge's reply.
+        raise SeamRefused("bodies:judge:intake", "built")
     _seam = copy.deepcopy(seam)
 
 

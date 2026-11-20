@@ -973,3 +973,76 @@ PY
 tb_py "$TB_CODE"
 e2e_expect_line "rows=44c,44d,44r,47,8,8r,8u,9r"
 e2e_expect_line "pairs without an issue fact=none"
+
+_flow_test_begin "factory table: next's JobPass.ctx gives every 1b fact an input in every decision (TB14, R100, R103)"
+fe_new tb21-jobpass-ctx
+e2e_repo main
+fe_record
+fe_enable
+fe_world_new flow-e2e-engine flow-e2e/scratch
+fe_world_knob list_fails '["user"]'
+e2e_describe "R100's next half and R103's table half: a JobPass of a job parked by row 40b (waiting_operator, reason tier_confirm, resume_state intake, no pending_intent), in a pass with no issue-sync entry for the job and gh api user failing. Each of the six issue facts raises next's FactFailed (plan 3.1, a pass with no sync entry); via_comment and retry_by_triage_only are false with no pending record (plan 2.2); tier_confirm_blocking is a bool; intent_effect_observed and intent_key_not_confirm are false with no login read and no lookup (plan 3.1, T:fact_dependencies); the four table-computed facts give a bool with no callable (plan 5.3); confirm_writes is a callable and ctx.sync a dict (plan 5.3 Context); no fact raises FactUnavailable"
+read -r -d '' TB_CODE <<'PY' || true
+import time
+import _flow_factory_next as N
+import _flow_factory_jobs as jobs
+p = N.Pass(jobs.resolve(), 'headless', time.time())
+p.pass_id, p.holds, p.open_jobs = 'p1', 0, 0
+j = job('waiting_operator', reason='tier_confirm', resume_state='intake', pending_intent=None, base='main',
+        vouch_at='2026-11-16T00:00:00Z')
+jp = N.JobPass(p, 7, j)
+ctx = jp.ctx('engine', None)
+moved = [f for f, pr in sorted(T.PROVIDERS.items()) if pr.phase == '1b' and pr.kind == 'built']
+print('moved=%d' % len(moved))
+for f in moved:
+    if f == T.CREATION_FACT:
+        continue
+    try:
+        v = T.PROVIDERS[f].compute(ctx, j)
+        print('%s=%s' % (f, type(v).__name__ if f == 'tier_confirm_blocking' else v))
+    except N.FactFailed:
+        print('%s=FactFailed' % f)
+    except T.FactUnavailable as e:
+        print('%s=FactUnavailable %s' % (f, e))
+print('confirm_writes callable=%s' % callable(ctx.confirm_writes))
+print('sync=%s' % type(ctx.sync).__name__)
+import shutil
+calls = os.path.join(os.path.dirname(shutil.which('gh')), 'fe-gh-calls.log')
+print('api user calls=%d' % sum(1 for x in (open(calls).read().splitlines() if os.path.exists(calls) else [])
+                                if x == 'api user'))
+PY
+tb_py "$TB_CODE"
+e2e_expect_line "moved=16"
+for TB_F in cancel_signal dependency_open needs_info_answer untrusted_close untrusted_edit untrusted_needs_info_answer; do
+  e2e_expect_line "$TB_F=FactFailed"
+done
+e2e_expect_line "via_comment=False"
+e2e_expect_line "retry_by_triage_only=False"
+e2e_expect_line "tier_confirm_blocking=bool"
+e2e_expect_line "intent_effect_observed=False"
+e2e_expect_line "intent_key_not_confirm=False"
+e2e_expect_line "issue_changed=False"
+e2e_expect_line "intake_rounds_exhausted=False"
+e2e_expect_line "park_tier_confirm=True"
+e2e_expect_line "pending_intent_stale=False"
+e2e_expect_line "confirm_writes callable=True"
+e2e_expect_line "sync=dict"
+e2e_expect_line "api user calls=0"
+e2e_expect_no_out "FactUnavailable"
+e2e_expect_err_lacks "Traceback"
+
+_flow_test_begin "factory table: a seam body for the intake judge is refused; the approve judge's body stays (TB15, R93)"
+fe_new tb22-judge-body
+e2e_repo main
+e2e_describe "plan B14 step 11: set_seam refuses bodies[\"judge:intake\"] with SEAM_REFUSED=bodies:judge:intake provider=built, because 1b launches the intake judge for real; a judge:approve body (phase 2) is still accepted"
+read -r -d '' TB_CODE <<'PY' || true
+for bodies in ({'judge:intake': 'judge_accept'}, {'judge:approve': 'judge_approve'}):
+    try:
+        T.set_seam({'bodies': bodies})
+        print('accepted ' + ','.join(bodies))
+    except T.SeamRefused as e:
+        print(e.line)
+PY
+tb_py "$TB_CODE"
+e2e_expect_line "SEAM_REFUSED=bodies:judge:intake provider=built"
+e2e_expect_line "accepted judge:approve"
