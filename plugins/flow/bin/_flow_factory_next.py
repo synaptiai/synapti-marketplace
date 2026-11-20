@@ -75,6 +75,7 @@ sys.path[:] = [p for p in sys.path if p and os.path.isabs(p) and os.path.realpat
 
 import hashlib
 import json
+import re
 import signal
 import subprocess
 import time
@@ -165,8 +166,11 @@ def _number(value, default, minimum=0):
 
 def _read_json(path):
     """The JSON value of a regular file read without following a symlink;
-    None when there is no such file or it cannot be read or parsed."""
-    if not os.path.lexists(path):
+    None when there is no such file or it cannot be read or parsed, and when
+    the folder that holds it is a symbolic link or not a folder (a linked
+    J/directives, J/sync or J/results is never read through: journal wave 4,
+    linked job folders)."""
+    if not os.path.lexists(path) or _linked_dir(os.path.dirname(path)):
         return None
     try:
         return json.loads(_read_with_no_follow(path))
@@ -999,10 +1003,21 @@ class JobPass:
             memo[self.n] = t
         return memo[self.n]
 
+    def outbox_linked(self):
+        """Whether J/outbox is a symbolic link or something other than a
+        folder. Such an outbox is treated as not found at every read and
+        write of the row paths, as the drain and the person commands treat
+        it (journal wave 4, linked folders): its items are never read,
+        run, saved or listed. A linked item file inside a real folder is
+        already not found by the GitHub writes module's reader."""
+        return _linked_dir(os.path.join(self.jdir, "outbox"))
+
     def confirm_writes(self, writes):
         """Context.confirm_writes: B7's confirm keys of the winner's writes,
-        through the job's tier memo."""
-        return ftiers.confirm_writes(list(writes), self.job, self.tiers(), fdir=self.paths.fdir)
+        through the job's tier memo. A confirmed intent behind a linked
+        J/outbox covers no write kind."""
+        job = dict(self.job, confirmed_intent=None) if self.outbox_linked() else self.job
+        return ftiers.confirm_writes(list(writes), job, self.tiers(), fdir=self.paths.fdir)
 
     def issue_facts(self):
         entry = self.p.issue_sync.get(self.n)
@@ -1087,6 +1102,8 @@ class JobPass:
             gh_real = ff.which_real("gh")
             if login is None or not gh_real:
                 raise FactFailed("engine login unknown" if login is None else "gh not found")
+            if self.outbox_linked():
+                raise FactFailed(f"intent_unknown {pi.get('id')}")
             try:
                 return fgithub.lookup(gh_real, self.job, pi.get("id"), login, paths=self.paths) is not None
             except fgithub.ReadFailed as e:
@@ -1193,7 +1210,11 @@ class JobPass:
             self.caller_effects(d, ctx, new, line, to_run)
         except fgithub.IntentNotPending as e:
             # R68: a confirm that names another intent is refused, runs
-            # nothing, and its stored event is dropped (B6's line).
+            # nothing, and its stored event is dropped (B6's line). As for
+            # any decision that did not apply, the items it recorded are
+            # dropped and what the kill did is kept (B14 steps 7 and 9).
+            self.drop_recorded(before)
+            self.keep_kill(new, killed or "snapshot" in handlers)
             self.refuse(e.line)
             return "refused"
         except (fgit.GitFailed, fgit.CloneConfigChanged, Refused, ValueError, OSError) as e:
@@ -1239,9 +1260,11 @@ class JobPass:
         self.job = kept
 
     def outbox_ids(self):
-        """The intent ids of the items in J/outbox now ([] when there is no
-        readable outbox folder)."""
+        """The intent ids of the items in J/outbox now (none when there is
+        no readable outbox folder, or J/outbox is a link)."""
         odir = os.path.join(self.jdir, "outbox")
+        if self.outbox_linked():
+            return set()
         try:
             return {x[:-len(".json")] for x in os.listdir(odir) if x.endswith(".json")}
         except OSError:
@@ -1253,9 +1276,25 @@ class JobPass:
         alike: the decision did not apply, so its writes must never run."""
         for iid in sorted(self.outbox_ids() - before):
             try:
-                fgithub.drop_intent(self.paths, self.job, iid)
+                self.drop_intent(self.job, iid)
             except (Refused, ValueError, OSError) as e:
                 self.p.status("other", f"WRITE_NOT_DROPPED job={self.key} intent={iid} {' '.join(str(e).split())}")
+
+    def drop_intent(self, job, iid):
+        """B6's drop_intent, except that behind a linked J/outbox the item
+        is not found: the intent_dropped line is written as drop_intent
+        writes it for an item that does not read, and nothing is saved
+        through the link."""
+        if not self.outbox_linked():
+            fgithub.drop_intent(self.paths, job, iid)
+            return
+        jobs._need_job_lock(self.n)
+        if not (isinstance(iid, str) and re.fullmatch(r"[0-9a-z-]+", iid) and iid.startswith(self.key + "-")):
+            raise ValueError(f"intent {iid!r}")
+        h = fgithub._history(os.path.join(self.jdir, "events.jsonl"), iid)
+        if h["rec"] is None or h["sent"] or h["dropped"]:
+            return
+        fgithub._drop(self.paths, self.n, self.key, iid, None, None)
 
     # 1b caller handlers (plan B13 table, B14 steps 6 to 8) ---------------------
     def repo(self):
@@ -1333,7 +1372,7 @@ class JobPass:
             fintake.effect_answer(self.paths, new, args["qid"], args["text"])
         old_pi = self.job.get("pending_intent")
         if "intent_clear" in names and isinstance(old_pi, dict) and new.get("pending_intent") is None:
-            fgithub.drop_intent(self.paths, new, old_pi.get("id"))
+            self.drop_intent(new, old_pi.get("id"))
         if labels_line is not None:
             jobs.append_event(self.paths, self.n, labels_line)
 
@@ -1430,7 +1469,8 @@ class JobPass:
         if d.row == "11":
             ci = new.get("confirmed_intent")
             if ci:
-                item = fgithub.sent_item(self.jdir, ci, self.key)
+                # A confirmed item behind a linked J/outbox is not found.
+                item = None if self.outbox_linked() else fgithub.sent_item(self.jdir, ci, self.key)
                 if isinstance(item, dict) and item.get("kind") == "assign_label":
                     return
             self.record(new, "11", "assign_label", self.assign_literal(), None, ASSIGN_KEY, True, state=new["state"])
@@ -1445,6 +1485,11 @@ class JobPass:
             # whose keys may still resolve to confirm.
             self.observe_intent(iid, gh_real, lines)
         else:
+            # Behind a linked J/outbox the pending item is not found; a
+            # confirm naming another intent is still IntentNotPending, which
+            # run_literal raises first.
+            if self.outbox_linked() and isinstance(pi, dict) and iid == pi.get("id"):
+                raise Refused(f"intent_unknown {iid}")
             fgithub.run_literal(self.paths, dict(self.job, write_seq=new.get("write_seq")), iid, gh_real,
                                 self.login(), tiers=lambda k: self.tiers()(k), lines=lines)
         for line in lines:
@@ -1462,6 +1507,8 @@ class JobPass:
         pi = self.job.get("pending_intent")
         if not isinstance(pi, dict) or iid != pi.get("id"):
             raise fgithub.IntentNotPending(iid, pi.get("id") if isinstance(pi, dict) else None)
+        if self.outbox_linked():
+            raise Refused(f"intent_unknown {iid}")
         path = os.path.join(self.jdir, "outbox", f"{iid}.json")
         item = fgithub._valid(path, iid, self.key)
         if item is None:
@@ -1908,6 +1955,9 @@ class JobPass:
         launcher_pid and launcher_start; every other line is recorded as
         report_refused. The file is removed once its lines are handled."""
         ddir = os.path.join(self.jdir, "directives")
+        if _linked_dir(ddir):
+            # Never listed, read or removed through a link.
+            return
         try:
             names = sorted(x for x in os.listdir(ddir) if x.endswith(".pending-report.jsonl"))
         except OSError:
