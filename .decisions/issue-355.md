@@ -535,3 +535,31 @@ Choices:
 
 - A linked J/outbox or J/directives is treated as absent at every read in `_flow_factory_person.py`: write_seq, the directives read, the context lease and status's directive check. A linked J/jobs gets `factory_dir_refused`; a job folder that is itself a link gets `job_unreadable` (exit 5), matching what status and the other person subcommands say.
 - Left as they are: `directive_open` in next reads J/results with `os.path.lexists`, so a linked J/results can mark a directive finished (B14 owns next); and a factory directory configured outside the repository is not checked for links by the job lock (`_flow_factory_jobs.py`).
+
+## Inferred readings (wave 5)
+
+### Docs (B10)
+
+- **Parity check scope:** every file of the plugin that names issueAssign must also name issueUpdate, except files under tests/ and evals/results-*. Design github_writes_and_tiers L23-L28 lists only shipped code, settings and docs, and e2e_copy_plugin leaves the same folders out of a copy. Two test files (tests/cascade-resolve.test.sh and a schema fixture) name only issueAssign.
+- **What the docs claim:** only what the hook does when run. `gh pr reopen` is not classified, so reopening is documented for issues only. GraphQL comment mutations are named as not caught by the comment-post deny (wave 4).
+- **Changelog:** the issueUpdate entries go under "Changed" in Unreleased, because posts that ran with no setting now follow one. The Unreleased preface's "no GitHub writes" is B18's to correct.
+
+### Next integration (B14)
+
+- **Test placement:** the B14 W and E scenarios are in e2e-factory-engine-next.test.sh (NX12 onward), not split across e2e-factory-text, -commands, -intake and -github as plan 2.6 has them. They run `next` end to end, which is that file's subject; the four module files keep testing their modules.
+- **Issue reads:** a job whose own issue read fails gets no entry and one `ISSUE_READ_FAILED job=<key> <reason>` line; it does not hold back last_sync_at. A missing engine login or running out of time still does (plan 3.1, per-job entries). A write failure in the sync's phase B prints `SYNC_WRITE_FAILED job=<key> <reason>`.
+- **Lines and records:** row 8's answer handler appends `{"type":"answer_comments","job","pass","comments":[ids]}`. refuse_note prints `EVENT_REFUSED=<event> job=<key> row=<row> <text>` and records a non-blocking issueUpdate comment, with the comment id as ref when the event came from a comment. pr_close is recorded under issueUpdate, non-blocking, with the row's target as state_at_write (the Q9 forms). `BASE_REF_UNRESOLVED` prints `ref=origin/-` for a job with no base. The row 40b park line is printed on every pass from the drain step, like row 40's.
+- **Confirm with a wrong id (R68)** is a refusal: exit 3, its event dropped.
+- **R7 extended:** a waiting reply created, as well as one edited, at or after the retry time is left out of the re-vouch; a reply whose times cannot be read is also left out.
+- **Row 44** records an NI answer through effect_answer before it resumes (wave 3 open item). The issue-set file is deleted after the re-vouch rows and after person_answer rows that wrote the answers file.
+- **hold_intent** holds an assign_label intent only; any other blocking write raises `Refused(intent_kind_not_built)`, because 1b builds no push or comment intent.
+- **Linked results:** the linked-results rule (wave 4) also applies to apply_pending's result check and the lost-run charge.
+
+### Probe code (B15)
+
+- **P2 limits** (decided by the user 2026-11-20): 120 turns, $1.50, 1200 s. The prompt asks for 74 command forms and 5 edit-and-task pairs, about 96-100 turns; the last real P2 run used 79 turns for 78 tool calls, so 90 turns would have ended the run before the stop sequence.
+- **Ledger:** only log-file-changes.sh (PostToolUse on Edit, Write, NotebookEdit) adds file_change entries, so after the worker's first edit with no quality run, every task completion is refused. P2's task_completed_refusals is expected to be no-go, which leads to B16's TaskCompleted half.
+- **B16 marker:** a copy's hook counts as having the factory warn fallback when the hook script's own text names FLOW_FACTORY_DIRECTIVE. B16 must name that variable in flow-goal-stop.sh and verify-task-completion.sh themselves, not only in a sourced lib, or the counts stay not_run.
+- **Worker variables:** FLOW_FACTORY_JOB=issue-0-j1 and FLOW_FACTORY_DIRECTIVE=<area>/directive.json; the file is never created, because tier-gate reads only whether each is set (design L35).
+- **P9 per mode:** each mode's tier_gate finding is kept in F/interactive.json, because the record schema allows only fixed part fields. The part is no-go if either mode is no-go, not_run while one is missing, and go otherwise. The printed P9 steps leave out p14, wait-question and answer.
+- **Probe warning:** printed on stdout as the first line of each probe invocation except --verify-record, --export and --step await, which read or export a record and start no session.
