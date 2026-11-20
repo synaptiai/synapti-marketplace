@@ -2458,6 +2458,47 @@ FP_FACTS="$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')/facts.json"
 e2e_expect_equal '{"stop": true, "task_completed": true} 4' "$(_fp_get "$FP_FACTS" 'json.dumps(d["fallbacks"], sort_keys=True) + " " + str(d["stop_cap"])')" "the fallbacks and the cap in the facts"
 e2e_expect_equal "go" "$(_fp_p 'p["parts"]["task_completed_refusals"]["result"]')" "task_completed_refusals with the fallback and no refusal"
 
+_flow_test_begin "platform: P2 reads the TaskCompleted fallback from verify-task-completion.sh alone (PL26)"
+_fp_platform_scenario fp-plat-p2-fallback-task-only "a plugin whose verify-task-completion.sh names FLOW_FACTORY_DIRECTIVE and whose flow-goal-stop.sh is the plugin's own: the facts record the TaskCompleted fallback and no Stop fallback; five completions with no refusal make task_completed_refusals go; the Stop hook blocks the one stop and the session ends on it, so stop_caps is no-go, as with no fallback"
+# Source: plan B15 step 1 Counting (task_completed_refusals: 0 refusals over 4
+# or more entries is go once the copy's verify-task-completion.sh has the
+# fallback; stop_caps: a session that ends on a block is no-go); plan Q5 and
+# B16 (each fallback is built only for the part that measures no-go, so a
+# copy with one script changed is the case a re-run meets). A fallback read
+# from the other script would record the Stop fallback as present.
+FP_PID=P2
+_fp_p2_turn_cost
+e2e_plugin_copy hooks/scripts/verify-task-completion.sh "$(cat "$E2E_PLUGIN_DIR/hooks/scripts/verify-task-completion.sh")
+# FLOW_FACTORY_DIRECTIVE: stands in for B16's factory warn fallback."
+_fp_platform_run -- --only P2
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+FP_FACTS="$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')/facts.json"
+e2e_expect_equal '{"stop": false, "task_completed": true}' "$(_fp_get "$FP_FACTS" 'json.dumps(d["fallbacks"], sort_keys=True)')" "the fallbacks in the facts"
+e2e_expect_equal "go" "$(_fp_p 'p["parts"]["task_completed_refusals"]["result"]')" "task_completed_refusals with the TaskCompleted fallback and no refusal"
+e2e_expect_equal "no-go" "$(_fp_p 'p["parts"]["stop_caps"]["result"]')" "stop_caps with no Stop fallback and a session that ends on a block"
+
+_flow_test_begin "platform: P2 reads the Stop fallback from flow-goal-stop.sh alone (PL26)"
+_fp_platform_scenario fp-plat-p2-fallback-stop-only "a plugin whose flow-goal-stop.sh names FLOW_FACTORY_DIRECTIVE and lets every stop through when it is set, and whose verify-task-completion.sh is the plugin's own: the facts record the Stop fallback and no TaskCompleted fallback; the one stop is let through with no block, so stop_caps is go; five completions with no refusal make task_completed_refusals not_run with reason no_refusal"
+# Source: plan B15 step 1 Counting (stop_caps: once B16's Stop fallback is
+# built, 0 blocks with a final approve is go; task_completed_refusals: 4 or
+# more entries with no refusal while the copy's verify-task-completion.sh has
+# no fallback is not_run with reason no_refusal); B16's outline (with
+# FLOW_FACTORY_DIRECTIVE set, flow-goal-stop warns instead of blocking).
+# A fallback read from the other script would make the refusals part go and
+# the Stop part not_run.
+FP_PID=P2
+_fp_p2_turn_cost
+e2e_plugin_copy hooks/scripts/flow-goal-stop.sh "#!/usr/bin/env bash
+# FLOW_FACTORY_DIRECTIVE: stands in for B16's factory warn fallback, which lets the stop through.
+if [ -n \"\${FLOW_FACTORY_DIRECTIVE:-}\" ]; then cat >/dev/null; echo '{\"decision\":\"approve\",\"reason\":\"factory worker: warn only\"}'; exit 0; fi
+$(sed 1d "$E2E_PLUGIN_DIR/hooks/scripts/flow-goal-stop.sh")"
+_fp_platform_run -- --only P2
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+FP_FACTS="$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')/facts.json"
+e2e_expect_equal '{"stop": true, "task_completed": false}' "$(_fp_get "$FP_FACTS" 'json.dumps(d["fallbacks"], sort_keys=True)')" "the fallbacks in the facts"
+e2e_expect_equal "go" "$(_fp_p 'p["parts"]["stop_caps"]["result"]')" "stop_caps with the Stop fallback and no block"
+e2e_expect_equal "not_run yes" "$(_fp_p '"%s %s" % (p["parts"]["task_completed_refusals"]["result"], "yes" if p["parts"]["task_completed_refusals"]["reason"].startswith("no_refusal") else p["parts"]["task_completed_refusals"]["reason"])')" "task_completed_refusals with no TaskCompleted fallback, and whether its reason is no_refusal"
+
 _flow_test_begin "platform: P2's cap is the one the copy's Stop hook uses in the worker's environment (PL26)"
 _fp_runner_scenario fp-p2-cap "P2's setup, with the scratch HOME's user settings at failAfterStuckTurns 4 and FLOW_USER_SETTINGS in the engine's environment naming a file with 5: p2_cap gives 4, and the copy's flow-goal-stop.sh run in the worker's environment blocks 4 times before it approves; with no user file in HOME, p2_cap gives the default 3"
 # Source: plan B15 step 1 Counting (the cap is flow.goals.failAfterStuckTurns,
