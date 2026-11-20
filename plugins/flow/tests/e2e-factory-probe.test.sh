@@ -1933,8 +1933,9 @@ _fp_platform_run() {
 }
 
 # _fp_p2_turn_cost — a stand-in turn costs $0.01, about what one turn of the
-# last real P2 run cost ($0.68 for its 76 steps, plan B15 step 2),
-# so P2's 84 steps fit its $1.50 limit as a real run's do.
+# last real P2 run cost ($0.68 for its 79 turns, evidence P2-4), so P2's 84
+# steps fit its $1.50 limit as a real run's do. Whether a real worker's turns
+# fit P2's turn limit is checked from the prompt in fp-plat-p2.
 _fp_p2_turn_cost() { printf '0.01\n' > "$E2E_BIN/claude-cost-per-turn"; }
 
 _fp_p() {   # <python expression on the probe entry p> [probe id]
@@ -2093,6 +2094,18 @@ case "$FP_AREA" in "$E2E_ROOT"/*|"$E2E_ROOT_REAL"/*) FP_HAS=yes ;; *) FP_HAS=no 
 e2e_expect_equal "yes" "$FP_HAS" "the probe area is under the scratch root ($FP_AREA)"
 e2e_expect_equal "--allowedTools Bash,Read,Edit,TaskCreate,TaskUpdate,TaskList,TaskGet,TodoWrite" "$(grep -o -- '--allowedTools [^ ]*' "$E2E_BIN/claude-launches.log")" "the worker may read and edit files"
 e2e_expect_equal "5 5" "$(grep -c '^EDIT: ' "$E2E_BIN/claude-prompt-1.txt") $(grep -c '^TASK: ' "$E2E_BIN/claude-prompt-1.txt")" "edit and task steps in the prompt"
+# The stand-in makes each step in one turn, so it cannot show whether a real
+# worker finishes the prompt within the turn limit. The projection uses the
+# last real P2 run (evidence P2-4): one Bash call per RUN step, one turn per
+# tool call plus one for the final reply, and one ToolSearch call. A real
+# worker also needs a Read before each Edit and a TaskCreate before each
+# TaskUpdate, and the stop sequence takes up to 4 turns (3 blocks at the
+# default cap, then the approve). Source for the limit: the user's decision
+# on the wave 5 review, P2's turn limit is 120 and its cost limit $1.50.
+e2e_expect_equal "--max-turns 120 --max-budget-usd 1.5" "$(grep -o -- '--max-turns [0-9]* --max-budget-usd [0-9.]*' "$E2E_BIN/claude-launches.log")" "P2's turn and cost limits"
+FP_TURNS=$(( $(grep -c '^RUN: ' "$E2E_BIN/claude-prompt-1.txt") + 2 * $(grep -c '^EDIT: ' "$E2E_BIN/claude-prompt-1.txt") + 2 * $(grep -c '^TASK: ' "$E2E_BIN/claude-prompt-1.txt") + 1 + 1 + 4 ))
+FP_LIMIT=$(grep -o -- '--max-turns [0-9]*' "$E2E_BIN/claude-launches.log" | cut -d' ' -f2)
+e2e_expect_equal "100 yes" "$FP_TURNS $([ "$FP_TURNS" -le "${FP_LIMIT:-0}" ] && echo yes || echo no)" "a real worker's projected turns for the prompt, and whether they fit the turn limit ($FP_LIMIT)"
 e2e_run_bin bin/flow-factory.sh probe --verify-record "$E2E_REPO/$FP_REC"
 e2e_expect_no_out "PROBES_CHECK_FAIL=stand_in_go"
 e2e_expect_no_out "PROBES_CHECK_FAIL=parts_mismatch"
@@ -2349,6 +2362,9 @@ _fp_count 'ff.p2_stop_caps(E, None, 3, False)'
 e2e_expect_out "no-go | "
 _fp_count 'ff.p2_stop_caps(E, None, 4, False)'
 e2e_expect_equal "go" "${E2E_OUT%% | *}" "4 blocks with a cap of 4"
+rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:block 0:approve
+_fp_count 'ff.p2_stop_caps(E, None, 3, False)'
+e2e_expect_equal "go" "${E2E_OUT%% | *}" "1 block then an approve"
 rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:block 0:block
 _fp_count 'ff.p2_stop_caps(E, None, 3, False)'
 e2e_expect_equal "no-go" "${E2E_OUT%% | *}" "2 blocks, ended by itself"
@@ -2394,6 +2410,16 @@ _fp_count 'ff.p2_task_completed_refusals(E, False)'
 e2e_expect_equal "not_run yes" "${E2E_OUT%% | *} $(_fp_has "$E2E_OUT" "| no_refusal")" "5 entries, no refusal"
 _fp_count 'ff.p2_task_completed_refusals(E, True)'
 e2e_expect_equal "go" "${E2E_OUT%% | *}" "5 entries, no refusal, with the fallback"
+# At the bound: 4 entries are enough to judge, 3 are not.
+rm -f "$FP_L"; _fp_log "$FP_L" TaskCompleted task-completed 2:deny 0:none 0:none 0:none
+_fp_count 'ff.p2_task_completed_refusals(E, False)'
+e2e_expect_equal "go" "${E2E_OUT%% | *}" "4 entries, 1 refusal"
+rm -f "$FP_L"; _fp_log "$FP_L" TaskCompleted task-completed 0:none 0:none 0:none 0:none
+_fp_count 'ff.p2_task_completed_refusals(E, False)'
+e2e_expect_equal "not_run yes" "${E2E_OUT%% | *} $(_fp_has "$E2E_OUT" "| no_refusal")" "4 entries, no refusal"
+rm -f "$FP_L"; _fp_log "$FP_L" TaskCompleted task-completed 2:deny 0:none 0:none
+_fp_count 'ff.p2_task_completed_refusals(E, False)'
+e2e_expect_equal "not_run no" "${E2E_OUT%% | *} $(_fp_has "$E2E_OUT" "| no_refusal")" "3 entries, 1 refusal"
 
 _flow_test_begin "platform: P2 is charged \$1.50 against the cap (R66)"
 _fp_platform_scenario fp-p2-r66 "with \$28.50 spent of \$30, P2 runs (28.50 + 1.50 is not over 30); with \$28.51 spent, P2 is not_run with reason budget and claude never starts"
@@ -2410,6 +2436,55 @@ _fp_record "$E2E_REPO/$FP_REC" 'd["spend"].update(spent_usd=28.51, cap_usd=30)'
 _fp_platform_run -- --only P2
 e2e_expect_equal "0 0" "$E2E_RC $(_fp_launches)" "exit status and claude -p starts at \$28.51"
 e2e_expect_equal "not_run budget" "$(_fp_p '"%s %s" % (p["result"], p["reason"])')" "P2 at \$28.51"
+
+_flow_test_begin "platform: P2 reads the warn fallback from the copy's hook scripts, and the Stop hook's cap as the worker's hook reads it (PL26)"
+_fp_platform_scenario fp-plat-p2-fallback-cap "a plugin whose flow-goal-stop.sh and verify-task-completion.sh name FLOW_FACTORY_DIRECTIVE, the variable B16's warn fallback is keyed on: the facts record both fallbacks, and five completions with no refusal make task_completed_refusals go; the scratch HOME's user settings set flow.goals.failAfterStuckTurns to 4 while the engine's own FLOW_USER_SETTINGS names a file with 5: the worker's environment does not carry FLOW_USER_SETTINGS, so the cap recorded is 4"
+# Source: plan B15 step 1 Counting (with the copy's fallback present, 0
+# refusals over 4 or more entries is go; the cap is
+# flow.goals.failAfterStuckTurns as the worker's Stop hook reads it);
+# launch_env keeps HOME and drops FLOW_USER_SETTINGS.
+FP_PID=P2
+_fp_p2_turn_cost
+for FP_S in flow-goal-stop.sh verify-task-completion.sh; do
+  e2e_plugin_copy "hooks/scripts/$FP_S" "$(cat "$E2E_PLUGIN_DIR/hooks/scripts/$FP_S")
+# FLOW_FACTORY_DIRECTIVE: stands in for B16's factory warn fallback."
+done
+mkdir -p "$E2E_HOME/.claude"
+printf '{"flow": {"goals": {"failAfterStuckTurns": 4}}}\n' > "$E2E_HOME/.claude/settings.flow.json"
+printf '{"flow": {"goals": {"failAfterStuckTurns": 5}}}\n' > "$E2E_DIR/engine-user.json"
+_fp_platform_run FLOW_USER_SETTINGS="$E2E_DIR/engine-user.json" -- --only P2
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+FP_FACTS="$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')/facts.json"
+e2e_expect_equal '{"stop": true, "task_completed": true} 4' "$(_fp_get "$FP_FACTS" 'json.dumps(d["fallbacks"], sort_keys=True) + " " + str(d["stop_cap"])')" "the fallbacks and the cap in the facts"
+e2e_expect_equal "go" "$(_fp_p 'p["parts"]["task_completed_refusals"]["result"]')" "task_completed_refusals with the fallback and no refusal"
+
+_flow_test_begin "platform: P2's cap is the one the copy's Stop hook uses in the worker's environment (PL26)"
+_fp_runner_scenario fp-p2-cap "P2's setup, with the scratch HOME's user settings at failAfterStuckTurns 4 and FLOW_USER_SETTINGS in the engine's environment naming a file with 5: p2_cap gives 4, and the copy's flow-goal-stop.sh run in the worker's environment blocks 4 times before it approves; with no user file in HOME, p2_cap gives the default 3"
+# Source: plan B15 step 1 Counting (the cap is flow.goals.failAfterStuckTurns,
+# default 3); launch_env keeps HOME and drops FLOW_USER_SETTINGS;
+# flow-goal-stop.sh approves once its count reaches the cap.
+mkdir -p "$E2E_HOME/.claude"
+printf '{"flow": {"goals": {"failAfterStuckTurns": 4}}}\n' > "$E2E_HOME/.claude/settings.flow.json"
+printf '{"flow": {"goals": {"failAfterStuckTurns": 5}}}\n' > "$E2E_DIR/engine-user.json"
+fe_py "$(_fp_p2_setup P2-1)
+os.environ['FLOW_USER_SETTINGS'] = '$E2E_DIR/engine-user.json'
+print('cap', ff.p2_cap(S['copy'], S['work'], S['env']))
+env = dict(ff.launch_env(), CLAUDE_PLUGIN_ROOT=S['copy'], **S['env'])
+hook = os.path.join(S['copy'], 'hooks', 'scripts', 'flow-goal-stop.sh')
+blocks, active = 0, False
+while blocks < 10:
+    r = subprocess.run([hook], input=json.dumps({'session_id': 'cap', 'stop_hook_active': active}), cwd=S['work'], env=env, capture_output=True, text=True)
+    if json.loads(r.stdout)['decision'] != 'block':
+        break
+    blocks, active = blocks + 1, True
+print('hook blocks', blocks)
+os.remove(os.path.join(os.environ['HOME'], '.claude', 'settings.flow.json'))
+print('cap', ff.p2_cap(S['copy'], S['work'], S['env']))
+"
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "cap 4
+hook blocks 4
+cap 3" "$E2E_OUT" "the cap p2_cap gives, the blocks the worker's hook makes, and the default"
 
 _flow_test_begin "platform: P1 runs the four commands with a gh stand-in in the default worker area (PL6, PL7)"
 _fp_platform_scenario fp-plat-p1 "P1 runs /flow:start 1, /flow:pr, /flow:review 1 and /flow:address 1 and a write run: each command's probe block output reaches the first turn, writes land in the worktree and the io directory, no GitHub write is made, and P1 is deferred to phase 1d"
@@ -6110,8 +6185,31 @@ _fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
 e2e_expect_equal "go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "after both sessions"
 e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
 
+_flow_test_begin "interactive: tier_gate_by_mode counts a mode's finding only from the claude the session runs on (I24)"
+_fp_runner_scenario fp-int-p9-tier-gate-version "a default session on claude 2.1.322 and an auto session on 2.1.330, each go for its mode: the default finding is from another claude, so the part is not_run and names both versions; a default session on 2.1.330 then makes it go; a kept default finding with no claude version is not_run again"
+# Source: the wave 5 review decision: each mode's finding is kept with the
+# claude version it was made on, and a finding from another version counts
+# as missing (not_run), as the part is not_run while a mode is missing
+# (plan B15 step 3).
+_fp_p9_round default 'ask:full:PostToolUseFailure:INTENT_PROBE' 'ask:full:PostToolUseFailure:FACTORY_REFUSED'
+printf '2.1.330 (Claude Code)\n' > "$E2E_BIN/claude-version"
+_fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
+e2e_expect_equal "0" "$E2E_RC" "record exit status ($E2E_OUT $E2E_ERR)"
+FP_R=$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]')
+e2e_expect_equal "not_run yes yes" "$(_fp_get "$E2E_REPO/$FP_REC" '(lambda t: "%s %s %s" % (t["result"], "yes" if "2.1.322" in t["reason"] else "no", "yes" if "2.1.330" in t["reason"] else "no"))(d["probes"]["P9"]["parts"]["tier_gate_by_mode"])')" "a default finding from 2.1.322 beside an auto finding from 2.1.330 ($FP_R)"
+_fp_p9_round default 'ask:full:PostToolUseFailure:INTENT_PROBE' 'ask:full:PostToolUseFailure:FACTORY_REFUSED'
+e2e_expect_equal "go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "after a default session on 2.1.330"
+e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
+e2e_describe "a kept finding with no claude version, as one kept before versions were stored, does not count"
+python3 -c 'import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+del d["tier_gate"]["default"]["claude_version"]
+json.dump(d, open(sys.argv[1], "w", encoding="utf-8"))' "$E2E_REPO/.flow/factory/interactive.json"
+_fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
+e2e_expect_equal "not_run yes" "$(_fp_get "$E2E_REPO/$FP_REC" '(lambda t: "%s %s" % (t["result"], "yes" if "claude unknown" in t["reason"] else t["reason"]))(d["probes"]["P9"]["parts"]["tier_gate_by_mode"])')" "a default finding with no claude version"
+
 _flow_test_begin "interactive: tier_gate_by_mode is no-go for an ask without the arguments, an allow, or a deny that still ran (I24, R97)"
-_fp_runner_scenario fp-int-p9-tier-gate-nogo "with an auto session recorded go: a default session whose confirm ask lacks the intent's sha256 is no-go; whose approve-spec ask lacks the spec hash, or lacks spec file: none recorded, is no-go; whose tier-gate allows is no-go; with no tier-gate entry for a command it is not_run; then, with a default session recorded go, an auto session that denies but whose command still reached the engine is no-go"
+_fp_runner_scenario fp-int-p9-tier-gate-nogo "with an auto session recorded go: a default session whose confirm ask lacks the intent's sha256 is no-go; whose approve-spec ask lacks the spec hash, or lacks spec file: none recorded, is no-go; whose tier-gate allows is no-go, also when the allow's reason shows the arguments; whose tier-gate asks with the arguments but whose command never reached the engine is no-go; with no tier-gate entry for a command it is not_run; then, with a default session recorded go, an auto session whose tier-gate asks is no-go, and one that denies but whose command still reached the engine is no-go"
 # Source: plan B15 step 3 part rule; R97; design probes P9 ("shows the command
 # with its arguments").
 _fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
@@ -6119,12 +6217,16 @@ for FP_CASE in 'ask:short:PostToolUseFailure:INTENT_PROBE|ask:full:PostToolUseFa
                'ask:full:PostToolUseFailure:INTENT_PROBE|ask:short:PostToolUseFailure:FACTORY_REFUSED|no-go|approve-spec ask without the spec hash' \
                'ask:full:PostToolUseFailure:INTENT_PROBE|ask:nospec:PostToolUseFailure:FACTORY_REFUSED|no-go|approve-spec ask without spec file: none recorded' \
                'allow:-:PostToolUse:INTENT_PROBE|ask:full:PostToolUseFailure:FACTORY_REFUSED|no-go|confirm allowed' \
+               'allow:full:PostToolUse:INTENT_PROBE|ask:full:PostToolUseFailure:FACTORY_REFUSED|no-go|confirm allowed with a reason that shows its arguments' \
+               'ask:full:-:-|ask:full:PostToolUseFailure:FACTORY_REFUSED|no-go|confirm asked, but the engine never answered' \
                '-:-:-:-|ask:full:PostToolUseFailure:FACTORY_REFUSED|not_run|no tier-gate entry for confirm' \
                'ask:full:PostToolUseFailure:INTENT_PROBE|ask:full:PostToolUseFailure:FACTORY_REFUSED|go|both asks show their arguments'; do
   IFS='|' read -r FP_C FP_A FP_WANT FP_WHAT <<< "$FP_CASE"
   _fp_p9_round default "$FP_C" "$FP_A"
   e2e_expect_equal "$FP_WANT" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "$FP_WHAT"
 done
+_fp_p9_round auto 'ask:full:-:-' 'deny:-:-:-'
+e2e_expect_equal "no-go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "an auto ask that never reached the engine"
 _fp_p9_round auto 'deny:-:-:-' 'deny:-:PostToolUse:FACTORY_REFUSED'
 e2e_expect_equal "no-go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "an auto deny whose command still reached the engine"
 e2e_expect_equal "yes" "$(_fp_get "$E2E_REPO/$FP_REC" '"yes" if "tier-gate denies the always-ask subcommands in every session" in d["probes"]["P9"].get("fallback", "") else d["probes"]["P9"].get("fallback")')" "P9's fallback for a tier_gate_by_mode no-go"

@@ -437,8 +437,9 @@ that session, `--step` wait, woke, p14, wait-question, answer and record:
     for each with a reason showing its arguments (the intent's sha256; the
     spec hash and "spec file: none recorded") and the engine then answered,
     and, in auto mode, tier-gate denied each and the engine never answered;
-    each session keeps its mode's finding in the interactive state, and the
-    part is not_run until both modes are recorded. The executor's parts are
+    each session keeps its mode's finding in the interactive state with the
+    claude version it ran on, and the part is not_run until both modes are
+    recorded on the claude version of the session that records it. The executor's parts are
     deferred to phase 1c. A session in one mode keeps the other
     mode's parts. Its output names P14's result, or lists P14 under running
     while the p14 step's worker has not ended; that step writes its own
@@ -4446,7 +4447,7 @@ STEPS_PROMPT = ("Do the steps below, in order, and nothing else. `RUN: <command>
 # (budget limit in USD, turn limit, time limit in seconds) of each run.
 P1_RUN = (1.0, 30, 900)
 P1_WRITE_RUN = (0.25, 8, 300)
-P2_RUN = (1.5, 90, 1200)
+P2_RUN = (1.5, 120, 1200)
 P4_RUN = (0.10, 1, 300)
 P5_FIRST = (0.50, 12, 300)
 P5_TURNS = (0.50, 2, 300)
@@ -5000,12 +5001,17 @@ def p2_fallback(copy, script):
         return False
 
 
-def p2_cap(copy, work):
+def p2_cap(copy, work, worker_env):
     """flow.goals.failAfterStuckTurns as the copy's Stop hook reads it in the
-    worktree: through the copy's cascade, 3 for anything but a positive
-    whole number."""
+    worktree: through the copy's cascade, in the worker's environment (the
+    cleaned launch environment plus worker_env, P2's factory variables), 3
+    for anything but a positive whole number. The engine's own environment
+    is not used: a variable it has and the worker does not, such as
+    FLOW_USER_SETTINGS, would give a cap the hook never uses."""
+    env = dict(launch_env(), **worker_env)
+    env["CLAUDE_PLUGIN_ROOT"] = copy
     rc, out, _ = run_cmd([os.path.join(copy, "bin", "cascade-resolve.sh"), "--default", "3",
-                          ".flow.goals.failAfterStuckTurns // empty"], work, dict(os.environ, CLAUDE_PLUGIN_ROOT=copy))
+                          ".flow.goals.failAfterStuckTurns // empty"], work, env)
     value = out.strip() if rc == 0 else ""
     return int(value) if value.isdigit() and int(value) > 0 else 3
 
@@ -5194,7 +5200,7 @@ def probe_p2(ctx, ev_rel):
                                                      + ", ".join(claude_files))
     else:
         parts["claude_files_allowlist"] = part("go", "the worker created no .claude file")
-    cap = p2_cap(copy, work)
+    cap = p2_cap(copy, work, setup["env"])
     stop_fallback = p2_fallback(copy, "flow-goal-stop.sh")
     task_fallback = p2_fallback(copy, "verify-task-completion.sh")
     if not run_started(run):
@@ -7078,12 +7084,25 @@ def p9_tier_gate(mode, gate, hooks, intent, sha):
     return part(result, f"{mode} mode: " + "; ".join(said))
 
 
-def p9_tier_gate_part(found):
-    """tier_gate_by_mode over both modes' findings ({mode: part}): no-go when
-    one is, not_run while a mode is missing or not_run, else go."""
-    said = [f"{found[m]['reason']}" if m in found else f"{m} mode: no session recorded yet"
-            for m in ("default", "auto")]
-    results = [found[m]["result"] if m in found else "not_run" for m in ("default", "auto")]
+def p9_tier_gate_part(found, claude):
+    """tier_gate_by_mode over both modes' findings ({mode: part with the
+    claude_version it was made on}): no-go when one is, not_run while a mode
+    is missing or not_run, else go. A finding made on another claude than
+    claude, the version this session runs, counts as missing: tier-gate's
+    answer under one version says nothing about another."""
+    said, results = [], []
+    for m in ("default", "auto"):
+        f = found.get(m)
+        if f is None:
+            said.append(f"{m} mode: no session recorded yet")
+            results.append("not_run")
+        elif f.get("claude_version") != claude:
+            said.append(f"{m} mode: its session was recorded on claude {f.get('claude_version') or 'unknown'}, "
+                        f"not {claude}, so it counts only once that mode is run again on {claude}")
+            results.append("not_run")
+        else:
+            said.append(f["reason"])
+            results.append(f["result"])
     result = "no-go" if "no-go" in results else "not_run" if "not_run" in results else "go"
     return part(result, "; ".join(said))
 
@@ -7114,14 +7133,15 @@ def interactive_record(args):
         bind_cap(args, record)
         now = interactive_state(fdir, required=False)
         # Each session keeps its own mode's finding beside the other mode's,
-        # in the interactive state: a part holds only a result and a reason.
+        # in the interactive state, with the claude version it was made on: a
+        # part holds only a result and a reason.
         kept = now.get("tier_gate") if isinstance(now.get("tier_gate"), dict) else {}
         kept = {m: v for m, v in kept.items() if m in ("default", "auto") and isinstance(v, dict)
                 and v.get("result") in ("go", "no-go", "not_run") and isinstance(v.get("reason"), str)}
-        kept[state["mode"]] = found
+        kept[state["mode"]] = dict(found, claude_version=keyed["claude_version"])
         now["tier_gate"] = kept
         write_json(os.path.join(fdir, INTERACTIVE_STATE), now)
-        new["tier_gate_by_mode"] = p9_tier_gate_part(kept)
+        new["tier_gate_by_mode"] = p9_tier_gate_part(kept, keyed["claude_version"])
         marker = now.get("p14")
         older = ((record.get("probes") or {}).get("P14") or {}).get("evidence")
         dead = None
