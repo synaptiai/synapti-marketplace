@@ -24,14 +24,23 @@
 #      strictest of four sources) against the hook's cascade (the first
 #      value), the fail-closed base fetch and its status lines, a person
 #      subcommand that the hook asks about or denies, or that a comment
-#      posted with your GitHub token counts as yours until the worker
-#      sandbox arrives; or it says the hook's factory rules turn on for a
+#      posted with your GitHub token counts as yours; or it promises the
+#      worker sandbox, names it by a planning phase instead of "a later
+#      release", or drops that the sandbox would not cover other programs
+#      running as you (the CHANGELOG likewise); or it says the hook's
+#      factory rules turn on for a
 #      variable they do not read, or that a job parks with a status line
 #      (design github_writes_and_tiers L37 and L48, residual_risks L3;
 #      plan B10 outline, plan 7.2 items 4 and 14; tier-gate's factory check)
 #   D8 the Actions table of gate configuration leaves out a gh command, REST
 #      endpoint or GraphQL mutation that design github_writes_and_tiers
-#      L6-L17 or the Q9 forms (plan 7.2 item 12) put under issueUpdate
+#      L6-L17 or the Q9 forms (plan 7.2 item 12) put under issueUpdate, or
+#      the safety reference's summary of those forms drops one
+#   D9 a flow.factory.* row of gate configuration says a key is not read
+#      yet, or that its use comes in a later change, when the factory's code
+#      reads it; or says the engine does not add the in-progress label when
+#      it does; or says the comment commands will use the trust test when
+#      they use it now
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -156,13 +165,32 @@ _td_fac_lacks "when a \`FLOW_FACTORY_*\` variable is set" "no claim that any FLO
 # Matched as one fragment: FLOW_FACTORY_JOB and FLOW_FACTORY_DIRECTIVE also
 # appear in the worker bullet, so a check per name would pass without them here.
 _td_fac_has "run only in a factory: when \`FLOW_FACTORY_JOB\`, \`FLOW_FACTORY_DIRECTIVE\`, \`FLOW_FACTORY_IO\` or \`FLOW_FACTORY_MAIN\` is set" "the sentence that turns the rules on names the four variables tier-gate reads"
-# Residual risk (design residual_risks L3; plan 7.2 item 4): a comment posted
-# with the person's token counts as the person's, and the worker sandbox that
-# keeps the token from workers comes in phase 1c.
+# Residual risk (design residual_risks L2 and L3; plan 7.2 item 4): a comment
+# posted with the person's token counts as the person's. The worker sandbox
+# that would keep the token from a worker's shell commands holds only once
+# probe P16 is go, which has not run, so the docs call it planned, in the
+# reader's words ("a later release", as the base-fetch paragraph says), and
+# say it would not cover other programs running as you (design
+# worker_github_access L13).
 _td_fac_has "posted with your GitHub token" "the engine cannot tell a comment posted with your token from yours"
 _td_fac_has "\`gh auth token\`" "any process running as you can read the token"
-_td_fac_has "worker sandbox" "the control that keeps the token from workers"
-_td_fac_has "phase 1c" "when the worker sandbox arrives"
+_td_fac_has "A later release is planned to add a worker sandbox" "the worker sandbox is planned for a later release"
+_td_fac_has "it would not cover other programs running as you" "the worker sandbox would not cover other programs running as you"
+_td_fac_lacks "phase 1c" "no planning phase name for the worker sandbox"
+_td_fac_lacks "comes with the factory's worker launch" "no promise of when the worker sandbox comes"
+# The CHANGELOG's Unreleased section says the same, wrapped over several
+# lines, so it is read as one line.
+TD_UNREL=$(awk '/^## Unreleased/{on=1; next} on && /^## /{exit} on' "$TD_P/CHANGELOG.md" | tr '\n' ' ' | tr -s ' ')
+_td_unrel_has() {   # <fixed text> <what>
+  if printf '%s\n' "$TD_UNREL" | grep -qF -- "$1"; then _flow_assert_pass "$2"; else _flow_assert_fail "$2: '$1' not found in the CHANGELOG's Unreleased section"; fi
+}
+_td_unrel_has "a later release is planned to add a worker sandbox" "the CHANGELOG says the worker sandbox is planned for a later release"
+_td_unrel_has "it would not cover other programs running as you" "the CHANGELOG says the worker sandbox would not cover other programs running as you"
+if printf '%s\n' "$TD_UNREL" | grep -qF -- "keeps the token from workers comes later"; then
+  _flow_assert_fail "the CHANGELOG still says the worker sandbox comes later, as a promise"
+else
+  _flow_assert_pass "the CHANGELOG makes no promise of the worker sandbox"
+fi
 _td_has "$TD_SAFETY" "they are refused in \`claude -p\`" "what confirm does to flow's own comment and review posts in claude -p"
 _td_fac_has "run it in a terminal outside Claude Code" "the deny text"
 _td_fac_has "Without jq the hook cannot read the permission mode" "the jq-free deny"
@@ -184,7 +212,10 @@ _flow_test_begin "tier docs: the Actions table lists the forms tiers.issueUpdate
 TD_ROW=$(grep -F '| `issueUpdate` |' "$TD_GATES")
 if [ -n "$TD_ROW" ]; then _flow_assert_pass "gate configuration has an issueUpdate row"; else _flow_assert_fail "no issueUpdate row in the Actions table"; fi
 # The expected list is design github_writes_and_tiers L6-L17 and the Q9 forms
-# of plan 7.2 item 12, written as the row spells them.
+# of plan 7.2 item 12, written as the row spells them. DELETE on
+# `.../issues/{n}/labels/{name}` is GitHub's endpoint for removing one label
+# (design L14's "DELETE issues/{n}/labels"), the form the engine's own label
+# removal uses, and one tier-gate puts under issueUpdate.
 while IFS= read -r T; do
   [ -n "$T" ] || continue
   if printf '%s\n' "$TD_ROW" | grep -qF -- "$T"; then _flow_assert_pass "the issueUpdate row names $T"; else _flow_assert_fail "the issueUpdate row does not name $T"; fi
@@ -206,6 +237,7 @@ POST to `.../pulls/{n}/reviews`
 `.../pulls/{n}/requested_reviewers`
 PATCH or DELETE on `.../pulls/comments/{id}`
 POST, PUT or DELETE on `.../issues/{n}/labels`
+DELETE on `.../issues/{n}/labels/{name}`
 PATCH on `.../pulls/{n}` with a state, body or title field
 PATCH on `.../issues/{n}`
 `addComment`
@@ -225,3 +257,83 @@ PATCH on `.../issues/{n}`
 `closeIssue`
 `reopenIssue`
 EOF
+
+_flow_test_begin "tier docs: the safety reference's summary names the forms tiers.issueUpdate covers (D8)"
+# Only the paragraph that lists them: `close`, `ready` and `gh label create`
+# also appear elsewhere in the file, so a whole-file match would pass without
+# them here. The forms are design github_writes_and_tiers L6-L17 and the Q9
+# forms of plan 7.2 item 12, as the paragraph groups them.
+TD_SUM=$(grep -F '`issueUpdate` covers writes' "$TD_SAFETY")
+if [ -n "$TD_SUM" ]; then _flow_assert_pass "the safety reference has the issueUpdate summary"; else _flow_assert_fail "no paragraph with '\`issueUpdate\` covers writes' in the safety reference"; fi
+while IFS= read -r T; do
+  [ -n "$T" ] || continue
+  if printf '%s\n' "$TD_SUM" | grep -qF -- "$T"; then _flow_assert_pass "the issueUpdate summary names $T"; else _flow_assert_fail "the issueUpdate summary does not name $T"; fi
+done <<'EOS'
+`gh issue comment`, `close` and `reopen`
+`gh pr comment`, `review`, `ready` (and `--undo`) and `close`
+`gh issue edit` and `gh pr edit` with a label, body, title or reviewer option
+`gh label create`
+the matching `gh api` calls
+the matching GraphQL mutations
+EOS
+
+_flow_test_begin "tier docs: the factory settings rows match what the factory's code reads now (D9)"
+# A row is checked against the engine's code, not a fixed list. A key other
+# than a label is read where its full name is quoted. A label key is read
+# through label_name in _flow_factory_next.py, by its quoted short name,
+# directly or through a table such as LABELLED_PARKS; the line of defaults,
+# which maps each name to "flow:...", is not a read. A row whose key is read
+# must name a module and must not say it is not read yet or that its use
+# comes in a later change or phase.
+TD_BIN="$TD_P/bin"
+_td_gate_row() {   # <key>
+  grep -F "| \`flow.factory.$1\` |" "$TD_GATES"
+}
+_td_key_read() {   # <key>; prints the line that reads it
+  case "$1" in
+    labels.*) grep -nF -- "\"${1#labels.}\"" "$TD_BIN/_flow_factory_next.py" | grep -vF '": "flow:' | head -1 ;;
+    *) grep -hnF -- "\"flow.factory.$1\"" "$TD_BIN"/_flow_factory*.py | head -1 ;;
+  esac
+}
+for K in intake.maxRounds maxRounds labels.inProgress labels.needsInfo labels.needsHuman labels.specReview labels.ready labels.priorityHigh trustedPermission trustedBots; do
+  R=$(_td_gate_row "$K")
+  if [ -z "$R" ]; then _flow_assert_fail "no row for flow.factory.$K in gate configuration"; continue; fi
+  PAT=$(_td_key_read "$K")
+  if [ -n "$PAT" ]; then
+    case "$R" in
+      *'not read yet'*|*'later change'*|*'later phase'*) _flow_assert_fail "the flow.factory.$K row says it is not used yet, but the code reads it (line $PAT)" ;;
+      *'`bin/_flow_factory'*) _flow_assert_pass "the flow.factory.$K row names the module that reads it" ;;
+      *) _flow_assert_fail "the flow.factory.$K row names no module, but the code reads it (line $PAT)" ;;
+    esac
+  else
+    case "$R" in
+      *'not read yet'*) _flow_assert_pass "the flow.factory.$K row says it is not read yet, and no code reads it" ;;
+      *) _flow_assert_fail "the flow.factory.$K row does not say it is not read yet, and no code reads it" ;;
+    esac
+  fi
+done
+# The engine adds the in-progress label with its assignment (the assign_label
+# write of rows 11 and 40, design stages: prepare's "assignment and label
+# written").
+R=$(_td_gate_row labels.inProgress)
+if grep -qF 'literal_assign_label(self.repo(), self.n, self.login(), label_name("inProgress"))' "$TD_BIN/_flow_factory_next.py"; then
+  case "$R" in
+    *'does not add the label'*) _flow_assert_fail "the labels.inProgress row says the engine does not add the label, but next adds it with the assignment" ;;
+    *) _flow_assert_pass "the labels.inProgress row makes no claim that the engine does not add the label" ;;
+  esac
+else
+  _flow_assert_fail "next no longer adds labels.inProgress with the assignment; recheck this row and this check"
+fi
+# The comment commands test their author with Permissions.trusted.
+for K in trustedPermission trustedBots; do
+  R=$(_td_gate_row "$K")
+  if grep -qF 'perms.trusted(' "$TD_BIN/_flow_factory_commands.py"; then
+    case "$R" in
+      *'will use'*) _flow_assert_fail "the flow.factory.$K row says the comment commands will use the trust test, but they use it now" ;;
+      *'`bin/_flow_factory_commands.py`'*) _flow_assert_pass "the flow.factory.$K row names the comment commands' module" ;;
+      *) _flow_assert_fail "the flow.factory.$K row does not name bin/_flow_factory_commands.py, which uses the trust test" ;;
+    esac
+  else
+    _flow_assert_fail "_flow_factory_commands.py no longer calls perms.trusted; recheck this row and this check"
+  fi
+done

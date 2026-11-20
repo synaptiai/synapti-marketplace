@@ -61,8 +61,10 @@ settings cannot turn it on.
   `context --mode` and `await`; and it denies commands that name the factory
   folder and, while the factory is enabled, comments that name
   `/flow-factory`. A program running as you can still post such a comment
-  with your GitHub token, and the engine counts it as yours; the worker
-  sandbox that keeps the token from workers comes later. The factory's
+  with your GitHub token, and the engine counts it as yours; a later release
+  is planned to add a worker sandbox that would keep the token from a
+  worker's shell commands, and it would not cover other programs running as
+  you. The factory's
   engine resolves each tier key as the strictest of four sources rather than
   the first, and counts a base branch it cannot fetch as `confirm`.
   `references/three-tier-safety.md` describes both.
