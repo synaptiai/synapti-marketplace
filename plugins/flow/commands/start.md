@@ -1310,4 +1310,4 @@ End with what was done, what was verified and how (the command and what it print
 | Branch creation | 1 | Autonomous |
 | File edits | 1 | Autonomous |
 | Commits | 1 | Autonomous, logged by hook |
-| Issue assignment | 2 | Follows `tiers.issueAssign` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks) |
+| Issue assignment | 2 | Follows `tiers.issueAssign` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks). An assignment command that also adds a label, or sets a body or a title, follows `tiers.issueUpdate` as well |

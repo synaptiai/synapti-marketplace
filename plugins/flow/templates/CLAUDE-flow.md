@@ -33,7 +33,7 @@ This project uses the [flow](https://github.com/synaptiai/synapti-marketplace/tr
 ### Safety Model
 
 - **Tier 1** (Autonomous): commits, branches, file edits
-- **Tier 2** (Journal): push, PR creation, issue creation, issue assignment. By default each runs and writes a breadcrumb to the git-ignored auto-log trail; each is a `tiers.*` setting (`push`, `prCreate`, `issueCreate`, `issueAssign`) that also takes `autonomous` or `confirm`
+- **Tier 2** (Journal): push, PR creation, issue creation, issue assignment, and comments, reviews, labels, closing and edits on an existing issue or PR. By default each runs and writes a breadcrumb to the git-ignored auto-log trail; each is a `tiers.*` setting (`push`, `prCreate`, `issueCreate`, `issueAssign`, `issueUpdate`) that also takes `autonomous` or `confirm`
 - **Tier 3** (Confirm): merge, release, pushing or deleting a tag. Always asks; `tiers.merge` and `tiers.release` cannot go below `confirm`
 
 The `tier-gate.sh` hook applies these settings to every Bash command, and flow's `git` and `gh` wrappers check again when the program starts.

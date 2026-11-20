@@ -467,7 +467,7 @@ Three-tier action classification:
 | Tier | Actions | Behavior |
 |------|---------|----------|
 | **Tier 1** (Autonomous) | Commits, branches, edits | Execute without asking |
-| **Tier 2** (Journal) | Push, PR creation, issue creation, issue assignment | By default, execute and write one breadcrumb to the git-ignored auto-log trail. Each is a `tiers.*` setting (`push`, `prCreate`, `issueCreate`, `issueAssign`) that also takes `autonomous` or `confirm` |
+| **Tier 2** (Journal) | Push, PR creation, issue creation, issue assignment, and comments, reviews, labels, closing and edits on an existing issue or PR | By default, execute and write one breadcrumb to the git-ignored auto-log trail. Each is a `tiers.*` setting (`push`, `prCreate`, `issueCreate`, `issueAssign`, `issueUpdate`) that also takes `autonomous` or `confirm` |
 | **Tier 3** (Confirm) | Merge, release, pushing or deleting a tag | Always ask; `tiers.merge` and `tiers.release` cannot go below `confirm` |
 
 Four checks apply these settings. Each covers what the one before it does not:
@@ -564,7 +564,7 @@ Example project settings in `.claude/settings.flow.json` (`tiers` is applied to 
 {
   "agentTeams": false,
   "agentTeamModel": "sonnet",
-  "tiers": { "push": "journal", "prCreate": "journal", "issueAssign": "journal", "issueCreate": "journal", "merge": "confirm", "release": "confirm" },
+  "tiers": { "push": "journal", "prCreate": "journal", "issueAssign": "journal", "issueUpdate": "journal", "issueCreate": "journal", "merge": "confirm", "release": "confirm" },
   "conventions": { "commitTypes": ["feat", "fix", "docs", "..."] },
   "merge": { "strategy": "squash", "deleteBranch": true },
   "lsp": { "enabled": true, "timeout": 5000, "diagnosticsAsQuality": true },

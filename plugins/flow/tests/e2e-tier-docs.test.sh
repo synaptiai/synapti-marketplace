@@ -13,6 +13,19 @@
 #      checks: the hook, the wrappers, Claude Code's ask rules, rulesets
 #   D4 nothing says that GitHub rulesets, not the local checks, are what stops
 #      a merge or release that reaches GitHub
+#   D5 a file of the plugin lists tiers.issueAssign and not tiers.issueUpdate
+#      beside it (design github_writes_and_tiers L23-L30: the new key goes
+#      every place issueAssign is listed, and this file asserts it)
+#   D6 a command's tier table still says a pull request comment, review,
+#      reply, body edit or re-requested review runs with no tier setting,
+#      when tiers.issueUpdate covers it (design github_writes_and_tiers L6-L17)
+#   D7 the safety reference leaves out how the factory resolves a key (the
+#      strictest of four sources) against the hook's cascade (the first
+#      value), the fail-closed base fetch and its status lines, or a person
+#      subcommand that the hook asks about or denies (design
+#      github_writes_and_tiers L37 and L48; plan B10 outline)
+#   D8 the Actions table of gate configuration leaves out a form the hook
+#      classifies as issueUpdate (plan 2.4, Q9 forms)
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -20,7 +33,9 @@
   return 1 2>/dev/null; exit 1
 }
 
-TD_P="$REPO_ROOT/plugins/flow"
+# The plugin under test: the shipped one, or a copy E2E_PLUGIN_DIR names
+# (a mutant made with e2e_copy_plugin).
+TD_P="$E2E_PLUGIN_DIR"
 TD_README="$TD_P/README.md"
 TD_SAFETY="$TD_P/references/three-tier-safety.md"
 TD_GATES="$TD_P/references/gate-configuration.md"
@@ -78,3 +93,63 @@ _td_has "$TD_SAFETY" "\`npx\`, \`bundle exec\`" "the safety reference names the 
 _flow_test_begin "tier docs: rulesets are what stops a merge or release on GitHub (D4)"
 _td_has "$TD_README" "They are what stops a merge or release that reaches GitHub" "README"
 _td_has "$TD_SAFETY" "are what stops a merge or release that reaches GitHub" "the safety reference"
+
+_flow_test_begin "tier docs: every file that lists tiers.issueAssign lists tiers.issueUpdate (D5)"
+# The scan leaves out tests/ and the recorded eval runs (evals/results-*):
+# they are not documentation or settings, and e2e_copy_plugin leaves them
+# out of a copy too.
+TD_MISSING=""
+TD_SEEN=0
+while IFS= read -r F; do
+  case "${F#"$TD_P"/}" in tests/*|evals/results-*) continue ;; esac
+  TD_SEEN=$((TD_SEEN + 1))
+  grep -q 'issueUpdate' "$F" || TD_MISSING="$TD_MISSING ${F#"$TD_P"/}"
+done <<EOF
+$(grep -rl 'issueAssign' "$TD_P" 2>/dev/null | LC_ALL=C sort)
+EOF
+if [ "$TD_SEEN" -gt 0 ]; then _flow_assert_pass "the scan found files naming issueAssign"; else _flow_assert_fail "the scan found no file naming issueAssign under $TD_P"; fi
+assert_equal "" "$TD_MISSING" "files that name issueAssign but not issueUpdate"
+
+_flow_test_begin "tier docs: the command tier tables put comments, reviews and pull request edits under tiers.issueUpdate (D6)"
+for F in "$TD_P/commands/review.md" "$TD_P/commands/address.md"; do
+  _td_lacks "$F" "no tier setting covers it" "no claim that no tier setting covers a comment or review"
+  _td_lacks "$F" "no tier setting, no breadcrumb" "no claim that a reply, body edit or re-requested review has no tier setting"
+  _td_has "$F" "Follows \`tiers.issueUpdate\`" "the tier table names tiers.issueUpdate"
+done
+
+_flow_test_begin "tier docs: the safety reference says how the factory applies the keys and what the hook does with its commands (D7)"
+TD_FAC=$(awk '/^### The flow factory/{on=1; print; next} on && /^##/{exit} on' "$TD_SAFETY")
+if [ -n "$TD_FAC" ]; then _flow_assert_pass "the safety reference has a section on the flow factory"; else _flow_assert_fail "no '### The flow factory' section in references/three-tier-safety.md"; fi
+_td_fac_has() {   # <fixed text> <what>
+  if printf '%s\n' "$TD_FAC" | grep -qF -- "$1"; then _flow_assert_pass "$2"; else _flow_assert_fail "$2: '$1' not found in the factory section"; fi
+}
+_td_fac_has "the strictest" "the engine takes the strictest value"
+_td_fac_has "the first source that has a value" "the hook takes the first value"
+_td_fac_has "BASE_FETCH_FAILED" "the fetch failure line"
+_td_fac_has "BASE_REF_UNRESOLVED" "the unresolved base line"
+_td_fac_has "credential helper" "the engine's git loads no credential helper"
+_td_fac_has "tier_confirm" "the park before launch"
+_td_has "$TD_SAFETY" "they are refused in \`claude -p\`" "what confirm does to flow's own comment and review posts in claude -p"
+_td_fac_has "run it in a terminal outside Claude Code" "the deny text"
+_td_fac_has "Without jq the hook cannot read the permission mode" "the jq-free deny"
+_td_fac_has "the whole command" "a person call is asked about only as the whole command"
+# The person subcommands are the Person group the shipped script prints
+# (design github_writes_and_tiers L41).
+TD_PERSON=$("$TD_P/bin/flow-factory.sh" usage 2>/dev/null | sed -n 's/^Person: //p')
+if [ -n "$TD_PERSON" ]; then _flow_assert_pass "flow-factory.sh usage prints the Person group"; else _flow_assert_fail "flow-factory.sh usage printed no Person line"; fi
+# Matched against the sentence that lists them only, up to its first full
+# stop: `confirm` and `answer` also appear elsewhere in the section, as a tier
+# value, as the subject of the next sentence and as an untiered form.
+TD_LIST=$(printf '%s\n' "$TD_FAC" | sed -n 's/.*the person subcommands are \([^.]*\)\..*/\1/p')
+if [ -n "$TD_LIST" ]; then _flow_assert_pass "the factory section has the sentence listing the person subcommands"; else _flow_assert_fail "no sentence with 'the person subcommands are' in the factory section"; fi
+for W in $TD_PERSON; do
+  if printf '%s\n' "$TD_LIST" | grep -qF -- "\`$W\`"; then _flow_assert_pass "the list names the person subcommand $W"; else _flow_assert_fail "the list of person subcommands does not name $W"; fi
+done
+
+_flow_test_begin "tier docs: the Actions table lists the forms tiers.issueUpdate covers (D8)"
+TD_ROW=$(grep -F '| `issueUpdate` |' "$TD_GATES")
+if [ -n "$TD_ROW" ]; then _flow_assert_pass "gate configuration has an issueUpdate row"; else _flow_assert_fail "no issueUpdate row in the Actions table"; fi
+for T in '`gh issue comment`' '`gh issue close`' '`gh issue reopen`' '`gh pr comment`' '`gh pr review`' '`gh pr ready`' '`gh pr close`' '`gh label create`' \
+         '`.../issues/{n}/labels`' '`.../issues/{n}`' '`updateIssue`' '`closeIssue`' '`reopenIssue`' '`addComment`' '`requestReviews`'; do
+  if printf '%s\n' "$TD_ROW" | grep -qF -- "$T"; then _flow_assert_pass "the issueUpdate row names $T"; else _flow_assert_fail "the issueUpdate row does not name $T"; fi
+done

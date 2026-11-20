@@ -70,7 +70,7 @@ case "$RUN_ARGS" in *" "*) TRIGGER_ID=${RUN_ARGS#* } ;; esac
 
 Recursion is checked when the trigger is validated, not while the target runs. `recursion_policy.triggered_runs_may_create_triggers`, `_modify_triggers` and `_enable_triggers` default to `false`. `trigger-policy` (step 3 above) rejects a trigger that sets `_modify_triggers` or `_enable_triggers` to `true`, and one that sets `_create_triggers` to `true` unless `flow.triggers.allowTriggerCreationFromTriggeredRun` is `true`. No command, hook or script detects at run time that a command was started by a trigger, so nothing stops the target command from creating, enabling or modifying a trigger; do not do so while running a trigger's target.
 
-The target command's actions keep their tiers: the `tier-gate.sh` hook applies to every Bash command, so push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate` and `tiers.issueAssign`, and merge, release and pushing or deleting a tag always ask. In `claude -p` an ask is a refusal.
+The target command's actions keep their tiers: the `tier-gate.sh` hook applies to every Bash command, so push, PR creation, issue creation, issue assignment and writes to an existing issue or pull request (comments, reviews, labels, closing and edits) follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate`, `tiers.issueAssign` and `tiers.issueUpdate`, and merge, release and pushing or deleting a tag always ask. In `claude -p` an ask is a refusal.
 
 ## Anti-patterns
 
@@ -90,7 +90,7 @@ The target command's actions keep their tiers: the `tier-gate.sh` hook applies t
 |---|---|---|
 | Read `<runtime dir>/triggers/<id>.trigger.yaml` and validate via `Skill(trigger-policy)` | 1 | Autonomous, read-only |
 | Concurrency check against `<runtime dir>/runs/` for in-flight runs of this trigger | 1 | Autonomous, read-only |
-| Invoke `target.command` (the trigger's nominated next-action) and append the `trigger-fired` journal artifact | 1 | Autonomous, local file write. The target's own actions keep their tiers: push, PR creation, issue creation and issue assignment follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate` and `tiers.issueAssign` (default `journal`: run and write one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks); merge, release and pushing or deleting a tag always ask. `trigger-policy` also refuses a trigger whose `forbidden_actions` does not list `merge` and `release`. |
+| Invoke `target.command` (the trigger's nominated next-action) and append the `trigger-fired` journal artifact | 1 | Autonomous, local file write. The target's own actions keep their tiers: push, PR creation, issue creation, issue assignment and writes to an existing issue or pull request (comments, reviews, labels, closing and edits) follow `tiers.push`, `tiers.prCreate`, `tiers.issueCreate`, `tiers.issueAssign` and `tiers.issueUpdate` (default `journal`: run and write one breadcrumb to the git-ignored auto-log trail; `autonomous` runs; `confirm` asks); merge, release and pushing or deleting a tag always ask. `trigger-policy` also refuses a trigger whose `forbidden_actions` does not list `merge` and `release`. |
 | Cancel previous in-flight runs (when `concurrency.policy: cancel_previous`) | 1 | Autonomous, local file write — transitions other runs to `cancelled` |
 
 `/flow:run` itself never enforces a Tier 3 action; the trigger-policy hard-deny on merge/release is non-negotiable.
