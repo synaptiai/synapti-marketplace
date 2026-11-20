@@ -1932,6 +1932,11 @@ _fp_platform_run() {
   e2e_run_bin XDG_STATE_HOME="$E2E_DIR/state" ${envs[@]+"${envs[@]}"} bin/flow-factory.sh probe --platform "$@"
 }
 
+# _fp_p2_turn_cost — a stand-in turn costs $0.01, about what one turn of the
+# last real P2 run cost ($0.68 for its 76 steps, plan B15 step 2),
+# so P2's 84 steps fit its $1.50 limit as a real run's do.
+_fp_p2_turn_cost() { printf '0.01\n' > "$E2E_BIN/claude-cost-per-turn"; }
+
 _fp_p() {   # <python expression on the probe entry p> [probe id]
   _fp_get "$E2E_REPO/$FP_REC" "(lambda p: $1)(d['probes']['${2:-$FP_PID}'])"
 }
@@ -2051,55 +2056,95 @@ e2e_expect_line "PROBES_STALE=P4 model"
 e2e_expect_line "PROBES_STALE=P4/flow_once model"
 e2e_expect_no_out "PROBES_STALE=P10"
 
-_flow_test_begin "platform: P2 with the stand-in deny firing on all 72 forms is deferred, not go (PL1, PL13, PL14)"
-_fp_platform_scenario fp-plat-p2 "nine person subcommands in eight wrapped forms and three worker forms run in the stand-in worker: the real tier-gate fires on every one, the stand-in deny refuses all 72 person forms, the worker forms run, the Stop, SessionEnd and TaskCompleted hooks fire, AskUserQuestion is not among the worker's tools, no .claude file is created, the go conditions that need phase 1 are recorded deferred with their phase, and P2 is deferred to phase 1b"
+_flow_test_begin "platform: P2 with tier-gate's own deny on all 72 forms, the hooks wrapped and the counts recorded (PL1, PL13, PL14, PL22, PL23, PL24)"
+_fp_platform_scenario fp-plat-p2 "nine person subcommands in eight wrapped forms and two worker forms run in the stand-in worker, whose environment names FLOW_FACTORY_JOB and FLOW_FACTORY_DIRECTIVE: the real tier-gate fires on every one and its own worker rule refuses all 72 person forms, so person_forms_denied is go; the worker forms run; the worker edits five files and marks five tasks completed; the Stop, SessionEnd and TaskCompleted hooks fire; the stand-in stops once and ends after the Stop hook's block, so stop_caps is no-go; its ledger never sees a file change, so the five completions are not refused and task_completed_refusals is not_run (no_refusal); the Stop hook's counter is under the probe area; AskUserQuestion is not among the worker's tools, no .claude file is created, SessionEnd's writes stay deferred to phase 1c, and P2 is not a stand-in result"
 FP_PID=P2
+_fp_p2_turn_cost
 _fp_platform_run -- --only P2
 e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
-e2e_expect_equal "deferred" "$(_fp_p 'p["result"]')" "P2 result"
-e2e_expect_equal "synaptiai/synapti-marketplace#355" "$(_fp_p 'p["deferred_to"]')" "P2 deferred_to"
-e2e_expect_equal "true" "$(_fp_p 'p["stand_in"]')" "P2 stand_in"
-e2e_expect_equal '{"ask_user_question_absent": "go", "claude_files_allowlist": "go", "coverage": "go", "person_forms_denied": "deferred", "session_end_hook": "go", "session_end_writes": "deferred", "stop_caps": "deferred", "stop_hook": "go", "task_completed_hook": "go", "task_completed_refusals": "deferred", "tier_gate_fires": "go", "worker_forms_allowed": "go"}' \
+e2e_expect_equal "no-go" "$(_fp_p 'p["result"]')" "P2 result"
+e2e_expect_equal "false" "$(_fp_p 'p["stand_in"]')" "P2 stand_in"
+e2e_expect_equal '{"ask_user_question_absent": "go", "claude_files_allowlist": "go", "coverage": "go", "person_forms_denied": "go", "session_end_hook": "go", "session_end_writes": "deferred", "stop_caps": "no-go", "stop_hook": "go", "task_completed_hook": "go", "task_completed_refusals": "not_run", "tier_gate_fires": "go", "worker_forms_allowed": "go"}' \
   "$(_fp_p '{k: v["result"] for k, v in sorted(p["parts"].items())}')" "every P2 part"
-e2e_expect_equal "synaptiai/synapti-marketplace#355 synaptiai/synapti-marketplace#356 synaptiai/synapti-marketplace#355" "$(_fp_p '" ".join(p["parts"][k].get("deferred_to", "none") for k in ("stop_caps", "session_end_writes", "task_completed_refusals"))')" "the phase each go condition not yet checkable is deferred to"
-e2e_expect_equal "yes" "$(_fp_p '"yes" if "72 of 72" in p["parts"]["person_forms_denied"]["reason"] else p["parts"]["person_forms_denied"]["reason"]')" "the deny part counts 72 of 72"
+e2e_expect_equal "synaptiai/synapti-marketplace#356" "$(_fp_p 'p["parts"]["session_end_writes"].get("deferred_to", "none")')" "the phase SessionEnd's writes are deferred to"
+e2e_expect_equal "yes" "$(_fp_p '"yes" if "72 of 72" in p["parts"]["person_forms_denied"]["reason"] and "tier-gate" in p["parts"]["person_forms_denied"]["reason"] else p["parts"]["person_forms_denied"]["reason"]')" "the deny part counts 72 of 72 refused by tier-gate"
+e2e_expect_equal "yes" "$(_fp_p '"yes" if p["parts"]["task_completed_refusals"]["reason"].startswith("no_refusal") else p["parts"]["task_completed_refusals"]["reason"]')" "the refusals part says no_refusal"
+e2e_expect_equal "yes" "$(_fp_p '"yes" if "flow-goal-stop.sh warns instead of blocking" in p.get("fallback", "") else p.get("fallback")')" "P2's fallback names the Stop hook's warn fallback"
 FP_FACTS="$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')/facts.json"
-e2e_expect_equal "72 3" "$(_fp_get "$FP_FACTS" '"%d %d" % (sum(1 for f in d["forms"].values() if f["kind"] == "person"), sum(1 for f in d["forms"].values() if f["kind"] == "worker"))')" "person and worker forms"
+e2e_expect_equal "72 2" "$(_fp_get "$FP_FACTS" '"%d %d" % (sum(1 for f in d["forms"].values() if f["kind"] == "person"), sum(1 for f in d["forms"].values() if f["kind"] == "worker"))')" "person and worker forms"
 e2e_expect_equal "bash -c|env -u|nohup|plain|python3 _flow_factory.py|sh -c|timeout|variable path" "$(_fp_get "$FP_FACTS" '"|".join(sorted(f["form"] for f in d["forms"].values() if f["kind"] == "person" and f["subcommand"] == "answer"))')" "the eight wrapped forms"
 e2e_expect_equal "yes" "$(_fp_get "$FP_FACTS" '"yes" if any(f["command"].startswith("python3 ") and f["command"].split()[1].endswith("/bin/_flow_factory.py") for f in d["forms"].values()) else "no"')" "a form runs python3 <copy>/bin/_flow_factory.py"
 e2e_expect_equal "0" "$(_fp_get "$FP_FACTS" 'sum(1 for f in d["forms"].values() if f["kind"] == "person" and f["ran"])')" "person forms that ran"
-e2e_expect_equal "3" "$(_fp_get "$FP_FACTS" 'sum(1 for f in d["forms"].values() if f["kind"] == "worker" and f["ran"])')" "worker forms that ran"
+e2e_expect_equal "2" "$(_fp_get "$FP_FACTS" 'sum(1 for f in d["forms"].values() if f["kind"] == "worker" and f["ran"])')" "worker forms that ran"
 FP_COPY=$(_fp_get "$FP_FACTS" 'd["plugin_copy"]')
 e2e_expect_equal "$(cksum < "$REPO_ROOT/plugins/flow/hooks/scripts/tier-gate.sh")" "$(cksum < "$FP_COPY/hooks/scripts/tier-gate.sh")" "the copy's tier-gate.sh is the plugin's own"
-e2e_expect_equal "75" "$(_fp_get "$FP_FACTS" 'sum(1 for f in d["forms"].values() if "tier-gate" in f["hooks"])')" "forms tier-gate saw"
+e2e_expect_equal "absent" "$([ -e "$FP_COPY/hooks/scripts/factory-probe-standin-deny.sh" ] && echo present || echo absent)" "the stand-in deny rule"
+e2e_expect_equal "74" "$(_fp_get "$FP_FACTS" 'sum(1 for f in d["forms"].values() if "tier-gate" in f["hooks"])')" "forms tier-gate saw"
+FP_EVD="$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')"
+e2e_expect_equal "5 0 1:block" "$(python3 -c 'import json, sys
+e = [json.loads(l) for l in open(sys.argv[1])]
+t = [x for x in e if x["label"] == "task-completed"]
+s = [x["decision"] for x in e if x["label"] == "goal-stop"]
+print(len(t), sum(1 for x in t if x["rc"] == 2), "%d:%s" % (len(s), ",".join(s)))' "$FP_EVD/hooks.jsonl")" "task-completed entries, refusals, and goal-stop decisions in the log"
+FP_AREA=$(dirname "$FP_COPY")
+FP_BLOCKS=$(find "$FP_AREA/state/sessions" -name stop-blocks.json 2>/dev/null | wc -l | tr -d ' ')
+e2e_expect_equal "1 no" "$FP_BLOCKS $([ -d "$E2E_HOME/.claude/flow-state/sessions" ] && echo yes || echo no)" "the Stop hook's counter is in the probe area, not the scratch HOME's state"
+case "$FP_AREA" in "$E2E_ROOT"/*|"$E2E_ROOT_REAL"/*) FP_HAS=yes ;; *) FP_HAS=no ;; esac
+e2e_expect_equal "yes" "$FP_HAS" "the probe area is under the scratch root ($FP_AREA)"
+e2e_expect_equal "--allowedTools Bash,Read,Edit,TaskCreate,TaskUpdate,TaskList,TaskGet,TodoWrite" "$(grep -o -- '--allowedTools [^ ]*' "$E2E_BIN/claude-launches.log")" "the worker may read and edit files"
+e2e_expect_equal "5 5" "$(grep -c '^EDIT: ' "$E2E_BIN/claude-prompt-1.txt") $(grep -c '^TASK: ' "$E2E_BIN/claude-prompt-1.txt")" "edit and task steps in the prompt"
 e2e_run_bin bin/flow-factory.sh probe --verify-record "$E2E_REPO/$FP_REC"
 e2e_expect_no_out "PROBES_CHECK_FAIL=stand_in_go"
 e2e_expect_no_out "PROBES_CHECK_FAIL=parts_mismatch"
 e2e_expect_no_out "PROBES_CHECK_FAIL=schema"
 
+_flow_test_begin "platform: P2 whose tier-gate lets one person form through is no-go (PL22)"
+_fp_platform_scenario fp-plat-p2-broken-rule "a plugin copy whose tier-gate worker rule lets reject through: the reject forms run and are logged by the canaries, so person_forms_denied is no-go and names them, and the other forms are still refused"
+# Source: plan B15 test plan ("one form allowed by a broken rule produces no-go").
+FP_PID=P2
+_fp_p2_turn_cost
+FP_TF=$(python3 - "$E2E_PLUGIN_DIR/hooks/scripts/lib/tier-factory.sh" <<'PYEOF'
+import sys
+s = open(sys.argv[1]).read()
+old = 'if [ -z "$exact" ] || ! _tf_worker_form "$exact"; then _tg_deny "$wdeny"; fi'
+assert s.count(old) == 1
+print(s.replace(old, 'case "$exact" in *" reject "*) return 0 ;; esac; ' + old), end="")
+PYEOF
+)
+e2e_plugin_copy hooks/scripts/lib/tier-factory.sh "$FP_TF"
+_fp_platform_run -- --only P2
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "no-go" "$(_fp_p 'p["parts"]["person_forms_denied"]["result"]')" "person deny part"
+e2e_expect_equal "yes" "$(_fp_p '"yes" if "reject (plain)" in p["parts"]["person_forms_denied"]["reason"] and "cancel" not in p["parts"]["person_forms_denied"]["reason"] else p["parts"]["person_forms_denied"]["reason"]')" "the reason names the reject forms and not cancel"
+
 _flow_test_begin "platform: P2 with one wrapped form let through is no-go and names it (PL2)"
 _fp_platform_scenario fp-plat-p2-leak "the worker runs reject under nohup although the hook refused it: P2 is no-go, names that form, and gives the fallback"
 FP_PID=P2
+_fp_p2_turn_cost
 printf 'p2-reject-nohup\n' > "$E2E_BIN/claude-ignore-deny"
 _fp_platform_run -- --only P2
 e2e_expect_equal "no-go" "$(_fp_p 'p["result"]')" "P2 result"
 e2e_expect_equal "no-go" "$(_fp_p 'p["parts"]["person_forms_denied"]["result"]')" "person deny part"
 e2e_expect_equal "yes" "$(_fp_p '"yes" if "reject (nohup)" in p["parts"]["person_forms_denied"]["reason"] and "answer" not in p["parts"]["person_forms_denied"]["reason"] else p["parts"]["person_forms_denied"]["reason"]')" "the reason names reject (nohup) alone"
-e2e_expect_equal "warn-only hooks; the engine refusal stays; residual risk" "$(_fp_p 'p["fallback"]')" "P2 fallback"
+# The stand-in's one blocked stop also makes stop_caps no-go, so its
+# fallback follows the deny part's.
+e2e_expect_equal "warn-only hooks; the engine refusal stays; residual risk" "$(_fp_p 'p["fallback"].split("; flow-goal-stop.sh")[0]')" "P2 fallback, first the deny part's"
 e2e_expect_equal "absent" "$(_fp_p 'p.get("deferred_to", "absent")')" "P2 deferred_to"
 
 _flow_test_begin "platform: P2 with a form the worker never ran is not deferred (PL3)"
-_fp_platform_scenario fp-plat-p2-skip "the worker skips cancel in its sh -c form: that form is not counted as denied, so P2 is not_run, not deferred"
+_fp_platform_scenario fp-plat-p2-skip "the worker skips cancel in its sh -c form: that form is not counted as denied, so the coverage and deny parts are not_run, not go"
 FP_PID=P2
+_fp_p2_turn_cost
 printf 'p2-cancel-shc\n' > "$E2E_BIN/claude-skip-steps"
 _fp_platform_run -- --only P2
-e2e_expect_equal "not_run" "$(_fp_p 'p["result"]')" "P2 result"
+e2e_expect_equal "not_run not_run" "$(_fp_p '"%s %s" % (p["parts"]["coverage"]["result"], p["parts"]["person_forms_denied"]["result"])')" "coverage and deny parts"
 e2e_expect_equal "yes" "$(_fp_p '"yes" if "cancel (sh -c)" in p["parts"]["coverage"]["reason"] else p["parts"]["coverage"]["reason"]')" "the coverage part names the form"
 e2e_expect_equal "yes" "$(_fp_p '"yes" if "71 of 72" in p["parts"]["person_forms_denied"]["reason"] else p["parts"]["person_forms_denied"]["reason"]')" "the deny part counts 71 of 72"
 
 _flow_test_begin "platform: P2 whose worker marks no task completed does not blame TaskCompleted (PL3)"
 _fp_platform_scenario fp-plat-p2-notask "the worker skips the task step: the TaskCompleted part is not_run, not no-go"
 FP_PID=P2
+_fp_p2_turn_cost
 printf 'TASK:\n' > "$E2E_BIN/claude-skip-steps"
 _fp_platform_run -- --only P2
 e2e_expect_equal "not_run" "$(_fp_p 'p["parts"]["task_completed_hook"]["result"]')" "TaskCompleted part"
@@ -2108,6 +2153,7 @@ e2e_expect_equal "go" "$(_fp_p 'p["parts"]["stop_hook"]["result"]')" "Stop part"
 _flow_test_begin "platform: P2 whose deny misses the python3 _flow_factory.py form is no-go (PL13)"
 _fp_platform_scenario fp-plat-p2-python "the worker runs every python3 <copy>/bin/_flow_factory.py form although the hook refused it, as a deny that only knows flow-factory.sh would let it: the _flow_factory.py canary logs each run, and the deny part and P2 are no-go and name the form"
 FP_PID=P2
+_fp_p2_turn_cost
 printf '_flow_factory.py\n' > "$E2E_BIN/claude-ignore-deny"
 _fp_platform_run -- --only P2
 e2e_expect_equal "no-go" "$(_fp_p 'p["parts"]["person_forms_denied"]["result"]')" "person deny part"
@@ -2119,6 +2165,7 @@ e2e_expect_equal "9" "$(_fp_get "$FP_FACTS" 'sum(1 for f in d["forms"].values() 
 _flow_test_begin "platform: P2 whose worker is offered AskUserQuestion or creates a config-loading .claude file is no-go (PL14)"
 _fp_platform_scenario fp-plat-p2-config "the worker's init event lists AskUserQuestion, and the worker writes .claude/settings.local.json and .claude/probe.lock in its worktree: the AskUserQuestion part is no-go, the .claude part is no-go and names the settings file but not the lock file"
 FP_PID=P2
+_fp_p2_turn_cost
 printf '["Bash", "TaskUpdate", "AskUserQuestion"]\n' > "$E2E_BIN/claude-init-tools"
 printf 'mkdir -p .claude && printf "{}" > .claude/settings.local.json && : > .claude/probe.lock\n' > "$E2E_BIN/claude-script"
 _fp_platform_run -- --only P2
@@ -2129,11 +2176,240 @@ e2e_expect_equal "no-go" "$(_fp_p 'p["result"]')" "P2 result"
 _flow_test_begin "platform: P2 whose worker is killed does not blame the hooks (PL3)"
 _fp_platform_scenario fp-plat-p2-killed "the worker is killed right after its init event: the run part is no-go, and the Stop, SessionEnd and TaskCompleted parts are not_run"
 FP_PID=P2
+_fp_p2_turn_cost
 printf 'kill -TERM "$PPID"\n' > "$E2E_BIN/claude-script"
 _fp_platform_run -- --only P2
 e2e_expect_equal '{"run": "no-go", "session_end_hook": "not_run", "stop_hook": "not_run", "task_completed_hook": "not_run"}' \
   "$(_fp_p '{k: v["result"] for k, v in sorted(p["parts"].items()) if k in ("run", "stop_hook", "session_end_hook", "task_completed_hook")}')" "run and hook parts"
 e2e_expect_equal "no-go" "$(_fp_p 'p["result"]')" "P2 result"
+
+# P2 after phase 1b: tier-gate's own deny rule, the Stop and TaskCompleted
+# hooks wrapped in the recorder, and the counting of stop_caps and
+# task_completed_refusals from the recorder's log.
+#
+# Ways it can be wrong, written down before the checks:
+#   PL22 the stand-in deny rule is still in the copy, or person_forms_denied
+#        counts a deny from any hook but tier-gate, or the worker's
+#        environment lacks the factory variables, so tier-gate's worker rule
+#        never applies; or `question get` is still offered as a worker form
+#   PL23 the copy's Stop and TaskCompleted hooks are not inside the recorder,
+#        so the log says an event fired but not what the hook decided; or the
+#        copy's settings leave stopHookEnforcement at warn, which never blocks
+#   PL24 the worker has no active goal the Stop hook blocks on, or the hook's
+#        block counter lands in the person's own state folder
+#   PL25 the recorder logs a Stop approve, or a block given only as
+#        {"decision":"block"}, as none; or it changes what it logs for
+#        tier-gate's own decisions; or a tier-gate entry carries no reason
+#   PL26 stop_caps is go with more blocks than the cap, or with no final
+#        approve, or no-go when a turn, cost or time limit cut the run short
+#        after a block; task_completed_refusals is go with no refusal or more
+#        than 3, or judged from fewer than 4 completions
+#   R66  P2's charged limit is left at $4, so a run at $28.50 of $30 is refused
+
+# _fp_p2_setup <name> — fe_py statements that make P2's setup under
+# $E2E_DIR/state/flow-factory/probe/<name> and name its parts S (a dict).
+_fp_p2_setup() {
+  printf '%s' "import json, os, shutil, subprocess
+import _flow_factory as ff
+area = os.path.realpath(os.path.join('$E2E_DIR', 'state', 'flow-factory', 'probe', '$1'))
+os.makedirs(area)
+ev = os.path.join('$E2E_DIR', 'ev-$1')
+os.makedirs(ev)
+S = ff.p2_setup(area, ev, {'jq': shutil.which('jq'), 'git': shutil.which('git')})
+"
+}
+
+_flow_test_begin "platform: P2's setup wraps the Stop and TaskCompleted hooks, sets block mode and commits an active goal (PL22, PL23, PL24)"
+_fp_runner_scenario fp-p2-setup "P2's setup: the plugin copy has no stand-in deny; its Stop hook flow-goal-stop.sh and its TaskCompleted hook verify-task-completion.sh run inside the recorder (labels goal-stop and task-completed); SessionEnd keeps a bare recorder entry; its settings.json sets flow.goals.stopHookEnforcement to block; the worktree has .flow/goals/factory-probe-p2.goal.yaml committed on main with lifecycle active, scope.branch main and one criterion with no verification_command; the worker environment names FLOW_FACTORY_JOB, FLOW_FACTORY_DIRECTIVE and a FLOW_STATE_DIR under the probe area; and the worker forms are context --mode and await only"
+# Source: plan B15 step 1 (Copy, Worker), R51; design probes P2 checks.
+fe_py "$(_fp_p2_setup P2-1)
+c = json.load(open(os.path.join(S['copy'], 'hooks', 'hooks.json')))['hooks']
+def cmds(event):
+    return [h['command'] for e in c.get(event, []) for h in e['hooks']]
+print('standin', os.path.exists(os.path.join(S['copy'], 'hooks', 'scripts', 'factory-probe-standin-deny.sh')))
+print('stop', cmds('Stop'))
+print('task', cmds('TaskCompleted'))
+print('end', cmds('SessionEnd'))
+print('mode', json.load(open(os.path.join(S['copy'], 'settings.json')))['flow']['goals']['stopHookEnforcement'])
+git = ['git', '-C', S['work']]
+print('branch', subprocess.run(git + ['branch', '--show-current'], capture_output=True, text=True).stdout.strip())
+print('tracked', subprocess.run(git + ['ls-files', '.flow/goals'], capture_output=True, text=True).stdout.strip())
+print('clean', subprocess.run(git + ['status', '--porcelain'], capture_output=True, text=True).stdout.strip() == '')
+import yaml
+g = yaml.safe_load(open(os.path.join(S['work'], '.flow', 'goals', 'factory-probe-p2.goal.yaml')))
+print('goal', g['lifecycle']['status'], g['scope']['branch'], [('verification_command' in a) for a in g['objective']['acceptance_criteria']])
+env = S['env']
+print('env', sorted(k for k in env if k.startswith('FLOW_')), env['FLOW_STATE_DIR'] == os.path.join(area, 'state'))
+print('edits', [subprocess.run(git + ['show', 'HEAD:' + f], capture_output=True, text=True).stdout.strip() for f in ff.P2_EDIT_FILES])
+forms = ff.p2_forms('/x/flow-factory.sh', 'timeout')
+print('workers', sorted(f['form'] for f in forms.values() if f['kind'] == 'worker'))
+print('area', area)
+"
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_line "standin False"
+FP_ROOT='${CLAUDE_PLUGIN_ROOT}/hooks/scripts'
+e2e_expect_line "stop ['\"$FP_ROOT/factory-probe-hook.sh\" goal-stop \"$FP_ROOT/flow-goal-stop.sh\"', '$FP_ROOT/reply-style-check.sh']"
+e2e_expect_line "task ['\"$FP_ROOT/factory-probe-hook.sh\" task-completed \"$FP_ROOT/verify-task-completion.sh\"']"
+e2e_expect_line "end ['$FP_ROOT/session-end-learn.sh', '$FP_ROOT/session-end-state.sh', '\"$FP_ROOT/factory-probe-hook.sh\" event']"
+e2e_expect_line "mode block"
+e2e_expect_line "branch main"
+e2e_expect_line "tracked .flow/goals/factory-probe-p2.goal.yaml"
+e2e_expect_line "clean True"
+e2e_expect_line "goal active main [False]"
+e2e_expect_line "env ['FLOW_FACTORY_DIRECTIVE', 'FLOW_FACTORY_JOB', 'FLOW_STATE_DIR'] True"
+e2e_expect_line "edits ['original', 'original', 'original', 'original', 'original']"
+e2e_expect_line "workers ['await p2-await --max-seconds 100', 'context --mode']"
+FP_AREA=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^area //p')
+case "$FP_AREA" in "$E2E_ROOT"/*|"$E2E_ROOT_REAL"/*) FP_HAS=yes ;; *) FP_HAS=no ;; esac
+e2e_expect_equal "yes" "$FP_HAS" "the probe area is under the scratch root ($FP_AREA)"
+
+_flow_test_begin "platform: the copy's Stop hook blocks on P2's goal, with its counter under the probe area (R83, PL24)"
+_fp_runner_scenario fp-p2-r83 "the P2 copy's flow-goal-stop.sh, run in the setup's worktree with the setup's environment: a stop with stop_hook_active false gives {\"decision\":\"block\"}, then one with true blocks again; the counter in <area>/state/sessions/r83/stop-blocks.json reads 2, and the scratch HOME's flow-state has no counter"
+# Source: plan R83; flow-goal-stop.sh block mode (a criterion with no
+# verification_command blocks; the count rises while stop_hook_active is true).
+fe_py "$(_fp_p2_setup P2-1)
+env = dict(os.environ, CLAUDE_PLUGIN_ROOT=S['copy'], **S['env'])
+hook = os.path.join(S['copy'], 'hooks', 'scripts', 'flow-goal-stop.sh')
+for active in (False, True):
+    r = subprocess.run([hook], input=json.dumps({'session_id': 'r83', 'stop_hook_active': active}), cwd=S['work'], env=env, capture_output=True, text=True)
+    print('decision', r.returncode, json.loads(r.stdout)['decision'])
+print('count', json.load(open(os.path.join(area, 'state', 'sessions', 'r83', 'stop-blocks.json')))['count'])
+print('home', os.path.exists(os.path.join(os.environ['HOME'], '.claude', 'flow-state', 'sessions', 'r83')))
+"
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "decision 0 block
+decision 0 block
+count 2
+home False" "$E2E_OUT" "two blocks, the counter under the probe area"
+
+_flow_test_begin "platform: the recorder logs the Stop hook's block and approve, and tier-gate's reason (R87, PL25)"
+_fp_runner_scenario fp-p2-r87 "the real recorder around the copy's flow-goal-stop.sh, as the copy's Stop entry runs it, over four stops (stop_hook_active false, then true three times) logs block, block, block, approve; a hook that only prints {\"decision\":\"block\"} on a Stop is logged block, and on a TaskCompleted none; the copy's tier-gate entry, run with a person subcommand in the worker environment, logs deny with tier-gate's reason, and a command it does not decide logs reason null; entries of other labels have no reason field"
+# Source: plan R87, R97 (reason: null), B15 step 1 Copy (the Stop .decision
+# read; other events keep today's reading); flow-goal-stop.sh's cap of 3.
+printf '#!/bin/bash\ncat >/dev/null\necho %s\n' "'{\"decision\":\"block\"}'" > "$E2E_DIR/fake-block.sh"
+chmod +x "$E2E_DIR/fake-block.sh"
+fe_py "$(_fp_p2_setup P2-1)
+env = dict(os.environ, CLAUDE_PLUGIN_ROOT=S['copy'], **S['env'])
+c = json.load(open(os.path.join(S['copy'], 'hooks', 'hooks.json')))['hooks']
+def entry_cmd(event, word):
+    return next(h['command'] for e in c[event] for h in e['hooks'] if word in h['command']).replace('\${CLAUDE_PLUGIN_ROOT}', S['copy'])
+stop = entry_cmd('Stop', 'goal-stop')
+for active in (False, True, True, True):
+    subprocess.run(['bash', '-c', stop], input=json.dumps({'hook_event_name': 'Stop', 'session_id': 'r87', 'stop_hook_active': active}), cwd=S['work'], env=env, capture_output=True, text=True)
+rec = os.path.join(S['copy'], 'hooks', 'scripts', 'factory-probe-hook.sh')
+for event in ('Stop', 'TaskCompleted'):
+    subprocess.run([rec, 'goal-stop' if event == 'Stop' else 'task-completed', '$E2E_DIR/fake-block.sh'], input=json.dumps({'hook_event_name': event, 'session_id': 'r87'}), cwd=S['work'], env=env, capture_output=True, text=True)
+gate = entry_cmd('PreToolUse', 'tier-gate')
+for command in ('/x/flow-factory.sh cancel issue-1-j1', 'ls'):
+    subprocess.run(['bash', '-c', gate], input=json.dumps({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash', 'tool_input': {'command': command}, 'permission_mode': 'default', 'session_id': 'r87', 'cwd': S['work']}), cwd=S['work'], env=env, capture_output=True, text=True)
+for e in ff.read_jsonl(S['hook_log']):
+    r = e.get('reason', 'absent')
+    print(e['event'], e['label'], e['rc'], e['decision'], 'worker-deny' if isinstance(r, str) and 'a worker session may run only' in r else r)
+"
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "Stop goal-stop 0 block absent
+Stop goal-stop 0 block absent
+Stop goal-stop 0 block absent
+Stop goal-stop 0 approve absent
+Stop goal-stop 0 block absent
+TaskCompleted task-completed 0 none absent
+PreToolUse tier-gate 0 deny worker-deny
+PreToolUse tier-gate 0 none None" "$E2E_OUT" "the logged entries"
+
+# _fp_log <file> <event> <label> <rc:decision>... — recorder lines, one per
+# rc:decision pair, in the recorder's line format.
+_fp_log() {
+  local f="$1" ev="$2" label="$3" x
+  shift 3
+  for x in "$@"; do
+    printf '{"event": "%s", "label": "%s", "command": null, "rc": %s, "decision": "%s"}\n' "$ev" "$label" "${x%%:*}" "${x#*:}" >> "$f"
+  done
+}
+# _fp_has <text> <part> — yes when the text holds the part, else no.
+_fp_has() { case "$1" in *"$2"*) echo yes ;; *) echo no ;; esac; }
+# _fp_count <python expression over entries E> — print the expression.
+_fp_count() {
+  fe_py "import _flow_factory as ff
+E = ff.read_jsonl('$E2E_DIR/log.jsonl')
+p = $1
+print(p['result'] + ' | ' + p['reason'])"
+}
+
+_flow_test_begin "platform: stop_caps counts the goal-stop entries against the cap (PL26, R82)"
+_fp_runner_scenario fp-p2-stop-caps "recorded P2 logs: 3 blocks then an approve is go; 4 blocks then an approve is no-go, and go with a cap of 4; 2 blocks with no final approve in a run that ended by itself is no-go; the same in a run ended by its cost limit, turn limit or timeout is not_run naming the limit; 4 blocks in such a run is no-go; a single approve and no block is not_run, and go once the Stop fallback is present; blocks logged by another label are not counted"
+# Source: plan B15 step 1 Counting (stop_caps, in its order), R82;
+# flow.goals.failAfterStuckTurns default 3.
+FP_L="$E2E_DIR/log.jsonl"
+rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:block 0:block 0:block 0:approve; _fp_log "$FP_L" SessionEnd event 0:none
+_fp_count 'ff.p2_stop_caps(E, None, 3, False)'
+e2e_expect_out "go | "
+e2e_expect_no_out "no-go"
+rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:block 0:block 0:block 0:block 0:approve
+_fp_count 'ff.p2_stop_caps(E, None, 3, False)'
+e2e_expect_out "no-go | "
+_fp_count 'ff.p2_stop_caps(E, None, 4, False)'
+e2e_expect_equal "go" "${E2E_OUT%% | *}" "4 blocks with a cap of 4"
+rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:block 0:block
+_fp_count 'ff.p2_stop_caps(E, None, 3, False)'
+e2e_expect_equal "no-go" "${E2E_OUT%% | *}" "2 blocks, ended by itself"
+for FP_LIMIT in "cost limit" "turn limit" "timeout"; do
+  _fp_count "ff.p2_stop_caps(E, '$FP_LIMIT', 3, False)"
+  e2e_expect_equal "not_run yes" "${E2E_OUT%% | *} $(_fp_has "$E2E_OUT" "$FP_LIMIT")" "2 blocks, ended by its $FP_LIMIT"
+done
+rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:block 0:block 0:block 0:block
+_fp_count "ff.p2_stop_caps(E, 'cost limit', 3, False)"
+e2e_expect_equal "no-go" "${E2E_OUT%% | *}" "4 blocks, ended by its cost limit"
+rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:approve; _fp_log "$FP_L" Stop event 0:block 0:block
+_fp_count 'ff.p2_stop_caps(E, None, 3, False)'
+e2e_expect_equal "not_run" "${E2E_OUT%% | *}" "one approve and no goal-stop block"
+_fp_count 'ff.p2_stop_caps(E, None, 3, True)'
+e2e_expect_equal "go" "${E2E_OUT%% | *}" "one approve and no block, with the fallback"
+fe_py "import _flow_factory as ff
+for run in ({'outcome': 'completed'}, {'outcome': 'timeout'}, {'outcome': 'error', 'result_event': {'subtype': 'error_max_turns'}},
+            {'outcome': 'error', 'result_event': {'subtype': 'error_max_budget_usd'}}, {'outcome': 'error', 'result_event': {'subtype': 'error_during_execution'}}, {'outcome': 'killed'}):
+    print(ff.p2_run_limit(run))"
+e2e_expect_equal "None
+timeout
+turn limit
+cost limit
+None
+None" "$E2E_OUT" "the limit each run outcome names"
+
+_flow_test_begin "platform: task_completed_refusals counts the task-completed refusals (PL26)"
+_fp_runner_scenario fp-p2-task-refusals "recorded P2 logs: 5 TaskCompleted entries with 3 refusals is go; with 4 refusals no-go; 2 entries not_run; 5 entries with no refusal not_run with reason no_refusal, and go once the TaskCompleted fallback is present; exit 2 under another label is not a refusal"
+# Source: plan B15 step 1 Counting (task_completed_refusals, in its order);
+# design probes P2 go_condition ("refuses at most 3 times per stage").
+FP_L="$E2E_DIR/log.jsonl"
+rm -f "$FP_L"; _fp_log "$FP_L" TaskCompleted task-completed 2:deny 2:deny 2:deny 0:none 0:none
+_fp_count 'ff.p2_task_completed_refusals(E, False)'
+e2e_expect_equal "go" "${E2E_OUT%% | *}" "5 entries, 3 refusals"
+rm -f "$FP_L"; _fp_log "$FP_L" TaskCompleted task-completed 2:deny 2:deny 2:deny 2:deny 0:none
+_fp_count 'ff.p2_task_completed_refusals(E, False)'
+e2e_expect_equal "no-go" "${E2E_OUT%% | *}" "5 entries, 4 refusals"
+rm -f "$FP_L"; _fp_log "$FP_L" TaskCompleted task-completed 2:deny 0:none; _fp_log "$FP_L" TaskCompleted event 0:none 0:none 0:none
+_fp_count 'ff.p2_task_completed_refusals(E, False)'
+e2e_expect_equal "not_run" "${E2E_OUT%% | *}" "2 task-completed entries"
+rm -f "$FP_L"; _fp_log "$FP_L" TaskCompleted task-completed 0:none 0:none 0:none 0:none 0:none; _fp_log "$FP_L" TaskCompleted event 2:deny
+_fp_count 'ff.p2_task_completed_refusals(E, False)'
+e2e_expect_equal "not_run yes" "${E2E_OUT%% | *} $(_fp_has "$E2E_OUT" "| no_refusal")" "5 entries, no refusal"
+_fp_count 'ff.p2_task_completed_refusals(E, True)'
+e2e_expect_equal "go" "${E2E_OUT%% | *}" "5 entries, no refusal, with the fallback"
+
+_flow_test_begin "platform: P2 is charged \$1.50 against the cap (R66)"
+_fp_platform_scenario fp-p2-r66 "with \$28.50 spent of \$30, P2 runs (28.50 + 1.50 is not over 30); with \$28.51 spent, P2 is not_run with reason budget and claude never starts"
+# Source: plan R66, Q6; would_pass_cap ("over" is strictly greater).
+FP_PID=P2
+_fp_p2_turn_cost
+mkdir -p "$E2E_REPO/.flow/factory"
+_fp_record "$E2E_REPO/$FP_REC" 'd["spend"].update(spent_usd=28.5, cap_usd=30)'
+_fp_platform_run -- --only P2
+e2e_expect_equal "0 1" "$E2E_RC $(_fp_launches)" "exit status and claude -p starts at \$28.50"
+e2e_expect_equal "no" "$([ "$(_fp_p 'p["reason"]')" = budget ] && echo yes || echo no)" "P2 not refused for budget at \$28.50"
+: > "$E2E_BIN/claude-launches.log"
+_fp_record "$E2E_REPO/$FP_REC" 'd["spend"].update(spent_usd=28.51, cap_usd=30)'
+_fp_platform_run -- --only P2
+e2e_expect_equal "0 0" "$E2E_RC $(_fp_launches)" "exit status and claude -p starts at \$28.51"
+e2e_expect_equal "not_run budget" "$(_fp_p '"%s %s" % (p["result"], p["reason"])')" "P2 at \$28.51"
 
 _flow_test_begin "platform: P1 runs the four commands with a gh stand-in in the default worker area (PL6, PL7)"
 _fp_platform_scenario fp-plat-p1 "P1 runs /flow:start 1, /flow:pr, /flow:review 1 and /flow:address 1 and a write run: each command's probe block output reaches the first turn, writes land in the worktree and the io directory, no GitHub write is made, and P1 is deferred to phase 1d"
@@ -3802,26 +4078,26 @@ e2e_expect_out "INTERACTIVE_STEP=1 "
 e2e_expect_out " --permission-mode default --model claude-opus-5-5"
 e2e_expect_out "--step wait"
 e2e_expect_out "--step woke"
-e2e_expect_out "--step p14"
+e2e_expect_no_out "--step p14"
 e2e_expect_out "--step record"
 FP_COPY=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_PLUGIN=//p')
 FP_HAS=no
 case "$FP_COPY" in "$(cd "$E2E_DIR" && pwd -P)/state/flow-factory/probe/P9-"*) FP_HAS=yes ;; esac
 e2e_expect_equal "yes" "$FP_HAS" "the capture plugin is under XDG_STATE_HOME/flow-factory/probe ($FP_COPY)"
-e2e_expect_equal "PreToolUse UserPromptSubmit" "$(_fp_get "$FP_COPY/hooks/hooks.json" '" ".join(sorted(d["hooks"]))')" "the capture plugin's hook events"
+e2e_expect_equal "PostToolUse PostToolUseFailure PreToolUse UserPromptSubmit" "$(_fp_get "$FP_COPY/hooks/hooks.json" '" ".join(sorted(d["hooks"]))')" "the capture plugin's hook events"
 e2e_expect_equal "no" "$([ -e "$E2E_REPO/$FP_REC" ] && echo yes || echo no)" "a record was written"
 
-_flow_test_begin "interactive: P9 records the permission mode and a wake, in each mode, deferred to phase 1 (I4, I5, I18)"
-_fp_runner_scenario fp-int-p9 "a default-mode session: its hook input carries permission_mode and the background wait wakes it with no prompt between, so both parts are go; P9 is deferred to 1b; a second session in auto mode adds its parts and keeps the default ones"
+_flow_test_begin "interactive: P9 records the permission mode and a wake, in each mode (I4, I5, I18)"
+_fp_runner_scenario fp-int-p9 "a default-mode session: its hook input carries permission_mode and the background wait wakes it with no prompt between, so both parts are go; with no tier-gate entry for the person commands, tier_gate_by_mode and P9 are not_run; a second session in auto mode adds its parts and keeps the default ones"
 _fp_int --mode default
 FP_COPY=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_PLUGIN=//p')
 _fp_session default
 _fp_int --step record
 e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
 e2e_expect_out "PROBE_INTERACTIVE="
-e2e_expect_equal '{"background_wake_default": "go", "executor": "deferred", "hook_mode_default": "go", "tier_gate_by_mode": "deferred"}' "$(_fp_parts P9)" "every P9 part"
-e2e_expect_equal "deferred synaptiai/synapti-marketplace#355" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["probes"]["P9"]["result"], d["probes"]["P9"].get("deferred_to"))')" "P9 result and deferred_to"
-e2e_expect_equal "synaptiai/synapti-marketplace#355 synaptiai/synapti-marketplace#356" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["probes"]["P9"]["parts"]["tier_gate_by_mode"]["deferred_to"], d["probes"]["P9"]["parts"]["executor"]["deferred_to"])')" "each deferred part's issue"
+e2e_expect_equal '{"background_wake_default": "go", "executor": "deferred", "hook_mode_default": "go", "tier_gate_by_mode": "not_run"}' "$(_fp_parts P9)" "every P9 part"
+e2e_expect_equal "not_run None" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["probes"]["P9"]["result"], d["probes"]["P9"].get("deferred_to"))')" "P9 result and deferred_to: no tier-gate entry was logged for the person commands"
+e2e_expect_equal "none synaptiai/synapti-marketplace#356" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["probes"]["P9"]["parts"]["tier_gate_by_mode"].get("deferred_to", "none"), d["probes"]["P9"]["parts"]["executor"]["deferred_to"])')" "each deferred part's issue"
 e2e_expect_equal "interactive" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["group"]')" "P9 group"
 e2e_expect_equal "default" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["groups"]["interactive"]["keyed_on"]["permission_modes"]')" "keyed_on permission_modes"
 e2e_expect_equal "evidence/P9-1 none" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["probes"]["P9"]["evidence"], d["probes"]["P9"].get("evidence_history", "none"))')" "P9 evidence and earlier folders after one session"
@@ -3833,7 +4109,7 @@ _fp_int --mode auto
 FP_COPY=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_PLUGIN=//p')
 _fp_session auto
 _fp_int --step record
-e2e_expect_equal '{"background_wake_auto": "go", "background_wake_default": "go", "executor": "deferred", "hook_mode_auto": "go", "hook_mode_default": "go", "tier_gate_by_mode": "deferred"}' "$(_fp_parts P9)" "P9 parts after both modes"
+e2e_expect_equal '{"background_wake_auto": "go", "background_wake_default": "go", "executor": "deferred", "hook_mode_auto": "go", "hook_mode_default": "go", "tier_gate_by_mode": "not_run"}' "$(_fp_parts P9)" "P9 parts after both modes"
 e2e_expect_equal "auto,default" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["groups"]["interactive"]["keyed_on"]["permission_modes"]')" "keyed_on permission_modes after both"
 e2e_expect_equal "evidence/P9-2 ['evidence/P9-1']" "$(_fp_get "$E2E_REPO/$FP_REC" '"%s %s" % (d["probes"]["P9"]["evidence"], d["probes"]["P9"].get("evidence_history", "none"))')" "P9 evidence and earlier folders after the second session (its default parts came from the first)"
 e2e_describe "recording the auto session again lists neither its own folder nor the first one twice"
@@ -4417,7 +4693,10 @@ _fp_p14_scenario fp-int-p14-model "$FP_D" 0.01
 : > "$E2E_BIN/claude-no-events"
 _fp_int --step setup --mode default --model claude-sonnet-5-5
 e2e_expect_equal "0" "$E2E_RC" "exit status of the setup ($E2E_OUT $E2E_ERR)"
-e2e_expect_out "--step p14 --model claude-sonnet-5-5 "
+# The session steps leave the p14 step out (plan B15 step 3); the next
+# setup they name keeps the model.
+e2e_expect_out "--mode auto --model claude-sonnet-5-5"
+e2e_expect_no_out "--step p14"
 _fp_int --step p14 --poll-seconds 2 --hold-seconds 4 --model claude-sonnet-5-5
 e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
 e2e_expect_equal "1 0" "$(grep -c -- '--model claude-sonnet-5-5\( \|$\)' "$E2E_BIN/claude-launches.log") $(grep -c -- \
@@ -5723,6 +6002,226 @@ e2e_expect_equal "0" "$E2E_RC" "exit status of the run with the copy ($E2E_OUT $
 e2e_expect_equal "no-go yes" "$(_fp_p '(lambda c: "%s %s" % (c["result"], "yes"
   if "increase in the session" in (p.get("fallback") or "") and "total_cost_usd since the run before" in (p.get("fallback") or "") else p.get("fallback")))(p["parts"]["engine_charge"])')" \
   "engine_charge and P5's fallback"
+
+# P9 after phase 1b, and the probe warning.
+#
+# Ways it can be wrong, written down before the checks:
+#   I23 the setup leaves no probe intent status --intent can show, or a flow
+#       copy whose tier-gate is not logged or whose engine is a canary, so a
+#       yes never reaches the real engine; or the capture plugin cannot see
+#       whether a command ran
+#   I24 tier_gate_by_mode is go on an ask that does not show the command's
+#       arguments, on an allow, or on a deny after which the command still
+#       ran; or go with one mode's sessions missing
+#   W5  the probe warning is missing when tiers.issueUpdate resolves to
+#       confirm, prints with journal, or reads an unresolved base ref as
+#       confirm
+
+_flow_test_begin "interactive: P9 setup records a probe intent and a logged flow copy (I23)"
+_fp_runner_scenario fp-int-setup-1b "probe --interactive --mode default with a probe record: setup prints INTERACTIVE_INTENT=probe-p9-1 and INTERACTIVE_FLOW, the session start names both --plugin-dir values, the confirm and approve-spec steps give the command by full path as the whole command; status --intent probe-p9-1 prints the intent; the flow copy's Bash tier-gate runs inside the recorder logging to the session's tier-gate.jsonl, and its flow-factory.sh and _flow_factory.py are the plugin's own; the capture plugin has PostToolUse and PostToolUseFailure entries for Bash; and a PostToolUseFailure input whose error holds INTENT_PROBE is captured with engine INTENT_PROBE and only the fields event, tool, command, at and engine"
+# Source: plan B15 step 3 and test plan (P9 setup); plan 2.2 probe intent and
+# lookup rule; journal wave 4 (a person call is asked only as the whole command).
+fe_record
+_fp_int --mode default
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_line "INTERACTIVE_INTENT=probe-p9-1"
+FP_COPY=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_PLUGIN=//p')
+FP_FLOW=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_FLOW=//p')
+FP_P9=$(dirname "$FP_COPY")
+e2e_expect_equal "$FP_P9/flow" "$FP_FLOW" "the flow copy is in the P9 probe folder"
+case "$FP_P9" in "$E2E_ROOT"/*|"$E2E_ROOT_REAL"/*) FP_HAS=yes ;; *) FP_HAS=no ;; esac
+e2e_expect_equal "yes" "$FP_HAS" "the P9 probe folder is under the scratch root ($FP_P9)"
+FP_FF="$E2E_ACTIVE_PLUGIN/bin/flow-factory.sh"
+e2e_expect_out "--plugin-dir $FP_COPY --plugin-dir $FP_FLOW --permission-mode default"
+e2e_expect_out ": $FP_FF confirm probe-p9-1"
+e2e_expect_out ": $FP_FF approve-spec issue-999999-j1 --spec-hash 0123456789ab"
+e2e_expect_no_out "--step p14"
+FP_EV=$(_fp_get "$E2E_REPO/.flow/factory/interactive.json" 'd["evidence"]')
+e2e_expect_equal "yes" "$(_fp_get "$FP_FLOW/hooks/hooks.json" '"yes" if any("factory-probe-hook.sh\" tier-gate" in h["command"] and "/tier-gate.sh" in h["command"] and "'"$E2E_REPO/.flow/factory/$FP_EV/tier-gate.jsonl"'" in open("'"$FP_FLOW"'/hooks/scripts/factory-probe-hook.sh").read() for e in d["hooks"]["PreToolUse"] if e.get("matcher") == "Bash" for h in e["hooks"]) else "no"')" "the copy's tier-gate runs in the recorder, logging to the session's tier-gate.jsonl"
+e2e_expect_equal "$(cksum < "$E2E_ACTIVE_PLUGIN/bin/flow-factory.sh") $(cksum < "$E2E_ACTIVE_PLUGIN/bin/_flow_factory.py")" \
+  "$(cksum < "$FP_FLOW/bin/flow-factory.sh") $(cksum < "$FP_FLOW/bin/_flow_factory.py")" "the copy's engine files are the plugin's own"
+e2e_expect_equal "Bash Bash" "$(_fp_get "$FP_COPY/hooks/hooks.json" '"%s %s" % (d["hooks"]["PostToolUse"][0]["matcher"], d["hooks"]["PostToolUseFailure"][0]["matcher"])')" "the capture plugin's PostToolUse and PostToolUseFailure matchers"
+e2e_run_bin XDG_STATE_HOME="$E2E_DIR/state" bin/flow-factory.sh status --intent probe-p9-1
+e2e_expect_equal "0" "$E2E_RC" "status --intent exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_line "INTENT id=probe-p9-1 job=probe key=issueUpdate sha256=$(jq -r .sha256 "$FP_P9/events.jsonl")"
+_fp_capture "$FP_COPY" PostToolUseFailure "$(python3 -c 'import json, sys
+print(json.dumps({"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "permission_mode": "default",
+                  "tool_input": {"command": sys.argv[1]}, "error": "Exit code 3\nINTENT_PROBE=probe-p9-1"}))' "$FP_FF confirm probe-p9-1")"
+e2e_expect_equal '["at", "command", "engine", "event", "tool"] INTENT_PROBE' \
+  "$(python3 -c 'import json, sys; e = [json.loads(l) for l in open(sys.argv[1])][-1]; print(json.dumps(sorted(e)), e["engine"])' "$E2E_REPO/.flow/factory/$FP_EV/hooks.jsonl")" "the captured entry"
+
+# _fp_p9_round <mode> <confirm> <approve> — one P9 session: setup, the
+# tier-gate entries the flow copy's recorder would log for the confirm and
+# approve-spec calls, the capture of what ran after them, the wait and woke
+# steps, and the record. Each of <confirm> and <approve> is
+# <decision>:<reason>:<engine event>:<engine word>, with - for none: decision
+# ask, allow or deny (- no entry); reason full, short (the confirm's without
+# the intent's sha256, the approve's without the spec hash) or nospec (the
+# approve's without "spec file: none recorded"); engine event PostToolUse or
+# PostToolUseFailure.
+_fp_p9_round() {
+  local mode="$1"
+  _fp_int --mode "$mode"
+  FP_COPY=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_PLUGIN=//p')
+  local p9 id ev sha ff="$E2E_ACTIVE_PLUGIN/bin/flow-factory.sh"
+  p9=$(dirname "$FP_COPY"); id="probe-p9-${p9##*-}"
+  ev="$E2E_REPO/.flow/factory/$(_fp_get "$E2E_REPO/.flow/factory/interactive.json" 'd["evidence"]')"
+  sha=$(jq -r .sha256 "$p9/events.jsonl")
+  python3 - "$ev/tier-gate.jsonl" "$ff confirm $id" "$2" "$id" "$sha" "$ff approve-spec issue-999999-j1 --spec-hash 0123456789ab" "$3" <<'PY'
+import json, sys
+log, ccmd, cspec, iid, sha, acmd, aspec = sys.argv[1:8]
+reasons = {"confirm": {"full": f"Flow factory: confirm asks.\nINTENT id={iid} job=probe key=issueUpdate sha256={sha}",
+                       "short": f"Flow factory: confirm asks.\nINTENT id={iid} job=probe key=issueUpdate"},
+           "approve": {"full": "Flow factory: approve-spec issue-999999-j1 --spec-hash 0123456789ab; spec file: none recorded",
+                       "short": "Flow factory: approve-spec issue-999999-j1; spec file: none recorded",
+                       "nospec": "Flow factory: approve-spec issue-999999-j1 --spec-hash 0123456789ab"}}
+with open(log, "a") as f:
+    for which, cmd, spec in (("confirm", ccmd, cspec), ("approve", acmd, aspec)):
+        decision, reason = spec.split(":")[:2]
+        if decision == "-":
+            continue
+        f.write(json.dumps({"event": "PreToolUse", "label": "tier-gate", "command": cmd, "rc": 0, "decision": decision,
+                            "reason": reasons[which][reason] if reason != "-" else None}) + "\n")
+PY
+  local which cmd spec event word
+  for which in confirm approve; do
+    if [ "$which" = confirm ]; then cmd="$ff confirm $id"; spec="$2"; else cmd="$ff approve-spec issue-999999-j1 --spec-hash 0123456789ab"; spec="$3"; fi
+    event=$(printf '%s' "$spec" | cut -d: -f3); word=$(printf '%s' "$spec" | cut -d: -f4)
+    [ "$event" = - ] && continue
+    _fp_capture "$FP_COPY" "$event" "$(python3 -c 'import json, sys
+d = {"hook_event_name": sys.argv[1], "tool_name": "Bash", "permission_mode": sys.argv[4], "tool_input": {"command": sys.argv[2]}}
+if sys.argv[1] == "PostToolUseFailure":
+    d["error"] = "Exit code 3\n" + sys.argv[3] + "=x"
+else:
+    d["tool_response"] = {"stdout": sys.argv[3] + "=x", "stderr": ""}
+print(json.dumps(d))' "$event" "$cmd" "$word" "$mode")"
+  done
+  _fp_session "$mode"
+  _fp_int --step record
+}
+
+_flow_test_begin "interactive: tier_gate_by_mode is go only with an ask showing the arguments in default mode and a deny in auto mode (I24, R97)"
+_fp_runner_scenario fp-int-p9-tier-gate "a default session whose tier-gate asks on confirm with the intent's sha256 and on approve-spec with the spec hash and spec file: none recorded, each then reaching the engine (INTENT_PROBE, FACTORY_REFUSED): the part is not_run until an auto session is recorded; an auto session whose tier-gate denies both and neither reaches the engine makes it go"
+# Source: plan B15 step 3 part rule and test plan; design probes P9 go_condition.
+_fp_p9_round default 'ask:full:PostToolUseFailure:INTENT_PROBE' 'ask:full:PostToolUseFailure:FACTORY_REFUSED'
+e2e_expect_equal "0" "$E2E_RC" "record exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "not_run" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "after the default session alone"
+_fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
+e2e_expect_equal "go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "after both sessions"
+e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
+
+_flow_test_begin "interactive: tier_gate_by_mode is no-go for an ask without the arguments, an allow, or a deny that still ran (I24, R97)"
+_fp_runner_scenario fp-int-p9-tier-gate-nogo "with an auto session recorded go: a default session whose confirm ask lacks the intent's sha256 is no-go; whose approve-spec ask lacks the spec hash, or lacks spec file: none recorded, is no-go; whose tier-gate allows is no-go; with no tier-gate entry for a command it is not_run; then, with a default session recorded go, an auto session that denies but whose command still reached the engine is no-go"
+# Source: plan B15 step 3 part rule; R97; design probes P9 ("shows the command
+# with its arguments").
+_fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
+for FP_CASE in 'ask:short:PostToolUseFailure:INTENT_PROBE|ask:full:PostToolUseFailure:FACTORY_REFUSED|no-go|confirm ask without the sha256' \
+               'ask:full:PostToolUseFailure:INTENT_PROBE|ask:short:PostToolUseFailure:FACTORY_REFUSED|no-go|approve-spec ask without the spec hash' \
+               'ask:full:PostToolUseFailure:INTENT_PROBE|ask:nospec:PostToolUseFailure:FACTORY_REFUSED|no-go|approve-spec ask without spec file: none recorded' \
+               'allow:-:PostToolUse:INTENT_PROBE|ask:full:PostToolUseFailure:FACTORY_REFUSED|no-go|confirm allowed' \
+               '-:-:-:-|ask:full:PostToolUseFailure:FACTORY_REFUSED|not_run|no tier-gate entry for confirm' \
+               'ask:full:PostToolUseFailure:INTENT_PROBE|ask:full:PostToolUseFailure:FACTORY_REFUSED|go|both asks show their arguments'; do
+  IFS='|' read -r FP_C FP_A FP_WANT FP_WHAT <<< "$FP_CASE"
+  _fp_p9_round default "$FP_C" "$FP_A"
+  e2e_expect_equal "$FP_WANT" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "$FP_WHAT"
+done
+_fp_p9_round auto 'deny:-:-:-' 'deny:-:PostToolUse:FACTORY_REFUSED'
+e2e_expect_equal "no-go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "an auto deny whose command still reached the engine"
+e2e_expect_equal "yes" "$(_fp_get "$E2E_REPO/$FP_REC" '"yes" if "tier-gate denies the always-ask subcommands in every session" in d["probes"]["P9"].get("fallback", "") else d["probes"]["P9"].get("fallback")')" "P9's fallback for a tier_gate_by_mode no-go"
+e2e_run_bin bin/flow-factory.sh probe --verify-record "$E2E_REPO/$FP_REC" --dispositions
+e2e_expect_equal "" "$(printf '%s\n' "$E2E_OUT" | grep -E '^PROBES_CHECK_FAIL=.* P9( |$)')" "record check findings about P9 (the record holds no other probe)"
+
+# _fp_real_gate <flow copy> <mode> <command> — run the flow copy's Bash
+# PreToolUse entry that wraps tier-gate, as Claude Code runs it in the
+# scratch repository, with that permission mode and command.
+_fp_real_gate() {
+  (cd "$E2E_REPO" && env -u FLOW_FACTORY_JOB -u FLOW_FACTORY_DIRECTIVE -u FLOW_FACTORY_IO -u FLOW_FACTORY_MAIN \
+    CLAUDE_PLUGIN_ROOT="$1" XDG_STATE_HOME="$E2E_DIR/state" PATH="$E2E_BIN:$PATH" python3 - "$1" "$2" "$3" "$E2E_REPO" <<'PY'
+import json, subprocess, sys
+root, mode, command, repo = sys.argv[1:5]
+conf = json.load(open(root + "/hooks/hooks.json", encoding="utf-8"))
+cmd = next(h["command"] for e in conf["hooks"]["PreToolUse"] if e.get("matcher") == "Bash"
+           for h in e["hooks"] if "factory-probe-hook.sh" in h["command"]).replace("${CLAUDE_PLUGIN_ROOT}", root)
+data = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command},
+        "permission_mode": mode, "session_id": "p9-real", "cwd": repo}
+r = subprocess.run(["bash", "-c", cmd], input=json.dumps(data), text=True, capture_output=True)
+sys.exit(r.returncode)
+PY
+  ) || _flow_assert_fail "$E2E_NAME: the flow copy's tier-gate entry did not run"
+}
+
+_flow_test_begin "interactive: the flow copy's real tier-gate asks with the arguments in default mode and denies in auto mode (I24, R97)"
+_fp_runner_scenario fp-int-p9-real-gate "with a probe record, each session's setup, then the flow copy's own recorder around tier-gate run on the two printed commands: in default mode both are logged ask, the confirm's reason holding the probe intent's sha256 and the approve-spec's holding 0123456789ab and spec file: none recorded; after the engine's answers are captured and the session recorded, the part is not_run; in auto mode both are logged deny, and the part is go"
+# Source: plan B15 step 3 part rule, R97; plan 2.4 rule 2 (the ask texts);
+# journal wave 4 (the whole command is asked).
+fe_record
+FP_FF="$E2E_ACTIVE_PLUGIN/bin/flow-factory.sh"
+for FP_MODE in default auto; do
+  _fp_int --mode "$FP_MODE"
+  FP_COPY=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_PLUGIN=//p')
+  FP_FLOW=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_FLOW=//p')
+  FP_ID=$(printf '%s\n' "$E2E_OUT" | sed -n 's/^INTERACTIVE_INTENT=//p')
+  FP_SHA=$(jq -r .sha256 "$(dirname "$FP_COPY")/events.jsonl")
+  FP_EV="$E2E_REPO/.flow/factory/$(_fp_get "$E2E_REPO/.flow/factory/interactive.json" 'd["evidence"]')"
+  _fp_real_gate "$FP_FLOW" "$FP_MODE" "$FP_FF confirm $FP_ID"
+  _fp_real_gate "$FP_FLOW" "$FP_MODE" "$FP_FF approve-spec issue-999999-j1 --spec-hash 0123456789ab"
+  if [ "$FP_MODE" = default ]; then FP_WANT="ask yes
+ask yes"; else FP_WANT="deny
+deny"; fi
+  e2e_expect_equal "$FP_WANT" "$(FP_SHA="$FP_SHA" python3 -c 'import json, os, sys
+for l in open(sys.argv[1]):
+    e = json.loads(l)
+    r = e.get("reason") or ""
+    want = [os.environ["FP_SHA"]] if " confirm " in e["command"] else ["0123456789ab", "spec file: none recorded"]
+    print(e["decision"], "yes" if all(w in r for w in want) else "no") if e["decision"] == "ask" else print(e["decision"])' "$FP_EV/tier-gate.jsonl")" "$FP_MODE mode: tier-gate's logged decisions and whether each reason shows the arguments"
+  if [ "$FP_MODE" = default ]; then
+    for FP_C in "$FP_FF confirm $FP_ID|INTENT_PROBE" "$FP_FF approve-spec issue-999999-j1 --spec-hash 0123456789ab|FACTORY_REFUSED"; do
+      _fp_capture "$FP_COPY" PostToolUseFailure "$(python3 -c 'import json, sys
+print(json.dumps({"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "tool_input": {"command": sys.argv[1]},
+                  "error": "Exit code 3\n" + sys.argv[2] + "=x"}))' "${FP_C%|*}" "${FP_C#*|}")"
+    done
+  fi
+  _fp_session "$FP_MODE"
+  _fp_int --step record
+  e2e_expect_equal "0" "$E2E_RC" "$FP_MODE record exit status ($E2E_OUT $E2E_ERR)"
+done
+e2e_expect_equal "go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "after both sessions"
+
+# _fp_warn_run [NAME=value ...] — probe --interactive --mode default.
+_fp_warn_run() {
+  e2e_run_bin XDG_STATE_HOME="$E2E_DIR/state" "$@" bin/flow-factory.sh probe --interactive --mode default
+}
+FP_WARN_CONFIRM="WARN tiers.issueUpdate=confirm: the engine's comments and labels wait in the outbox as PENDING_CONFIRM until confirmed in a terminal or the key changes"
+
+_flow_test_begin "probe: the issueUpdate warning prints when the key resolves to confirm (W5)"
+_fp_runner_scenario fp-warn-issue-update "with origin/HEAD resolving: tiers.issueUpdate confirm in the user file prints the confirm warning as the first line, and journal prints no warning; with no origin/HEAD: journal prints the base ref unresolved line, and confirm in the user file prints the confirm line instead; a project file on origin's main with confirm prints the confirm line although the user file says journal"
+# Source: plan 2.3 probe row (both texts, and when each prints), B15 step 4.
+fe_origin_local
+printf '{"tiers": {"issueUpdate": "confirm"}}\n' > "$E2E_DIR/user-confirm.json"
+printf '{"tiers": {"issueUpdate": "journal"}}\n' > "$E2E_DIR/user-journal.json"
+_fp_warn_run FLOW_USER_SETTINGS="$E2E_DIR/user-confirm.json"
+e2e_expect_equal "0" "$E2E_RC" "exit status ($E2E_OUT $E2E_ERR)"
+e2e_expect_equal "$FP_WARN_CONFIRM" "$(printf '%s\n' "$E2E_OUT" | sed -n 1p)" "the first line with confirm in the user file"
+e2e_expect_line "INTERACTIVE_MODE=default"
+_fp_warn_run FLOW_USER_SETTINGS="$E2E_DIR/user-journal.json"
+e2e_expect_equal "0" "$E2E_RC" "exit status with journal"
+e2e_expect_no_out "WARN tiers.issueUpdate"
+e2e_describe "the same without origin/HEAD"
+(cd "$E2E_REPO" && git remote set-head origin --delete)
+_fp_warn_run FLOW_USER_SETTINGS="$E2E_DIR/user-journal.json"
+e2e_expect_line "WARN tiers.issueUpdate: base ref unresolved (refs/remotes/origin/HEAD); run git remote set-head origin --auto to check the project setting"
+e2e_expect_no_out "$FP_WARN_CONFIRM"
+_fp_warn_run FLOW_USER_SETTINGS="$E2E_DIR/user-confirm.json"
+e2e_expect_line "$FP_WARN_CONFIRM"
+e2e_expect_no_out "base ref unresolved"
+e2e_describe "a project file on origin's main sets confirm"
+(cd "$E2E_REPO" && mkdir -p .claude && printf '{"tiers": {"issueUpdate": "confirm"}}\n' > .claude/settings.flow.json \
+  && git add .claude/settings.flow.json && git -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m project) \
+  || _flow_assert_fail "$E2E_NAME: could not commit the project file"
+fe_origin_local
+(cd "$E2E_REPO" && git rm -q .claude/settings.flow.json && git -c user.email=e2e@example.invalid -c user.name=e2e commit -q -m local)
+_fp_warn_run FLOW_USER_SETTINGS="$E2E_DIR/user-journal.json"
+e2e_expect_line "$FP_WARN_CONFIRM"
 
 _flow_test_begin "platform: the plugin's own hooks are unchanged by every platform scenario (PL11)"
 e2e_new fp-plat-hooks-unchanged
