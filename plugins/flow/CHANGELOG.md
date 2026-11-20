@@ -47,22 +47,25 @@ settings cannot turn it on.
 - A new tier setting, `tiers.issueUpdate` (default `journal`), covers writes
   to an issue or pull request that already exists: comments, reviews,
   labels, closing an issue or pull request, reopening an issue, marking a
-  pull request ready, and edits of its body, title or reviewers, by gh command, `gh api` or GraphQL
-  (#355). Before, these ran with no tier setting. `/flow:review` and
-  `/flow:address` post this way, so their reviews, comments and replies
-  now write a breadcrumb by default; set to `confirm`, they ask, and are
-  refused in `claude -p` (eval runs and triggers). A command that assigns
-  and labels counts under both `issueAssign` and `issueUpdate`.
+  pull request ready, and edits of its body, title or reviewers, by gh
+  command, `gh api` or GraphQL (#355). Before, these ran with no tier
+  setting. `/flow:review` and `/flow:address` post this way, so their
+  reviews, comments and replies now write a breadcrumb by default; set to
+  `confirm`, they ask, and are refused in `claude -p` (eval runs and
+  triggers). A command that assigns and labels counts under both
+  `issueAssign` and `issueUpdate`.
 - In a repository where the flow factory runs, `tier-gate.sh` applies the
   factory's own rules (#355). It asks before a person subcommand of
   `flow-factory.sh` in the default permission mode and denies it in any
-  other mode, or when it is not the whole command; it lets a worker run
-  only `context --mode` and `await`; and it denies commands that name the
-  factory folder and, while the factory is enabled, comments that name
-  `/flow-factory`. The factory's engine resolves each tier key as the
-  strictest of four sources rather than the first, and counts a base branch
-  it cannot fetch as `confirm`. `references/three-tier-safety.md` describes
-  both.
+  other mode, or when it is not the whole command; it lets a worker run only
+  `context --mode` and `await`; and it denies commands that name the factory
+  folder and, while the factory is enabled, comments that name
+  `/flow-factory`. A program running as you can still post such a comment
+  with your GitHub token, and the engine counts it as yours; the worker
+  sandbox that keeps the token from workers comes later. The factory's
+  engine resolves each tier key as the strictest of four sources rather than
+  the first, and counts a base branch it cannot fetch as `confirm`.
+  `references/three-tier-safety.md` describes both.
 - `flow-factory.sh` subcommands other than `wait`, `run`, `question`,
   `runner` and `await` no longer exit 5 with `FACTORY_REFUSED=not_built`.
   With no probe record the wrapper prints

@@ -1311,3 +1311,4 @@ End with what was done, what was verified and how (the command and what it print
 | File edits | 1 | Autonomous |
 | Commits | 1 | Autonomous, logged by hook |
 | Issue assignment | 2 | Follows `tiers.issueAssign` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks). An assignment command that also adds a label, or sets a body or a title, follows `tiers.issueUpdate` as well |
+| `gh issue edit` to add acceptance criteria to the issue's body | 2 | Follows `tiers.issueUpdate` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks) |

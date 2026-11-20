@@ -18,14 +18,20 @@
 #      every place issueAssign is listed, and this file asserts it)
 #   D6 a command's tier table still says a pull request comment, review,
 #      reply, body edit or re-requested review runs with no tier setting,
-#      when tiers.issueUpdate covers it (design github_writes_and_tiers L6-L17)
+#      when tiers.issueUpdate covers it, or has no row for an issue edit the
+#      command tells the agent to make (design github_writes_and_tiers L6-L17)
 #   D7 the safety reference leaves out how the factory resolves a key (the
 #      strictest of four sources) against the hook's cascade (the first
-#      value), the fail-closed base fetch and its status lines, or a person
-#      subcommand that the hook asks about or denies (design
-#      github_writes_and_tiers L37 and L48; plan B10 outline)
-#   D8 the Actions table of gate configuration leaves out a form the hook
-#      classifies as issueUpdate (plan 2.4, Q9 forms)
+#      value), the fail-closed base fetch and its status lines, a person
+#      subcommand that the hook asks about or denies, or that a comment
+#      posted with your GitHub token counts as yours until the worker
+#      sandbox arrives; or it says the hook's factory rules turn on for a
+#      variable they do not read, or that a job parks with a status line
+#      (design github_writes_and_tiers L37 and L48, residual_risks L3;
+#      plan B10 outline, plan 7.2 items 4 and 14; tier-gate's factory check)
+#   D8 the Actions table of gate configuration leaves out a gh command, REST
+#      endpoint or GraphQL mutation that design github_writes_and_tiers
+#      L6-L17 or the Q9 forms (plan 7.2 item 12) put under issueUpdate
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -116,6 +122,13 @@ for F in "$TD_P/commands/review.md" "$TD_P/commands/address.md"; do
   _td_lacks "$F" "no tier setting, no breadcrumb" "no claim that a reply, body edit or re-requested review has no tier setting"
   _td_has "$F" "Follows \`tiers.issueUpdate\`" "the tier table names tiers.issueUpdate"
 done
+# /flow:start tells the agent to update the issue with `gh issue edit` when it
+# has no acceptance criteria; that edit sets a body, an issueUpdate write.
+TD_START_ROW=$(grep -F '| `gh issue edit` ' "$TD_P/commands/start.md")
+case "$TD_START_ROW" in
+  *'tiers.issueUpdate'*) _flow_assert_pass "start.md's tier table has a row for its gh issue edit under tiers.issueUpdate" ;;
+  *) _flow_assert_fail "start.md's tier table has no '| \`gh issue edit\` ' row naming tiers.issueUpdate" ;;
+esac
 
 _flow_test_begin "tier docs: the safety reference says how the factory applies the keys and what the hook does with its commands (D7)"
 TD_FAC=$(awk '/^### The flow factory/{on=1; print; next} on && /^##/{exit} on' "$TD_SAFETY")
@@ -123,12 +136,33 @@ if [ -n "$TD_FAC" ]; then _flow_assert_pass "the safety reference has a section 
 _td_fac_has() {   # <fixed text> <what>
   if printf '%s\n' "$TD_FAC" | grep -qF -- "$1"; then _flow_assert_pass "$2"; else _flow_assert_fail "$2: '$1' not found in the factory section"; fi
 }
+_td_fac_lacks() {   # <fixed text, any case> <what>
+  if printf '%s\n' "$TD_FAC" | grep -qiF -- "$1"; then _flow_assert_fail "$2: '$1' is still in the factory section"; else _flow_assert_pass "$2"; fi
+}
 _td_fac_has "the strictest" "the engine takes the strictest value"
 _td_fac_has "the first source that has a value" "the hook takes the first value"
 _td_fac_has "BASE_FETCH_FAILED" "the fetch failure line"
 _td_fac_has "BASE_REF_UNRESOLVED" "the unresolved base line"
 _td_fac_has "credential helper" "the engine's git loads no credential helper"
+_td_fac_has "A later release adds fetching from an origin that needs credentials." "a later release adds the authenticated fetch"
+_td_fac_lacks "no workaround is documented" "no sentence about what the documentation leaves out"
+# BASE_FETCH_FAILED is a line next prints; the park reason is tier_confirm,
+# and the job parks before launch only when the session cannot confirm.
+_td_fac_lacks "parks with \`BASE_FETCH_FAILED\`" "no park named after the fetch line"
 _td_fac_has "tier_confirm" "the park before launch"
+# tier-gate turns its factory rules on for these four variables only
+# (_tg_in_factory), not for any FLOW_FACTORY_* name.
+_td_fac_lacks "when a \`FLOW_FACTORY_*\` variable is set" "no claim that any FLOW_FACTORY_* variable turns the rules on"
+# Matched as one fragment: FLOW_FACTORY_JOB and FLOW_FACTORY_DIRECTIVE also
+# appear in the worker bullet, so a check per name would pass without them here.
+_td_fac_has "run only in a factory: when \`FLOW_FACTORY_JOB\`, \`FLOW_FACTORY_DIRECTIVE\`, \`FLOW_FACTORY_IO\` or \`FLOW_FACTORY_MAIN\` is set" "the sentence that turns the rules on names the four variables tier-gate reads"
+# Residual risk (design residual_risks L3; plan 7.2 item 4): a comment posted
+# with the person's token counts as the person's, and the worker sandbox that
+# keeps the token from workers comes in phase 1c.
+_td_fac_has "posted with your GitHub token" "the engine cannot tell a comment posted with your token from yours"
+_td_fac_has "\`gh auth token\`" "any process running as you can read the token"
+_td_fac_has "worker sandbox" "the control that keeps the token from workers"
+_td_fac_has "phase 1c" "when the worker sandbox arrives"
 _td_has "$TD_SAFETY" "they are refused in \`claude -p\`" "what confirm does to flow's own comment and review posts in claude -p"
 _td_fac_has "run it in a terminal outside Claude Code" "the deny text"
 _td_fac_has "Without jq the hook cannot read the permission mode" "the jq-free deny"
@@ -149,7 +183,45 @@ done
 _flow_test_begin "tier docs: the Actions table lists the forms tiers.issueUpdate covers (D8)"
 TD_ROW=$(grep -F '| `issueUpdate` |' "$TD_GATES")
 if [ -n "$TD_ROW" ]; then _flow_assert_pass "gate configuration has an issueUpdate row"; else _flow_assert_fail "no issueUpdate row in the Actions table"; fi
-for T in '`gh issue comment`' '`gh issue close`' '`gh issue reopen`' '`gh pr comment`' '`gh pr review`' '`gh pr ready`' '`gh pr close`' '`gh label create`' \
-         '`.../issues/{n}/labels`' '`.../issues/{n}`' '`updateIssue`' '`closeIssue`' '`reopenIssue`' '`addComment`' '`requestReviews`'; do
+# The expected list is design github_writes_and_tiers L6-L17 and the Q9 forms
+# of plan 7.2 item 12, written as the row spells them.
+while IFS= read -r T; do
+  [ -n "$T" ] || continue
   if printf '%s\n' "$TD_ROW" | grep -qF -- "$T"; then _flow_assert_pass "the issueUpdate row names $T"; else _flow_assert_fail "the issueUpdate row does not name $T"; fi
-done
+done <<'EOF'
+`gh issue comment`
+`gh pr comment`
+`gh pr review`
+`gh issue edit` and `gh pr edit` with a label, body, title or reviewer option
+`gh pr ready` (and `--undo`)
+`gh pr close`
+`gh label create`
+`gh issue close`
+`gh issue reopen`
+POST to `.../issues/{n}/comments`
+PATCH or DELETE on `.../issues/comments/{id}`
+POST to `.../pulls/{n}/reviews`
+`.../pulls/{n}/comments`
+`.../pulls/{n}/comments/{id}/replies`
+`.../pulls/{n}/requested_reviewers`
+PATCH or DELETE on `.../pulls/comments/{id}`
+POST, PUT or DELETE on `.../issues/{n}/labels`
+PATCH on `.../pulls/{n}` with a state, body or title field
+PATCH on `.../issues/{n}`
+`addComment`
+`updateIssueComment`
+`addPullRequestReview`
+`submitPullRequestReview`
+`addPullRequestReviewComment`
+`addPullRequestReviewThreadReply`
+`addLabelsToLabelable`
+`removeLabelsFromLabelable`
+`markPullRequestReadyForReview`
+`convertPullRequestToDraft`
+`closePullRequest`
+`updatePullRequest`
+`requestReviews`
+`updateIssue`
+`closeIssue`
+`reopenIssue`
+EOF
