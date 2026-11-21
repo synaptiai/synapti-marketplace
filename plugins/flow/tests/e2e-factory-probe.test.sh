@@ -2371,7 +2371,7 @@ print(p['result'] + ' | ' + p['reason'])"
 }
 
 _flow_test_begin "platform: stop_caps counts the goal-stop entries against the cap (PL26, R82)"
-_fp_runner_scenario fp-p2-stop-caps "recorded P2 logs: 3 blocks then an approve is go; 4 blocks then an approve is no-go, and go with a cap of 4; 2 blocks with no final approve in a run that ended by itself is no-go; the same in a run ended by its cost limit, turn limit or timeout is not_run naming the limit; 4 blocks in such a run is no-go; a single approve and no block is not_run, and go once the Stop fallback is present; with the fallback, a log with no goal-stop entry is no-go; blocks logged by another label are not counted"
+_fp_runner_scenario fp-p2-stop-caps "recorded P2 logs: 3 blocks then an approve is go; 4 blocks then an approve is no-go, and go with a cap of 4; 2 blocks with no final approve in a run that ended by itself is no-go; the same in a run ended by its cost limit, turn limit or timeout is not_run naming the limit; 4 blocks in such a run is no-go; 3 blocks then an approve in such a run is go, and with the fallback one approve is go and no goal-stop entry is no-go; a single approve and no block is not_run, and go once the Stop fallback is present; with the fallback, a log with no goal-stop entry is no-go; blocks logged by another label are not counted"
 # Source: plan B15 step 1 Counting (stop_caps, in its order), R82;
 # flow.goals.failAfterStuckTurns default 3.
 FP_L="$E2E_DIR/log.jsonl"
@@ -2397,6 +2397,25 @@ done
 rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:block 0:block 0:block 0:block
 _fp_count "ff.p2_stop_caps(E, 'cost limit', 3, False)"
 e2e_expect_equal "no-go" "${E2E_OUT%% | *}" "4 blocks, ended by its cost limit"
+# A limit gives not_run only when the last Stop entry is a block (R82): a run
+# ended by a limit after the Stop hook let the stop through measured the hook,
+# so 3 blocks then an approve is go, and with the fallback 0 blocks then an
+# approve is go, and no goal-stop entry is no-go.
+rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:block 0:block 0:block 0:approve
+for FP_LIMIT in "cost limit" "turn limit" "timeout"; do
+  _fp_count "ff.p2_stop_caps(E, '$FP_LIMIT', 3, False)"
+  e2e_expect_equal "go" "${E2E_OUT%% | *}" "3 blocks then an approve, ended by its $FP_LIMIT"
+done
+rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:approve
+for FP_LIMIT in "cost limit" "turn limit" "timeout"; do
+  _fp_count "ff.p2_stop_caps(E, '$FP_LIMIT', 3, True)"
+  e2e_expect_equal "go" "${E2E_OUT%% | *}" "one approve and no block, with the fallback, ended by its $FP_LIMIT"
+done
+rm -f "$FP_L"; _fp_log "$FP_L" SessionEnd event 0:none
+for FP_LIMIT in "cost limit" "turn limit" "timeout"; do
+  _fp_count "ff.p2_stop_caps(E, '$FP_LIMIT', 3, True)"
+  e2e_expect_equal "no-go" "${E2E_OUT%% | *}" "no Stop entry, with the fallback, ended by its $FP_LIMIT"
+done
 rm -f "$FP_L"; _fp_log "$FP_L" Stop goal-stop 0:approve; _fp_log "$FP_L" Stop event 0:block 0:block
 _fp_count 'ff.p2_stop_caps(E, None, 3, False)'
 e2e_expect_equal "not_run" "${E2E_OUT%% | *}" "one approve and no goal-stop block"
