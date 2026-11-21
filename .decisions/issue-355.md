@@ -543,6 +543,9 @@ Choices:
 - **Parity check scope:** every file of the plugin that names issueAssign must also name issueUpdate, except files under tests/ and evals/results-*. Design github_writes_and_tiers L23-L28 lists only shipped code, settings and docs, and e2e_copy_plugin leaves the same folders out of a copy. Two test files (tests/cascade-resolve.test.sh and a schema fixture) name only issueAssign.
 - **What the docs claim:** only what the hook does when run. `gh pr reopen` is not classified, so reopening is documented for issues only. GraphQL comment mutations are named as not caught by the comment-post deny (wave 4).
 - **Changelog:** the issueUpdate entries go under "Changed" in Unreleased, because posts that ran with no setting now follow one. The Unreleased preface's "no GitHub writes" is B18's to correct.
+- **Changelog key list:** the Unreleased settings entry is checked against every flow.factory key in the plugin's settings.json outside the worker block, so a key added later fails the check until the changelog names it. The opening now says the engine starts no judge or worker in this release, because the shipped engine posts the needs-human notice and label (rows 51b and 53u, plan 1.3).
+- **"Starts no judge or worker" kept:** with no seam every launch_due pair is blocked on cost_cap_reached (1g), so the shipped `next` never applies row 40b (plan 1.3, checked by running the shipped wrapper). Scenarios run through the test entry point with a seam do not show shipped behavior.
+- **Planning-phase names:** a flow.factory row of gate configuration may not match `later phase|phase 1[a-z]`; "phase 0 probes" stays allowed as a reader term.
 
 ### Next integration (B14)
 
@@ -554,6 +557,7 @@ Choices:
 - **Row 44** records an NI answer through effect_answer before it resumes (wave 3 open item). The issue-set file is deleted after the re-vouch rows and after person_answer rows that wrote the answers file.
 - **hold_intent** holds an assign_label intent only; any other blocking write raises `Refused(intent_kind_not_built)`, because 1b builds no push or comment intent.
 - **Linked results:** the linked-results rule (wave 4) also applies to apply_pending's result check and the lost-run charge.
+- **Changed or missing outbox item at confirm:** intent_effect_observed returns false for an item that is not the recorded one, before the login read, and `next` prints `INTENT_CHANGED=<id> job=<key> recorded=<hex> current=<hex>[ field=<f>]` or `INTENT_UNKNOWN=<id> job=<key>` once per pass. Only row 41 (person_confirm) refuses, with exit 3, and its stored event is dropped. Rows 41e and 41k keep EFFECT_FAILED, because they are raised again every pass. An item that fails validation is treated as unknown (plan 2.2, 2.3, 5.2).
 
 ### Probe code (B15)
 
