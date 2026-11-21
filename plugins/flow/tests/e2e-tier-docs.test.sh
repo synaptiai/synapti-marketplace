@@ -40,7 +40,9 @@
 #      yet, or that its use comes in a later change, when the factory's code
 #      reads it; or says the engine does not add the in-progress label when
 #      it does; or says the comment commands will use the trust test when
-#      they use it now
+#      they use it now; or counts a quoted label name that is not a label
+#      lookup as a read; or names a planning phase instead of "a later
+#      release"
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -186,6 +188,27 @@ _td_unrel_has() {   # <fixed text> <what>
 }
 _td_unrel_has "a later release is planned to add a worker sandbox" "the CHANGELOG says the worker sandbox is planned for a later release"
 _td_unrel_has "it would not cover other programs running as you" "the CHANGELOG says the worker sandbox would not cover other programs running as you"
+# Every flow.factory setting the plugin's settings.json ships, other than the
+# worker block (listed there as a group), is named in the Unreleased settings
+# entry, so a key this branch adds is not left out.
+TD_FKEYS=$(jq -r '.flow.factory | paths(type != "object") | select(.[0] != "worker" and (map(type) | all(. == "string"))) | join(".")' "$TD_P/settings.json" 2>/dev/null)
+if [ -n "$TD_FKEYS" ]; then _flow_assert_pass "settings.json has flow.factory keys"; else _flow_assert_fail "no flow.factory keys read from settings.json"; fi
+for K in $TD_FKEYS; do
+  _td_unrel_has "\`$K\`" "the CHANGELOG names the setting flow.factory.$K"
+done
+# next adds the needs-info or needs-human label when a job parks there and
+# removes it when the job leaves (the labels.needsInfo and labels.needsHuman
+# rows of gate configuration).
+_td_unrel_has "adds the \`flow:needs-info\` or \`flow:needs-human\` label" "the CHANGELOG says next adds the park labels"
+# next writes to GitHub in this release: a job that an untrusted edit or
+# close sends to needs_human (rows 51b and 53u, which plan 1.3 lists among the
+# rows a shipped run can apply) gets the needs-human notice and label. So the
+# opening of the section does not say the factory makes no GitHub writes.
+if printf '%s\n' "$TD_UNREL" | grep -qiF -- "no GitHub writes"; then
+  _flow_assert_fail "the CHANGELOG still says the factory makes no GitHub writes, but next posts comments and labels"
+else
+  _flow_assert_pass "the CHANGELOG makes no claim that the factory makes no GitHub writes"
+fi
 if printf '%s\n' "$TD_UNREL" | grep -qF -- "keeps the token from workers comes later"; then
   _flow_assert_fail "the CHANGELOG still says the worker sandbox comes later, as a promise"
 else
@@ -280,18 +303,22 @@ EOS
 _flow_test_begin "tier docs: the factory settings rows match what the factory's code reads now (D9)"
 # A row is checked against the engine's code, not a fixed list. A key other
 # than a label is read where its full name is quoted. A label key is read
-# through label_name in _flow_factory_next.py, by its quoted short name,
-# directly or through a table such as LABELLED_PARKS; the line of defaults,
-# which maps each name to "flow:...", is not a read. A row whose key is read
-# must name a module and must not say it is not read yet or that its use
-# comes in a later change or phase.
+# only where _flow_factory_next.py looks its name up: a call
+# label_name("<name>"), or a value of LABELLED_PARKS, which next passes to
+# label_name. Any other quoted occurrence of the short name (the defaults
+# table, a stage named "ready", an unrelated table) is not a read. A row
+# whose key is read must name a module and must not say it is not read yet
+# or that its use comes in a later change or phase.
 TD_BIN="$TD_P/bin"
 _td_gate_row() {   # <key>
   grep -F "| \`flow.factory.$1\` |" "$TD_GATES"
 }
 _td_key_read() {   # <key>; prints the line that reads it
   case "$1" in
-    labels.*) grep -nF -- "\"${1#labels.}\"" "$TD_BIN/_flow_factory_next.py" | grep -vF '": "flow:' | head -1 ;;
+    labels.*)
+      { grep -nF -- "label_name(\"${1#labels.}\")" "$TD_BIN/_flow_factory_next.py"
+        grep -nE '^LABELLED_PARKS = \{' "$TD_BIN/_flow_factory_next.py" | grep -F -- ": \"${1#labels.}\""
+      } | head -1 ;;
     *) grep -hnF -- "\"flow.factory.$1\"" "$TD_BIN"/_flow_factory*.py | head -1 ;;
   esac
 }
@@ -312,6 +339,11 @@ for K in intake.maxRounds maxRounds labels.inProgress labels.needsInfo labels.ne
     esac
   fi
 done
+# A row whose key is not read yet says when it comes in the reader's words,
+# "a later release", as the rest of the factory docs do, never by a planning
+# phase.
+TD_PHASE_ROWS=$(grep -F '| `flow.factory.' "$TD_GATES" | grep -iE 'later phase|phase 1[a-z]' | sed -n 's/^| `\([^`]*\)`.*/\1/p' | tr '\n' ' ')
+assert_equal "" "$TD_PHASE_ROWS" "flow.factory rows that name a planning phase"
 # The engine adds the in-progress label with its assignment (the assign_label
 # write of rows 11 and 40, design stages: prepare's "assignment and label
 # written").

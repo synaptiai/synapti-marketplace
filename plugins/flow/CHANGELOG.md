@@ -4,8 +4,9 @@
 
 Each entry below describes the change against 3.17.0.
 
-The flow factory is off by default and is not yet usable: it has a job engine
-but no runner, no GitHub writes and no worker sandbox. It stays off unless
+The flow factory is off by default and is not yet usable: it has a job engine,
+which in this release starts no judge or worker, but no runner and no worker
+sandbox. It stays off unless
 `flow.factory.enabled` is `true` in your user settings; a repository's own
 settings cannot turn it on.
 
@@ -32,9 +33,16 @@ settings cannot turn it on.
   and `rebuild` exits 4 with `PERSON_ONLY_REFUSED`.
 - The `flow.factory.*` settings: `enabled`, `label`, `concurrency`,
   `maxOpenJobs`, `leaseSeconds`, `heartbeatSeconds`, `nextBudgetSeconds`,
-  `syncIntervalSeconds`, `maxRounds`, and under `worker` the `model`,
-  `extraEnv`, `mcpConfig` and each stage's `maxBudgetUsd`, `timeoutSeconds`
-  and `allowedTools`.
+  `syncIntervalSeconds`, `maxRounds`, `intake.maxRounds`, the label names
+  `labels.inProgress`, `labels.needsInfo`, `labels.needsHuman`,
+  `labels.priorityHigh`, `labels.specReview` and `labels.ready` (the last two
+  not read yet), `trustedPermission` and `trustedBots`, and under `worker`
+  the `model`, `extraEnv`, `mcpConfig` and each stage's `maxBudgetUsd`,
+  `timeoutSeconds` and `allowedTools`.
+- `next` adds the `flow:needs-info` or `flow:needs-human` label (the names
+  `labels.needsInfo` and `labels.needsHuman` set) to the issue when its job
+  enters needs_info or needs_human, and removes it when the job leaves. Both
+  writes follow `tiers.issueUpdate`.
 - `schemas/v1/factory-job.schema.json` and
   `schemas/v1/factory-directive.schema.json` for job and directive files.
 - The engine checks the phase 0 probe record before it acts. With no record,
