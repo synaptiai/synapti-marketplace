@@ -546,6 +546,7 @@ Choices:
 - **Changelog key list:** the Unreleased settings entry is checked against every flow.factory key in the plugin's settings.json outside the worker block, so a key added later fails the check until the changelog names it. The opening now says the engine starts no judge or worker in this release, because the shipped engine posts the needs-human notice and label (rows 51b and 53u, plan 1.3).
 - **"Starts no judge or worker" kept:** with no seam every launch_due pair is blocked on cost_cap_reached (1g), so the shipped `next` never applies row 40b (plan 1.3, checked by running the shipped wrapper). Scenarios run through the test entry point with a seam do not show shipped behavior.
 - **Planning-phase names:** a flow.factory row of gate configuration may not match `later phase|phase 1[a-z]`; "phase 0 probes" stays allowed as a reader term.
+- **Factory key list from the schema:** the docs checks take every flow.factory key from the settings schema, not from settings.json, so a key with no default (judges.intakeModel) still needs a gate-configuration row and a changelog entry, and each row must name every module that reads its key.
 
 ### Next integration (B14)
 
@@ -558,6 +559,7 @@ Choices:
 - **hold_intent** holds an assign_label intent only; any other blocking write raises `Refused(intent_kind_not_built)`, because 1b builds no push or comment intent.
 - **Linked results:** the linked-results rule (wave 4) also applies to apply_pending's result check and the lost-run charge.
 - **Changed or missing outbox item at confirm:** intent_effect_observed returns false for an item that is not the recorded one, before the login read, and `next` prints `INTENT_CHANGED=<id> job=<key> recorded=<hex> current=<hex>[ field=<f>]` or `INTENT_UNKNOWN=<id> job=<key>` once per pass. Only row 41 (person_confirm) refuses, with exit 3, and its stored event is dropped. Rows 41e and 41k keep EFFECT_FAILED, because they are raised again every pass. An item that fails validation is treated as unknown (plan 2.2, 2.3, 5.2).
+- **Unreadable outbox:** a real J/outbox that cannot be listed goes to the drain, which prints OUTBOX_UNREADABLE reason=unlisted. A linked J/pending ends the pass with idle, not wait, because nothing will handle what is behind the link (design runner step 4).
 
 ### Probe code (B15)
 
