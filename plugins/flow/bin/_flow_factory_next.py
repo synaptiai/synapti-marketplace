@@ -2279,7 +2279,11 @@ class JobPass:
         """Whether a stage or judge result of the job waits in pending/. A
         J/pending that is a link, or a real one that cannot be listed, is
         never listed here: the job's results are not known, so the stage is
-        not launched again (phase B refuses such a job first)."""
+        not launched again. These two branches are a backstop that no test
+        reaches: phase B refuses such a job first (factory_dir_refused or
+        pending_unlisted) and phase C skips every job phase B refused, so
+        within one pass they matter only if J/pending is replaced between
+        phase B and phase C."""
         pdir = os.path.join(self.jdir, "pending")
         if _linked_dir(pdir):
             return True

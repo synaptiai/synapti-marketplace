@@ -2369,6 +2369,38 @@ e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_err_lacks "Traceback"
 e2e_expect_equal 1 "$(nx_line_count 'UNREADABLE job=issue-7')" "the job is unreadable"
 e2e_expect_equal idle "$(nx_last)" "the last line (a live lease behind a linked job folder is not a wait)"
+fe_new nx61f-lease-file-linked-live-lease
+# Source: as nx61c, one level down: the job folder and its J/directives are
+# real, and the lease file itself is a link to a lease outside the job. A
+# lease file that is a link is not read (journal wave 4, linked job
+# folders), so the live launcher it names is not the job's and is not a
+# wait; plan 2.6 (idle: a non-terminal job, no lease, no open directive, no
+# pending event). The job is parked in needs_human, as nx14b, so that
+# nothing else of the job's can make the last word a wait (Inferred: design
+# runner step 4, nothing of the job's is running).
+e2e_describe "one job in needs_human with a real J/directives whose $D1.lease.json is a link to a lease outside the job; that lease names a live sleep 60 as its launcher, with its start time; one pass"
+e2e_repo main
+fe_record
+fe_enable
+fe_job 7 needs_human "d['reason'] = 'attempts_exhausted'; d['blocked_stage'] = 'build'"
+NX_F=$(fe_factory_dir)
+NX_J="$NX_F/jobs/issue-7"
+mkdir -p "$NX_J/directives"
+NX_K=$(_fe_in_scratch "$(fe_python)" -I -c 'import subprocess; print(subprocess.Popen(["sleep", "60"], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)')
+_fe_register "$NX_K"
+fe_mask_pid "$NX_K" launcher
+NX_KS=$(_fe_lstart "$NX_K")
+NX_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+jq -n --arg d "$D1" --argjson p "$NX_K" --arg s "$NX_KS" --arg now "$NX_NOW" '{directive: $d, kind: "worker", host: "h",
+  launcher_pid: $p, launcher_start: $s, started_at: $now, heartbeat_at: $now, child_pid: null, child_pgid: null,
+  child_start: null, revoked_at: null}' > "$E2E_DIR/outside-lease.json"
+ln -s "$E2E_DIR/outside-lease.json" "$NX_J/directives/$D1.lease.json"
+cp "$E2E_DIR/outside-lease.json" "$E2E_DIR/outside-lease.before"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal "" "$(diff "$E2E_DIR/outside-lease.before" "$E2E_DIR/outside-lease.json" 2>&1)" "the lease outside the job is not written"
+e2e_expect_equal idle "$(nx_last)" "the last line (a live lease behind a linked lease file is not a wait)"
 fe_new nx61e-pending-unlisted
 # Source: as nx61b, for a real J/pending folder that cannot be listed (as
 # nx60l does for J/outbox). The pass goes on without a traceback, and the
