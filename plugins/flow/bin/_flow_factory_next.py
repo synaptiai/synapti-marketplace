@@ -149,6 +149,15 @@ class FactFailed(Exception):
     clone failed); the event is left for the next pass."""
 
 
+class IntentUnknown(Refused):
+    """The pending intent's outbox item is not found: J/outbox is a link, or
+    the item does not read or validate (plan 2.3, INTENT_UNKNOWN=<id>)."""
+
+    def __init__(self, iid):
+        self.line = f"INTENT_UNKNOWN={iid}"
+        super().__init__(f"intent_unknown {iid}")
+
+
 # ---------------------------------------------------------------- small helpers
 
 _epoch = jobs.epoch
@@ -1012,6 +1021,22 @@ class JobPass:
         already not found by the GitHub writes module's reader."""
         return _linked_dir(os.path.join(self.jdir, "outbox"))
 
+    def pending_item(self, iid):
+        """The job's outbox item iid as recorded. Raises IntentUnknown when
+        J/outbox is a link or the item does not read or validate, and the
+        GitHub writes module's IntentChanged when it is not the item its
+        intent_recorded line records (check_item)."""
+        if self.outbox_linked():
+            raise IntentUnknown(iid)
+        item = fgithub._valid(os.path.join(self.jdir, "outbox", f"{iid}.json"), iid, self.key) \
+            if isinstance(iid, str) and "/" not in iid else None
+        if item is None:
+            raise IntentUnknown(iid)
+        changed = fgithub.check_item(os.path.join(self.jdir, "events.jsonl"), item)
+        if changed:
+            raise changed
+        return item
+
     def confirm_writes(self, writes):
         """Context.confirm_writes: B7's confirm keys of the winner's writes,
         through the job's tier memo. A confirmed intent behind a linked
@@ -1098,12 +1123,21 @@ class JobPass:
             pi = self.job.get("pending_intent")
             if not isinstance(pi, dict):
                 return False
+            # An item that is not found, or is not the one recorded, has no
+            # effect of its own to observe (T:facts.intent_effect_observed:
+            # the pending intent's effect). It is false, with a status line
+            # in every pass, so the job's other exits still apply and the
+            # park is not silent (plan 5.2, "Outbox file edited").
+            try:
+                self.pending_item(pi.get("id"))
+            except (IntentUnknown, fgithub.IntentChanged) as e:
+                head, _, tail = e.line.partition(" ")
+                self.p.status("other", f"{head} job={self.key}" + (f" {tail}" if tail else ""))
+                return False
             login = self.p.engine_login()
             gh_real = ff.which_real("gh")
             if login is None or not gh_real:
                 raise FactFailed("engine login unknown" if login is None else "gh not found")
-            if self.outbox_linked():
-                raise FactFailed(f"intent_unknown {pi.get('id')}")
             try:
                 return fgithub.lookup(gh_real, self.job, pi.get("id"), login, paths=self.paths) is not None
             except fgithub.ReadFailed as e:
@@ -1208,20 +1242,22 @@ class JobPass:
             # Carry item 2: the handled caller effects run inside the same
             # try, after kill_current, so a failure keeps what the kill did.
             self.caller_effects(d, ctx, new, line, to_run)
-        except fgithub.IntentNotPending as e:
-            # R68: a confirm that names another intent is refused, runs
-            # nothing, and its stored event is dropped (B6's line). As for
-            # any decision that did not apply, the items it recorded are
-            # dropped and what the kill did is kept (B14 steps 7 and 9).
-            self.drop_recorded(before)
-            self.keep_kill(new, killed or "snapshot" in handlers)
-            self.refuse(e.line)
-            return "refused"
         except (fgit.GitFailed, fgit.CloneConfigChanged, Refused, ValueError, OSError) as e:
             # No write of a decision that did not apply may be sent: every
-            # outbox item this decision recorded is dropped (B14 step 7).
+            # outbox item this decision recorded is dropped, and what the
+            # kill did is kept (B14 steps 7 and 9).
             self.drop_recorded(before)
             self.keep_kill(new, killed or "snapshot" in handlers)
+            if isinstance(e, fgithub.IntentNotPending) or \
+                    (d.row == "41" and isinstance(e, (fgithub.IntentChanged, IntentUnknown))):
+                # R68, R32: a confirm that names another intent, or an
+                # intent whose item is not found or not the one recorded,
+                # is refused with its line and runs nothing; its stored
+                # event is dropped, so it is not tried again every pass
+                # (plan 2.3, 5.2). Rows 41e and 41k, which a pass raises
+                # again by itself, report EFFECT_FAILED instead.
+                self.refuse(e.line)
+                return "refused"
             self.p.status("other", f"EFFECT_FAILED job={self.key} row={d.row} {' '.join(str(e).split())}")
             return "failed"
         if launch is not None:
@@ -1485,11 +1521,13 @@ class JobPass:
             # whose keys may still resolve to confirm.
             self.observe_intent(iid, gh_real, lines)
         else:
-            # Behind a linked J/outbox the pending item is not found; a
-            # confirm naming another intent is still IntentNotPending, which
-            # run_literal raises first.
-            if self.outbox_linked() and isinstance(pi, dict) and iid == pi.get("id"):
-                raise Refused(f"intent_unknown {iid}")
+            # Behind a linked J/outbox, or when the item does not read, the
+            # pending item is not found; a confirm naming another intent is
+            # still IntentNotPending, which run_literal raises first.
+            if isinstance(pi, dict) and iid == pi.get("id") and \
+                    (self.outbox_linked() or fgithub._valid(os.path.join(self.jdir, "outbox", f"{iid}.json"),
+                                                            iid, self.key) is None):
+                raise IntentUnknown(iid)
             fgithub.run_literal(self.paths, dict(self.job, write_seq=new.get("write_seq")), iid, gh_real,
                                 self.login(), tiers=lambda k: self.tiers()(k), lines=lines)
         for line in lines:
