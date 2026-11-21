@@ -71,9 +71,9 @@ settings cannot turn it on.
   `flow-factory.sh` in the default permission mode and denies it in any
   other mode, or when it is not the whole command; it lets a worker run only
   `context --mode` and `await`; and it denies commands that name the factory
-  folder and, while the factory is enabled, comments that name
-  `/flow-factory`. A program running as you can still post such a comment
-  with your GitHub token, and the engine counts it as yours; a later release
+  folder by its absolute path and, while the factory is enabled, comments
+  that name `/flow-factory`. A program running as you can still post such a
+  comment with your GitHub token, and the engine counts it as yours; a later release
   is planned to add a worker sandbox that would keep the token from a
   worker's shell commands, and it would not cover other programs running as
   you. The factory's

@@ -208,6 +208,12 @@ _td_unrel_has() {   # <fixed text> <what>
 }
 _td_unrel_has "a later release is planned to add a worker sandbox" "the CHANGELOG says the worker sandbox is planned for a later release"
 _td_unrel_has "it would not cover other programs running as you" "the CHANGELOG says the worker sandbox would not cover other programs running as you"
+# tier-gate denies a command that names the factory folder by its absolute
+# path only (tier-factory.sh matches the folder's absolute forms); a
+# relative path such as `ls .flow/factory` gets no decision. The factory
+# section above says "by its absolute path", and the CHANGELOG says the same.
+_td_fac_has "a command naming the factory folder by its absolute path is denied" "the safety reference says the hook denies the factory folder named by its absolute path"
+_td_unrel_has "it denies commands that name the factory folder by its absolute path" "the CHANGELOG says the hook denies the factory folder named by its absolute path"
 # Every flow.factory setting the plugin's settings schema accepts, other than
 # the worker block (listed there as a group), is named in the Unreleased
 # settings entry, so a key this branch adds is not left out. The list comes
