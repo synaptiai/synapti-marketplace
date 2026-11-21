@@ -768,7 +768,10 @@ class Pass:
                 continue
             jdir = jobs.job_dir(self.paths, n)
             pdir = os.path.join(jdir, "pending")
-            if os.path.isdir(pdir) and any(jobs.PENDING_NAME.match(x) for x in os.listdir(pdir)):
+            # A linked J/pending is never listed: the pass refuses the job
+            # (factory_dir_refused), so nothing behind the link waits.
+            if not _linked_dir(pdir) and os.path.isdir(pdir) and \
+                    any(jobs.PENDING_NAME.match(x) for x in os.listdir(pdir)):
                 return "wait"
             did = job.get("directive")
             if did:
@@ -799,10 +802,20 @@ class Pass:
             if not isinstance(job, dict):
                 continue
             odir = os.path.join(jobs.job_dir(self.paths, n), "outbox")
-            try:
-                has = any(x.endswith(".json") for x in os.listdir(odir))
-            except OSError:
-                has = False
+            if not os.path.lexists(odir):
+                continue
+            if _linked_dir(odir):
+                # A link or something other than a folder is never listed
+                # here; the drain says why the job's writes wait
+                # (OUTBOX_UNREADABLE) without reading through it.
+                has = True
+            else:
+                try:
+                    has = any(x.endswith(".json") for x in os.listdir(odir))
+                except OSError:
+                    # A folder that cannot be listed: the drain gives its
+                    # OUTBOX_UNREADABLE reason=unlisted line.
+                    has = True
             if not has:
                 continue
             if not self.enough():

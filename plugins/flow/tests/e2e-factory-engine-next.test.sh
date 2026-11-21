@@ -71,9 +71,12 @@
 #   NX59 the round limit is not met by a reply, or met with none (R98)
 #   NX60 a linked J/outbox is read or written through by rows 41e, 41k, 11,
 #        40 or 50, or by the fact that chooses row 41e; a confirm of an item
-#        that is not found is kept, or the park fails silently
+#        that is not found is kept, or the park fails silently; a J/outbox
+#        that is a link, a regular file or a folder that cannot be listed
+#        gives no OUTBOX_UNREADABLE line in the pass
 #   NX61 a linked J/directives is read or written through: its lease revoked
-#        or its pending-report file removed through the link
+#        or its pending-report file removed through the link; a linked
+#        J/pending is listed for the pass's last word
 #   NX62 row 41 runs an item edited after the stored confirm (R32), or the
 #        refused confirm is kept and the park fails silently in every pass
 #   NX63 a later launch rebuilds in/issue.md from live GitHub (R9)
@@ -1525,6 +1528,48 @@ e2e_expect_equal 1 "$(nx_line_count '"INTENT_NOT_PENDING=issue-7-j1-40-9 pending
 e2e_expect_equal "waiting_operator issue-7-j1-40-1" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.pending_intent.id)"')" "still parked on its own intent"
 e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted"
 e2e_expect_equal 0 "$(find "$NX_J/pending" -name '*-person_confirm.json' | grep -c .)" "the confirm dropped"
+fe_new nx28b-other-intent-keeps-kill
+# Source: as nx28; T:41 (waiting_operator -> resume_state, so the decision
+# leaves waiting_operator and kills the current directive first); B14 step 9
+# (a decision that did not apply keeps what the kill did: job.json keeps the
+# charge kill_current made, cost and its runs entry, and not the move);
+# charge_lost_run's rule (a run whose launcher was killed is charged limit
+# plus the allowance, basis limit_plus_turn: the limit is 0.50 and the
+# allowance at least 0.50, amendments.md A.7, so at least 100 cents). The
+# lease's heartbeat is fresh and its launcher alive, so liveness does not
+# revoke it before row 41: only the kill of row 41 charges the run.
+e2e_describe "job 7 parked by row 40; then a current directive issue-7-j1-prepare-2 (max_budget_usd 0.50) with a lease whose launcher is a live sleep 60, a fresh heartbeat and a child_pid; a stored person_confirm naming issue-7-j1-40-9; one pass"
+nx_base prepare
+nx_stage_result prepare
+nx_settings '.tiers.issueAssign = "confirm"'
+nx_next
+e2e_expect_equal 40 "$(nx_rows)" "rows after the park"
+NX_K=$(_fe_in_scratch "$(fe_python)" -I -c 'import subprocess; print(subprocess.Popen(["sleep", "60"], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)')
+_fe_register "$NX_K"
+fe_mask_pid "$NX_K" launcher
+NX_KS=$(_fe_lstart "$NX_K")
+NX_D2=issue-7-j1-prepare-2
+fe_directive "$NX_D2" "d['max_budget_usd'] = 0.5; d['started_at'] = '2026-11-16T00:00:00Z'"
+NX_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+jq -n --arg d "$NX_D2" --argjson p "$NX_K" --arg s "$NX_KS" --arg now "$NX_NOW" '{directive: $d, kind: "worker", host: "h",
+  launcher_pid: $p, launcher_start: $s, started_at: $now, heartbeat_at: $now, child_pid: $p, child_pgid: null,
+  child_start: null, revoked_at: null}' > "$NX_J/directives/$NX_D2.lease.json"
+fe_py "import _flow_factory_jobs as jobs
+p = jobs.resolve()
+with jobs.job_lock(p, 7, timeout=5):
+    j = jobs.read_job(p, 7)
+    j['directive'] = '$NX_D2'
+    jobs.write_job(p, j)"
+nx_pend 9 person_confirm '{"intent": "issue-7-j1-40-9"}'
+nx_next
+e2e_expect_equal 3 "$E2E_RC" "exit status (a refusal in the pass)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count '"INTENT_NOT_PENDING=issue-7-j1-40-9 pending=issue-7-j1-40-1"')" "the refusal line"
+e2e_expect_equal "waiting_operator issue-7-j1-40-1" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.pending_intent.id)"')" "still parked on its own intent (the move is not kept)"
+e2e_expect_equal "set" "$(nx_jq "$NX_J/directives/$NX_D2.lease.json" 'if .revoked_at then "set" else "unset" end')" "the kill revoked the lease"
+e2e_expect_equal "1 limit_plus_turn" "$(nx_jq "$NX_J/job.json" '[.cost.runs[]? | select(.directive == "'"$NX_D2"'")] | "\(length) \(.[0].basis)"')" "job.json keeps the kill's charge"
+e2e_expect_equal yes "$(nx_le 100 "$(nx_jq "$NX_J/job.json" '[.cost.runs[]? | select(.directive == "'"$NX_D2"'")][0].charged_usd * 100 | round')")" "the charge is at least the limit plus the least allowance, in cents"
+e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted"
 fi
 
 # ---------------------------------------------------------------- NX29
@@ -1998,7 +2043,7 @@ with jobs.job_lock(p, 7, timeout=5):
   nx_link_outbox
 }
 if nx_run NX60; then
-_flow_test_begin "next: a linked J/outbox is treated as not found by the row paths, never read or written through (NX60)"
+_flow_test_begin "next: a linked J/outbox is treated as not found by the row paths, never read or written through, and the drain says why the job's writes wait (NX60)"
 fe_new nx60a-41e-linked
 # Source: journal wave 4 "Linked folders" (a symbolic link for J/outbox is
 # treated as not found, INTENT_UNKNOWN, as plan 2.2's lookup rule says);
@@ -2190,11 +2235,55 @@ e2e_expect_equal 0 "$(nx_ev_count 7 '.type == "intent_dropped" and .id == "issue
 e2e_expect_equal same "$(cmp -s "$E2E_DIR/stash-40-2.json" "$E2E_DIR/outside-outbox/issue-7-j1-40-2.json" && echo same || echo changed)" "the second item behind the link is not written"
 e2e_expect_equal same "$(nx_outside_same)" "the pending item behind the link is not written"
 e2e_expect_equal "40 waiting_operator issue-7-j1-40-1" "$(nx_rows) $(nx_jq "$NX_J/job.json" '"\(.state) \(.pending_intent.id)"')" "rows, and still parked on its intent"
+fe_new nx60j-drain-linked-empty
+# Source: B6's drain (a J/outbox that is a symbolic link, not a folder or
+# cannot be listed gives one OUTBOX_UNREADABLE line and nothing runs; the
+# line is journal wave 2's, so a job whose writes wait says why); B14 step 5
+# (the pass runs B6's drain for each job with an outbox); journal wave 4
+# "Linked folders" (a linked J/outbox is never listed through). Whether the
+# folder behind the link holds an item is not something the pass may look
+# at, so the line shows for a link to an empty folder too.
+e2e_describe "job 7 parked by row 40; J/outbox moved out of the job and replaced by a link to an empty folder outside the job; one pass"
+nx_park
+mv "$NX_J/outbox" "$E2E_DIR/outbox-kept"
+mkdir "$E2E_DIR/outside-empty"
+ln -s "$E2E_DIR/outside-empty" "$NX_J/outbox"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count '"OUTBOX_UNREADABLE job=issue-7-j1 reason=symlink"')" "the drain's OUTBOX_UNREADABLE line"
+e2e_expect_equal 0 "$(find "$E2E_DIR/outside-empty" -mindepth 1 | grep -c .)" "nothing written behind the link"
+e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted"
+fe_new nx60k-drain-regular-file
+# Source: as nx60j, for a regular file at J/outbox (reason=not_a_folder).
+e2e_describe "job 7 parked by row 40; J/outbox moved out of the job and a regular file holding 'x' put in its place; one pass"
+nx_park
+mv "$NX_J/outbox" "$E2E_DIR/outbox-kept"
+printf 'x' > "$NX_J/outbox"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count '"OUTBOX_UNREADABLE job=issue-7-j1 reason=not_a_folder"')" "the drain's OUTBOX_UNREADABLE line"
+e2e_expect_equal x "$(cat "$NX_J/outbox")" "the file at J/outbox is not written"
+e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted"
+fe_new nx60l-drain-unlisted
+# Source: as nx60j, for a real J/outbox folder that cannot be listed
+# (reason=unlisted). The permissions are given back after the pass, so the
+# scratch folder can be removed.
+e2e_describe "job 7 parked by row 40; its J/outbox folder left with no permissions; one pass"
+nx_park
+chmod 000 "$NX_J/outbox"
+nx_next
+chmod 755 "$NX_J/outbox"
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count '"OUTBOX_UNREADABLE job=issue-7-j1 reason=unlisted"')" "the drain's OUTBOX_UNREADABLE line"
+e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted"
 fi
 
 # ---------------------------------------------------------------- NX61
 if nx_run NX61; then
-_flow_test_begin "next: a linked J/directives is treated as absent, never read or written through (NX61)"
+_flow_test_begin "next: a linked J/directives or J/pending is treated as absent, never read or written through (NX61)"
 fe_new nx61-directives-linked
 # Source: journal wave 4 and its B12 follow-up "Linked job folders" (a linked
 # J/directives is treated as absent at every read; a linked job folder is
@@ -2221,6 +2310,28 @@ e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_err_lacks "Traceback"
 e2e_expect_equal "" "$(diff -r "$E2E_DIR/directives.before" "$E2E_DIR/outside-directives" 2>&1)" "the files outside the job are not written or removed"
 e2e_expect_equal 0 "$(nx_ev_count 7 '.type == "report_refused"')" "no report line read through the link"
+fe_new nx61b-pending-linked-final-word
+# Source: journal wave 4 and its B12 follow-up "Linked job folders" (a
+# linked job folder is never read through); design runner step 4
+# (--until-idle exits when nothing is running or actionable) and
+# execution_model step 6 (next ends with wait, idle or done). The pass
+# refuses a job whose J/pending is a link (factory_dir_refused) and nothing
+# moves it until a person replaces the link, so the last word is idle, not a
+# wait read from the names behind the link (Inferred).
+e2e_describe "job 7 in build with no directive; J/pending replaced by a link to a folder outside the job that holds a stage_succeeded file name; one pass"
+nx_base build
+mkdir -p "$E2E_DIR/outside-pending"
+printf '{}' > "$E2E_DIR/outside-pending/00000000000000000009-stage_succeeded.json"
+rm -f "$NX_J/pending"/*.json
+[ -d "$NX_J/pending" ] && rmdir "$NX_J/pending"
+ln -s "$E2E_DIR/outside-pending" "$NX_J/pending"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count 'factory_dir_refused')" "the pass refuses the job"
+e2e_expect_equal idle "$(nx_last)" "the last line"
+e2e_expect_equal '{}' "$(cat "$E2E_DIR/outside-pending/00000000000000000009-stage_succeeded.json")" "the file behind the link is not written"
+e2e_expect_equal 0 "$(nx_launches)" "claude launches"
 fi
 
 # ---------------------------------------------------------------- NX62
