@@ -4,9 +4,9 @@
 
 Each entry below describes the change against 3.17.0.
 
-The flow factory is off by default and is not yet usable: it has a job engine,
-which in this release starts no judge or worker, but no runner and no worker
-sandbox. It stays off unless
+The flow factory is off by default and is not yet usable: it has a job engine
+but no runner and no worker sandbox, and in this release the engine starts no
+judge or worker. It stays off unless
 `flow.factory.enabled` is `true` in your user settings; a repository's own
 settings cannot turn it on.
 
@@ -36,9 +36,12 @@ settings cannot turn it on.
   `syncIntervalSeconds`, `maxRounds`, `intake.maxRounds`, the label names
   `labels.inProgress`, `labels.needsInfo`, `labels.needsHuman`,
   `labels.priorityHigh`, `labels.specReview` and `labels.ready` (the last two
-  not read yet), `trustedPermission` and `trustedBots`, and under `worker`
-  the `model`, `extraEnv`, `mcpConfig` and each stage's `maxBudgetUsd`,
-  `timeoutSeconds` and `allowedTools`.
+  not read yet), `trustedPermission` and `trustedBots`,
+  `judges.intakeModel` (the intake judge's model; when it is not set, the
+  model the platform probe recorded, and with neither the launch is refused
+  with `model_unknown`), and under `worker` the `model`, `extraEnv`,
+  `mcpConfig` and each stage's `maxBudgetUsd`, `timeoutSeconds` and
+  `allowedTools`.
 - `next` adds the `flow:needs-info` or `flow:needs-human` label (the names
   `labels.needsInfo` and `labels.needsHuman` set) to the issue when its job
   enters needs_info or needs_human, and removes it when the job leaves. Both

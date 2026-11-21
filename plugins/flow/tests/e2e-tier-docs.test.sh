@@ -29,7 +29,11 @@
 #      release", or drops that the sandbox would not cover other programs
 #      running as you (the CHANGELOG likewise); or it says the hook's
 #      factory rules turn on for a
-#      variable they do not read, or that a job parks with a status line
+#      variable they do not read, or that a job parks with a status line;
+#      or it says no hold applies yet when the outbox hold on the
+#      needs-human notice and label applies now; or the CHANGELOG leaves out
+#      a setting the schema accepts, or what the intake judge runs when its
+#      model is not set
 #      (design github_writes_and_tiers L37 and L48, residual_risks L3;
 #      plan B10 outline, plan 7.2 items 4 and 14; tier-gate's factory check)
 #   D8 the Actions table of gate configuration leaves out a gh command, REST
@@ -42,7 +46,10 @@
 #      it does; or says the comment commands will use the trust test when
 #      they use it now; or counts a quoted label name that is not a label
 #      lookup as a read; or names a planning phase instead of "a later
-#      release"
+#      release"; or a key the settings schema accepts has no row (one with
+#      no default in settings.json among them), or a row leaves out a module
+#      that reads its key; or the intake judge's model and timeout rows do not
+#      say how the launcher reads them and passes them to flow-judge.sh
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -161,6 +168,13 @@ _td_fac_lacks "no workaround is documented" "no sentence about what the document
 # and the job parks before launch only when the session cannot confirm.
 _td_fac_lacks "parks with \`BASE_FETCH_FAILED\`" "no park named after the fetch line"
 _td_fac_has "tier_confirm" "the park before launch"
+# The opening says the parks take effect once next starts a judge or worker,
+# but one hold applies now: rows 51b and 53u (an untrusted edit or close of
+# the issue in intake, which plan 1.3 lists among the rows a shipped run can
+# apply) post the needs-human notice and label, and with tiers.issueUpdate
+# confirm the shipped flow-factory.sh next prints PENDING_CONFIRM for both
+# and status lists them (B14 step 8).
+_td_fac_has "One hold applies now: when an untrusted edit or close of the issue moves a job to needs_human, the notice and the label \`next\` posts wait in the outbox while \`tiers.issueUpdate\` is \`confirm\`" "the opening says the outbox hold on the needs-human notice and label applies now"
 # tier-gate turns its factory rules on for these four variables only
 # (_tg_in_factory), not for any FLOW_FACTORY_* name.
 _td_fac_lacks "when a \`FLOW_FACTORY_*\` variable is set" "no claim that any FLOW_FACTORY_* variable turns the rules on"
@@ -188,14 +202,39 @@ _td_unrel_has() {   # <fixed text> <what>
 }
 _td_unrel_has "a later release is planned to add a worker sandbox" "the CHANGELOG says the worker sandbox is planned for a later release"
 _td_unrel_has "it would not cover other programs running as you" "the CHANGELOG says the worker sandbox would not cover other programs running as you"
-# Every flow.factory setting the plugin's settings.json ships, other than the
-# worker block (listed there as a group), is named in the Unreleased settings
-# entry, so a key this branch adds is not left out.
-TD_FKEYS=$(jq -r '.flow.factory | paths(type != "object") | select(.[0] != "worker" and (map(type) | all(. == "string"))) | join(".")' "$TD_P/settings.json" 2>/dev/null)
-if [ -n "$TD_FKEYS" ]; then _flow_assert_pass "settings.json has flow.factory keys"; else _flow_assert_fail "no flow.factory keys read from settings.json"; fi
+# Every flow.factory setting the plugin's settings schema accepts, other than
+# the worker block (listed there as a group), is named in the Unreleased
+# settings entry, so a key this branch adds is not left out. The list comes
+# from schema.json, not settings.json, because a key with no default (such
+# as judges.intakeModel) is in the schema only. A leaf is a property with no
+# properties of its own. Every key settings.json ships must be in that list,
+# so reading the schema loses no key the old list had.
+_td_schema_fkeys() {
+  jq -r 'def leaves(p): to_entries[] | (p + [.key]) as $q | if (.value.properties | type) == "object" then (.value.properties | leaves($q)) else ($q | join(".")) end; .properties.flow.properties.factory.properties | leaves([])' "$TD_P/schema.json" 2>/dev/null
+}
+TD_SKEYS=$(_td_schema_fkeys)
+if [ -n "$TD_SKEYS" ]; then _flow_assert_pass "schema.json has flow.factory keys"; else _flow_assert_fail "no flow.factory keys read from schema.json"; fi
+for K in $(jq -r '.flow.factory | paths(type != "object") | select(map(type) | all(. == "string")) | join(".")' "$TD_P/settings.json" 2>/dev/null); do
+  if printf '%s\n' "$TD_SKEYS" | grep -qxF -- "$K"; then :; else _flow_assert_fail "settings.json has flow.factory.$K, which the schema key list does not have"; fi
+done
+TD_FKEYS=$(printf '%s\n' "$TD_SKEYS" | grep -v '^worker\.')
 for K in $TD_FKEYS; do
   _td_unrel_has "\`$K\`" "the CHANGELOG names the setting flow.factory.$K"
 done
+# The intake judge's model has no default; the entry says what happens then
+# (plan 2.5: the probe record's platform model; _flow_factory_launch.py
+# refuses model_unknown when neither gives one).
+_td_unrel_has "\`judges.intakeModel\` (the intake judge's model; when it is not set, the model the platform probe recorded" "the CHANGELOG says which model the intake judge runs when judges.intakeModel is not set"
+# The opening says the engine has no runner and no worker sandbox, and,
+# separately, that it starts no judge or worker in this release; a relative
+# clause between "a job engine" and "but no runner" reads as if the "but"
+# belonged to it.
+_td_unrel_has "it has a job engine but no runner and no worker sandbox, and in this release the engine starts no judge or worker." "the CHANGELOG's opening says what the factory lacks in one clause and what the engine does not start in another"
+if printf '%s\n' "$TD_UNREL" | grep -qF -- "which in this release starts no judge or worker, but"; then
+  _flow_assert_fail "the CHANGELOG's opening still puts the relative clause between 'a job engine' and 'but no runner'"
+else
+  _flow_assert_pass "the CHANGELOG's opening has no relative clause before 'but no runner'"
+fi
 # next adds the needs-info or needs-human label when a job parks there and
 # removes it when the job leaves (the labels.needsInfo and labels.needsHuman
 # rows of gate configuration).
@@ -313,25 +352,46 @@ TD_BIN="$TD_P/bin"
 _td_gate_row() {   # <key>
   grep -F "| \`flow.factory.$1\` |" "$TD_GATES"
 }
-_td_key_read() {   # <key>; prints the line that reads it
+# The modules that read a key, one file name per line. Besides the quoted
+# full name, a key is read through _flow_factory_next.py's num("<key>"),
+# which prefixes flow.factory., and a stage key through an f-string such as
+# "flow.factory.worker.stages.{stage}.timeoutSeconds" or the intake stage's
+# own quoted name.
+_td_key_files() {   # <key>
   case "$1" in
     labels.*)
-      { grep -nF -- "label_name(\"${1#labels.}\")" "$TD_BIN/_flow_factory_next.py"
-        grep -nE '^LABELLED_PARKS = \{' "$TD_BIN/_flow_factory_next.py" | grep -F -- ": \"${1#labels.}\""
-      } | head -1 ;;
-    *) grep -hnF -- "\"flow.factory.$1\"" "$TD_BIN"/_flow_factory*.py | head -1 ;;
-  esac
+      { grep -lF -- "label_name(\"${1#labels.}\")" "$TD_BIN/_flow_factory_next.py"
+        if grep -E '^LABELLED_PARKS = \{' "$TD_BIN/_flow_factory_next.py" | grep -qF -- ": \"${1#labels.}\""; then
+          printf '%s\n' "$TD_BIN/_flow_factory_next.py"
+        fi
+      } ;;
+    'worker.stages.<stage>.'*)
+      grep -lE -- "\"flow\.factory\.worker\.stages\.(\{[a-z_]+\}|[a-z_]+)\.${1##*.}\"" "$TD_BIN"/_flow_factory*.py ;;
+    *) grep -lF -- "\"flow.factory.$1\"" "$TD_BIN"/_flow_factory*.py
+       grep -lF -- ".num(\"$1\"" "$TD_BIN/_flow_factory_next.py" ;;
+  esac 2>/dev/null | sed 's|.*/||' | sort -u
 }
-for K in intake.maxRounds maxRounds labels.inProgress labels.needsInfo labels.needsHuman labels.specReview labels.ready labels.priorityHigh trustedPermission trustedBots; do
+# Every leaf key of the schema's flow.factory block has a row, the worker
+# stages folded into the rows' <stage> form, so a key with no default in
+# settings.json is checked too (gate configuration: one row per setting).
+TD_RKEYS=$(printf '%s\n' "$TD_SKEYS" | sed -E 's/^worker\.stages\.[^.]+\./worker.stages.<stage>./' | sort -u)
+for K in $TD_RKEYS; do
   R=$(_td_gate_row "$K")
   if [ -z "$R" ]; then _flow_assert_fail "no row for flow.factory.$K in gate configuration"; continue; fi
-  PAT=$(_td_key_read "$K")
-  if [ -n "$PAT" ]; then
+  FILES=$(_td_key_files "$K")
+  PAT=$(printf '%s\n' "$FILES" | tr '\n' ' ' | sed 's/ *$//')
+  if [ -n "$FILES" ]; then
     case "$R" in
-      *'not read yet'*|*'later change'*|*'later phase'*) _flow_assert_fail "the flow.factory.$K row says it is not used yet, but the code reads it (line $PAT)" ;;
+      *'not read yet'*|*'later change'*|*'later phase'*) _flow_assert_fail "the flow.factory.$K row says it is not used yet, but the code reads it ($PAT)" ;;
       *'`bin/_flow_factory'*) _flow_assert_pass "the flow.factory.$K row names the module that reads it" ;;
-      *) _flow_assert_fail "the flow.factory.$K row names no module, but the code reads it (line $PAT)" ;;
+      *) _flow_assert_fail "the flow.factory.$K row names no module, but the code reads it ($PAT)" ;;
     esac
+    for F in $FILES; do
+      case "$R" in
+        *"\`bin/$F\`"*) _flow_assert_pass "the flow.factory.$K row names bin/$F, which reads it" ;;
+        *) _flow_assert_fail "the flow.factory.$K row does not name bin/$F, which reads it" ;;
+      esac
+    done
   else
     case "$R" in
       *'not read yet'*) _flow_assert_pass "the flow.factory.$K row says it is not read yet, and no code reads it" ;;
@@ -344,6 +404,34 @@ done
 # phase.
 TD_PHASE_ROWS=$(grep -F '| `flow.factory.' "$TD_GATES" | grep -iE 'later phase|phase 1[a-z]' | sed -n 's/^| `\([^`]*\)`.*/\1/p' | tr '\n' ' ')
 assert_equal "" "$TD_PHASE_ROWS" "flow.factory rows that name a planning phase"
+# The launcher reads the intake judge's two settings itself and passes them
+# to flow-judge.sh as arguments (plan 2.5, B11 step 2): the model as
+# --model, refusing model_unknown when neither the key nor the probe record
+# gives one, and the intake timeout as --timeout-seconds, which
+# flow-judge.sh does not cut to the 5-600 s of the goal and verdict judges.
+TD_LAUNCH="$TD_BIN/_flow_factory_launch.py"
+if grep -qF 'raise Refused(f"model_unknown directive={did} next: set flow.factory.judges.intakeModel' "$TD_LAUNCH" \
+    && grep -qF '"--judge", "intake", "--model", directive["model"]' "$TD_LAUNCH"; then
+  R=$(_td_gate_row judges.intakeModel)
+  for T in '`--model`' 'the model the platform probe recorded' '`model_unknown`' 'user settings only'; do
+    case "$R" in
+      *"$T"*) _flow_assert_pass "the judges.intakeModel row says $T" ;;
+      *) _flow_assert_fail "the judges.intakeModel row does not say $T" ;;
+    esac
+  done
+else
+  _flow_assert_fail "_flow_factory_launch.py no longer passes judges.intakeModel as --model or refuses model_unknown; recheck this row and this check"
+fi
+if grep -qF '"flow.factory.worker.stages.intake.timeoutSeconds"' "$TD_LAUNCH" && grep -qF '"--timeout-seconds", str(timeout)' "$TD_LAUNCH"; then
+  R=$(_td_gate_row 'worker.stages.<stage>.timeoutSeconds')
+  T="For intake, \`bin/_flow_factory_launch.py\` reads the key itself and passes it to \`flow-judge.sh --judge intake\` as \`--timeout-seconds\`, without the 5-600 s limit of the goal and verdict judges"
+  case "$R" in
+    *"$T"*) _flow_assert_pass "the timeoutSeconds row says the launcher reads the intake timeout and passes it as --timeout-seconds" ;;
+    *) _flow_assert_fail "the timeoutSeconds row does not say: $T" ;;
+  esac
+else
+  _flow_assert_fail "_flow_factory_launch.py no longer reads the intake timeout or passes --timeout-seconds; recheck this row and this check"
+fi
 # The engine adds the in-progress label with its assignment (the assign_label
 # write of rows 11 and 40, design stages: prepare's "assignment and label
 # written").
