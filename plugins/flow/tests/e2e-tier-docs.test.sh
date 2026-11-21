@@ -33,7 +33,8 @@
 #      or it says no hold applies yet when the outbox hold on the
 #      needs-human notice and label applies now; or the CHANGELOG leaves out
 #      a setting the schema accepts, or what the intake judge runs when its
-#      model is not set
+#      model is not set, or says the intake stage takes the budget and tools
+#      keys the other stages take
 #      (design github_writes_and_tiers L37 and L48, residual_risks L3;
 #      plan B10 outline, plan 7.2 items 4 and 14; tier-gate's factory check)
 #   D8 the Actions table of gate configuration leaves out a gh command, REST
@@ -50,6 +51,10 @@
 #      no default in settings.json among them), or a row leaves out a module
 #      that reads its key; or the intake judge's model and timeout rows do not
 #      say how the launcher reads them and passes them to flow-judge.sh
+#   D10 under tiers.issueUpdate confirm, an untrusted edit (row 51b) or close
+#      (row 53u) of an intake job posts the needs-human comment or label
+#      anyway, or prints no PENDING_CONFIRM line for one of them, so the
+#      safety reference's "One hold applies now" is untrue
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -173,7 +178,8 @@ _td_fac_has "tier_confirm" "the park before launch"
 # the issue in intake, which plan 1.3 lists among the rows a shipped run can
 # apply) post the needs-human notice and label, and with tiers.issueUpdate
 # confirm the shipped flow-factory.sh next prints PENDING_CONFIRM for both
-# and status lists them (B14 step 8).
+# and posts neither, which scenario D10 at the end of this file runs for
+# both rows.
 _td_fac_has "One hold applies now: when an untrusted edit or close of the issue moves a job to needs_human, the notice and the label \`next\` posts wait in the outbox while \`tiers.issueUpdate\` is \`confirm\`" "the opening says the outbox hold on the needs-human notice and label applies now"
 # tier-gate turns its factory rules on for these four variables only
 # (_tg_in_factory), not for any FLOW_FACTORY_* name.
@@ -225,6 +231,16 @@ done
 # (plan 2.5: the probe record's platform model; _flow_factory_launch.py
 # refuses model_unknown when neither gives one).
 _td_unrel_has "\`judges.intakeModel\` (the intake judge's model; when it is not set, the model the platform probe recorded" "the CHANGELOG says which model the intake judge runs when judges.intakeModel is not set"
+# The worker's stages each take maxBudgetUsd, timeoutSeconds and
+# allowedTools, except intake, whose judge runs with no tools and no budget
+# key and so takes timeoutSeconds only (schema.json, worker.stages.intake).
+# The entry says so, as the allowedTools row of gate configuration does.
+TD_INTAKE_STAGE=$(jq -r '.properties.flow.properties.factory.properties.worker.properties.stages.properties.intake.properties | keys | join(",")' "$TD_P/schema.json" 2>/dev/null)
+if [ "$TD_INTAKE_STAGE" = timeoutSeconds ]; then
+  _td_unrel_has "each stage's \`maxBudgetUsd\`, \`timeoutSeconds\` and \`allowedTools\` (the intake stage has \`timeoutSeconds\` only, which the launcher passes to the intake judge)" "the CHANGELOG says the intake stage has timeoutSeconds only"
+else
+  _flow_assert_fail "schema.json's worker.stages.intake keys are '$TD_INTAKE_STAGE', not timeoutSeconds only; recheck the CHANGELOG's settings entry and this check"
+fi
 # The opening says the engine has no runner and no worker sandbox, and,
 # separately, that it starts no judge or worker in this release; a relative
 # clause between "a job engine" and "but no runner" reads as if the "but"
@@ -456,4 +472,80 @@ for K in trustedPermission trustedBots; do
   else
     _flow_assert_fail "_flow_factory_commands.py no longer calls perms.trusted; recheck this row and this check"
   fi
+done
+
+# ---------------------------------------------------------------- D10
+# The hold the safety reference says applies now, run through the shipped
+# flow-factory.sh next (no seam) with the gh stand-in. factory-e2e.sh is
+# sourced here, after every docs check, because it replaces the EXIT trap
+# with one that also stops the factory's processes.
+source "$REPO_ROOT/plugins/flow/tests/lib/factory-e2e.sh" || {
+  _flow_assert_fail "cannot load tests/lib/factory-e2e.sh"
+  return 1 2>/dev/null; exit 1
+}
+# _td_hold_run <scenario> <edit|close> <issueUpdate value or default> — job 7
+# in intake, vouched at 00:00, a sync on every pass; at 01:00 an outsider with
+# read access edits the body (row 51b) or ci[bot], a bot not in trustedBots,
+# closes the issue (row 53u); then one pass of the shipped wrapper's next.
+_td_hold_run() {
+  local tiers='{}'
+  [ "$3" = default ] || tiers="{\"issueUpdate\": \"$3\"}"
+  fe_new "$1"
+  e2e_repo main
+  fe_record
+  e2e_user_settings "{\"flow\": {\"factory\": {\"enabled\": true, \"syncIntervalSeconds\": 0}}, \"tiers\": $tiers}"
+  fe_world_new flow-e2e-engine flow-e2e/scratch
+  fe_gh --version 'gh version 2.101.0 (2026-09-15)'
+  fe_world_issue 7 "Add a port setting" "The service needs a port setting."
+  fe_job 7 intake "d['vouch_at'] = '2026-11-16T00:00:00Z'"
+  TD_J="$(fe_factory_dir)/jobs/issue-7"
+  if [ "$2" = edit ]; then
+    fe_world_perm outsider read
+    fe_world_edit issue:7 outsider 2026-11-16T01:00:00Z
+  else
+    fe_world_close 7 'ci[bot]' write 2026-11-16T01:00:00Z
+  fi
+  e2e_run_bin bin/flow-factory.sh next --executor headless
+}
+# _td_status_count <extended regex> — how many of next's status lines match.
+_td_status_count() {
+  printf '%s\n' "$E2E_OUT" | jq -Rr 'fromjson? | .status? // empty' | grep -cE -- "$1"
+}
+# _td_comment_posts — how many comments the stand-in received for issue 7.
+_td_comment_posts() {
+  fe_world_posts | jq -r 'select(.method == "POST" and (.path | endswith("/issues/7/comments"))) | .path' | grep -c .
+}
+
+_flow_test_begin "tier docs: an untrusted edit or close under tiers.issueUpdate confirm holds the needs-human notice and label in the outbox, through the shipped next (D10)"
+# Source: three-tier-safety.md, the factory section's opening ("One hold
+# applies now"); T:51b (intake, github_change, untrusted_edit -> needs_human,
+# reason untrusted_edit); T:53u (untrusted_close -> needs_human, reason
+# issue_closed_untrusted); plan B14 step 8 (on entry to needs_human a
+# needs-human comment and a label_add of labels.needsHuman, both notices
+# under issueUpdate, drained in the same pass); plan B6 step 7 and 2.3 (a
+# notice whose key is confirm becomes pending_confirm and next prints
+# PENDING_CONFIRM job=<key> intent=<id> kind=<kind>); design
+# github_writes_and_tiers (confirm holds the write). The control under the
+# plugin default (journal) shows that the user key, not a failed base fetch,
+# made the hold.
+for TD_CASE in edit:51b:untrusted_edit close:53u:issue_closed_untrusted; do
+  TD_KIND=${TD_CASE%%:*}; TD_REST=${TD_CASE#*:}; TD_ROW=${TD_REST%%:*}; TD_WHY=${TD_REST#*:}
+  _td_hold_run "td-hold-$TD_KIND-confirm" "$TD_KIND" confirm
+  e2e_describe "job 7 in intake; tiers.issueUpdate confirm in the user settings; an untrusted $TD_KIND of issue 7 at 01:00; one pass of the shipped flow-factory.sh next"
+  e2e_expect_equal 0 "$E2E_RC" "$TD_KIND under confirm: exit status ($E2E_ERR)"
+  e2e_expect_equal "$TD_ROW needs_human $TD_WHY" "$(jq -r 'select(.type == "transition") | .row' "$TD_J/events.jsonl" 2>/dev/null | tr '\n' ' ')$(jq -r '"\(.state) \(.reason)"' "$TD_J/job.json" 2>/dev/null)" "$TD_KIND under confirm: row, state and reason"
+  e2e_expect_equal 0 "$(_td_status_count '^BASE_(FETCH_FAILED|REF_UNRESOLVED) ')" "$TD_KIND under confirm: the base fetch succeeded"
+  e2e_expect_equal 1 "$(_td_status_count '^PENDING_CONFIRM job=issue-7-j1 intent=[^ ]+ kind=comment$')" "$TD_KIND under confirm: one PENDING_CONFIRM line for the needs-human comment"
+  e2e_expect_equal 1 "$(_td_status_count '^PENDING_CONFIRM job=issue-7-j1 intent=[^ ]+ kind=label_add$')" "$TD_KIND under confirm: one PENDING_CONFIRM line for the needs-human label"
+  e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "$TD_KIND under confirm: nothing posted"
+  e2e_expect_equal '[]' "$(jq -c '.issues["7"].labels' "$FE_WORLD")" "$TD_KIND under confirm: no label on the issue"
+  e2e_expect_err_lacks "Traceback"
+
+  _td_hold_run "td-hold-$TD_KIND-default" "$TD_KIND" default
+  e2e_describe "control: the same world under the plugin default for tiers.issueUpdate (journal)"
+  e2e_expect_equal 0 "$E2E_RC" "$TD_KIND under the default: exit status ($E2E_ERR)"
+  e2e_expect_equal "$TD_ROW needs_human" "$(jq -r 'select(.type == "transition") | .row' "$TD_J/events.jsonl" 2>/dev/null | tr '\n' ' ')$(jq -r .state "$TD_J/job.json" 2>/dev/null)" "$TD_KIND under the default: row and state"
+  e2e_expect_equal 0 "$(_td_status_count '^PENDING_CONFIRM ')" "$TD_KIND under the default: no PENDING_CONFIRM line"
+  e2e_expect_equal 1 "$(_td_comment_posts)" "$TD_KIND under the default: one needs-human comment posted"
+  e2e_expect_equal '["flow:needs-human"]' "$(jq -c '.issues["7"].labels' "$FE_WORLD")" "$TD_KIND under the default: the needs-human label on the issue"
 done

@@ -41,7 +41,8 @@ settings cannot turn it on.
   model the platform probe recorded, and with neither the launch is refused
   with `model_unknown`), and under `worker` the `model`, `extraEnv`,
   `mcpConfig` and each stage's `maxBudgetUsd`, `timeoutSeconds` and
-  `allowedTools`.
+  `allowedTools` (the intake stage has `timeoutSeconds` only, which the
+  launcher passes to the intake judge).
 - `next` adds the `flow:needs-info` or `flow:needs-human` label (the names
   `labels.needsInfo` and `labels.needsHuman` set) to the issue when its job
   enters needs_info or needs_human, and removes it when the job leaves. Both
