@@ -761,7 +761,7 @@ class Pass:
         if not any(isinstance(j, jobs.Unreadable) or self.table.kind(j.get("state")) != "terminal"
                    for _, j in found):
             return "done"
-        if fcaller.live_leases(self.paths.fdir):
+        if _live_lease_found(self.paths):
             return "wait"
         for n, job in found:
             if not isinstance(job, dict) or self.table.kind(job.get("state")) == "terminal":
@@ -769,13 +769,23 @@ class Pass:
             jdir = jobs.job_dir(self.paths, n)
             pdir = os.path.join(jdir, "pending")
             # A linked J/pending is never listed: the pass refuses the job
-            # (factory_dir_refused), so nothing behind the link waits.
-            if not _linked_dir(pdir) and os.path.isdir(pdir) and \
-                    any(jobs.PENDING_NAME.match(x) for x in os.listdir(pdir)):
-                return "wait"
+            # (factory_dir_refused), so nothing behind the link waits. A
+            # real J/pending that cannot be listed is refused the same way
+            # (pending_unlisted) and waits for a person.
+            if not _linked_dir(pdir) and os.path.isdir(pdir):
+                try:
+                    names = os.listdir(pdir)
+                except OSError:
+                    names = []
+                if any(jobs.PENDING_NAME.match(x) for x in names):
+                    return "wait"
             did = job.get("directive")
             if did:
-                if os.path.lexists(os.path.join(jdir, "directives", did + ".pending-report.jsonl")):
+                # A linked J/directives is never read through: the pass
+                # refuses the job, and nothing handles a pending-report file
+                # behind the link.
+                ddir = os.path.join(jdir, "directives")
+                if not _linked_dir(ddir) and os.path.lexists(os.path.join(ddir, did + ".pending-report.jsonl")):
                     return "wait"
                 if directive_open(self.paths, n, did):
                     return "wait"
@@ -887,6 +897,40 @@ def _result_present(paths, n, did):
     if os.path.islink(rdir) or os.path.islink(path):
         return False
     return os.path.lexists(path)
+
+
+def _live_lease_found(paths):
+    """Whether a job folder's own J/directives holds a live lease: one that
+    is not revoked and whose launcher runs with the start time it records
+    (the rule of the caller module's live_leases). A job folder or a
+    J/directives that is a link or not a folder is not read through, and a
+    lease file that is itself a link is not read (journal wave 4, linked job
+    folders): a lease found that way is not the job's. A folder that cannot
+    be listed holds no lease that can be read."""
+    jroot = os.path.join(paths.fdir, "jobs")
+    if _linked_dir(jroot):
+        return False
+    try:
+        folders = sorted(os.listdir(jroot))
+    except OSError:
+        return False
+    for name in folders:
+        jdir = os.path.join(jroot, name)
+        ddir = os.path.join(jdir, "directives")
+        if _linked_dir(jdir) or _linked_dir(ddir):
+            continue
+        try:
+            files = sorted(os.listdir(ddir))
+        except OSError:
+            continue
+        for x in files:
+            if not x.endswith(".lease.json"):
+                continue
+            lease = _read_json(os.path.join(ddir, x))
+            if isinstance(lease, dict) and lease.get("revoked_at") is None \
+                    and fcaller._alive(lease.get("launcher_pid"), lease.get("launcher_start")):
+                return True
+    return False
 
 
 def directive_open(paths, n, did):
@@ -1909,7 +1953,14 @@ class JobPass:
         cannot be read, or names no event of the table, is refused and
         removed."""
         out = {}
-        for name, rec in jobs.pending_events(self.paths, self.n):
+        try:
+            found = jobs.pending_events(self.paths, self.n)
+        except OSError:
+            # A real J/pending that cannot be listed or read: the job is
+            # refused for this pass, as a linked one is (factory_dir_refused),
+            # and its events wait for a person.
+            raise Refused(f"pending_unlisted {os.path.relpath(os.path.join(self.jdir, 'pending'), self.paths.main)}")
+        for name, rec in found:
             event = name.split("-", 1)[1][:-len(".json")]
             if isinstance(rec, jobs.Unreadable) or event not in self.p.table.events or rec.get("event") != event:
                 self.refuse(f"EVENT_REFUSED={event} state={self.job['state']}")
@@ -2225,12 +2276,19 @@ class JobPass:
             self.refuse(d.line)
 
     def unapplied_results(self):
-        """Whether a stage or judge result of the job waits in pending/."""
+        """Whether a stage or judge result of the job waits in pending/. A
+        J/pending that is a link, or a real one that cannot be listed, is
+        never listed here: the job's results are not known, so the stage is
+        not launched again (phase B refuses such a job first)."""
         pdir = os.path.join(self.jdir, "pending")
+        if _linked_dir(pdir):
+            return True
+        if not os.path.lexists(pdir):
+            return False
         try:
             names = os.listdir(pdir)
         except OSError:
-            return False
+            return True
         for x in names:
             if not jobs.PENDING_NAME.match(x):
                 continue

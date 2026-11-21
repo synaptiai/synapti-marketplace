@@ -76,7 +76,10 @@
 #        gives no OUTBOX_UNREADABLE line in the pass
 #   NX61 a linked J/directives is read or written through: its lease revoked
 #        or its pending-report file removed through the link; a linked
-#        J/pending is listed for the pass's last word
+#        J/pending is listed for the pass's last word; a pending-report file
+#        or a live lease behind a linked J/directives or a linked job folder
+#        makes the last word wait; a real J/pending that cannot be listed
+#        stops the pass with a traceback
 #   NX62 row 41 runs an item edited after the stored confirm (R32), or the
 #        refused confirm is kept and the park fails silently in every pass
 #   NX63 a later launch rebuilds in/issue.md from live GitHub (R9)
@@ -107,6 +110,9 @@ nx_secs() { perl -e 'printf "%.2f", $ARGV[1] - $ARGV[0]' "$1" "$2"; }
 # -f %m, and GNU stat reads -f as "the file system", whose %m is not a time.
 nx_mtime() { perl -MTime::HiRes=stat -e 'printf "%.3f", (stat $ARGV[0])[9]' "$1"; }
 nx_le() { perl -e 'exit(($ARGV[0] <= $ARGV[1]) ? 0 : 1)' "$1" "$2" && echo yes || echo "no ($1 s)"; }
+# nx_cents_at_least <least> <cents> — yes when cents is at least least, else
+# the amount found, in cents.
+nx_cents_at_least() { perl -e 'exit(($ARGV[1] =~ /^-?[0-9]+$/ && $ARGV[1] >= $ARGV[0]) ? 0 : 1)' "$1" "$2" && echo yes || echo "no (${2:-nothing} cents)"; }
 
 D1=issue-7-j1-build-1
 D2=issue-7-j1-build-2
@@ -1568,7 +1574,7 @@ e2e_expect_equal 1 "$(nx_line_count '"INTENT_NOT_PENDING=issue-7-j1-40-9 pending
 e2e_expect_equal "waiting_operator issue-7-j1-40-1" "$(nx_jq "$NX_J/job.json" '"\(.state) \(.pending_intent.id)"')" "still parked on its own intent (the move is not kept)"
 e2e_expect_equal "set" "$(nx_jq "$NX_J/directives/$NX_D2.lease.json" 'if .revoked_at then "set" else "unset" end')" "the kill revoked the lease"
 e2e_expect_equal "1 limit_plus_turn" "$(nx_jq "$NX_J/job.json" '[.cost.runs[]? | select(.directive == "'"$NX_D2"'")] | "\(length) \(.[0].basis)"')" "job.json keeps the kill's charge"
-e2e_expect_equal yes "$(nx_le 100 "$(nx_jq "$NX_J/job.json" '[.cost.runs[]? | select(.directive == "'"$NX_D2"'")][0].charged_usd * 100 | round')")" "the charge is at least the limit plus the least allowance, in cents"
+e2e_expect_equal yes "$(nx_cents_at_least 100 "$(nx_jq "$NX_J/job.json" '[.cost.runs[]? | select(.directive == "'"$NX_D2"'")][0].charged_usd * 100 | round')")" "the charge is at least the limit plus the least allowance, in cents"
 e2e_expect_equal 0 "$(fe_world_posts | grep -c .)" "nothing posted"
 fi
 
@@ -2310,6 +2316,79 @@ e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_err_lacks "Traceback"
 e2e_expect_equal "" "$(diff -r "$E2E_DIR/directives.before" "$E2E_DIR/outside-directives" 2>&1)" "the files outside the job are not written or removed"
 e2e_expect_equal 0 "$(nx_ev_count 7 '.type == "report_refused"')" "no report line read through the link"
+# Source: as nx61b below. The pass refuses the job every time and nothing
+# handles the pending-report file behind the link, so it is not read for
+# the last word either (Inferred).
+e2e_expect_equal idle "$(nx_last)" "the last line (the pending-report file behind the link is not a wait)"
+fe_new nx61c-directives-linked-live-lease
+# Source: as nx61 and nx61b. A lease is read only from the job's own
+# J/directives (journal wave 4, a linked J/directives is treated as absent
+# at every read), so a live launcher named by a lease behind the link is not
+# a wait (Inferred: design runner step 4, nothing of the job's is running).
+e2e_describe "job 7 in build with current directive $D1; J/directives moved outside the job and a link put in its place; the lease behind the link names a live sleep 60 as its launcher, with its start time; one pass"
+nx_seed "d['directive'] = '$D1'; d['stage_launches'] = {'build': 1}; d['holds_slot'] = True"
+nx_plugin 'RUN: true'
+fe_directive "$D1" "d['max_budget_usd'] = 0.5; d['started_at'] = '2026-11-16T00:00:00Z'"
+NX_K=$(_fe_in_scratch "$(fe_python)" -I -c 'import subprocess; print(subprocess.Popen(["sleep", "60"], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)')
+_fe_register "$NX_K"
+fe_mask_pid "$NX_K" launcher
+NX_KS=$(_fe_lstart "$NX_K")
+NX_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+jq -n --arg d "$D1" --argjson p "$NX_K" --arg s "$NX_KS" --arg now "$NX_NOW" '{directive: $d, kind: "worker", host: "h",
+  launcher_pid: $p, launcher_start: $s, started_at: $now, heartbeat_at: $now, child_pid: null, child_pgid: null,
+  child_start: null, revoked_at: null}' > "$NX_J/directives/$D1.lease.json"
+mv "$NX_J/directives" "$E2E_DIR/outside-directives"
+ln -s "$E2E_DIR/outside-directives" "$NX_J/directives"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count 'factory_dir_refused')" "the pass refuses the job"
+e2e_expect_equal unset "$(jq -r 'if .revoked_at then "set" else "unset" end' "$E2E_DIR/outside-directives/$D1.lease.json")" "the lease behind the link is not revoked"
+e2e_expect_equal idle "$(nx_last)" "the last line (a live lease behind a linked J/directives is not a wait)"
+fe_new nx61d-job-folder-linked-live-lease
+# Source: journal wave 4 and its B12 follow-up "Linked job folders" (a
+# linked job folder is never read through); the job is unreadable
+# (UNREADABLE ... next: flow-factory.sh rebuild), and a lease behind the link
+# is not the job's, so it is not a wait (Inferred, as nx61c).
+e2e_describe "job 7 in build with current directive $D1 whose lease names a live sleep 60 as its launcher; then the whole job folder moved outside the factory and a link put in its place; one pass"
+nx_seed "d['directive'] = '$D1'; d['stage_launches'] = {'build': 1}; d['holds_slot'] = True"
+nx_plugin 'RUN: true'
+fe_directive "$D1" "d['max_budget_usd'] = 0.5; d['started_at'] = '2026-11-16T00:00:00Z'"
+NX_K=$(_fe_in_scratch "$(fe_python)" -I -c 'import subprocess; print(subprocess.Popen(["sleep", "60"], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid)')
+_fe_register "$NX_K"
+fe_mask_pid "$NX_K" launcher
+NX_KS=$(_fe_lstart "$NX_K")
+NX_NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+jq -n --arg d "$D1" --argjson p "$NX_K" --arg s "$NX_KS" --arg now "$NX_NOW" '{directive: $d, kind: "worker", host: "h",
+  launcher_pid: $p, launcher_start: $s, started_at: $now, heartbeat_at: $now, child_pid: null, child_pgid: null,
+  child_start: null, revoked_at: null}' > "$NX_J/directives/$D1.lease.json"
+mv "$NX_J" "$E2E_DIR/outside-job"
+ln -s "$E2E_DIR/outside-job" "$NX_J"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count 'UNREADABLE job=issue-7')" "the job is unreadable"
+e2e_expect_equal idle "$(nx_last)" "the last line (a live lease behind a linked job folder is not a wait)"
+fe_new nx61e-pending-unlisted
+# Source: as nx61b, for a real J/pending folder that cannot be listed (as
+# nx60l does for J/outbox). The pass goes on without a traceback, and the
+# job's events wait for a person to give the folder back its permissions
+# (Inferred: design runner step 4, nothing the engine can act on). The
+# permissions are given back after the pass, so the scratch folder can be
+# removed.
+e2e_describe "job 7 in build with no directive; its J/pending folder holds a stage_succeeded file and is left with no permissions; one pass"
+nx_base build
+mkdir -p "$NX_J/pending"
+printf '{}' > "$NX_J/pending/00000000000000000009-stage_succeeded.json"
+chmod 000 "$NX_J/pending"
+nx_next
+chmod 755 "$NX_J/pending"
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal 1 "$(nx_line_count '"FACTORY_REFUSED=pending_unlisted .flow/factory/jobs/issue-7/pending job=issue-7"')" "the pass refuses the job"
+e2e_expect_equal idle "$(nx_last)" "the last line"
+e2e_expect_equal '{}' "$(cat "$NX_J/pending/00000000000000000009-stage_succeeded.json")" "the stored event is kept for the next pass"
+e2e_expect_equal 0 "$(nx_launches)" "claude launches"
 fe_new nx61b-pending-linked-final-word
 # Source: journal wave 4 and its B12 follow-up "Linked job folders" (a
 # linked job folder is never read through); design runner step 4
