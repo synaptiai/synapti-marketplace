@@ -45,6 +45,16 @@
 #   TF13 (design e2e_tests L118) hooks.json has no PreToolUse entry for the
 #        state guard whose matcher matches Write, Edit and NotebookEdit and not
 #        Bash
+#   TF14 (plan B16, design factory_mode_in_commands L43 and L164) with
+#        FLOW_FACTORY_DIRECTIVE set, the TaskCompleted gate still refuses a
+#        dirty completion, or warns with other text than its warn mode's; it
+#        warns only up to a count; it warns with the variable set but empty,
+#        or without it; or it writes anything (person_channels L48:
+#        nothing under the factory directory; no per-job state dir before
+#        1c, phasing L48). The plugin's settings.json already sets block, so
+#        the five completions are the block case; the later check with the
+#        project setting block repeats it through the project's settings
+#        file and is no guard of its own
 #
 # Every expected value is written out by hand from the plan or design line
 # named in each scenario; none is taken from the code under test.
@@ -997,4 +1007,78 @@ for T in Write Edit NotebookEdit Bash; do
   e2e_expect_equal "$( [ "$T" = Bash ] && echo false || echo true)" "$(jq -nr --arg m "$TF_M" --arg t "$T" '$t | test("^(" + $m + ")$")')" "the matcher matches $T"
 done
 e2e_expect_equal yes "$([ -x "$E2E_ACTIVE_PLUGIN/$TF_GUARD" ] && echo yes || echo no)" "the state guard is executable"
+fi
+
+# ---------------------------------------------------------------- TF14
+if tf_want TF14; then
+_flow_test_begin "verify-task-completion: in a factory worker (FLOW_FACTORY_DIRECTIVE set) a dirty completion is warned about, not refused, and nothing is written (TF14, plan B16)"
+tf_factory tf14-task-warn
+# Source: plan B16 outline and test plan (with FLOW_FACTORY_DIRECTIVE set,
+# verify-task-completion warns instead of refusing; without it, the refusal as
+# today; no counter and no write anywhere, so nothing under the factory
+# directory); design factory_mode_in_commands L43 ("testing.taskCompletionGate
+# | warn" for a factory worker) and L164 (the P2 fallback is
+# verify-task-completion warn); person_channels L48 (the engine is the only
+# writer under the factory directory). The warn text is the hook's warn mode,
+# which its header gives as the block text prefixed "WARNING (stop allowed)"
+# with exit 0. Set but empty counts as unset (task text for B16). The
+# directive path names no file, as in the P2 worker (journal, B15 worker
+# variables): only whether the variable is set is read.
+e2e_describe "a file written outside the runtime directory and logged by log-file-changes.sh, with no quality run: TaskCompleted without the variable, then five times with FLOW_FACTORY_DIRECTIVE naming a missing file, then with it empty, then with the project setting block and with it off; the repository, HOME, the state dir and TMPDIR are listed with each file's sha256 before and after the warned completions"
+TF_ST="$E2E_DIR/state"; TF_TMP="$E2E_DIR/tmp"
+mkdir -p "$TF_ST" "$TF_TMP" "$E2E_REPO/src"
+TF_DIRECTIVE="$E2E_DIR/area/directive.json"
+printf 'x = 1\n' > "$E2E_REPO/src/app.txt"
+e2e_run_hook "FLOW_STATE_DIR=$TF_ST" "TMPDIR=$TF_TMP" hooks/scripts/log-file-changes.sh \
+  "$(jq -nc --arg cwd "$E2E_REPO" --arg p "$E2E_REPO/src/app.txt" '{session_id:"s-14",cwd:$cwd,hook_event_name:"PostToolUse",tool_name:"Write",tool_input:{file_path:$p}}')"
+e2e_expect_equal 0 "$E2E_RC" "log-file-changes.sh exit status"
+TF_TASK=$(jq -nc --arg cwd "$E2E_REPO" '{session_id:"s-14",cwd:$cwd,hook_event_name:"TaskCompleted",task_id:"1",task_subject:"ship it"}')
+# tf_task [NAME=value ...] — the gate on the dirty completion.
+tf_task() { e2e_run_hook "FLOW_STATE_DIR=$TF_ST" "TMPDIR=$TF_TMP" "$@" hooks/scripts/verify-task-completion.sh "$TF_TASK"; }
+# tf_tree — every path under the folders the gate could write to, with the
+# sha256 of each regular file.
+tf_tree() {
+  local d
+  for d in "$E2E_REPO" "$E2E_HOME" "$TF_ST" "$TF_TMP"; do
+    ( cd "$d" && find . | LC_ALL=C sort | while IFS= read -r p; do
+        if [ -f "$p" ] && [ ! -L "$p" ]; then printf '%s %s %s\n' "$d" "$p" "$(_e2e_sha256 "$p")"; else printf '%s %s\n' "$d" "$p"; fi
+      done )
+  done
+}
+tf_task
+e2e_expect_equal 2 "$E2E_RC" "no FLOW_FACTORY_DIRECTIVE: exit status (refused, as today)"
+e2e_expect_err "Task 'ship it' cannot be completed: 1 file(s) changed since the last passing quality run"
+e2e_expect_err_lacks "WARNING"
+TF_REFUSAL=$E2E_ERR
+TF_BEFORE=$(tf_tree)
+TF_FBEFORE=$(cd "$TF_F" && find . | LC_ALL=C sort)
+for TF_I in 1 2 3 4 5; do
+  tf_task "FLOW_FACTORY_DIRECTIVE=$TF_DIRECTIVE"
+  e2e_expect_equal "0" "$E2E_RC" "FLOW_FACTORY_DIRECTIVE set, completion $TF_I: exit status"
+  e2e_expect_equal "WARNING (stop allowed): $TF_REFUSAL" "$E2E_ERR" "FLOW_FACTORY_DIRECTIVE set, completion $TF_I: stderr is the refusal text prefixed as warn mode prefixes it"
+  e2e_expect_equal "" "$E2E_OUT" "FLOW_FACTORY_DIRECTIVE set, completion $TF_I: stdout"
+done
+e2e_expect_equal "$TF_FBEFORE" "$(cd "$TF_F" && find . | LC_ALL=C sort)" "the paths under the scratch repository's .flow/factory after the warned completions"
+# The paths that differ, each with < (gone or changed) or > (new or changed).
+e2e_expect_equal "" "$(diff <(printf '%s\n' "$TF_BEFORE") <(tf_tree) | grep '^[<>]')" "the paths under the repository, HOME, the state dir and TMPDIR that the warned completions added, removed or changed"
+e2e_expect_equal no "$([ -e "$TF_DIRECTIVE" ] || [ -e "$E2E_DIR/area" ] && echo yes || echo no)" "the directive path or its folder exists"
+tf_task "FLOW_FACTORY_DIRECTIVE="
+e2e_expect_equal "2 yes" "$E2E_RC $([ "$E2E_ERR" = "$TF_REFUSAL" ] && echo yes || echo no)" "FLOW_FACTORY_DIRECTIVE set but empty: exit status, and stderr is the refusal text"
+# The same block case set in the project's settings file instead of taken
+# from the plugin's settings.json, which already sets block: the worker still
+# warns (design factory_mode_in_commands L43 sets the factory's value over
+# it). It repeats the five completions above and guards nothing they do not.
+mkdir -p "$E2E_REPO/.claude"
+printf '{"testing": {"taskCompletionGate": "block"}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+tf_task
+e2e_expect_equal 2 "$E2E_RC" "project block, no variable: exit status"
+TF_REFUSAL=$E2E_ERR
+tf_task "FLOW_FACTORY_DIRECTIVE=$TF_DIRECTIVE"
+e2e_expect_equal "0 yes" "$E2E_RC $([ "$E2E_ERR" = "WARNING (stop allowed): $TF_REFUSAL" ] && echo yes || echo no)" "project block, FLOW_FACTORY_DIRECTIVE set: exit status, and stderr is the warning"
+# Inferred (factory_mode_in_commands L43 names warn only in place of a
+# refusal): off still evaluates nothing.
+printf '{"testing": {"taskCompletionGate": "off"}}\n' > "$E2E_REPO/.claude/settings.flow.json"
+tf_task "FLOW_FACTORY_DIRECTIVE=$TF_DIRECTIVE"
+e2e_expect_equal "0 ''" "$E2E_RC '$E2E_ERR'" "project off, FLOW_FACTORY_DIRECTIVE set: exit status and stderr"
+e2e_expect_equal yes "$(grep -q FLOW_FACTORY_DIRECTIVE "$E2E_ACTIVE_PLUGIN/hooks/scripts/verify-task-completion.sh" && echo yes || echo no)" "the hook script's own text names FLOW_FACTORY_DIRECTIVE (the mark the platform probe reads, journal B15)"
 fi

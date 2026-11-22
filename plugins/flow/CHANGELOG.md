@@ -80,6 +80,12 @@ settings cannot turn it on.
   engine resolves each tier key as the strictest of four sources rather than
   the first, and counts a base branch it cannot fetch as `confirm`.
   `references/three-tier-safety.md` describes both.
+- In a factory worker session (`FLOW_FACTORY_DIRECTIVE` set and not
+  empty), `verify-task-completion.sh` treats
+  `testing.taskCompletionGate: block`, the default, as `warn`: it prints the
+  warning and lets the completion through (#355). It keeps no count and
+  writes nothing. `off` still checks nothing, and outside a worker `block`
+  refuses as before.
 - `flow-factory.sh` subcommands other than `wait`, `run`, `question`,
   `runner` and `await` no longer exit 5 with `FACTORY_REFUSED=not_built`.
   With no probe record the wrapper prints

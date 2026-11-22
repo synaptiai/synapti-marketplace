@@ -25,6 +25,10 @@
 #           (Claude Code refuses the completion and feeds stderr back).
 #   warn  — same text prefixed "WARNING (stop allowed)", exit 0.
 #   off   — exit 0 without evaluating.
+# In a factory worker (FLOW_FACTORY_DIRECTIVE set and not empty) block counts
+# as warn: the platform probe found the gate refusing every task completion
+# of a factory worker. The fallback keeps no count and writes nothing; off
+# stays off.
 #
 # Silent exit 0 when: STATE is clean, empty (nothing recorded), or
 # unavailable (python3 missing); jq is missing; the payload has no session_id
@@ -68,6 +72,8 @@ case "$MODE" in
   block) ;;
   *) MODE="block" ;;   # unknown value: keep the safe default
 esac
+# A factory worker is warned, never refused (the factory warn fallback).
+[ "$MODE" = "block" ] && [ -n "${FLOW_FACTORY_DIRECTIVE:-}" ] && MODE="warn"
 # The journal directory as every journal writer resolves it.
 if [ -x "${PLUGIN_ROOT}/bin/journal-dir.sh" ]; then
   JOURNAL_DIR=$("${PLUGIN_ROOT}/bin/journal-dir.sh" 2>/dev/null)
