@@ -230,6 +230,16 @@ artifacts:
   captured_at: '2026-11-18T21:13:37Z'
   goal_id: issue-355
   source: issue
+- type: goal-evaluation
+  captured_at: '2026-11-22T21:35:08Z'
+  goal_id: issue-355
+  result: waiting_for_user
+  reason: paused for P9 sessions; resume after P9
+- type: goal-evaluation
+  captured_at: '2026-11-22T21:41:35Z'
+  goal_id: issue-355
+  result: active
+  reason: resumed after P9
 ---
 
 ## Specification
@@ -583,3 +593,5 @@ Choices:
 - **Expected P2 run 2:** facts fallbacks {"stop": false, "task_completed": true}; every task-completed entry at rc 0; task_completed_refusals go with 4 or more completions; stop_caps go as in run 1. A refusal would mean the variable did not reach the hook.
 - **P2 run 2 (2026-11-22, after B16, evidence/P2-6, $0.89):** P2 is deferred, which is its best result in 1b: session_end_writes is deferred to #356 (phase 1c builds the per-job state dir), and every other part is go. task_completed_refusals is go (the fallback refused none of 5 completions; all 5 TaskCompleted entries rc 0); stop_caps go (3 blocks within the cap of 3, then the stop let through); facts fallbacks {"stop": false, "task_completed": true}. Spend is now $23.06 of the $30 cap.
 - **P9 pre-session check (2026-11-22, Claude Code 2.1.326, $0.35, not charged to the probe record):** a `claude -p` session with a plugin that only logs ran `sh -c 'echo P9_PRECHECK_LINE; exit 3'`; it fired PostToolUseFailure only, with no tool_response and `.error` = "Exit code 3\nP9_PRECHECK_LINE". So the capture plugin's search of the whole hook input finds the engine's line, as plan 7.4 assumed from 2.1.299.
+- **P9 sessions (2026-11-22, driven by Claude in tmux at the user's choice, evidence/P9-7 and P9-8):** tier_gate_by_mode go. Default mode: tier-gate asked before `confirm probe-p9-7` (the question showed the recorded literal and its sha256) and before `approve-spec issue-999999-j1` (it showed `spec_hash: 0123456789ab` and `spec file: none recorded`); Claude answered yes, as the user chose, and the engine answered `FACTORY_REFUSED=disabled` both times, because the worktree copy cannot read repository settings. Auto mode: tier-gate denied both, naming the terminal command, and neither ran. P9 is deferred only for its executor part (#356). Claude Code updated from 2.1.326 to 2.1.330 during the default session; both stored findings carry 2.1.330. The default session cost $0.80, the auto session about $0.60.
+- **Goal paused during P9:** the P9 flow copy's Stop hook found this branch's active goal and ran its verification suites on every turn (load average 70). The goal was paused (waiting_for_user) for the sessions and resumed afterwards; the runs it had started were stopped by their process group.

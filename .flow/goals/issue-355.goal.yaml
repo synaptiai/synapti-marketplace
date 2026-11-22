@@ -280,10 +280,10 @@ continuation:
   max_iterations: 20
 lifecycle:
   status: active
-  current_phase: plan
-  current_activity: plan passed the stranger test; build next
-  turns_evaluated: 0
+  current_phase: verify
+  current_activity: B17 full suite, then the B18 PR
+  turns_evaluated: 1
   last_evaluation:
     result: incomplete
-    reason: specification captured and plan passed the stranger test
-    at: '2026-11-18T21:13:36Z'
+    reason: resumed after the P9 sessions; P9 tier_gate_by_mode go
+    at: '2026-11-22T21:41:34Z'
