@@ -570,3 +570,14 @@ Choices:
 - **P9 per mode:** each mode's tier_gate finding is kept in F/interactive.json, because the record schema allows only fixed part fields. Each mode's finding stores the Claude Code version it ran under; a finding from another version counts as missing. The part is no-go if either mode is no-go, not_run while one is missing, and go otherwise. The printed P9 steps leave out p14, wait-question and answer.
 - **Probe warning:** printed on stdout as the first line of each probe invocation except --verify-record, --export and --step await, which read or export a record and start no session.
 - **P2 run 1 (2026-11-22, Claude Code 2.1.326, evidence/P2-5, $1.07):** stop_caps go (3 blocks within the cap of 3, then the stop approved); task_completed_refusals no-go (5 of 5 completions refused); session_end_writes deferred to 1c; every other part go. The record's cap was raised from $25 to $30 before the run; spend is now $22.17. B16 builds the TaskCompleted half only.
+
+## Inferred readings (wave 6)
+
+### TaskCompleted warn fallback (B16, `hooks/scripts/verify-task-completion.sh`)
+
+- **Scope:** only the TaskCompleted half is built, because P2 run 1 measured stop_caps go and task_completed_refusals no-go. flow-goal-stop.sh is unchanged and does not name FLOW_FACTORY_DIRECTIVE.
+- **What changes:** with FLOW_FACTORY_DIRECTIVE set and not empty, block counts as warn: the existing warn text on stderr and exit 0. off stays off, because design L43 replaces a refusal and nothing says off should start checking. The fallback also overrides a project's explicit block, because L43 gives the factory's value and L164 names this warn mode as the P2 fallback. Set but empty counts as unset. It keeps no count and writes nothing.
+- **Marker:** the hook's own text names FLOW_FACTORY_DIRECTIVE, which is what p2_fallback reads (B15).
+- **Probe scenarios:** fp-plat-p2 now expects task_completed_refusals go and the facts {"stop": false, "task_completed": true}. The task-only scenario repeated it and is folded in. The stop-only scenario removes the exact fallback lines from its copy, checks they were there and are gone, and runs bash -n on the copy. The exact reason text is taken from the engine; the plan sets only the result.
+- **Test runner:** run.sh unsets FLOW_FACTORY_JOB, FLOW_FACTORY_DIRECTIVE, FLOW_FACTORY_IO and FLOW_FACTORY_MAIN, so the suite run from a factory worker sees the person's behavior. windows-hooks-smoke.sh is not run through run.sh; it feeds only tier-gate payloads that the factory rules do not match.
+- **Expected P2 run 2:** facts fallbacks {"stop": false, "task_completed": true}; every task-completed entry at rc 0; task_completed_refusals go with 4 or more completions; stop_caps go as in run 1. A refusal would mean the variable did not reach the hook.

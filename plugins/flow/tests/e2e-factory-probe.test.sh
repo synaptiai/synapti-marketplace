@@ -2078,7 +2078,9 @@ e2e_expect_equal "yes" "$(_fp_p '"yes" if "72 of 72" in p["parts"]["person_forms
 # Source: plan B15 step 1 Counting (task_completed_refusals: once B16's
 # TaskCompleted fallback is built, 0 refusals over 4 or more entries is go).
 # The plugin's own verify-task-completion.sh has that fallback since B16;
-# its flow-goal-stop.sh does not.
+# its flow-goal-stop.sh does not. The plan sets only the result; the exact
+# wording of the reason is taken from the engine's text in
+# bin/_flow_factory.py, and the count of 5 is the stand-in's five completions.
 e2e_expect_equal "the TaskCompleted hook's factory warn fallback refused none of 5 completions" "$(_fp_p 'p["parts"]["task_completed_refusals"]["reason"]')" "the refusals part's reason"
 e2e_expect_equal "yes" "$(_fp_p '"yes" if "flow-goal-stop.sh warns instead of blocking" in p.get("fallback", "") else p.get("fallback")')" "P2's fallback names the Stop hook's warn fallback"
 FP_FACTS="$E2E_REPO/.flow/factory/$(_fp_p 'p["evidence"]')/facts.json"
@@ -2544,15 +2546,13 @@ _fp_p2_turn_cost
 FP_VT_OWN=$(cat "$E2E_PLUGIN_DIR/hooks/scripts/verify-task-completion.sh")
 FP_VT_LINE='[ "$MODE" = "block" ] && [ -n "${FLOW_FACTORY_DIRECTIVE:-}" ] && MODE="warn"'
 FP_VT_HEAD='# In a factory worker (FLOW_FACTORY_DIRECTIVE set and not empty) block counts
-# as warn: the platform probe found the gate refusing every task completion
-# of a factory worker. The fallback keeps no count and writes nothing; off
-# stays off.'
+# as warn. The fallback keeps no count and writes nothing; off stays off.'
 FP_VT_NOTE='# A factory worker is warned, never refused (the factory warn fallback).'
 FP_VT_COPY=${FP_VT_OWN/"$FP_VT_NOTE"$'\n'"$FP_VT_LINE"$'\n'/}
 FP_VT_COPY=${FP_VT_COPY/"$FP_VT_HEAD"$'\n'/}
 e2e_expect_equal "1 1" "$(printf '%s\n' "$FP_VT_OWN" | grep -Fxc "$FP_VT_LINE") $(printf '%s\n' "$FP_VT_OWN" | grep -Fxc "# In a factory worker (FLOW_FACTORY_DIRECTIVE set and not empty) block counts")" "the plugin's own verify-task-completion.sh has the fallback line and the header line that names the variable, once each"
 e2e_plugin_copy hooks/scripts/verify-task-completion.sh "$FP_VT_COPY"
-e2e_expect_equal "0 6" "$(grep -c FLOW_FACTORY_DIRECTIVE "$E2E_ACTIVE_PLUGIN/hooks/scripts/verify-task-completion.sh") $(( $(printf '%s\n' "$FP_VT_OWN" | wc -l) - $(wc -l < "$E2E_ACTIVE_PLUGIN/hooks/scripts/verify-task-completion.sh") ))" "the copy's lines that name FLOW_FACTORY_DIRECTIVE, and how many fewer lines it has than the plugin's own (the fallback line, its comment line and the four header lines)"
+e2e_expect_equal "0 4" "$(grep -c FLOW_FACTORY_DIRECTIVE "$E2E_ACTIVE_PLUGIN/hooks/scripts/verify-task-completion.sh") $(( $(printf '%s\n' "$FP_VT_OWN" | wc -l) - $(wc -l < "$E2E_ACTIVE_PLUGIN/hooks/scripts/verify-task-completion.sh") ))" "the copy's lines that name FLOW_FACTORY_DIRECTIVE, and how many fewer lines it has than the plugin's own (the fallback line, its comment line and the two header lines)"
 e2e_expect_equal "0" "$(bash -n "$E2E_ACTIVE_PLUGIN/hooks/scripts/verify-task-completion.sh" 2>&1; echo $?)" "bash -n on the copy's verify-task-completion.sh"
 e2e_plugin_copy hooks/scripts/flow-goal-stop.sh "#!/usr/bin/env bash
 # FLOW_FACTORY_DIRECTIVE: stands in for B16's factory warn fallback, which lets the stop through.
