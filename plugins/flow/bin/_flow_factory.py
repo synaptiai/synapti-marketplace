@@ -7089,19 +7089,29 @@ def p9_tier_gate_part(found, claude):
     claude_version it was made on}): no-go when one is, not_run while a mode
     is missing or not_run, else go. A finding made on another claude than
     claude, the version this session runs, counts as missing: tier-gate's
-    answer under one version says nothing about another."""
+    answer under one version says nothing about another. Each mode's
+    finding names the evidence folder of the session that made it, when it
+    has one, since the part's own evidence field names only the last
+    session's folder."""
     said, results = [], []
     for m in ("default", "auto"):
         f = found.get(m)
+        ev = f.get("evidence") if isinstance(f, dict) else None
+        # A finding kept before folders were stored has none, and is said
+        # as it was.
+        ev = ev if isinstance(ev, str) and ev else None
         if f is None:
             said.append(f"{m} mode: no session recorded yet")
             results.append("not_run")
         elif f.get("claude_version") != claude:
-            said.append(f"{m} mode: its session was recorded on claude {f.get('claude_version') or 'unknown'}, "
+            said.append(f"{m} mode: its session" + (f" in {ev}" if ev else "")
+                        + f" was recorded on claude {f.get('claude_version') or 'unknown'}, "
                         f"not {claude}, so it counts only once that mode is run again on {claude}")
             results.append("not_run")
         else:
-            said.append(f["reason"])
+            head = f"{m} mode: "
+            body = f["reason"][len(head):] if f["reason"].startswith(head) else f["reason"]
+            said.append((f"{m} mode, in {ev}: " if ev else head) + body)
             results.append(f["result"])
     result = "no-go" if "no-go" in results else "not_run" if "not_run" in results else "go"
     return part(result, "; ".join(said))
@@ -7138,7 +7148,8 @@ def interactive_record(args):
         kept = now.get("tier_gate") if isinstance(now.get("tier_gate"), dict) else {}
         kept = {m: v for m, v in kept.items() if m in ("default", "auto") and isinstance(v, dict)
                 and v.get("result") in ("go", "no-go", "not_run") and isinstance(v.get("reason"), str)}
-        kept[state["mode"]] = dict(found, claude_version=keyed["claude_version"])
+        kept[state["mode"]] = dict(found, claude_version=keyed["claude_version"],
+                                   evidence=state["evidence"].replace(os.sep, "/"))
         now["tier_gate"] = kept
         write_json(os.path.join(fdir, INTERACTIVE_STATE), now)
         new["tier_gate_by_mode"] = p9_tier_gate_part(kept, keyed["claude_version"])

@@ -6300,9 +6300,27 @@ _fp_runner_scenario fp-int-p9-tier-gate "a default session whose tier-gate asks 
 _fp_p9_round default 'ask:full:PostToolUseFailure:INTENT_PROBE' 'ask:full:PostToolUseFailure:FACTORY_REFUSED'
 e2e_expect_equal "0" "$E2E_RC" "record exit status ($E2E_OUT $E2E_ERR)"
 e2e_expect_equal "not_run" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "after the default session alone"
+FP_EV_DEFAULT=$(_fp_get "$E2E_REPO/.flow/factory/interactive.json" 'd["evidence"]')
 _fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
+FP_EV_AUTO=$(_fp_get "$E2E_REPO/.flow/factory/interactive.json" 'd["evidence"]')
 e2e_expect_equal "go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "after both sessions"
 e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
+e2e_describe "the part's reason names the evidence folder of each mode's session, since its own evidence field names only the last session's"
+# Source: review finding HV-3: a part resting on two sessions must let a
+# reader find each mode's evidence; the part's evidence field holds one folder.
+FP_R=$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["reason"]')
+e2e_expect_equal "evidence/P9-1 evidence/P9-2" "$FP_EV_DEFAULT $FP_EV_AUTO" "the two sessions' folders"
+case "$FP_R" in "default mode, in $FP_EV_DEFAULT: confirm: "*"; auto mode, in $FP_EV_AUTO: confirm: "*) FP_HAS=yes ;; *) FP_HAS=no ;; esac
+e2e_expect_equal "yes" "$FP_HAS" "the reason names each mode's folder ($FP_R)"
+e2e_describe "a kept finding with no folder, as one kept before folders were stored, is said without one and still counts"
+python3 -c 'import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+del d["tier_gate"]["default"]["evidence"]
+json.dump(d, open(sys.argv[1], "w", encoding="utf-8"))' "$E2E_REPO/.flow/factory/interactive.json"
+_fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
+FP_EV_AUTO=$(_fp_get "$E2E_REPO/.flow/factory/interactive.json" 'd["evidence"]')
+FP_R=$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]')
+e2e_expect_equal "go yes" "$(_fp_get "$E2E_REPO/$FP_REC" '(lambda t: "%s %s" % (t["result"], "yes" if t["reason"].startswith("default mode: confirm: ") and "; auto mode, in '"$FP_EV_AUTO"': confirm: " in t["reason"] else "no"))(d["probes"]["P9"]["parts"]["tier_gate_by_mode"])')" "a default finding with no folder beside an auto finding in $FP_EV_AUTO ($FP_R)"
 
 _flow_test_begin "interactive: tier_gate_by_mode counts a mode's finding only from the claude the session runs on (I24)"
 _fp_runner_scenario fp-int-p9-tier-gate-version "a default session on claude 2.1.322 and an auto session on 2.1.330, each go for its mode: the default finding is from another claude, so the part is not_run and names both versions; a default session on 2.1.330 then makes it go; a kept default finding with no claude version is not_run again"
@@ -6316,6 +6334,7 @@ _fp_p9_round auto 'deny:-:-:-' 'deny:-:-:-'
 e2e_expect_equal "0" "$E2E_RC" "record exit status ($E2E_OUT $E2E_ERR)"
 FP_R=$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]')
 e2e_expect_equal "not_run yes yes" "$(_fp_get "$E2E_REPO/$FP_REC" '(lambda t: "%s %s %s" % (t["result"], "yes" if "2.1.322" in t["reason"] else "no", "yes" if "2.1.330" in t["reason"] else "no"))(d["probes"]["P9"]["parts"]["tier_gate_by_mode"])')" "a default finding from 2.1.322 beside an auto finding from 2.1.330 ($FP_R)"
+e2e_expect_equal "yes" "$(_fp_get "$E2E_REPO/$FP_REC" '"yes" if d["probes"]["P9"]["parts"]["tier_gate_by_mode"]["reason"].startswith("default mode: its session in evidence/P9-1 was recorded on claude 2.1.322") else "no"')" "the reason names the folder of the session from the other claude ($FP_R)"
 _fp_p9_round default 'ask:full:PostToolUseFailure:INTENT_PROBE' 'ask:full:PostToolUseFailure:FACTORY_REFUSED'
 e2e_expect_equal "go" "$(_fp_get "$E2E_REPO/$FP_REC" 'd["probes"]["P9"]["parts"]["tier_gate_by_mode"]["result"]')" "after a default session on 2.1.330"
 e2e_expect_equal "ok" "$(_fp_schema_valid "$E2E_REPO/$FP_REC")" "the record validates against the schema"
