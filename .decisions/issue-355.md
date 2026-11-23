@@ -257,6 +257,30 @@ artifacts:
   outcome: Escape every backtick in model text so only the engine's own fences pair;
     model inline code then shows as literal backticks
   question_id: q-20261123T120614Z-a22dbf
+- type: goal-evaluation
+  captured_at: '2026-11-23T20:57:49Z'
+  goal_id: issue-355
+  result: pass
+  evidence_bundle: .flow/runs/2026-11-18T094033Z-issue-355
+  failures: none
+- type: escalation-asked
+  captured_at: '2026-11-23T20:58:02Z'
+  question_id: q-20261123T205801Z-62c09b
+  blocking: 'yes'
+  class: permission
+  command: /flow:goal evaluate issue-355
+  situation: 'Goal issue-355: all 20 verification commands exit 0 at 1152e660; the
+    AC12 full suite gave pass=39378 fail=0.'
+- type: escalation-resolved
+  captured_at: '2026-11-23T22:29:41Z'
+  escalation_field: options
+  outcome: 'Confirm: mark the goal achieved'
+  question_id: q-20261123T205801Z-62c09b
+- type: goal-evaluation
+  captured_at: '2026-11-23T22:29:43Z'
+  goal_id: issue-355
+  result: achieved
+  reason: confirmed by the user after all 20 checks passed at 1152e660
 ---
 
 ## Specification

@@ -280,11 +280,12 @@ continuation:
   on_complete: mark_achieved
   max_iterations: 20
 lifecycle:
-  status: active
+  status: achieved
   current_phase: verify
   current_activity: B17 full suite, then the B18 PR
   turns_evaluated: 1
   last_evaluation:
-    result: incomplete
-    reason: resumed after the P9 sessions; P9 tier_gate_by_mode go
-    at: '2026-11-22T21:41:34Z'
+    result: pass
+    reason: all 20 verification commands exit 0 at 1152e660; full suite pass=39378
+      fail=0
+    at: '2026-11-23T22:29:41Z'
