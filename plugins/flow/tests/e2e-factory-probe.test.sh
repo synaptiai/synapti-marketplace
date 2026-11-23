@@ -1933,7 +1933,8 @@ _fp_platform_run() {
 }
 
 # _fp_p2_turn_cost — a stand-in turn costs $0.01, about what one turn of the
-# last real P2 run cost ($0.68 for its 79 turns, evidence P2-4), so P2's 84
+# real P2 run of phase 1a cost ($0.68 for its 79 turns; the #355 journal
+# records it, and the P2-6 export replaced its evidence), so P2's 84
 # steps fit its $1.50 limit as a real run's do. Whether a real worker's turns
 # fit P2's turn limit is checked from the prompt in fp-plat-p2.
 _fp_p2_turn_cost() { printf '0.01\n' > "$E2E_BIN/claude-cost-per-turn"; }
@@ -2109,7 +2110,8 @@ e2e_expect_equal "--allowedTools Bash,Read,Edit,TaskCreate,TaskUpdate,TaskList,T
 e2e_expect_equal "5 5" "$(grep -c '^EDIT: ' "$E2E_BIN/claude-prompt-1.txt") $(grep -c '^TASK: ' "$E2E_BIN/claude-prompt-1.txt")" "edit and task steps in the prompt"
 # The stand-in makes each step in one turn, so it cannot show whether a real
 # worker finishes the prompt within the turn limit. The projection uses the
-# last real P2 run (evidence P2-4): one Bash call per RUN step, one turn per
+# real P2 run of phase 1a ($0.68, 79 turns, in the #355 journal): one Bash
+# call per RUN step, one turn per
 # tool call plus one for the final reply, and one ToolSearch call. A real
 # worker also needs a Read before each Edit and a TaskCreate before each
 # TaskUpdate, and the stop sequence takes up to 4 turns (3 blocks at the

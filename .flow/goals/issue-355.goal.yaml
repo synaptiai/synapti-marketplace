@@ -42,7 +42,7 @@ objective:
     text: Intake posts one notice for ACCEPT, NEEDS_INFO or REJECT; a malformed result
       is retried within the stage run limit (three runs), then the job goes to needs_human.
     verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-intake.test.sh
-      plugins/flow/tests/e2e-factory-transitions.test.sh
+      plugins/flow/tests/e2e-factory-transitions.test.sh plugins/flow/tests/e2e-factory-engine-next.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
@@ -51,7 +51,7 @@ objective:
       to intake; the same reply from an author without write access counts only after
       a retry by triage access or higher.
     verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-text.test.sh
-      plugins/flow/tests/e2e-factory-intake.test.sh
+      plugins/flow/tests/e2e-factory-intake.test.sh plugins/flow/tests/e2e-factory-engine-next.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
@@ -75,6 +75,7 @@ objective:
     text: With a confirm key on the job path, the job parks in waiting_operator before
       it spends anything, and leaves when the key changes or a person confirms.
     verification_command: plugins/flow/tests/run.sh plugins/flow/tests/e2e-factory-github.test.sh
+      plugins/flow/tests/e2e-factory-engine-next.test.sh
     must_pass: true
     status: pending
     evidence_ref: null
@@ -227,7 +228,7 @@ specification:
     `INTENT_CHANGED=<id> recorded=<hex> current=<hex>` or `INTENT_NOT_PENDING=<id>
     pending=<id>`; a `pending_confirm` notice becomes `confirmed` (Q16).
   - 'Intake judge reply: `{decision: ACCEPT|NEEDS_INFO|REJECT, risk, surfaces, scope,
-    criteria, questions}`, charged from `total_cost_usd`.'
+    proposed_criteria, questions, reason}`, charged from `total_cost_usd`.'
   risk_map:
   - area: untrusted_edit window
     plausible_wrong_version: counts edits before vouch_at, or reads only the last

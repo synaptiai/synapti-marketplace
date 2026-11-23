@@ -274,7 +274,7 @@ _Captured by specification-capture skill on 2026-11-18. Source: mixed (issue #35
 - `tiers.issueUpdate` (autonomous | journal | confirm) in settings.json, schema.json, tier-gate.sh and tier-runtime.sh; covers issue comment, label edit, close, reopen and the REST and GraphQL issue edit forms (Q9).
 - Comment commands: line 1 `/flow-factory (answer|approve-spec|rework|reject|cancel|spec|retry) ...` from a login with triage access or higher; `/flow-factory answer NI-<k> <text>` for needs-info (Q17).
 - Terminal `confirm <intent>` prints the literal, body and sha256 and exits 3 with `INTENT_CHANGED=<id> recorded=<hex> current=<hex>` or `INTENT_NOT_PENDING=<id> pending=<id>`; a `pending_confirm` notice becomes `confirmed` (Q16).
-- Intake judge reply: `{decision: ACCEPT|NEEDS_INFO|REJECT, risk, surfaces, scope, criteria, questions}`, charged from `total_cost_usd`.
+- Intake judge reply: `{decision: ACCEPT|NEEDS_INFO|REJECT, risk, surfaces, scope, proposed_criteria, questions, reason}`, charged from `total_cost_usd`.
 
 ### Risk map
 
@@ -573,13 +573,13 @@ Choices:
 
 ### Probe code (B15)
 
-- **P2 limits** (decided by the user 2026-11-20): 120 turns, $1.50, 1200 s. The prompt asks for 74 command forms and 5 edit-and-task pairs, about 96-100 turns; the last real P2 run used 79 turns for 78 tool calls, so 90 turns would have ended the run before the stop sequence.
+- **P2 limits** (decided by the user 2026-11-20): 120 turns, $1.50, 1200 s. The prompt asks for 74 command forms and 5 edit-and-task pairs, about 96-100 turns; the phase 1a P2 run (evidence P2-4, replaced in the export by P2-6) used 79 turns for 78 tool calls and cost $0.68, so 90 turns would have ended the run before the stop sequence.
 - **Ledger:** only log-file-changes.sh (PostToolUse on Edit, Write, NotebookEdit) adds file_change entries, so after the worker's first edit with no quality run, every task completion is refused. P2's task_completed_refusals is expected to be no-go, which leads to B16's TaskCompleted half.
 - **B16 marker:** a copy's hook counts as having the factory warn fallback when the hook script's own text names FLOW_FACTORY_DIRECTIVE. B16 must name that variable in flow-goal-stop.sh and verify-task-completion.sh themselves, not only in a sourced lib, or the counts stay not_run.
 - **Worker variables:** FLOW_FACTORY_JOB=issue-0-j1 and FLOW_FACTORY_DIRECTIVE=<area>/directive.json; the file is never created, because tier-gate reads only whether each is set (design L35).
 - **P9 per mode:** each mode's tier_gate finding is kept in F/interactive.json, because the record schema allows only fixed part fields. Each mode's finding stores the Claude Code version it ran under; a finding from another version counts as missing. The part is no-go if either mode is no-go, not_run while one is missing, and go otherwise. The printed P9 steps leave out p14, wait-question and answer.
 - **Probe warning:** printed on stdout as the first line of each probe invocation except --verify-record, --export and --step await, which read or export a record and start no session.
-- **P2 run 1 (2026-11-22, Claude Code 2.1.326, evidence/P2-5, $1.07):** stop_caps go (3 blocks within the cap of 3, then the stop approved); task_completed_refusals no-go (5 of 5 completions refused); session_end_writes deferred to 1c; every other part go. The record's cap was raised from $25 to $30 before the run; spend is now $22.17. B16 builds the TaskCompleted half only.
+- **P2 run 1 (2026-11-22, Claude Code 2.1.326, $1.07; its evidence P2-5 stays in the live record and is not exported, because the record names only the latest P2 run, P2-6):** stop_caps go (3 blocks within the cap of 3, then the stop approved); task_completed_refusals no-go (5 of 5 completions refused); session_end_writes deferred to 1c; every other part go. The record's cap was raised from $25 to $30 before the run; spend is now $22.17. B16 builds the TaskCompleted half only.
 
 ## Inferred readings (wave 6)
 

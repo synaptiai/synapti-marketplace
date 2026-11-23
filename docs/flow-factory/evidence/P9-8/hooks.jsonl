@@ -1,0 +1,13 @@
+{"event": "UserPromptSubmit", "permission_mode": "auto", "tool": null, "command": null, "run_in_background": false, "at": 1795383573.211432, "task_notification": false}
+{"event": "PreToolUse", "permission_mode": "auto", "tool": "Bash", "command": "~/synapti-marketplace/.worktrees/issue-355/plugins/flow/bin/flow-factory.sh probe --interactive --step wait --seconds 30", "run_in_background": true, "at": 1795383577.829243}
+{"event": "PostToolUse", "tool": "Bash", "command": "~/synapti-marketplace/.worktrees/issue-355/plugins/flow/bin/flow-factory.sh probe --interactive --step wait --seconds 30", "at": 1795383580.228631, "engine": null}
+{"event": "UserPromptSubmit", "permission_mode": "auto", "tool": null, "command": null, "run_in_background": false, "at": 1795383612.084312, "task_notification": true}
+{"event": "PreToolUse", "permission_mode": "auto", "tool": "Bash", "command": "~/synapti-marketplace/.worktrees/issue-355/plugins/flow/bin/flow-factory.sh probe --interactive --step woke", "run_in_background": false, "at": 1795383615.1375082}
+{"event": "PostToolUse", "tool": "Bash", "command": "~/synapti-marketplace/.worktrees/issue-355/plugins/flow/bin/flow-factory.sh probe --interactive --step woke", "at": 1795383617.174047, "engine": null}
+{"event": "UserPromptSubmit", "permission_mode": "auto", "tool": null, "command": null, "run_in_background": false, "at": 1795383628.124157, "task_notification": false}
+{"event": "PreToolUse", "permission_mode": "auto", "tool": "Bash", "command": "~/synapti-marketplace/.worktrees/issue-355/plugins/flow/bin/flow-factory.sh confirm probe-p9-8", "run_in_background": false, "at": 1795383631.076376}
+{"event": "UserPromptSubmit", "permission_mode": "auto", "tool": null, "command": null, "run_in_background": false, "at": 1795383646.578167, "task_notification": false}
+{"event": "PreToolUse", "permission_mode": "auto", "tool": "Bash", "command": "~/synapti-marketplace/.worktrees/issue-355/plugins/flow/bin/flow-factory.sh approve-spec issue-999999-j1 --spec-hash 0123456789ab", "run_in_background": false, "at": 1795383649.86988}
+{"event": "UserPromptSubmit", "permission_mode": "auto", "tool": null, "command": null, "run_in_background": false, "at": 1795383657.6526752, "task_notification": false}
+{"event": "PreToolUse", "permission_mode": "auto", "tool": "Bash", "command": "~/synapti-marketplace/.worktrees/issue-355/plugins/flow/bin/flow-factory.sh probe --interactive --step record", "run_in_background": false, "at": 1795383660.740285}
+{"event": "PostToolUse", "tool": "Bash", "command": "~/synapti-marketplace/.worktrees/issue-355/plugins/flow/bin/flow-factory.sh probe --interactive --step record", "at": 1795383663.4014668, "engine": null}
