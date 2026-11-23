@@ -43,7 +43,7 @@ the id it makes.
 API:
   intent_digest(argv, body: bytes) -> hex
   marker(job_key, intent_id) -> the marker line
-  clean_post(text) -> text
+  clean_post(text, limit=60000) -> text
   literal_comment(repo, n), literal_label_add(repo, n, label),
   literal_label_remove(repo, n, label),
   literal_assign_label(repo, n, login, label), literal_pr_close(repo, pr)
@@ -115,8 +115,8 @@ _ISSUE_PATH = re.compile(r"^repos/(" + _REPO + r")/issues/([1-9][0-9]*)/(comment
 _LABEL_PATH = re.compile(r"^repos/(" + _REPO + r")/issues/([1-9][0-9]*)/labels/([^/]+)$")
 _PULL_PATH = re.compile(r"^repos/(" + _REPO + r")/pulls/([1-9][0-9]*)$")
 # A GitHub login or team after @, not right after a word character (an
-# address such as a@b.com) or a backtick.
-_MENTION = re.compile(r"(?<![A-Za-z0-9_`])@[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_`-])")
+# address such as a@b.com).
+_MENTION = re.compile(r"(?<![A-Za-z0-9_])@[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_-])")
 _TICKS = re.compile(r"`+")
 
 
@@ -170,50 +170,104 @@ def _code(text):
     return fence + pad + text + pad + fence
 
 
-def _outside_code(line, fn):
-    """line with fn applied to every part outside its code spans (a run of
-    backticks up to the next run of the same length); a run with no match
-    is plain text."""
-    out, i = [], 0
-    while i < len(line):
-        m = _TICKS.search(line, i)
-        if not m:
-            out.append(fn(line[i:]))
-            break
-        out.append(fn(line[i:m.start()]))
-        run = m.group(0)
-        close = re.compile("(?<!`)" + run + "(?!`)").search(line, m.end())
-        if close is None:
-            out.append(run)
-            i = m.end()
+def _odd_backslashes(text, i):
+    """True when an odd run of backslashes ends just before text[i], so the
+    character at i is escaped in GitHub Markdown."""
+    n = 0
+    while i - n - 1 >= 0 and text[i - n - 1] == "\\":
+        n += 1
+    return n % 2 == 1
+
+
+def _fences(text):
+    """The mention fences already in text: {length: [(open start, close end)]}
+    for each backtick run length whose runs all pair, in order, as a run, one
+    mention and a run, with no escaped opening run. Such a pair is a code
+    span however the rest of the text pairs its backticks: no other run has
+    that length, so nothing else closes it or is closed by it."""
+    runs = {}
+    for m in _TICKS.finditer(text):
+        runs.setdefault(len(m.group(0)), []).append(m)
+    out = {}
+    for length, ms in runs.items():
+        if len(ms) % 2:
             continue
-        out.append(line[m.start():close.end()])
-        i = close.end()
-    return "".join(out)
+        pairs = []
+        for a, b in zip(ms[0::2], ms[1::2]):
+            if _odd_backslashes(text, a.start()) or not _MENTION.fullmatch(text[a.end():b.start()]):
+                break
+            pairs.append((a.start(), b.end()))
+        else:
+            out[length] = pairs
+    return out
 
 
 def _mentions(text):
-    return _MENTION.sub(lambda m: "`" + m.group(0) + "`", text)
+    """text with every @mention put in a code span, wherever it is, because
+    GitHub pairs backticks across line breaks and the cleaner does not parse
+    paragraphs. The fence is a run length no other run in text has (or the
+    longest one already used only for mention fences), so it can neither
+    close nor be closed by another run; inside a real code span it is only
+    more code. A space keeps the fence from joining a backtick next to the
+    mention, and a second backslash keeps a backslash before it from
+    escaping the fence. A mention already in such a fence is left alone, so
+    cleaning cleaned text changes nothing."""
+    fences = _fences(text)
+    done = {(a, b) for pairs in fences.values() for a, b in pairs}
+    lengths = {len(m.group(0)) for m in _TICKS.finditer(text)}
+    if fences:
+        fence = "`" * max(fences)
+    else:
+        fence = "`" * next(n for n in range(1, len(lengths) + 2) if n not in lengths)
+    out, i = [], 0
+    for m in _MENTION.finditer(text):
+        s, e = m.start(), m.end()
+        if any(a < s < b for a, b in done):
+            continue
+        out.append(text[i:s])
+        if s > 0 and text[s - 1] == "`":
+            out.append(" ")
+        elif _odd_backslashes(text, s):
+            out.append("\\")
+        out.append(fence + m.group(0) + fence)
+        if e < len(text) and text[e] == "`":
+            out.append(" ")
+        i = e
+    out.append(text[i:])
+    return "".join(out)
 
 
-def clean_post(text):
+def _cap(text, limit):
+    """text cut to limit characters, the cut moved to before a mention
+    fence it would fall inside, so no fence is left open."""
+    if len(text) <= limit:
+        return text
+    cut = limit
+    for pairs in _fences(text).values():
+        for a, b in pairs:
+            if a < cut < b:
+                cut = a
+    return text[:cut]
+
+
+def clean_post(text, limit=POST_LIMIT):
     """Model text made safe to post (design trust_and_untrusted_text L59):
-    CRLF and CR made LF, every '<!--' broken up, @mentions outside code
-    spans put in backticks,
-    every line whose stripped form starts with /flow-factory put in a code
-    span, then cut to 60,000 characters. Cleaning cleaned text changes
+    CRLF and CR made LF, every '<!--' broken up, every line whose stripped
+    form starts with /flow-factory put in a code span, every @mention put in
+    a code span (see _mentions), then cut to limit characters (60,000 by
+    default; a caller that puts a marker line first passes what is left)
+    without cutting through a mention's fence. Cleaning cleaned text changes
     nothing. The caller's marker goes before it, never through it."""
     t = text.replace("\r\n", "\n").replace("\r", "\n")
     while "<!--" in t:
         t = t.replace("<!--", "< !--")
     out = []
     for line in t.split("\n"):
-        line = _outside_code(line, _mentions)
         stripped = line.strip()
         if stripped.startswith("/flow-factory"):
             line = line[:len(line) - len(line.lstrip())] + _code(stripped)
         out.append(line)
-    return "\n".join(out)[:POST_LIMIT]
+    return _cap(_mentions("\n".join(out)), limit)
 
 
 # literals --------------------------------------------------------------------
@@ -348,7 +402,7 @@ def _write_intent(outbox, events_path, iid, mark, fields, argv, body, append, nu
     text, body_bytes, body_file, body_path = None, b"", None, None
     if fields["kind"] == "comment":
         _need(isinstance(body, str), "a comment needs its text")
-        text = (mark + "\n" + clean_post(body))[:POST_LIMIT]
+        text = mark + "\n" + clean_post(body, POST_LIMIT - len(mark) - 1)
         body_bytes = text.encode("utf-8")
         body_file = iid + ".body.md"
         body_path = os.path.join(outbox, body_file)

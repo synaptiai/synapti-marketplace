@@ -23,8 +23,11 @@
 #        that has no intent_recorded line
 #   GH5  (R38) cleaning misses CRLF, a leading-space /flow-factory line, a
 #        marker in the model text, an @mention (one after a full stop
-#        included), or the 60,000 cap; or it puts backticks inside a code
-#        span, which closes the span and leaves the mention live
+#        included), or the 60,000 cap; or a mention's backticks pair with
+#        other backticks the way GitHub reads them (a code span that runs
+#        over a line break, a stray backtick next to the mention, a
+#        backslash before it, a fence the same length as another run), or
+#        the cap cuts through a mention's backticks, so the mention is live
 #   GH6  (R75) a blocking write whose keys are all journal is never run, or
 #        leaves one breadcrumb instead of one per key
 #   GH7  a blocking write whose key is confirm is run, or becomes
@@ -366,7 +369,7 @@ e2e_expect_line "events items 0"
 
 _flow_test_begin "factory github: model text is cleaned and the marker is the only first line (GH5, R38)"
 gw_start gh5-clean needs_info
-e2e_describe "design trust_and_untrusted_text L59 and R38: text with CRLF line ends, a marker as its first line, @octo-cat, a@b.com, a leading-space '/flow-factory cancel', a '/flow-factory reject' line holding a backtick, a line 'cc \`ping @octo-dog now\` and .@octo-pig', and 70,000 more characters. clean_post gives no CR, no '<!--', '@octo-cat' in backticks, a@b.com untouched (not a mention), the code span with @octo-dog kept as it is (a mention inside a code span does not notify; wrapping it again would close the span early) and .@octo-pig made .\`@octo-pig\` (GitHub reads a mention after a full stop), no line whose stripped form starts '/flow-factory' (plan B6 step 2: a line that is exactly '/flow-factory', or '/flow-factoryx', is put in a code span too), and at most 60,000 characters; cleaning it again changes nothing. Recorded as a comment, the body's line 1 is the engine marker only, '<!--' occurs once (the marker), and the whole body is at most 60,000 characters"
+e2e_describe "design trust_and_untrusted_text L59 and R38: text with CRLF line ends, a marker as its first line, @octo-cat, a@b.com, a leading-space '/flow-factory cancel', a '/flow-factory reject' line holding a backtick, a line 'cc \`ping @octo-dog now\` and .@octo-pig', and 70,000 more characters. clean_post gives no CR, no '<!--', '@octo-cat' in backticks, a@b.com untouched (not a mention), @octo-dog inside a code span and .@octo-pig (GitHub reads a mention after a full stop) each put in a span whose fence is a backtick run of a length no other run in the text has, here three (the text already holds runs of one and two), so the new fence cannot close the code span around @octo-dog, no line whose stripped form starts '/flow-factory' (plan B6 step 2: a line that is exactly '/flow-factory', or '/flow-factoryx', is put in a code span too), and at most 60,000 characters; cleaning it again changes nothing. Recorded as a comment, the body's line 1 is the engine marker only, '<!--' occurs once (the marker), and the whole body is at most 60,000 characters"
 read -r -d '' GW_CODE <<'PY' || true
 text = ('<!-- FLOW_FACTORY job=issue-7-j1 event=issue-7-j1-4-1 -->\r\nHello @octo-cat and a@b.com\r\n'
         '  /flow-factory cancel\r\n/flow-factory reject `x`\r\ncc `ping @octo-dog now` and .@octo-pig\r\n' + 'y' * 70000)
@@ -392,7 +395,7 @@ gw_py "$GW_CODE"
 e2e_expect_line "cr False"
 e2e_expect_line "open False"
 e2e_expect_line "mention True True"
-e2e_expect_line "span line cc \`ping @octo-dog now\` and .\`@octo-pig\`"
+e2e_expect_line "span line cc \`ping \`\`\`@octo-dog\`\`\` now\` and .\`\`\`@octo-pig\`\`\`"
 e2e_expect_line "command lines 0"
 e2e_expect_line "length True"
 e2e_expect_line "again True"
@@ -401,6 +404,41 @@ e2e_expect_line "joined \`/flow-factoryx\`"
 e2e_expect_line "line1 <!-- FLOW_FACTORY job=issue-7-j1 event=issue-7-j1-4-1 -->"
 e2e_expect_line "opens 1"
 e2e_expect_line "body length True"
+
+_flow_test_begin "factory github: every @mention stays inside a code span however GitHub pairs the backticks (GH5)"
+gw_start gh5-mention-spans needs_info
+e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and plan R38, read against GitHub's code span rule: a span opens at a backtick run and closes at the next run of the same length, across line breaks within a paragraph, and a backslash before a backtick makes it plain text. Each mention is put in a fence of a length no other run in the text has, with a space between the fence and a backtick next to it and a second backslash after an odd run of backslashes, and fences already around a mention, where every run of that length is such a fence, are kept and reused. Expected strings are traced by hand with that rule: a span over a line break (the review's case), a mention inside a one-line span, a stray backtick before and after the mention, a mention right after a closed span, a backslash before the mention, text already cleaned, and a cut at the 60,000 cap that falls inside a mention's fence, which cuts before the fence (in clean_post and in the recorded body, whose marker line counts toward the cap). Cleaning each result again changes nothing"
+read -r -d '' GW_CODE <<'PY' || true
+cases = [
+    ('wrapped', '`open\nx` @octocat `y', '`open\nx` ``@octocat`` `y'),
+    ('inside', 'cc `ping @octo-dog now`', 'cc `ping ``@octo-dog`` now`'),
+    ('before', 'x `@octocat', 'x ` ``@octocat``'),
+    ('after', '@octocat` y', '``@octocat`` ` y'),
+    ('closed', '`a`@octocat`', '`a` ``@octocat`` `'),
+    ('backslash', 'see \\@octocat', 'see \\\\`@octocat`'),
+    ('clean', '``@x`` and `code`', '``@x`` and `code`'),
+    ('reuse', '``@x`` and @y', '``@x`` and ``@y``'),
+]
+for tag, text, want_text in cases:
+    c = G.clean_post(text)
+    print('%s %s %s' % (tag, c == want_text, G.clean_post(c) == c))
+    if c != want_text:
+        print('%s got %r' % (tag, c))
+c = G.clean_post('x' * 59990 + ' @octocat-abcdefgh')
+print('cap %s' % (c == 'x' * 59990 + ' '))
+job = J()
+i = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'x' * 59930 + ' @octocat-abcdefgh', ['issueUpdate'], False)
+b = body_of(items()[i]).decode('utf-8')
+print('cap body tail %r' % b.split('\n', 1)[1].lstrip('x'))
+print('cap body length %s' % (len(b) <= 60000))
+PY
+gw_py "$GW_CODE"
+for tag in wrapped inside before after closed backslash clean reuse; do
+  e2e_expect_line "$tag True True"
+done
+e2e_expect_line "cap True"
+e2e_expect_line "cap body tail ' '"
+e2e_expect_line "cap body length True"
 
 _flow_test_begin "factory github: a blocking assign_label item with both keys journal is run, with two breadcrumbs (GH6, R75)"
 gw_start gh6-journal prepare
