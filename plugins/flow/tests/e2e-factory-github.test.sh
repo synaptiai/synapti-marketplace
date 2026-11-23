@@ -408,7 +408,7 @@ e2e_expect_line "body length True"
 
 _flow_test_begin "factory github: every @mention stays inside a code span however GitHub pairs the backticks (GH5)"
 gw_start gh5-mention-spans needs_info
-e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and plan R38, read against GitHub's code span rule: a span opens at a backtick run and closes at the next run of the same length, across line breaks within a paragraph, and a backslash before a backtick makes it plain text. Each mention is put in a fence of a length no other run in the text has, with a space between the fence and a backtick next to it and a second backslash after an odd run of backslashes, and fences already around a mention, where every run of that length is such a fence, are kept and reused. Expected strings are traced by hand with that rule: a span over a line break (the review's case), a mention inside a one-line span, a stray backtick before and after the mention, a mention right after a closed span, a backslash before the mention, text already cleaned, a mention right after another mention (after a login, a team, a trailing dash, three in a row, with a stray backtick or a backslash), where the first mention's closing fence would otherwise leave the second one live or join its fence, so each gets its own fence with a space between them, while an address such as a@y after a wrapped mention and a space stays plain text, and a cut at the 60,000 cap that falls inside a mention's fence, which cuts before the fence (in clean_post and in the recorded body, whose marker line counts toward the cap), and a cut that would leave an @ and login characters at the end of the text, from a word that was not a mention before the cut (a login followed by an underscore, an over-long login), which cuts before the @. Cleaning each result again changes nothing"
+e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and plan R38, read against GitHub's code span rule: a span opens at a backtick run and closes at the next run of the same length, across line breaks within a paragraph, and a backslash before a backtick makes it plain text. Each mention is put in a fence of a length no other run in the text has, with a space between the fence and a backtick next to it and a second backslash after an odd run of backslashes, and fences already around a mention, where every run of that length is such a fence, are kept and reused. Expected strings are traced by hand with that rule: a span over a line break (the review's case), a mention inside a one-line span, a stray backtick before and after the mention, a mention right after a closed span, a backslash before the mention, text already cleaned, a mention right after another mention (after a login, a team, a trailing dash, three in a row, with a stray backtick or a backslash), where the first mention's closing fence would otherwise leave the second one live or join its fence, so each gets its own fence with a space between them, while an address such as a@y after a wrapped mention and a space stays plain text, and a cut at the 60,000 cap that falls inside a mention's fence, which cuts before the fence (in clean_post and in the recorded body, whose marker line counts toward the cap), and a cut, in clean_post and in the recorded body, that would leave an @ and login characters at the end of the text, from a word that was not a mention before the cut (a login followed by an underscore, an over-long login), which cuts before the @. Cleaning each result again changes nothing"
 read -r -d '' GW_CODE <<'PY' || true
 cases = [
     ('wrapped', '`open\nx` @octocat `y', '`open\nx` ``@octocat`` `y'),
@@ -448,6 +448,10 @@ i = record(job, '4', 'comment', G.literal_comment(REPO, 7), 'x' * 59930 + ' @oct
 b = body_of(items()[i]).decode('utf-8')
 print('cap body tail %r' % b.split('\n', 1)[1].lstrip('x'))
 print('cap body length %s' % (len(b) <= 60000))
+room = 60000 - len(b.split('\n', 1)[0]) - 1
+i = record(job, '5', 'comment', G.literal_comment(REPO, 7), 'y' * (room - 5) + ' @octocat_ tail', ['issueUpdate'], False)
+b = body_of(items()[i]).decode('utf-8')
+print('cap body at tail %r' % b.split('\n', 1)[1].lstrip('y'))
 PY
 gw_py "$GW_CODE"
 for tag in wrapped inside before after closed backslash clean reuse \
@@ -460,6 +464,7 @@ for tag in cap-underscore cap-long; do
 done
 e2e_expect_line "cap body tail ' '"
 e2e_expect_line "cap body length True"
+e2e_expect_line "cap body at tail ' '"
 
 _flow_test_begin "factory github: a blocking assign_label item with both keys journal is run, with two breadcrumbs (GH6, R75)"
 gw_start gh6-journal prepare
