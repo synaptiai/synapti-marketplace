@@ -240,6 +240,23 @@ artifacts:
   goal_id: issue-355
   result: active
   reason: resumed after P9
+- type: escalation-asked
+  captured_at: '2026-11-23T12:06:15Z'
+  question_id: q-20261123T120614Z-a22dbf
+  blocking: 'yes'
+  class: decision
+  command: /flow:pr review round 3
+  situation:
+  - 'Review round 3 found two more ways the @mention cleaner fails: an escaped backtick
+    run next to a mention can leave it live on GitHub (P1)'
+  - and the 60
+  - 000 cap can cut inside a backtick run so cleaning
+- type: escalation-resolved
+  captured_at: '2026-11-23T12:09:24Z'
+  escalation_field: options
+  outcome: Escape every backtick in model text so only the engine's own fences pair;
+    model inline code then shows as literal backticks
+  question_id: q-20261123T120614Z-a22dbf
 ---
 
 ## Specification
@@ -604,3 +621,9 @@ Choices:
 - **ERR-2, unlistable J/archive (P3):** `_archive_names` returns [] only when the folder does not exist and None for any other read error; create_one then returns None and creation waits, as for a linked J/archive, so an archived job's key is never used again.
 - **SEC-1, command posted before a notice (P2), Inferred:** a trusted command posted after the engine's last issue read but before it posted its next notice was dropped. A notice's marker now counts from the engine's decision time: the newest comment of the last read whose commands were all judged, less 1 s, never later than the marker's created_at. GitHub's clock sets both sides, so clock skew cannot drop a command; the 1 s covers a comment from the same second as the newest one read. The binding is an events line `{type: commands_scanned, job, through, pass}` with no id (the write module and rebuild skip it), written after the commands are stored, again only when `through` changes, and once with `through: null` when the job is created, so a cancel posted between labelling and the first notice counts. A marker with no binding (an earlier job, an intent recorded before any read line, or unreadable events) counts at its created_at, as before. This departs from the wording of plan B5 step 3 and AC6 ("a person comment posted before the latest marker: nothing"): a comment posted before the marker but after the engine decided the notice is now judged. Reading: design person_channels L57 puts the floor at the engine's own notice; plan 3.1 reads R96 the same way for trust_and_untrusted_text L13. New signatures: `scan(snapshot, job, perms, engine_login, table=None, reads=None)`, `marker_reads(paths, n, key)`, `record_scan(paths, job, snapshot, pass_id=None)`.
 - **HV-3, tier_gate_by_mode evidence (P3):** the part's evidence field holds one folder (schema factory-probes.schema.json types it as one string), so the reason now names each mode's folder (`default mode, in evidence/P9-7: ...`). A stored finding without a folder still counts and is described without one. The live P9-7 and P9-8 findings were stored before folders were kept, so the committed record changes only after both modes are recorded again; until then the committed reason names no folders, and P9-7 is reachable through the hook_mode_default part's evidence.
+
+## PR review rounds 2 and 3 (2026-11-23, fixes d58dd0c5, 5e6b0842, dbe9e513)
+
+- **F2-R2, a mention right after another (P2):** in `@x@octocat` the raw text has a login character before the second @, so only @x is a mention; once @x was wrapped, the closing backtick came before the second @ and GitHub linked it. The cleaner now wraps a mention that starts where the last wrapped one ended, with a space between the two fences.
+- **Cut at the cap (P2):** a word that was not a mention, such as `@octocat_` or a login longer than GitHub allows, could become a bare mention once the 60,000 cut removed its end. The cut now moves to before an @ whose word runs up to it, in clean_post and in the recorded body.
+- **Escaped backtick runs (round 3, P1) and a cut inside a backtick run (P2), decided by the user:** this was the third round with the same cause: the cleaner kept the judge's own backticks and had to predict how GitHub pairs them. Asked as question q-20261123T120614Z-a22dbf; the user chose to escape every backtick in judge text (over the reviewer's patch plus a committed fuzz check). The intake notices escape each template value with `escape_ticks` (a backslash before every backtick that an odd backslash run does not already escape), so the only backticks GitHub can pair in a notice are the template's and the engine's own. Judge code formatting shows as plain backticks. Engine text (the status notes, the refusal note) keeps its code spans and is not escaped; the queue label in a status note comes from the person's settings. A cut inside a backtick run can now fall only in a template's own span, which holds no mention.
