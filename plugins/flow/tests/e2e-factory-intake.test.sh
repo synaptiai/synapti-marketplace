@@ -582,7 +582,7 @@ fi
 # ---------------------------------------------------------------- IN11
 if in_run IN11; then
 in_module in11-model-backticks intake
-e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and the user's choice of 2026-11-23 (PR review round 3): every backtick in judge text is escaped before it goes into a notice, so the only backticks GitHub can pair are the templates' and the engine's own. A backtick gets a backslash unless an odd run of backslashes already escapes it. Expected strings are traced by hand: 'see \\\`\`@octocat and @hubot' (the review's input) becomes 'see \\\`\\\`' with both mentions in two-backtick fences, a space after the escaped backtick, because the needs-info template's own one-backtick spans take length 1; in a reject reason, a code span becomes 'see \\\`code\\\`' with the mention in a two-backtick fence, a three-backtick fence and a backtick after an escaped backslash are escaped; the templates' own spans such as \`NI-1: ...\` and \`/flow-factory spec\` are unchanged, and an engine reason in the needs-human notice keeps its code span, because only judge values are escaped"
+e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and the user's choice of 2026-11-23 (PR review round 3): every backtick in judge text is escaped before it goes into a notice, so the only backticks GitHub can pair are the templates' and the engine's own. A backtick gets a backslash unless an odd run of backslashes already escapes it. Expected strings are traced by hand: 'see \\\`\`@octocat and @hubot' (the review's input) becomes 'see \\\`\\\`' with both mentions in two-backtick fences, a space after the escaped backtick, because the needs-info template's own one-backtick spans take length 1; in a reject reason, a code span becomes 'see \\\`code\\\`' with the mention in a two-backtick fence, a three-backtick fence and a backtick after an escaped backslash are escaped; the templates' own spans such as \`NI-1: ...\` and \`/flow-factory spec\` are unchanged, and an engine reason in the needs-human notice keeps its code span. In the accept notice every model backtick in the scope, risk, surfaces and criteria is escaped and each mention is in a two-backtick fence. _fill escapes any value that is not itself an EngineText, so a caller that passes judge text unescaped is still safe, and keeps an EngineText value as it is"
 in_py "
 Q = dict($IN_NEEDS, questions=['see \\\\\`\`@octocat and @hubot'])
 job = J()
@@ -608,6 +608,23 @@ job['reason'] = 'the \`x\` step failed'
 with jobs.job_lock(P, 7):
     iid = I.effect_needs_human(P, job, repo=REPO, row='51b')
 print('engine reason %s' % ('Reason: the \`x\` step failed' in body(iid).split('\n')))
+os.makedirs(os.path.join(JD, 'in-copies'), exist_ok=True)
+with open(os.path.join(JD, 'in-copies', 'issue.md'), 'w', encoding='utf-8') as fh:
+    fh.write('<<<UNTRUSTED_ISSUE_TITLE>>>\n> t\n<<<END_UNTRUSTED_ISSUE_TITLE>>>\n')
+A = dict($IN_ACCEPT, scope='use \`x then @octocat \`y', risk='lo\`w', surfaces=['a\`b'], proposed_criteria=['c\`d @hubot'])
+job = J()
+with jobs.job_lock(P, 7):
+    I.effect_accept(P, job, A, repo=REPO)
+    jobs.write_job(P, job)
+lines = body([k for k, v in items().items() if v['row'] == '6'][0]).split('\n')
+print('accept scope %s' % ('Scope: use \\\`x then \`\`@octocat\`\` \\\`y' in lines))
+print('accept risk %s' % ('Risk: lo\\\`w' in lines))
+print('accept surfaces %s' % ('Surfaces: a\\\`b' in lines))
+print('accept criteria %s' % ('- c\\\`d \`\`@hubot\`\`' in lines))
+for ln in lines:
+    print('accept line %r' % ln)
+f = I._fill('X {v} {e}', {'v': 'a \`b\`', 'e': I.G.EngineText('\`c\`')})
+print('fill value %s %s' % (f == 'X a \\\`b\\\` \`c\`', type(f).__name__))
 "
 e2e_expect_line "needs question True"
 e2e_expect_line "needs template True"
@@ -615,6 +632,11 @@ e2e_expect_line "reject scope True"
 e2e_expect_line "reject fence True"
 e2e_expect_line "reject backslash True"
 e2e_expect_line "engine reason True"
+e2e_expect_line "accept scope True"
+e2e_expect_line "accept risk True"
+e2e_expect_line "accept surfaces True"
+e2e_expect_line "accept criteria True"
+e2e_expect_line "fill value True EngineText"
 fi
 
 # ---------------------------------------------------------------- FJ1, FJ2

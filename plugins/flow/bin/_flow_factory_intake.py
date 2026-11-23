@@ -172,14 +172,21 @@ def _load_template(name):
         raise Refused(f"template_unreadable {path}: {' '.join(str(e).split())}")
 
 
+def _value(v):
+    """A template value as it goes into the notice: an EngineText as it is,
+    any other text with its backticks escaped (G.escape_ticks), so a value
+    is treated as judge text unless the engine marks it."""
+    return v if isinstance(v, G.EngineText) else G.escape_ticks(v)
+
+
 def _fill(text, values):
     """Each {placeholder} of a loaded template filled in one pass, so a
-    value that holds a placeholder is not filled again. The result is a
-    G.EngineText, so clean_post keeps the template's own backticks and the
-    engine values' (the needs-human reason, the tier keys, a comment id);
-    the judge effects therefore escape their values' backticks
-    (G.escape_ticks) before they call it."""
-    return G.EngineText(_PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), text))
+    value that holds a placeholder is not filled again. Each value goes
+    through _value, so its backticks are escaped unless it is an
+    EngineText. The result is a G.EngineText, so clean_post keeps the
+    template's own backticks."""
+    return G.EngineText(_PLACEHOLDER.sub(lambda m: _value(values[m.group(1)]) if m.group(1) in values
+                                         else m.group(0), text))
 
 
 def _template(name, values):
@@ -328,7 +335,9 @@ def effect_needs_human(paths, job, *, repo, row):
     that made the entry (plan B14 step 8)."""
     _locked(job)
     reason = job.get("reason") if isinstance(job.get("reason"), str) and job.get("reason") else "not recorded"
-    return _notice(paths, job, row, _template("needs-human", {"reason": reason}), "needs_human", repo)
+    # The reason is the table's own text ('reason <x>' effects), so its code
+    # spans are kept.
+    return _notice(paths, job, row, _template("needs-human", {"reason": G.EngineText(reason)}), "needs_human", repo)
 
 
 def effect_tier_confirm(paths, job, keys, *, repo, row):

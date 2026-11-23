@@ -661,7 +661,7 @@ cm_c 82 wrt write 2026-11-18T11:01:00Z '/flow-factory answer NI-7 use port 8080'
 cm_c 83 wrt write 2026-11-18T11:02:00Z '/flow-factory answer build-q1 2 use the default'
 cm_c 84 wrt write 2026-11-18T11:03:00Z '/flow-factory approve-spec 0123abc'
 cm_c 85 wrt write 2026-11-18T11:04:00Z '/flow-factory cancel'
-e2e_describe "plan B5 test plan: '/flow-factory answer NI-1' with no text gets a status note (Q17: the text must not be empty), and so does an answer naming a question the job never asked (NI-7, Inferred) and an answer to a worker question (build-q1) in needs_info (Inferred: a needs-info answer names an NI id, plan 2.3); each note is an outbox item with ref the comment id, and its body names the reason without the comment's text. In needs_spec_approval, approve-spec with a 7-digit hash gets a form note (design person_channels L58: at least 12 hex digits). store called again for a comment already in commands_seen adds no events line and no item (person_channels L78). A file in J/pending that cannot be read may be the same comment's event, so store refuses (pending_unreadable), stores nothing and leaves the comment unseen, for the next pass to try again (Inferred)"
+e2e_describe "plan B5 test plan: '/flow-factory answer NI-1' with no text gets a status note (Q17: the text must not be empty), and so does an answer naming a question the job never asked (NI-7, Inferred) and an answer to a worker question (build-q1) in needs_info (Inferred: a needs-info answer names an NI id, plan 2.3); each note is an outbox item with ref the comment id, and its body names the reason without the comment's text. In needs_spec_approval, approve-spec with a 7-digit hash gets a form note (design person_channels L58: at least 12 hex digits), whose command name and form keep their code spans, unescaped, because both are the engine's own text. store called again for a comment already in commands_seen adds no events line and no item (person_channels L78). A file in J/pending that cannot be read may be the same comment's event, so store refuses (pending_unreadable), stores nothing and leaves the comment unseen, for the next pass to try again (Inferred)"
 read -r -d '' CM_CODE <<'PY' || true
 job = J()
 cmds = {c['comment_id']: c for c in scan(job, only=(81, 82, 83))}
@@ -683,6 +683,7 @@ for i, it in sorted(items().items()):
     print('item %s ref=%s state=%s text-copied=%s' % (i, it['ref'], it['state_at_write'],
                                                      'use port' in b or 'use the default' in b or '0123abc' in b))
     print('body %s %r' % (it['ref'], b.split('\n', 1)[1]))
+    print('spans %s %s' % (it['ref'], '\\`' not in b and '`/flow-factory ' in b))
 job = J()
 job['state'] = 'needs_info'
 with jobs.job_lock(P, 7):
@@ -710,6 +711,7 @@ e2e_expect_line "item issue-7-j1-note-1 ref=81 state=needs_info text-copied=Fals
 e2e_expect_line "item issue-7-j1-note-2 ref=82 state=needs_info text-copied=False"
 e2e_expect_line "item issue-7-j1-note-3 ref=83 state=needs_info text-copied=False"
 e2e_expect_line "item issue-7-j1-note-4 ref=84 state=needs_spec_approval text-copied=False"
+e2e_expect_line "spans 84 True"
 e2e_expect_out "Job issue-7-j1 has no question NI-7."
 e2e_expect_out "Job issue-7-j1 is in state needs_info, where this command does not apply."
 e2e_expect_line 'cmd 85 cancel raise=True trusted=True triage_only=False event=person_cancel args={} note=no'

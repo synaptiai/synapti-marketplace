@@ -180,9 +180,11 @@ class EngineText(str):
     of an EngineText and escapes every backtick of any other str, so a body
     is treated as model text unless the engine marks it. A model value put
     into an EngineText must be escaped (escape_ticks) by whoever puts it
-    there. Any string operation on an EngineText (joining, slicing, replace,
-    formatting) gives a plain str, which clean_post then escapes: losing the
-    mark can only escape too much, never too little."""
+    there. An operation that builds new text from an EngineText (joining,
+    +, slicing, replace, strip, formatting with values, a JSON round trip)
+    gives a plain str, which clean_post then escapes: losing the mark can
+    only escape too much, never too little. Only operations that return the
+    same content unchanged (format() with no fields, copy) keep the mark."""
     __slots__ = ()
 
 

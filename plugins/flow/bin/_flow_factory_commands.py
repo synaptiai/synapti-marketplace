@@ -281,7 +281,7 @@ def _refusal(name, args, job, table):
     if state not in table.events.get(EVENTS[name], {}).get("occurs_in", []):
         return where
     if args is None:
-        return f"The form is {FORMS[name]}."
+        return github.EngineText(f"The form is {FORMS[name]}.")
     if name == "answer":
         only = _answer_states(args["qid"])
         if only is not None and state not in only:
@@ -371,15 +371,17 @@ def _render(what, reason):
     or is not UTF-8 is refused (template_unreadable), as the intake module
     refuses its own templates, so the rows' callers, which catch Refused,
     report it. Each caller renders before it records anything. The text is
-    a github.EngineText, so clean_post keeps its code spans: what and reason
-    are engine text (the command name and the forms are fixed, a label is
-    already in a _code span, a login has no backtick)."""
+    a github.EngineText, so clean_post keeps the template's code spans; what
+    and reason keep theirs only when they are EngineText themselves (the
+    command name and the forms are fixed, a label is in a _code span), and
+    any other value has its backticks escaped."""
     try:
         with open(TEMPLATE, encoding="utf-8") as f:
             template = f.read()
     except (OSError, UnicodeDecodeError) as e:
         raise jobs.Refused(f"template_unreadable {TEMPLATE}: {' '.join(str(e).split())}")
-    values = {"what": what, "reason": reason}
+    values = {k: v if isinstance(v, github.EngineText) else github.escape_ticks(v)
+              for k, v in (("what", what), ("reason", reason))}
     return github.EngineText(PLACEHOLDER.sub(lambda m: values[m.group(1)], template))
 
 
@@ -410,7 +412,7 @@ def store(paths, job, command, *, repo, caller=None):
             jobs.store_pending(paths, n, command["event"], command["args"], f"comment:{cid}",
                                caller or _caller(), facts, comment=comment)
     elif command["note"]:
-        _note(paths, job, cid, f"the `/flow-factory {command['name']}` command in comment {cid}",
+        _note(paths, job, cid, github.EngineText(f"the `/flow-factory {command['name']}` command in comment {cid}"),
               command["note"], repo)
     seen.append(cid)
     jobs.append_event(paths, n, {"type": "commands_seen", "job": key, "commands_seen": list(seen)})
@@ -436,7 +438,8 @@ def label_notes(snapshot, job, label):
 def store_label_note(paths, job, note, *, repo):
     before = job.get("write_seq")
     actor = note.get("actor") or "an account that no longer exists"
-    iid = _note(paths, job, note["event_id"], f"the removal of the label {github._code(note['label'])} by {actor}",
+    what = github.EngineText(f"the removal of the label {github._code(note['label'])} by {github.escape_ticks(actor)}")
+    iid = _note(paths, job, note["event_id"], what,
                 f"Only a person with write access or higher cancels a job by removing that label, "
                 f"so job {job['key']} keeps running.", repo)
     if job.get("write_seq") != before:
