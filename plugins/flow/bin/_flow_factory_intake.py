@@ -172,11 +172,10 @@ def _load_template(name):
 
 def _fill(text, values):
     """Each {placeholder} of a loaded template filled in one pass, so a
-    value that holds a placeholder is not filled again. Every value has its
-    backticks escaped (G.escape_ticks), because the values are judge text;
-    the template's own backticks are kept."""
-    return _PLACEHOLDER.sub(lambda m: G.escape_ticks(values[m.group(1)]) if m.group(1) in values else m.group(0),
-                            text)
+    value that holds a placeholder is not filled again. The judge effects
+    escape their values' backticks (G.escape_ticks) before they call it;
+    engine values and the template's own backticks are kept."""
+    return _PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), text)
 
 
 def _template(name, values):
@@ -239,9 +238,10 @@ def effect_accept(paths, job, result, *, repo):
     copies = os.path.join(jobs.job_dir(paths, job["issue"]), "in-copies")
     jobs._ensure(paths, copies)
     _write(os.path.join(copies, "intake.json"), result)
-    body = _fill(template, {"scope": result["scope"], "risk": result["risk"],
-                            "surfaces": ", ".join(result["surfaces"]) or "none named",
-                            "criteria": _bullets(result["proposed_criteria"])})
+    E = G.escape_ticks
+    body = _fill(template, {"scope": E(result["scope"]), "risk": E(result["risk"]),
+                            "surfaces": E(", ".join(result["surfaces"])) or "none named",
+                            "criteria": _bullets([E(c) for c in result["proposed_criteria"]])})
     _notice(paths, job, "6", body, "prepare", repo)
     job["intake_inputs"] = inputs
     job["intake"] = intake
@@ -272,7 +272,7 @@ def effect_needs_info(paths, job, result, now, *, repo):
         jobs._ensure(paths, qdir)
         _write(os.path.join(qdir, qid + ".json"), {"job": job["key"], "id": qid, "text": text, "round": rnd})
         ids.append((qid, text))
-    body = _fill(template, {"questions": "\n".join(f"- {q}: {t}" for q, t in ids)})
+    body = _fill(template, {"questions": "\n".join(f"- {q}: {G.escape_ticks(t)}" for q, t in ids)})
     _notice(paths, job, "4", body, "needs_info", repo)
     return {"asked_at": now, "questions": [q for q, _ in ids], "round": rnd, "earlier": earlier}
 
@@ -280,7 +280,7 @@ def effect_needs_info(paths, job, result, now, *, repo):
 def effect_reject(paths, job, result, *, repo):
     """Row 5: the reject notice, recorded for rejected (the row's target)."""
     _locked(job)
-    return _notice(paths, job, "5", _template("intake-reject", {"reason": result["reason"]}), "rejected", repo)
+    return _notice(paths, job, "5", _template("intake-reject", {"reason": G.escape_ticks(result["reason"])}), "rejected", repo)
 
 
 def effect_revouch_notice(paths, job, comment_id, *, repo):

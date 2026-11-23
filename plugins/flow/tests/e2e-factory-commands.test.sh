@@ -601,6 +601,10 @@ for i, it in sorted(items().items()):
         ev.get(it['ref'], {}).get('actor', '?') in b))
     print('body %s %r' % (i, b))
 print('items %d write_seq %s' % (len(items()), J().get('write_seq')))
+job = J()
+with jobs.job_lock(P, 7):
+    iid = C.store_label_note(P, job, {'event_id': 99, 'actor': 'alice', 'label': 'flow`factory'}, repo=REPO)
+print('tick label %s' % ('the label ``flow`factory`` by alice' in body(items()[iid])))
 PY
 cm_py "$CM_CODE"
 e2e_expect_equal "0" "$E2E_RC" "exit status"
@@ -609,6 +613,7 @@ e2e_expect_line "notes [('tri', '2026-11-18T11:00:00Z'), ('ci[bot]', '2026-11-18
 e2e_expect_line "item issue-7-j1-note-1 ref-is-event=True state=intake valid=[] label=True actor=True"
 e2e_expect_line "item issue-7-j1-note-2 ref-is-event=True state=intake valid=[] label=True actor=True"
 e2e_expect_line "items 2 write_seq 2"
+e2e_expect_line "tick label True"
 
 # ---------------------------------------------------------------------------
 _flow_test_begin "factory commands: store_pending keeps the comment object to the comment channel (CM10)"

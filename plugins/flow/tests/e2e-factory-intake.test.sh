@@ -50,7 +50,7 @@
 #   IN11 (trust_and_untrusted_text L59) a backtick in judge text is left
 #        live, so it can pair with the engine's backticks around a mention
 #        and leave the mention outside any code span; or the templates' own
-#        backticks are escaped
+#        backticks, or an engine reason's, are escaped
 #   FJ1  (2.5, R22, R101) flow-judge.sh --judge intake runs without --model or
 #        --timeout-seconds, or with a timeout that is not a positive whole
 #        number; goal or verdict accepts the intake-only arguments
@@ -582,7 +582,7 @@ fi
 # ---------------------------------------------------------------- IN11
 if in_run IN11; then
 in_module in11-model-backticks intake
-e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and the user's choice of 2026-11-23 (PR review round 3): every backtick in judge text is escaped before it goes into a notice, so the only backticks GitHub can pair are the templates' and the engine's own. A backtick gets a backslash unless an odd run of backslashes already escapes it. Expected strings are traced by hand: 'see \\\`\`@octocat and @hubot' (the review's input) becomes 'see \\\`\\\`' with both mentions in two-backtick fences, a space after the escaped backtick, because the needs-info template's own one-backtick spans take length 1; in a reject reason, a code span becomes 'see \\\`code\\\`' with the mention in a two-backtick fence, a three-backtick fence and a backtick after an escaped backslash are escaped; the templates' own spans such as \`NI-1: ...\` and \`/flow-factory spec\` are unchanged"
+e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and the user's choice of 2026-11-23 (PR review round 3): every backtick in judge text is escaped before it goes into a notice, so the only backticks GitHub can pair are the templates' and the engine's own. A backtick gets a backslash unless an odd run of backslashes already escapes it. Expected strings are traced by hand: 'see \\\`\`@octocat and @hubot' (the review's input) becomes 'see \\\`\\\`' with both mentions in two-backtick fences, a space after the escaped backtick, because the needs-info template's own one-backtick spans take length 1; in a reject reason, a code span becomes 'see \\\`code\\\`' with the mention in a two-backtick fence, a three-backtick fence and a backtick after an escaped backslash are escaped; the templates' own spans such as \`NI-1: ...\` and \`/flow-factory spec\` are unchanged, and an engine reason in the needs-human notice keeps its code span, because only judge values are escaped"
 in_py "
 Q = dict($IN_NEEDS, questions=['see \\\\\`\`@octocat and @hubot'])
 job = J()
@@ -603,12 +603,18 @@ print('reject fence %s' % ('\\\\\`\\\\\`\\\\\`js fence' in lines))
 print('reject backslash %s' % ('a \\\\\\\\\\\\\` b' in lines))
 for ln in lines:
     print('reject line %r' % ln)
+job = J()
+job['reason'] = 'the \`x\` step failed'
+with jobs.job_lock(P, 7):
+    iid = I.effect_needs_human(P, job, repo=REPO, row='51b')
+print('engine reason %s' % ('Reason: the \`x\` step failed' in body(iid).split('\n')))
 "
 e2e_expect_line "needs question True"
 e2e_expect_line "needs template True"
 e2e_expect_line "reject scope True"
 e2e_expect_line "reject fence True"
 e2e_expect_line "reject backslash True"
+e2e_expect_line "engine reason True"
 fi
 
 # ---------------------------------------------------------------- FJ1, FJ2

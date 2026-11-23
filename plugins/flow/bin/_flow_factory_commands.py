@@ -433,7 +433,7 @@ def label_notes(snapshot, job, label):
 def store_label_note(paths, job, note, *, repo):
     before = job.get("write_seq")
     actor = note.get("actor") or "an account that no longer exists"
-    iid = _note(paths, job, note["event_id"], f"the removal of the label `{note['label']}` by {actor}",
+    iid = _note(paths, job, note["event_id"], f"the removal of the label {github._code(note['label'])} by {actor}",
                 f"Only a person with write access or higher cancels a job by removing that label, "
                 f"so job {job['key']} keeps running.", repo)
     if job.get("write_seq") != before:
