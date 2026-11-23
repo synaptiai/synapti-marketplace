@@ -47,6 +47,10 @@
 #   IN10 (trust_and_untrusted_text L30) the needs-info template does not ask
 #        for replies that start with the question id, or does not explain
 #        /flow-factory spec
+#   IN11 (trust_and_untrusted_text L59) a backtick in judge text is left
+#        live, so it can pair with the engine's backticks around a mention
+#        and leave the mention outside any code span; or the templates' own
+#        backticks are escaped
 #   FJ1  (2.5, R22, R101) flow-judge.sh --judge intake runs without --model or
 #        --timeout-seconds, or with a timeout that is not a positive whole
 #        number; goal or verdict accepts the intake-only arguments
@@ -573,6 +577,38 @@ done
 IN_TPL=$(cat "$E2E_PLUGIN_DIR/templates/factory/intake-needs-info.comment.md" 2>/dev/null)
 e2e_expect_equal yes "$(grep -qF 'start your reply with the question id' <<<"$IN_TPL" && echo yes || echo no)" "needs-info template asks for the question id first"
 e2e_expect_equal yes "$(grep -qF '/flow-factory spec' <<<"$IN_TPL" && echo yes || echo no)" "needs-info template explains /flow-factory spec"
+fi
+
+# ---------------------------------------------------------------- IN11
+if in_run IN11; then
+in_module in11-model-backticks intake
+e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and the user's choice of 2026-11-23 (PR review round 3): every backtick in judge text is escaped before it goes into a notice, so the only backticks GitHub can pair are the templates' and the engine's own. A backtick gets a backslash unless an odd run of backslashes already escapes it. Expected strings are traced by hand: 'see \\\`\`@octocat and @hubot' (the review's input) becomes 'see \\\`\\\`' with both mentions in two-backtick fences, a space after the escaped backtick, because the needs-info template's own one-backtick spans take length 1; in a reject reason, a code span becomes 'see \\\`code\\\`' with the mention in a two-backtick fence, a three-backtick fence and a backtick after an escaped backslash are escaped; the templates' own spans such as \`NI-1: ...\` and \`/flow-factory spec\` are unchanged"
+in_py "
+Q = dict($IN_NEEDS, questions=['see \\\\\`\`@octocat and @hubot'])
+job = J()
+with jobs.job_lock(P, 7):
+    I.effect_needs_info(P, job, Q, '2026-11-17T00:00:00Z', repo=REPO)
+    jobs.write_job(P, job)
+b = body('issue-7-j1-4-1')
+print('needs question %s' % ('- NI-1: see \\\\\`\\\\\` \`\`@octocat\`\` and \`\`@hubot\`\`' in b.split('\n')))
+print('needs template %s' % ('for example \`NI-1: ...\`' in b and '\`/flow-factory spec\`' in b))
+R = dict($IN_REJECT, reason='see \`code\` and @x\n\`\`\`js fence\na \\\\\\\\\` b')
+job = J()
+with jobs.job_lock(P, 7):
+    I.effect_reject(P, job, R, repo=REPO)
+    jobs.write_job(P, job)
+lines = body('issue-7-j1-5-2').split('\n')
+print('reject scope %s' % ('Reason: see \\\\\`code\\\\\` and \`\`@x\`\`' in lines))
+print('reject fence %s' % ('\\\\\`\\\\\`\\\\\`js fence' in lines))
+print('reject backslash %s' % ('a \\\\\\\\\\\\\` b' in lines))
+for ln in lines:
+    print('reject line %r' % ln)
+"
+e2e_expect_line "needs question True"
+e2e_expect_line "needs template True"
+e2e_expect_line "reject scope True"
+e2e_expect_line "reject fence True"
+e2e_expect_line "reject backslash True"
 fi
 
 # ---------------------------------------------------------------- FJ1, FJ2

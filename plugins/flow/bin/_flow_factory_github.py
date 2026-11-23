@@ -44,6 +44,7 @@ API:
   intent_digest(argv, body: bytes) -> hex
   marker(job_key, intent_id) -> the marker line
   clean_post(text, limit=60000) -> text
+  escape_ticks(text) -> text (model text, before it goes into a notice)
   literal_comment(repo, n), literal_label_add(repo, n, label),
   literal_label_remove(repo, n, label),
   literal_assign_label(repo, n, login, label), literal_pr_close(repo, pr)
@@ -165,6 +166,25 @@ def _line1(text):
     reads a comment's first line)."""
     line = text.split("\n", 1)[0] if isinstance(text, str) else ""
     return line[:-1] if line.endswith("\r") else line
+
+
+def escape_ticks(text):
+    """text with every backtick escaped: a backtick gets a backslash before
+    it unless an odd run of backslashes already escapes it. Model text goes
+    through this before it is put in a notice (the callers that fill a
+    template), so the only backticks GitHub can pair in a notice are the
+    template's and the engine's own, and clean_post never has to predict how
+    GitHub pairs the model's (design trust_and_untrusted_text L59; the user's
+    choice of 2026-11-23). Model code formatting then shows as plain
+    backticks."""
+    if not isinstance(text, str):
+        return text
+    out = []
+    for i, ch in enumerate(text):
+        if ch == "`" and not _odd_backslashes(text, i):
+            out.append("\\")
+        out.append(ch)
+    return "".join(out)
 
 
 def _code(text):

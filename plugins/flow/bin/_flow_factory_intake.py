@@ -172,8 +172,11 @@ def _load_template(name):
 
 def _fill(text, values):
     """Each {placeholder} of a loaded template filled in one pass, so a
-    value that holds a placeholder is not filled again."""
-    return _PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), text)
+    value that holds a placeholder is not filled again. Every value has its
+    backticks escaped (G.escape_ticks), because the values are judge text;
+    the template's own backticks are kept."""
+    return _PLACEHOLDER.sub(lambda m: G.escape_ticks(values[m.group(1)]) if m.group(1) in values else m.group(0),
+                            text)
 
 
 def _template(name, values):
