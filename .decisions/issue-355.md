@@ -281,6 +281,12 @@ artifacts:
   goal_id: issue-355
   result: achieved
   reason: confirmed by the user after all 20 checks passed at 1152e660
+- type: review-cycle
+  captured_at: '2026-11-23T22:31:36Z'
+  cycle: 1
+  path: B
+  findings_count: 6
+  pr: 383
 ---
 
 ## Specification
