@@ -115,8 +115,13 @@ _ISSUE_PATH = re.compile(r"^repos/(" + _REPO + r")/issues/([1-9][0-9]*)/(comment
 _LABEL_PATH = re.compile(r"^repos/(" + _REPO + r")/issues/([1-9][0-9]*)/labels/([^/]+)$")
 _PULL_PATH = re.compile(r"^repos/(" + _REPO + r")/pulls/([1-9][0-9]*)$")
 # A GitHub login or team after @, not right after a word character (an
-# address such as a@b.com).
-_MENTION = re.compile(r"(?<![A-Za-z0-9_])@[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_-])")
+# address such as a@b.com). _MENTION_AT is the same mention with no rule
+# about the character before it: _mentions uses it right after a mention it
+# has put in backticks, because that closing backtick is a boundary in the
+# cleaned text even when a login character came before the @ in the raw text.
+_MENTION_BODY = r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?(?![A-Za-z0-9_-])"
+_MENTION = re.compile(r"(?<![A-Za-z0-9_])" + _MENTION_BODY)
+_MENTION_AT = re.compile(_MENTION_BODY)
 _TICKS = re.compile(r"`+")
 
 
@@ -210,8 +215,13 @@ def _mentions(text):
     close nor be closed by another run; inside a real code span it is only
     more code. A space keeps the fence from joining a backtick next to the
     mention, and a second backslash keeps a backslash before it from
-    escaping the fence. A mention already in such a fence is left alone, so
-    cleaning cleaned text changes nothing."""
+    escaping the fence. Wrapping a mention changes the characters around it
+    only, so the one place it can make a new mention is an @ right after it
+    (as in @x@y, where the raw text has a login character before the second
+    @ and the cleaned text has a backtick): a mention that starts where the
+    last wrapped one ended is wrapped too, with a space between the two
+    fences so they do not join into one run. A mention already in such a
+    fence is left alone, so cleaning cleaned text changes nothing."""
     fences = _fences(text)
     done = {(a, b) for pairs in fences.values() for a, b in pairs}
     lengths = {len(m.group(0)) for m in _TICKS.finditer(text)}
@@ -219,27 +229,42 @@ def _mentions(text):
         fence = "`" * max(fences)
     else:
         fence = "`" * next(n for n in range(1, len(lengths) + 2) if n not in lengths)
-    out, i = [], 0
-    for m in _MENTION.finditer(text):
+    out, i, pos, last = [], 0, 0, None
+    while True:
+        m = _MENTION_AT.match(text, last) if last is not None else None
+        if m is None:
+            m = _MENTION.search(text, pos)
+            if m is None:
+                break
         s, e = m.start(), m.end()
+        pos = e
         if any(a < s < b for a, b in done):
+            last = None
             continue
         out.append(text[i:s])
-        if s > 0 and text[s - 1] == "`":
+        if s == last or (s > 0 and text[s - 1] == "`"):
             out.append(" ")
         elif _odd_backslashes(text, s):
             out.append("\\")
         out.append(fence + m.group(0) + fence)
         if e < len(text) and text[e] == "`":
             out.append(" ")
-        i = e
+        i = last = e
     out.append(text[i:])
     return "".join(out)
 
 
+# An @ and the login, team or underscore characters after it, up to the end
+# of the text, not right after a word character.
+_TAIL_AT = re.compile(r"(?<![A-Za-z0-9_])@[A-Za-z0-9_./-]*\Z")
+
+
 def _cap(text, limit):
-    """text cut to limit characters, the cut moved to before a mention
-    fence it would fall inside, so no fence is left open."""
+    """text cut to limit characters. The cut is moved to before a mention
+    fence it would fall inside, so no fence is left open, and then to before
+    an @ whose word runs up to the cut: a word that was not a mention, such
+    as @octocat_ or a login longer than GitHub allows, can be one once its
+    end is cut off."""
     if len(text) <= limit:
         return text
     cut = limit
@@ -247,6 +272,9 @@ def _cap(text, limit):
         for a, b in pairs:
             if a < cut < b:
                 cut = a
+    m = _TAIL_AT.search(text, 0, cut)
+    if m:
+        cut = m.start()
     return text[:cut]
 
 
