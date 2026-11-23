@@ -16,12 +16,17 @@
 # runtime directory): tier-gate.sh and the engine's own checks remain.
 #
 # The path is tool_input.file_path, or tool_input.notebook_path for
-# NotebookEdit. A relative path is read against the payload's cwd; `.` and
-# `..` are applied to the text, then the longest existing part is replaced by
-# its physical path and a symbolic link at the end is followed, so /var and
-# /private/var, a `..` and a link into the factory all reach the same place.
+# NotebookEdit. A relative path is read against the payload's cwd. It is read
+# three ways: with `.` and `..` applied to the text; that text resolved the
+# way the kernel resolves it; and the path as given resolved that way, which
+# follows each symbolic link before the `..` after it is applied (L/../x with
+# L a link to the factory's jobs folder is the factory's x). Past a part that
+# does not exist yet, `.` and `..` are applied to the text. So /var and
+# /private/var, a `..`, a link into the factory and a link followed by `..`
+# all reach the same place, and the write is denied when any reading is under
+# the factory.
 #
-# The comparison is by spelling (the built and the physical path) and by
+# The comparison is by spelling (the built and the resolved paths) and by
 # identity: when the target, or a folder above it, is the factory directory
 # itself (the same device and inode), the write is denied, so another case
 # of a name on a volume that ignores case reaches it too.
@@ -135,23 +140,35 @@ norm() {
   printf '%s' "${s:-/}"
 }
 
-# The physical path: the longest existing directory, then the rest; a link
-# at the end is followed (up to 40 links).
+# physical <absolute path> — the path as the kernel resolves it: the parts are
+# taken from the left, a symbolic link is followed as soon as it is reached
+# (its target is put in front of the parts still to take, read from the
+# link's folder when relative, up to 40 links), and a `..` then removes the
+# last part of where that led. Past a part that does not exist, `.` and `..`
+# are applied to the text, as for folders a write would create.
 physical() {
-  local p="$1" head rest="" n=0 l
-  while [ "$n" -lt 40 ] && [ -L "$p" ]; do
-    l=$(readlink "$p") || break
-    case "$l" in /*) p=$(norm "$l") ;; *) p=$(norm "$(dirname -- "$p")/$l") ;; esac
-    n=$((n + 1))
+  local todo="$1" cur="" part next l n=0
+  while :; do
+    while [ "${todo#/}" != "$todo" ]; do todo=${todo#/}; done
+    [ -n "$todo" ] || break
+    part=${todo%%/*}
+    case "$todo" in */*) todo=${todo#*/} ;; *) todo="" ;; esac
+    case "$part" in
+      .) ;;
+      ..) cur=${cur%/*} ;;
+      *)
+        next="$cur/$part"
+        if [ "$n" -lt 40 ] && [ -L "$next" ] && l=$(readlink "$next"); then
+          n=$((n + 1))
+          case "$l" in /*) cur="" ;; esac
+          todo="$l/$todo"
+        else
+          cur="$next"
+        fi
+        ;;
+    esac
   done
-  head="$p"
-  while [ "$head" != / ] && [ ! -d "$head" ]; do
-    rest="/${head##*/}$rest"
-    head=$(dirname -- "$head")
-  done
-  head=$(cd -P "$head" 2>/dev/null && pwd -P) || { printf '%s' "$p"; return; }
-  [ "$head" = / ] && head=""
-  printf '%s%s' "$head" "$rest"
+  printf '%s' "${cur:-/}"
 }
 
 # in_fdir <path> — the path, or a folder above it, is the factory directory
@@ -165,9 +182,13 @@ in_fdir() {
   return 1
 }
 
+# Three readings, each denied when it reaches the factory: the text with `.`
+# and `..` applied (a caller that cleans the path before writing), the kernel's
+# reading of that text, and the kernel's reading of the path as given.
 T_NORM=$(norm "$TARGET")
-T_PHYS=$(physical "$T_NORM")
-for T in "$T_NORM" "$T_PHYS"; do
+T_NPHYS=$(physical "$T_NORM")
+T_PHYS=$(physical "$TARGET")
+for T in "$T_NORM" "$T_NPHYS" "$T_PHYS"; do
   case "$T" in
     "$FDIR"|"$FDIR"/*|"$FDIR_P"|"$FDIR_P"/*) deny "$SHOWN $REASON_TAIL" ;;
   esac

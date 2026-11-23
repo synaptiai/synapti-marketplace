@@ -933,6 +933,25 @@ printf '{}\n' > "$TF_F/jobs/issue-5/job.json"
 ln -s "$TF_F/jobs/issue-5/job.json" "$E2E_REPO/src/link.json"
 tf_guard Write file_path "$E2E_REPO/src/link.json"
 tf_expect deny "Write to a link outside that points into the factory"
+# A link followed by `..`: the kernel follows the link first and applies the
+# `..` to where it leads (os.path.realpath does the same), so L/../y.json with
+# L pointing at the factory's jobs folder is the factory's y.json. The header
+# of the guard says a `..` and a link into the factory reach the same place.
+ln -s "$TF_F/jobs" "$E2E_REPO/L"
+ln -s .flow/factory/jobs "$E2E_REPO/R"
+ln -s L "$E2E_REPO/L2"
+for P in "$E2E_REPO/L/../y.json" L/../job.json "$E2E_REPO/R/../y.json" R/../y.json L2/../y.json \
+         L/issue-5/../../y.json "$E2E_REPO/L/new/../../y.json" L/new/deeper/../../../y.json; do
+  tf_guard Write file_path "$P"
+  tf_expect deny "Write through a link and then ..: $P"
+done
+# The same shape that leads outside the factory is allowed.
+mkdir -p "$TF_OTHER/sub"
+ln -s "$TF_OTHER/sub" "$E2E_REPO/O"
+for P in "$E2E_REPO/O/../x.json" O/../x.json O/new/../../x.json; do
+  tf_guard Write file_path "$P"
+  tf_expect none "Write through a link and then .. to a place outside the factory: $P"
+done
 TF_NOJQ=$(e2e_path_without jq)
 tf_guard "PATH=$TF_NOJQ" Write file_path "$TF_F/jobs/issue-5/job.json"
 tf_expect deny "no jq: a payload naming the factory directory"
