@@ -292,6 +292,70 @@ e2e_expect_line "cmds []"
 e2e_expect_line "cmds [34, 35]"
 
 # ---------------------------------------------------------------------------
+_flow_test_begin "factory commands: an engine marker counts from the issue read its notice was decided on (CM2b, SEC-1)"
+cm_start cm-floor-decided needs_human
+cm_c 50 wrt write 2026-11-18T10:30:00Z 'thanks'
+e2e_describe "a needs_human job, vouch_at T1 (10:00). Expected: design person_channels L57 (a command counts after the factory's latest marker), read as plan 3.1 reads the needs-info floor (R96, Inferred): a marker counts from the time the engine decided it, the newest comment of the last read whose commands were judged before its intent was recorded, less one second (whole-second times), and never later than its own created_at; a marker whose intent has no such read (recorded before any read, or not in the job's events) counts at its created_at, as before. Note A is recorded before any read, the read through 10:30 is recorded (once: a second read with the same newest comment adds no line), then note B. Commands: 51 cancel 10:40, 53 reject 10:30, 54 cancel 10:20, 55 reject 10:27. A marker for B at 10:50: floor 10:29:59, raised [51, 53]; with no reads given: floor 10:50, raised []; a marker for A at 10:50: floor 10:50, []; a marker for note C recorded after a read of no comment (as at job creation): floor vouch_at, [51, 53, 54, 55]; a marker for B at 10:25: floor 10:25, [51, 53, 55]"
+read -r -d '' CM_CODE <<'PY' || true
+import _flow_factory_github as G
+def note(ref):
+    with jobs.job_lock(P, 7):
+        job = J()
+        iid = C._note(P, job, ref, 'A status note.', 'The test records it.', REPO)
+        jobs.write_job(P, job)
+    return iid
+a = note(900)
+job = J()
+snap = I.read_issue(gh, REPO, 7, job, perms())
+for _ in range(2):
+    with jobs.job_lock(P, 7):
+        C.record_scan(P, J(), snap)
+print('scan lines %s' % [e['through'] for e in events('commands_scanned')])
+b = note(901)
+reads = C.marker_reads(P, 7, 'issue-7-j1')
+print('reads A=%s B=%s' % (reads.get(a, 'absent'), reads.get(b, 'absent')))
+for cid, at, body in ((51, '2026-11-18T10:40:00Z', '/flow-factory cancel'),
+                      (53, '2026-11-18T10:30:00Z', '/flow-factory reject'),
+                      (54, '2026-11-18T10:20:00Z', '/flow-factory cancel'),
+                      (55, '2026-11-18T10:27:00Z', '/flow-factory reject')):
+    world(lambda w, cid=cid, at=at, body=body: w['comments']['7'].append(
+        {'id': cid, 'author': 'wrt', 'created_at': at, 'updated_at': at, 'body': body}))
+def marker(iid, at):
+    def edit(w):
+        w['comments']['7'] = [c for c in w['comments']['7'] if c['id'] != 60] + [
+            {'id': 60, 'author': LOGIN, 'created_at': at, 'updated_at': at,
+             'body': G.marker('issue-7-j1', iid) + '\nA notice.'}]
+    world(edit)
+def ids(r):
+    job = J()
+    s = I.read_issue(gh, REPO, 7, job, perms())
+    return [c['comment_id'] for c in C.scan(s, job, perms(), LOGIN, reads=r)]
+marker(b, '2026-11-18T10:50:00Z')
+print('B 10:50 %s' % ids(C.marker_reads(P, 7, 'issue-7-j1')))
+print('B 10:50 no reads %s' % ids(None))
+marker(a, '2026-11-18T10:50:00Z')
+print('A 10:50 %s' % ids(C.marker_reads(P, 7, 'issue-7-j1')))
+with jobs.job_lock(P, 7):
+    jobs.append_event(P, 7, {'type': 'commands_scanned', 'job': 'issue-7-j1', 'through': None})
+c = note(902)
+print('reads C=%s' % C.marker_reads(P, 7, 'issue-7-j1').get(c, 'absent'))
+marker(c, '2026-11-18T10:50:00Z')
+print('C 10:50 %s' % ids(C.marker_reads(P, 7, 'issue-7-j1')))
+marker(b, '2026-11-18T10:25:00Z')
+print('B 10:25 %s' % ids(C.marker_reads(P, 7, 'issue-7-j1')))
+PY
+cm_py "$CM_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+e2e_expect_line "scan lines ['2026-11-18T10:30:00Z']"
+e2e_expect_line "reads A=absent B=2026-11-18T10:30:00Z"
+e2e_expect_line "B 10:50 [51, 53]"
+e2e_expect_line "B 10:50 no reads []"
+e2e_expect_line "A 10:50 []"
+e2e_expect_line "reads C=None"
+e2e_expect_line "C 10:50 [51, 53, 54, 55]"
+e2e_expect_line "B 10:25 [51, 53, 55]"
+
+# ---------------------------------------------------------------------------
 _flow_test_begin "factory commands: untrusted and bot commands raise nothing and are listed by author, time and length only (CM4, CM8)"
 cm_start cm-trust queued "d['needs_info'] = {'asked_at': '2026-11-18T10:00:00Z', 'questions': ['NI-1'], 'round': 1, 'earlier': []}"
 fe_world_perm 'botri[bot]' triage

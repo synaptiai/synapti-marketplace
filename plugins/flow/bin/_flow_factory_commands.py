@@ -10,7 +10,17 @@ only when:
   - it was created strictly after the floor: the later of the job's vouch_at
     and the newest engine marker comment posted by the engine login (L57;
     with no marker the floor is vouch_at, R58). A marker line posted by any
-    other login does not move the floor;
+    other login does not move the floor. A marker's time is the time the
+    engine decided it, as the needs-info floor is asked_at (plan 3.1, R96):
+    the newest comment of the last issue read whose commands were all
+    judged before its intent was recorded (a commands_scanned events line),
+    less one second, since GitHub gives whole seconds and a comment of that
+    same second may have come after the read; never later than the
+    marker's own created_at. A command posted between that read and the
+    notice was never judged, so the notice does not drop it. A marker
+    whose intent the job's events file does not bind to such a line (an
+    earlier job's, or one recorded before this rule) counts at its
+    created_at;
   - its author passes Permissions.trusted, or, for retry only,
     Permissions.triage (L54, L55); both apply the bot rule.
 A counted command whose event does not occur in the job's state, or whose
@@ -26,12 +36,14 @@ events line records the listing. It is not marked seen, because trust is the
 permission read of each sync (L54: cached for one sync, a failed read
 untrusted), so a later sync that reads the author at the bar raises it.
 
-  scan(snapshot, job, perms, engine_login, table=None) -> [command]
+  scan(snapshot, job, perms, engine_login, table=None, reads=None)
+      -> [command]
       snapshot is the issue module's read_issue result, perms its
-      Permissions; table defaults to the plugin's transition table. Only
-      reads. Each command is {comment_id, name, event, args, trusted,
-      triage_only, raise, note, author, author_type, created_at, length,
-      permission}: trusted means the command counts (retry from triage
+      Permissions; table defaults to the plugin's transition table; reads
+      is marker_reads' answer (None: every marker counts at its
+      created_at). Only reads. Each command is {comment_id, name, event,
+      args, trusted, triage_only, raise, note, author, author_type,
+      created_at, length, permission}: trusted means the command counts (retry from triage
       included, with triage_only true); raise means it becomes a pending
       event; note is the refusal's reason, or None. ValueError when
       engine_login is not a login.
@@ -43,6 +55,18 @@ untrusted), so a later sync that reads the author at the bar raises it.
       and gives one UNTRUSTED_COMMAND line the first time only, after its
       {type: untrusted_command, job, comment} events line is written. job is
       changed in place.
+  marker_reads(paths, n, key) -> {intent id: time text or None}
+      for each intent of job key in J/events.jsonl, the through of the
+      last commands_scanned line before its last intent_recorded line
+      (None: no comment was read); an intent with no such line is left
+      out, and so is every intent when the file cannot be read
+  record_scan(paths, job, snapshot, pass_id=None)
+      under the job's lock, after every command of the snapshot is stored:
+      a {type: commands_scanned, job, through} events line, through the
+      newest created_at among the snapshot's comments (None with none);
+      not written when the last such line has the same through. The engine
+      also writes one with through None when it creates a job, since no
+      comment has been read for it
   label_notes(snapshot, job, label) -> [{event_id, actor, label}]
       removals of the queue label after vouch_at by an actor that is not
       trusted (L56: a triage user or a bot), which get a status note
@@ -104,21 +128,82 @@ def _line1(body):
     return body.split("\n", 1)[0] if isinstance(body, str) else ""
 
 
-def _floor(snapshot, job, engine_login):
+SCANNED = "commands_scanned"
+MARKER_EVENT = re.compile(r" event=([^ ]+) -->$")
+
+
+def _floor(snapshot, job, engine_login, reads=None):
     """The later of vouch_at and the newest engine marker by the engine
     login, as epoch seconds; None (nothing counts) when vouch_at, or a
-    marker's time, cannot be read."""
+    marker's time, cannot be read. A marker whose intent reads binds
+    counts at its decision time (the module docstring)."""
     floor = jobs.epoch(job.get("vouch_at"))
     if floor is None:
         return None
+    reads = reads if isinstance(reads, dict) else {}
     for c in snapshot.get("comments") or []:
-        if c.get("author") != engine_login or not text.is_engine_marker(_line1(c.get("body"))):
+        line = _line1(c.get("body"))
+        if c.get("author") != engine_login or not text.is_engine_marker(line):
             continue
         at = jobs.epoch(c.get("created_at"))
         if at is None:
             return None
+        m = MARKER_EVENT.search(line)
+        iid = m.group(1) if m else None
+        if iid in reads:
+            through = reads[iid]
+            if through is None:
+                # Decided before any comment was read: it moves nothing.
+                continue
+            at = min(at, jobs.epoch(through) - 1)
         floor = max(floor, at)
     return floor
+
+
+def _through(snapshot):
+    """The created_at text of the newest comment of the snapshot whose time
+    can be read, or None."""
+    best, out = None, None
+    for c in snapshot.get("comments") or []:
+        at = jobs.epoch(c.get("created_at"))
+        if at is not None and (best is None or at > best):
+            best, out = at, c.get("created_at")
+    return out
+
+
+def _scan_lines(paths, n, key):
+    """(marker_reads' answer, the last commands_scanned line's through or
+    False with none) from J/events.jsonl; ({}, False) when it cannot be
+    read."""
+    try:
+        lines = ff.read_jsonl(os.path.join(jobs.job_dir(paths, n), "events.jsonl"))
+    except (OSError, UnicodeError, ValueError):
+        return {}, False
+    reads, last = {}, False
+    for d in lines:
+        if not isinstance(d, dict) or d.get("job") != key:
+            continue
+        if d.get("type") == SCANNED:
+            t = d.get("through")
+            last = t if t is None or jobs.epoch(t) is not None else False
+        elif d.get("type") == "intent_recorded" and isinstance(d.get("id"), str):
+            if last is False:
+                reads.pop(d["id"], None)
+            else:
+                reads[d["id"]] = last
+    return reads, last
+
+
+def marker_reads(paths, n, key):
+    return _scan_lines(paths, n, key)[0]
+
+
+def record_scan(paths, job, snapshot, pass_id=None):
+    through = _through(snapshot)
+    if _scan_lines(paths, job["issue"], job["key"])[1] == through:
+        return
+    jobs.append_event(paths, job["issue"], {"type": SCANNED, "job": job["key"], "through": through,
+                                            "pass": pass_id})
 
 
 def _words(rest):
@@ -208,12 +293,12 @@ def _refusal(name, args, job, table):
     return None
 
 
-def scan(snapshot, job, perms, engine_login, table=None):
+def scan(snapshot, job, perms, engine_login, table=None, reads=None):
     if not isinstance(engine_login, str) or not engine_login:
         raise ValueError("engine login unknown")
     table = table or ftable.load_table()
     seen = set(x for x in job.get("commands_seen") or [] if type(x) is int)
-    floor = _floor(snapshot, job, engine_login)
+    floor = _floor(snapshot, job, engine_login, reads)
     if floor is None:
         return []
     out = []

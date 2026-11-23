@@ -575,17 +575,24 @@ class Pass:
 
     def _archive_names(self, n):
         """The names in J/archive ([] when there is none); None when J/archive
-        is a link or not a folder."""
+        is a link, not a folder, or cannot be listed: it may hold archived
+        jobs, so it is never read as empty (as J/pending, pending_unlisted)."""
         adir = os.path.join(jobs.job_dir(self.paths, n), "archive")
         if _linked_dir(adir):
             return None
         try:
             return os.listdir(adir)
-        except OSError:
+        except FileNotFoundError:
             return []
+        except OSError:
+            return None
 
     def _archive_seq(self, n):
-        names = self._archive_names(n) or []
+        """The largest archived job number, 0 with no archive; None when
+        J/archive cannot be read, so the next key cannot be known."""
+        names = self._archive_names(n)
+        if names is None:
+            return None
         seqs = [int(x[1:]) for x in names if x.startswith("j") and x[1:].isdigit()]
         return max(seqs, default=0)
 
@@ -601,7 +608,13 @@ class Pass:
             return None
         if isinstance(existing, dict) and self.table.kind(existing.get("state")) != "terminal":
             return None
-        seq = max(self._archive_seq(n), self._key_seq(existing.get("key")) if isinstance(existing, dict) else 0) + 1
+        archived = self._archive_seq(n)
+        if archived is None:
+            # An archive that cannot be read may hold the next key's job:
+            # creation waits, as for a linked J/archive (terminal_vouches
+            # gives None for it), without holding back the sync (Inferred).
+            return None
+        seq = max(archived, self._key_seq(existing.get("key")) if isinstance(existing, dict) else 0) + 1
         key = f"issue-{n}-j{seq}"
         unjobbed = fissue.read_unjobbed(self.gh, repo, n, self.perms, jobs.setting)
         if unjobbed is None:
@@ -643,6 +656,11 @@ class Pass:
                     "type": "created", "job": key, "pass": self.pass_id, "row": d.row, "event": d.event,
                     "from": None, "to": d.to, "stay": False, "effects_applied": list(d.effects),
                     "effects_deferred": [], "attempt": 0, "channel": "engine", "caller": self.me, "record": job})
+                # No comment has been read for the new job: a notice it
+                # records before its first sync does not move the command
+                # floor past vouch_at (the commands module's marker floor).
+                jobs.append_event(self.paths, n, {"type": "commands_scanned", "job": key, "through": None,
+                                                  "pass": self.pass_id})
 
     def _archive(self, n, old):
         """Move the terminal job's job.json, events.jsonl and pending/ into
@@ -1847,9 +1865,13 @@ class JobPass:
         snap = entry["snapshot"]
         try:
             repo, login = self.repo(), self.login()
-            for cmd in fcommands.scan(snap, self.job, self.p.perms, login, self.p.table):
+            reads = fcommands.marker_reads(self.paths, self.n, self.key)
+            for cmd in fcommands.scan(snap, self.job, self.p.perms, login, self.p.table, reads=reads):
                 for line in fcommands.store(self.paths, self.job, cmd, repo=repo, caller=self.p.me):
                     self.p.status("sync", line)
+            # Only now has every command of this read been judged, so only
+            # now may a later notice's floor rest on it.
+            fcommands.record_scan(self.paths, self.job, snap, self.p.pass_id)
             label = jobs.setting("flow.factory.label", "flow:factory")
             for note in fcommands.label_notes(snap, self.job, label):
                 fcommands.store_label_note(self.paths, self.job, note, repo=repo)

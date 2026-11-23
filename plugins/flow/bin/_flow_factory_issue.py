@@ -6,8 +6,11 @@ Every reader takes gh, a callable with Pass.gh's contract,
 gh(args) -> (ok, parsed JSON), and repo, "owner/name". Every list that GitHub
 pages is read with `gh api --paginate --slurp`, which prints one outer array
 of pages. A read that fails gives None for the whole issue, and the caller
-then computes no fact for it (plan 3.1). A permission read that fails is not
-a failed issue read: it makes that login untrusted (person_channels L54).
+then computes no fact for it (plan 3.1). A permission read that fails makes
+that login untrusted (person_channels L54), and for the trust tests that is
+all it does. Creation row 1's fifth condition asks whether a closing PR's
+author has write access, and a failed read cannot answer that, so there it
+is a failed issue read: read_unjobbed gives None.
 
   Permissions(gh, repo, settings=None)
       .of(login) -> "none"|"read"|"triage"|"write"|"maintain"|"admin"
@@ -17,6 +20,7 @@ a failed issue read: it makes that login untrusted (person_channels L54).
                                       trustedPermission says
       .triage(login, type) -> bool    triage or higher
       .open_pulls() -> [pull] or None the repository's open pulls
+      .unread(login) -> bool          the login's role read failed
       A login ending in [bot], or of type Bot, is none of trusted, write or
       triage unless trustedBots lists it; for a listed bot its role decides.
       A type other than User or Bot (an Organization, a Mannequin, the
@@ -128,6 +132,7 @@ class Permissions:
         bar = setting("flow.factory.trustedPermission", "write")
         self.bar = max(RANK["write"], RANK.get(bar, RANK["write"]) if isinstance(bar, str) else RANK["write"])
         self._roles = {}
+        self._unread = set()
         self._pulls = False
 
     def of(self, login):
@@ -140,6 +145,7 @@ class Permissions:
     def _read(self, login):
         ok, data = self.gh(["api", f"repos/{self.repo}/collaborators/{quote(login, safe='')}/permission"])
         if not ok or not isinstance(data, dict):
+            self._unread.add(login)
             return "none"
         role = data.get("role_name")
         if isinstance(role, str):
@@ -149,6 +155,13 @@ class Permissions:
         # No role_name: the legacy field, whose triage shows as read (R55).
         legacy = data.get("permission")
         return LEGACY.get(legacy, "none") if isinstance(legacy, str) else "none"
+
+    def unread(self, login):
+        """Whether the role read of login failed. The trust tests count such
+        a login as none; a caller that must know the login is not a writer
+        cannot use that answer."""
+        self.of(login)
+        return login in self._unread
 
     def _counts(self, login, typ):
         if not isinstance(login, str) or not login or (typ is not None and typ not in TYPES):
@@ -359,7 +372,9 @@ def read_unjobbed(gh, repo, n, perms, settings=None):
     """What creation row 1 reads for issue n with no open job, or None. The
     open pulls come from perms, read once per sync. Each closing PR carries
     write: whether its author has write access or higher (row 1 condition
-    5), which trustedPermission does not raise."""
+    5), which trustedPermission does not raise. None also when the role
+    read of a closing PR's author failed, unless the bot rule already
+    leaves that author out."""
     setting = _setting(settings)
     issue = _api(gh, f"repos/{repo}/issues/{n}")
     if issue is None:
@@ -385,9 +400,14 @@ def read_unjobbed(gh, repo, n, perms, settings=None):
         head = p.get("head") if isinstance(p.get("head"), dict) else {}
         head_repo = (head.get("repo") or {}).get("full_name") if isinstance(head.get("repo"), dict) else None
         login, typ = _who(p.get("user"))
+        write = perms.write(login, typ)
+        if not write and perms._counts(login, typ) and perms.unread(login):
+            # A failed role read does not show the author lacks write access
+            # (condition 5), so the issue waits for the next sync (plan 3.1).
+            return None
         closing.append({"number": p.get("number"), "head_ref": head.get("ref"),
                         "cross": not isinstance(head_repo, str) or head_repo.lower() != repo.lower(),
-                        "author": login, "author_type": typ, "write": perms.write(login, typ)})
+                        "author": login, "author_type": typ, "write": write})
     return {"number": n, "state": issue.get("state"),
             "labels": [x.get("name") if isinstance(x, dict) else x for x in issue.get("labels") or []],
             "label_event": label_event, "closing_prs": closing}

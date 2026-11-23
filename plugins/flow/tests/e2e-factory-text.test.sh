@@ -898,6 +898,40 @@ done
 e2e_expect_line "done"
 is_no_unhandled
 
+_flow_test_begin "factory issue: a closing PR whose author's role cannot be read makes read_unjobbed wait (IS7, ERR-1)"
+fe_new is2b-closing-author-unread
+e2e_repo main
+is_world
+# 24: an open PR from fix-24 saying Closes #24, by an author whose permission
+# read fails (HTTP 502). 25: the same with an author whose read answers
+# read (the control: a read-only author does not block). 26: the failing
+# author on a PR naming another issue, so its read does not matter.
+is_issue 24 "body"
+fe_world_pull 41 fix-24 flaky - "Closes #24"
+fe_world_perm flaky status:502
+is_issue 25 "body"
+fe_world_pull 42 fix-25 rdr read "Closes #25"
+is_issue 26 "body"
+fe_world_pull 43 fix-260 flaky - "Closes #260"
+e2e_describe "T:creation row 1 condition 5 (no open PR closing #N from a non-factory branch whose author has write access or higher) cannot be shown to hold when that author's role read fails: plan 3.1 (a read that does not answer gives None for the issue, and the issue waits for the next sync). Expected: 24 → read_unjobbed None; 25 → creation allowed (design trust_and_untrusted_text: a Closes PR blocks only when its author has write access or higher); 26 → allowed (the failing author's PR does not close #26). The same Permissions object still counts flaky as untrusted (person_channels L54: a failed read is untrusted)"
+read -r -d '' IS_CODE <<'PY' || true
+P = I.Permissions(gh, REPO, setting)
+NONE = {'open_job': False, 'terminal_vouch_at': []}
+print('u 24 %s' % I.read_unjobbed(gh, REPO, 24, P, setting))
+print('c 25 %s' % I.creation_conditions(I.read_unjobbed(gh, REPO, 25, P, setting), NONE, setting))
+print('c 26 %s' % I.creation_conditions(I.read_unjobbed(gh, REPO, 26, P, setting), NONE, setting))
+print('t flaky trusted=%s triage=%s' % (P.trusted('flaky', 'User'), P.triage('flaky', 'User')))
+print('done')
+PY
+is_py "$IS_CODE"
+e2e_expect_equal "0" "$E2E_RC" "exit status"
+e2e_expect_line "u 24 None"
+e2e_expect_line "c 25 True"
+e2e_expect_line "c 26 True"
+e2e_expect_line "t flaky trusted=False triage=False"
+e2e_expect_line "done"
+is_no_unhandled
+
 _flow_test_begin "factory issue: untrusted_edit reads every edit, rename and spec-input comment edit since vouch_at (IS3)"
 fe_new is3-untrusted-edit
 e2e_repo main

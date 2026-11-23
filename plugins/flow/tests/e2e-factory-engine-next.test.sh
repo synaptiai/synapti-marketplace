@@ -1373,6 +1373,42 @@ e2e_expect_equal 0 "$(nx_line_count 'UNTRUSTED_COMMAND job=issue-7-j1 comment=10
 e2e_expect_equal 53 "$(nx_rows | tr ' ' '\n' | tail -n 1)" "the last row"
 e2e_expect_equal cancelled "$(nx_jq "$NX_J/job.json" .state)" "state"
 e2e_expect_equal "comment:102" "$(jq -r 'select(.type == "transition" and .row == "53") | .channel' "$NX_J/events.jsonl")" "the channel of the cancel"
+
+fe_new nx23b-cancel-before-notice-posted
+# Source: design person_channels L57 (a command counts when posted after the
+# factory's latest marker), read as plan 3.1 reads the needs-info floor for
+# R96 (Inferred): the marker's time is the time the engine decided it, which
+# is the newest comment of the issue read the decision rested on, so a
+# command that read never held is not lost when the notice is posted after
+# it. T:53 (person_cancel -> cancelled).
+e2e_describe "job 7 queued with an open blocker (as nx23); comment 100 (plain text) at 01:00. Pass 1 syncs. Then the engine records a status note for the job (as a row of a later pass would), maintainer (write) posts /flow-factory cancel at 01:10, and pass 2, with no sync, drains the note, which the stand-in stamps 01:20. Pass 3 syncs: the cancel was in no read before the note was decided, so it counts and row 53 cancels the job"
+nx_base queued
+fe_world_issue 7 "Add a port setting" "The service needs a port setting.
+Blocked by #3"
+fe_world_issue 3 "A blocker" "Still open."
+fe_world_comment 7 100 maintainer write 2026-11-16T01:00:00Z "thanks"
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 1 exit status ($E2E_ERR)"
+e2e_expect_equal queued "$(nx_jq "$NX_J/job.json" .state)" "queued after pass 1"
+fe_py "import _flow_factory_jobs as jobs, _flow_factory_commands as C
+p = jobs.resolve()
+with jobs.job_lock(p, 7, timeout=5):
+    job = jobs.read_job(p, 7)
+    C._note(p, job, 100, 'A status note.', 'The test records it.', 'flow-e2e/scratch')
+    jobs.write_job(p, job)"
+e2e_expect_equal 0 "$E2E_RC" "the note is recorded ($E2E_ERR)"
+fe_world_comment 7 102 maintainer write 2026-11-16T01:10:00Z "/flow-factory cancel"
+_fe_world "the stand-in stamps writes 01:20" '.now = "2026-11-16T01:20:00Z"'
+nx_nosync
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 2 exit status ($E2E_ERR)"
+e2e_expect_equal 1 "$(nx_posts_to /issues/7/comments)" "the note is posted in pass 2"
+e2e_expect_equal queued "$(nx_jq "$NX_J/job.json" .state)" "queued after pass 2 (no sync)"
+nx_settings '.flow.factory.syncIntervalSeconds = 0'
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "pass 3 exit status ($E2E_ERR)"
+e2e_expect_equal cancelled "$(nx_jq "$NX_J/job.json" .state)" "the cancel counts"
+e2e_expect_equal "comment:102" "$(jq -r 'select(.type == "transition" and .row == "53") | .channel' "$NX_J/events.jsonl")" "row 53 from comment 102"
 fi
 
 # ---------------------------------------------------------------- NX24
@@ -1766,6 +1802,46 @@ e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
 e2e_expect_equal "issue-7-j2 cancelled" "$(nx_jq "$NX_J/job.json" '"\(.key) \(.state)"')" "no job is created"
 e2e_expect_equal 0 "$(nx_line_count 'FACTORY_REFUSED')" "creation waits before any write (no FACTORY_REFUSED line)"
 e2e_expect_equal "j1" "$(ls "$E2E_DIR/outside" | tr '\n' ' ' | sed 's/ $//')" "nothing written in the outside folder"
+
+# nx33_moved — job 7 cancelled as issue-7-j1, vouched at 2026-11-16, moved
+# whole into J/archive/j1 (the engine stopped after _archive and before the
+# new job.json was written), so J holds no job.json and no events.jsonl; the
+# issue labelled again at 2026-11-17 by write access.
+nx33_moved() {
+  nx_base cancelled
+  fe_world_label 7 flow:factory maintainer write 2026-11-17T00:00:00Z
+  mkdir -p "$NX_J/archive/j1"
+  mv "$NX_J/job.json" "$NX_J/events.jsonl" "$NX_J/archive/j1/"
+}
+fe_new nx33f-archive-moved-control
+# Source: creation row 1 (every terminal job's vouch_at, here 2026-11-16, is
+# before the label at 2026-11-17, so creation goes ahead); plan 2.2 job key
+# issue-N-j<seq>, seq one more than the largest archived one.
+e2e_describe "control: J/archive/j1 holds the whole cancelled job issue-7-j1 and J has no job.json; one pass creates issue-7-j2"
+nx33_moved
+nx_next
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_equal "issue-7-j2 queued" "$(nx_jq "$NX_J/job.json" '"\(.key) \(.state)"')" "a new job with the next key"
+# Source: the commands module's marker floor (SEC-1): no comment has been
+# read for a new job, so a notice it records before its first sync does
+# not move the command floor past vouch_at.
+e2e_expect_equal "created commands_scanned:null" "$(jq -r 'select(.type == "created" or .type == "commands_scanned") | if .type == "created" then .type else "\(.type):\(.through)" end' "$NX_J/events.jsonl" | tr '\n' ' ' | sed 's/ $//')" "the new job's events: created, then a read of no comment"
+fe_new nx33g-archive-unlisted
+# Source: as nx33f; plan B4 creation_conditions (an archived job that cannot
+# be read gives None, a vouch at or after the label, so creation waits);
+# the J/pending sibling (nx61e: a folder that cannot be listed is refused,
+# never read as empty). A J/archive that cannot be listed may hold j1, so
+# the key issue-7-j1 cannot be shown to be free. The permissions are given
+# back after the pass, so the scratch folder can be removed.
+e2e_describe "as nx33f, with J/archive left with no permissions; one pass"
+nx33_moved
+chmod 000 "$NX_J/archive"
+nx_next
+chmod 755 "$NX_J/archive"
+e2e_expect_equal 0 "$E2E_RC" "exit status ($E2E_ERR)"
+e2e_expect_err_lacks "Traceback"
+e2e_expect_equal absent "$([ -e "$NX_J/job.json" ] && echo present || echo absent)" "no job is created (no job.json)"
+e2e_expect_equal "issue-7-j1 cancelled" "$(nx_jq "$NX_J/archive/j1/job.json" '"\(.key) \(.state)"')" "the archived job is kept"
 
 fe_new nx33e-linked-results-stream
 # Source: 1a's charge of a run its launcher can no longer charge (basis
