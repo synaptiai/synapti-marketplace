@@ -1522,7 +1522,9 @@ class JobPass:
         ref = int(ch.split(":", 1)[1]) if ch.startswith("comment:") and ch.split(":", 1)[1].isdigit() else None
         text = effect[len("refuse: "):] if effect.startswith("refuse: ") else effect
         self.p.status("refused", f"EVENT_REFUSED={d.event} job={self.key} row={d.row} {text}")
-        body = f"Job {self.key} did not act on {d.event.replace('_', ' ')}: {text}"
+        # Engine text only (the job key, the event name and the table's
+        # refusal text), so it is marked as the engine's own.
+        body = fgithub.EngineText(f"Job {self.key} did not act on {d.event.replace('_', ' ')}: {text}")
         self.record(new, d.row, "comment", fgithub.literal_comment(self.repo(), self.n), body, NOTICE_KEY, False,
                     ref=ref, state=new["state"])
 

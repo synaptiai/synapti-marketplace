@@ -370,14 +370,17 @@ def _render(what, reason):
     """The status note's text. A template that is missing, cannot be read
     or is not UTF-8 is refused (template_unreadable), as the intake module
     refuses its own templates, so the rows' callers, which catch Refused,
-    report it. Each caller renders before it records anything."""
+    report it. Each caller renders before it records anything. The text is
+    a github.EngineText, so clean_post keeps its code spans: what and reason
+    are engine text (the command name and the forms are fixed, a label is
+    already in a _code span, a login has no backtick)."""
     try:
         with open(TEMPLATE, encoding="utf-8") as f:
             template = f.read()
     except (OSError, UnicodeDecodeError) as e:
         raise jobs.Refused(f"template_unreadable {TEMPLATE}: {' '.join(str(e).split())}")
     values = {"what": what, "reason": reason}
-    return PLACEHOLDER.sub(lambda m: values[m.group(1)], template)
+    return github.EngineText(PLACEHOLDER.sub(lambda m: values[m.group(1)], template))
 
 
 def _note(paths, job, ref, what, reason, repo):

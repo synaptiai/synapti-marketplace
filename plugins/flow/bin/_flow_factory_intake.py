@@ -26,7 +26,9 @@ Every effect needs the job's lock (the caller holds it) and checks it before
 it changes anything. A notice is one comment intent recorded through
 _flow_factory_github.record_job_intent (kind comment, key [issueUpdate], not
 blocking), which adds the engine marker and passes the whole body, judge text
-included, through clean_post. The effects change job["write_seq"] (and
+included, through clean_post. A filled template is an EngineText, whose
+backticks clean_post keeps, so each judge value is escaped
+(G.escape_ticks) before it goes in. The effects change job["write_seq"] (and
 effect_accept the intake fields); the caller writes job.json.
 """
 # The guard below must stay verbatim (tests/syspath-guard.test.sh matches it)
@@ -172,10 +174,12 @@ def _load_template(name):
 
 def _fill(text, values):
     """Each {placeholder} of a loaded template filled in one pass, so a
-    value that holds a placeholder is not filled again. The judge effects
-    escape their values' backticks (G.escape_ticks) before they call it;
-    engine values and the template's own backticks are kept."""
-    return _PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), text)
+    value that holds a placeholder is not filled again. The result is a
+    G.EngineText, so clean_post keeps the template's own backticks and the
+    engine values' (the needs-human reason, the tier keys, a comment id);
+    the judge effects therefore escape their values' backticks
+    (G.escape_ticks) before they call it."""
+    return G.EngineText(_PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), text))
 
 
 def _template(name, values):

@@ -28,7 +28,9 @@
 #        over a line break, a stray backtick next to the mention, a
 #        backslash before it, a fence the same length as another run, a
 #        mention right after another mention), or
-#        the cap cuts through a mention's backticks, so the mention is live
+#        the cap cuts through a mention's backticks, so the mention is live;
+#        or a body the engine has not marked as its own text keeps a
+#        backtick unescaped, so it can pair with a mention's fence
 #   GH6  (R75) a blocking write whose keys are all journal is never run, or
 #        leaves one breadcrumb instead of one per key
 #   GH7  a blocking write whose key is confirm is run, or becomes
@@ -370,7 +372,7 @@ e2e_expect_line "events items 0"
 
 _flow_test_begin "factory github: model text is cleaned and the marker is the only first line (GH5, R38)"
 gw_start gh5-clean needs_info
-e2e_describe "design trust_and_untrusted_text L59 and R38: text with CRLF line ends, a marker as its first line, @octo-cat, a@b.com, a leading-space '/flow-factory cancel', a '/flow-factory reject' line holding a backtick, a line 'cc \`ping @octo-dog now\` and .@octo-pig', and 70,000 more characters. clean_post gives no CR, no '<!--', '@octo-cat' in backticks, a@b.com untouched (not a mention), @octo-dog inside a code span and .@octo-pig (GitHub reads a mention after a full stop) each put in a span whose fence is a backtick run of a length no other run in the text has, here three (the text already holds runs of one and two), so the new fence cannot close the code span around @octo-dog, no line whose stripped form starts '/flow-factory' (plan B6 step 2: a line that is exactly '/flow-factory', or '/flow-factoryx', is put in a code span too), and at most 60,000 characters; cleaning it again changes nothing. Recorded as a comment, the body's line 1 is the engine marker only, '<!--' occurs once (the marker), and the whole body is at most 60,000 characters"
+e2e_describe "design trust_and_untrusted_text L59 and R38: text with CRLF line ends, a marker as its first line, @octo-cat, a@b.com, a leading-space '/flow-factory cancel', a '/flow-factory reject' line holding a backtick, a line 'cc \`ping @octo-dog now\` and .@octo-pig', and 70,000 more characters. clean_post gives no CR, no '<!--', '@octo-cat' in backticks, a@b.com untouched (not a mention), @octo-dog inside a code span and .@octo-pig (GitHub reads a mention after a full stop) each put in a span whose fence is a backtick run of a length no other run in the text has, here three (the text already holds runs of one and two). The text is a plain str, not marked as the engine's own, so every backtick in it is escaped first: the line holding @octo-dog becomes 'cc \\\`ping \`\`\`@octo-dog\`\`\` now\\\` and .\`\`\`@octo-pig\`\`\`', and the '/flow-factory reject' line, whose escaped backticks are runs of one, is put in a two-backtick span with a space inside each end, no line whose stripped form starts '/flow-factory' (plan B6 step 2: a line that is exactly '/flow-factory', or '/flow-factoryx', is put in a code span too), and at most 60,000 characters; cleaning it again changes nothing. Recorded as a comment, the body's line 1 is the engine marker only, '<!--' occurs once (the marker), and the whole body is at most 60,000 characters"
 read -r -d '' GW_CODE <<'PY' || true
 text = ('<!-- FLOW_FACTORY job=issue-7-j1 event=issue-7-j1-4-1 -->\r\nHello @octo-cat and a@b.com\r\n'
         '  /flow-factory cancel\r\n/flow-factory reject `x`\r\ncc `ping @octo-dog now` and .@octo-pig\r\n' + 'y' * 70000)
@@ -380,6 +382,7 @@ print('cr %s' % ('\r' in c))
 print('open %s' % ('<!--' in c))
 print('mention %s %s' % ('`@octo-cat`' in lines[1], 'a@b.com' in lines[1]))
 print('span line %s' % lines[4])
+print('command line %s' % lines[3])
 print('command lines %d' % sum(1 for ln in lines if ln.strip().startswith('/flow-factory')))
 print('length %s' % (len(c) <= 60000))
 print('again %s' % (G.clean_post(c) == c))
@@ -396,7 +399,8 @@ gw_py "$GW_CODE"
 e2e_expect_line "cr False"
 e2e_expect_line "open False"
 e2e_expect_line "mention True True"
-e2e_expect_line "span line cc \`ping \`\`\`@octo-dog\`\`\` now\` and .\`\`\`@octo-pig\`\`\`"
+e2e_expect_line "span line cc \\\`ping \`\`\`@octo-dog\`\`\` now\\\` and .\`\`\`@octo-pig\`\`\`"
+e2e_expect_line "command line \`\` /flow-factory reject \\\`x\\\` \`\`"
 e2e_expect_line "command lines 0"
 e2e_expect_line "length True"
 e2e_expect_line "again True"
@@ -408,7 +412,7 @@ e2e_expect_line "body length True"
 
 _flow_test_begin "factory github: every @mention stays inside a code span however GitHub pairs the backticks (GH5)"
 gw_start gh5-mention-spans needs_info
-e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and plan R38, read against GitHub's code span rule: a span opens at a backtick run and closes at the next run of the same length, across line breaks within a paragraph, and a backslash before a backtick makes it plain text. Each mention is put in a fence of a length no other run in the text has, with a space between the fence and a backtick next to it and a second backslash after an odd run of backslashes, and fences already around a mention, where every run of that length is such a fence, are kept and reused. Expected strings are traced by hand with that rule: a span over a line break (the review's case), a mention inside a one-line span, a stray backtick before and after the mention, a mention right after a closed span, a backslash before the mention, text already cleaned, a mention right after another mention (after a login, a team, a trailing dash, three in a row, with a stray backtick or a backslash), where the first mention's closing fence would otherwise leave the second one live or join its fence, so each gets its own fence with a space between them, while an address such as a@y after a wrapped mention and a space stays plain text, and a cut at the 60,000 cap that falls inside a mention's fence, which cuts before the fence (in clean_post and in the recorded body, whose marker line counts toward the cap), and a cut, in clean_post and in the recorded body, that would leave an @ and login characters at the end of the text, from a word that was not a mention before the cut (a login followed by an underscore, an over-long login), which cuts before the @. Cleaning each result again changes nothing"
+e2e_describe "design trust_and_untrusted_text L59 (@mentions are put in backticks) and plan R38, read against GitHub's code span rule: a span opens at a backtick run and closes at the next run of the same length, across line breaks within a paragraph, and a backslash before a backtick makes it plain text. Each mention is put in a fence of a length no other run in the text has, with a space between the fence and a backtick next to it and a second backslash after an odd run of backslashes, and fences already around a mention, where every run of that length is such a fence, are kept and reused. The table's texts are passed as EngineText, text the engine marks as its own, whose backticks clean_post keeps, because only such text can still hold backticks GitHub pairs (a plain str has every backtick escaped first; the cap cases hold no backtick and stay plain). Expected strings are traced by hand with that rule: a span over a line break (the review's case), a mention inside a one-line span, a stray backtick before and after the mention, a mention right after a closed span, a backslash before the mention, text already cleaned, a mention right after another mention (after a login, a team, a trailing dash, three in a row, with a stray backtick or a backslash), where the first mention's closing fence would otherwise leave the second one live or join its fence, so each gets its own fence with a space between them, while an address such as a@y after a wrapped mention and a space stays plain text, and a cut at the 60,000 cap that falls inside a mention's fence, which cuts before the fence (in clean_post and in the recorded body, whose marker line counts toward the cap), and a cut, in clean_post and in the recorded body, that would leave an @ and login characters at the end of the text, from a word that was not a mention before the cut (a login followed by an underscore, an over-long login), which cuts before the @. Cleaning each result again changes nothing"
 read -r -d '' GW_CODE <<'PY' || true
 cases = [
     ('wrapped', '`open\nx` @octocat `y', '`open\nx` ``@octocat`` `y'),
@@ -430,7 +434,7 @@ cases = [
     ('chain-not-address', '@x a@y', '`@x` a@y'),
 ]
 for tag, text, want_text in cases:
-    c = G.clean_post(text)
+    c = G.clean_post(G.EngineText(text))
     print('%s %s %s' % (tag, c == want_text, G.clean_post(c) == c))
     if c != want_text:
         print('%s got %r' % (tag, c))
@@ -465,6 +469,35 @@ done
 e2e_expect_line "cap body tail ' '"
 e2e_expect_line "cap body length True"
 e2e_expect_line "cap body at tail ' '"
+
+_flow_test_begin "factory github: every backtick of a body the engine has not marked as its own is escaped (GH5)"
+gw_start gh5-escape-default needs_info
+e2e_describe "the user's choice of 2026-11-23 (PR review round 3), made the default: a comment body is model text unless the engine marks it as its own (EngineText), so record_job_intent escapes every backtick of a plain str body before it cleans it, and the only backticks GitHub can pair are the mention fences. Expected strings are traced by hand (printed with Python's repr, so each backslash shows twice): a plain body 'see \`code\` and @octocat' is stored as 'see \\\`code\\\` and \`\`@octocat\`\`' (both backticks escaped; escaped runs of length 1 remain, so the fence is two backticks); the same text as EngineText keeps its code span, 'see \`code\` and \`\`@octocat\`\`'; EngineText 'Run \`x\`: ' joined with the plain 'see \`y\` @octocat' is a plain str, stored as 'Run \\\`x\\\`: see \\\`y\\\` \`\`@octocat\`\`'; an f-string around EngineText '\`a\`' is a plain str too, stored as '\\\`a\\\`'. clean_post of a plain str gives EngineText, so cleaning it again changes nothing"
+read -r -d '' GW_CODE <<'PY' || true
+job = J()
+def stored(tag, row, text):
+    i = record(job, row, 'comment', G.literal_comment(REPO, 7), text, ['issueUpdate'], False)
+    b = body_of(items()[i]).decode('utf-8').split('\n', 1)[1]
+    print('%s %r' % (tag, b))
+stored('plain', '4', 'see `code` and @octocat')
+stored('engine', '5', G.EngineText('see `code` and @octocat'))
+joined = G.EngineText('Run `x`: ') + 'see `y` @octocat'
+print('joined type %s' % type(joined).__name__)
+stored('joined', '6', joined)
+formatted = f"{G.EngineText('`a`')}"
+print('formatted type %s' % type(formatted).__name__)
+stored('formatted', '7', formatted)
+c = G.clean_post('see `code` and @octocat')
+print('cleaned type %s again %s' % (type(c).__name__, G.clean_post(c) == c))
+PY
+gw_py "$GW_CODE"
+e2e_expect_line "plain 'see \\\\\`code\\\\\` and \`\`@octocat\`\`'"
+e2e_expect_line "engine 'see \`code\` and \`\`@octocat\`\`'"
+e2e_expect_line "joined type str"
+e2e_expect_line "joined 'Run \\\\\`x\\\\\`: see \\\\\`y\\\\\` \`\`@octocat\`\`'"
+e2e_expect_line "formatted type str"
+e2e_expect_line "formatted '\\\\\`a\\\\\`'"
+e2e_expect_line "cleaned type EngineText again True"
 
 _flow_test_begin "factory github: a blocking assign_label item with both keys journal is run, with two breadcrumbs (GH6, R75)"
 gw_start gh6-journal prepare
@@ -822,7 +855,7 @@ printf '#!/bin/sh\ntouch "%s/plain-ran"\n' "$E2E_DIR" > "$E2E_DIR/plain/gh"
 mkdir -p "$E2E_DIR/envgh"
 printf '#!/bin/sh\nenv > "%s/gh-env.txt"\nexec "%s/gh" "$@"\n' "$E2E_DIR" "$E2E_BIN" > "$E2E_DIR/envgh/gh"
 chmod +x "$E2E_DIR/decoy/bin/gh" "$E2E_DIR/plain/gh" "$E2E_DIR/envgh/gh"
-e2e_describe "R33: a body holding \$(touch pwned) and a backticked \`touch pwned2\` is posted verbatim and no file is made; a directory holding a gh that writes decoy-ran, with ../scripts/lib/tier-runtime.sh beside it, first on PATH: which_real('gh') skips it and gives the stub (plan B6 step 4, _flow_factory.py which_real). Then a plain directory whose gh writes plain-ran is put first on PATH: the drain, passed the stub as gh_real, runs the stub, so plain-ran is never made (the item's argv[0] 'gh' is never looked up on PATH). A label_add of the label 'x\$(touch pwned);y' (shell text in the argv itself) adds exactly that label and makes no file. Run through a gh_real that saves its environment and then runs the stub, with FLOW_TIER_CALL and FLOW_TIER_DIR set and GH_PROMPT_DISABLED unset in the caller: the write sees no FLOW_TIER_ variable and GH_PROMPT_DISABLED=1 (plan B6 step 4)"
+e2e_describe "R33: a body holding \$(touch pwned) and a backticked \`touch pwned2\` is posted as written, except that its backticks are escaped (it is a plain str, not text the engine marks as its own), and no file is made; a directory holding a gh that writes decoy-ran, with ../scripts/lib/tier-runtime.sh beside it, first on PATH: which_real('gh') skips it and gives the stub (plan B6 step 4, _flow_factory.py which_real). Then a plain directory whose gh writes plain-ran is put first on PATH: the drain, passed the stub as gh_real, runs the stub, so plain-ran is never made (the item's argv[0] 'gh' is never looked up on PATH). A label_add of the label 'x\$(touch pwned);y' (shell text in the argv itself) adds exactly that label and makes no file. Run through a gh_real that saves its environment and then runs the stub, with FLOW_TIER_CALL and FLOW_TIER_DIR set and GH_PROMPT_DISABLED unset in the caller: the write sees no FLOW_TIER_ variable and GH_PROMPT_DISABLED=1 (plan B6 step 4)"
 read -r -d '' GW_CODE <<PY || true
 os.environ['PATH'] = '$E2E_DIR/decoy/bin' + os.pathsep + os.environ['PATH']
 real = ff.which_real('gh')
@@ -832,7 +865,7 @@ job = J()
 text = 'Run \$(touch pwned) and \`touch pwned2\` now.'
 record(job, '4', 'comment', G.literal_comment(REPO, 7), text, ['issueUpdate'], False)
 drain(job, tiers(), gh=real)
-print('verbatim %s' % (text in posts()[0]['body']))
+print('verbatim %s' % ('Run \$(touch pwned) and \\\\\`touch pwned2\\\\\` now.' in posts()[0]['body']))
 label = 'x\$(touch pwned);y'
 record(job, '4', 'label_add', G.literal_label_add(REPO, 7, label), None, ['issueUpdate'], False)
 os.environ['FLOW_TIER_CALL'] = 'call-record'

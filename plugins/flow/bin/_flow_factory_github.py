@@ -37,14 +37,20 @@ the in-progress label together (assign_label). A comment's body is stored in
 J/outbox/<id>.body.md, cleaned with clean_post and with the engine marker
 <!-- FLOW_FACTORY job=<job key> event=<id> --> as its first line, and the
 literal ends with -F body=@<that file's absolute path> (design stages L13).
+A body is model text unless the caller passes an EngineText: clean_post
+escapes every backtick of any other str, so a caller that forgets to mark
+or escape cannot leave a model backtick that GitHub pairs with a mention's
+fence.
 record_job_intent adds the marker and that argument itself, since both need
 the id it makes.
 
 API:
   intent_digest(argv, body: bytes) -> hex
   marker(job_key, intent_id) -> the marker line
-  clean_post(text, limit=60000) -> text
-  escape_ticks(text) -> text (model text, before it goes into a notice)
+  EngineText(str): a body the engine composed, whose backticks clean_post
+      keeps; any other str has every backtick escaped
+  clean_post(text, limit=60000) -> EngineText
+  escape_ticks(text) -> text (model text, before it goes into an EngineText)
   literal_comment(repo, n), literal_label_add(repo, n, label),
   literal_label_remove(repo, n, label),
   literal_assign_label(repo, n, login, label), literal_pr_close(repo, pr)
@@ -168,15 +174,28 @@ def _line1(text):
     return line[:-1] if line.endswith("\r") else line
 
 
+class EngineText(str):
+    """Text the engine composed itself (a filled template, a status note),
+    whose backticks are its own code spans. clean_post keeps the backticks
+    of an EngineText and escapes every backtick of any other str, so a body
+    is treated as model text unless the engine marks it. A model value put
+    into an EngineText must be escaped (escape_ticks) by whoever puts it
+    there. Any string operation on an EngineText (joining, slicing, replace,
+    formatting) gives a plain str, which clean_post then escapes: losing the
+    mark can only escape too much, never too little."""
+    __slots__ = ()
+
+
 def escape_ticks(text):
     """text with every backtick escaped: a backtick gets a backslash before
-    it unless an odd run of backslashes already escapes it. Model text goes
-    through this before it is put in a notice (the callers that fill a
-    template), so the only backticks GitHub can pair in a notice are the
-    template's and the engine's own, and clean_post never has to predict how
-    GitHub pairs the model's (design trust_and_untrusted_text L59; the user's
-    choice of 2026-11-23). Model code formatting then shows as plain
-    backticks."""
+    it unless an odd run of backslashes already escapes it, so escaping
+    escaped text changes nothing. clean_post does this to every body that is
+    not an EngineText, and the callers that fill a template do it to each
+    model value they put in, so the only backticks GitHub can pair in a
+    comment are the engine's own and the mention fences, and clean_post
+    never has to predict how GitHub pairs the model's (design
+    trust_and_untrusted_text L59; the user's choice of 2026-11-23). Model
+    code formatting then shows as plain backticks."""
     if not isinstance(text, str):
         return text
     out = []
@@ -299,14 +318,20 @@ def _cap(text, limit):
 
 
 def clean_post(text, limit=POST_LIMIT):
-    """Model text made safe to post (design trust_and_untrusted_text L59):
-    CRLF and CR made LF, every '<!--' broken up, every line whose stripped
-    form starts with /flow-factory put in a code span, every @mention put in
-    a code span (see _mentions), then cut to limit characters (60,000 by
-    default; a caller that puts a marker line first passes what is left)
-    without cutting through a mention's fence. Cleaning cleaned text changes
-    nothing. The caller's marker goes before it, never through it."""
-    t = text.replace("\r\n", "\n").replace("\r", "\n")
+    """text made safe to post (design trust_and_untrusted_text L59): every
+    backtick escaped (escape_ticks) unless text is an EngineText, so a plain
+    str is model text by default; then CRLF and CR made LF, every '<!--'
+    broken up, every line whose stripped form starts with /flow-factory put
+    in a code span, every @mention put in a code span (see _mentions), then
+    cut to limit characters (60,000 by default; a caller that puts a marker
+    line first passes what is left) without cutting through a mention's
+    fence. Escaping comes first, so the cap holds for the escaped text. The
+    result is an EngineText, since its backticks are now the engine's
+    (mention fences and command-line spans) or escaped, so cleaning cleaned
+    text changes nothing. The caller's marker goes before it, never through
+    it."""
+    t = text if isinstance(text, EngineText) else escape_ticks(text)
+    t = t.replace("\r\n", "\n").replace("\r", "\n")
     while "<!--" in t:
         t = t.replace("<!--", "< !--")
     out = []
@@ -315,7 +340,7 @@ def clean_post(text, limit=POST_LIMIT):
         if stripped.startswith("/flow-factory"):
             line = line[:len(line) - len(line.lstrip())] + _code(stripped)
         out.append(line)
-    return _cap(_mentions("\n".join(out)), limit)
+    return EngineText(_cap(_mentions("\n".join(out)), limit))
 
 
 # literals --------------------------------------------------------------------
@@ -446,7 +471,8 @@ def _write_intent(outbox, events_path, iid, mark, fields, argv, body, append, nu
     again and could never run). A failure removes the body file and raises
     outbox_unwritable naming the file that could not be written. With a
     number, the literal must act on that issue or pull request number, and
-    with a repo, in that repository (ignoring case)."""
+    with a repo, in that repository (ignoring case). A comment's body goes to
+    clean_post as the caller passed it, so an EngineText keeps its mark."""
     text, body_bytes, body_file, body_path = None, b"", None, None
     if fields["kind"] == "comment":
         _need(isinstance(body, str), "a comment needs its text")
