@@ -1,0 +1,2 @@
+context --mode
+await p2-await --max-seconds 100

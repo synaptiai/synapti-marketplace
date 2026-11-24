@@ -712,6 +712,10 @@ _e2e_exec() {
     _e2e_git_env
     cd "$E2E_REPO" || exit 1
     unset CLAUDE_CONFIG_DIR FLOW_USER_SETTINGS FLOW_STATE_DIR CLAUDE_HOOK_GOAL_JUDGE_MODE
+    # The factory variables and the state folder of the shell running the
+    # suite would put every hook into a factory, or a probe's state into the
+    # person's own folder. A scenario that wants one sets it after this line.
+    unset FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN XDG_STATE_HOME
     # A proxy on the machine running the tests would receive the requests
     # meant for the stub servers.
     unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy

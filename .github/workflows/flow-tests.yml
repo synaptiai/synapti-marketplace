@@ -53,6 +53,12 @@ jobs:
     # times from run 41145324569 (2026-10-30) put the parts at about 9, 4, 12
     # and 21 minutes of tests, plus a minute or two of setup per job; a part
     # is every fourth file, so adding a file can move time between parts.
+    # Each Linux part has a 45-minute limit. Part 4 holds
+    # e2e-factory-probe.test.sh and e2e-factory-engine.test.sh, which runs
+    # alone after the rest of its part: in run 45280564231 (2026-11-23) that
+    # part took 1773 s of tests against the 30-minute limit it then had, and a
+    # slower runner in the next run was cancelled with every finished file
+    # passing.
     #
     # macOS skips the System One suites and runs in three parts, the same
     # way, over the files it keeps. In one job it took 28 to 34 minutes in
@@ -69,10 +75,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, shard: 1, shards: 4, timeout: 30 }
-          - { os: ubuntu-latest, shard: 2, shards: 4, timeout: 30 }
-          - { os: ubuntu-latest, shard: 3, shards: 4, timeout: 30 }
-          - { os: ubuntu-latest, shard: 4, shards: 4, timeout: 30 }
+          - { os: ubuntu-latest, shard: 1, shards: 4, timeout: 45 }
+          - { os: ubuntu-latest, shard: 2, shards: 4, timeout: 45 }
+          - { os: ubuntu-latest, shard: 3, shards: 4, timeout: 45 }
+          - { os: ubuntu-latest, shard: 4, shards: 4, timeout: 45 }
           - { os: macos-latest, shard: 1, shards: 3, timeout: 45 }
           - { os: macos-latest, shard: 2, shards: 3, timeout: 45 }
           - { os: macos-latest, shard: 3, shards: 3, timeout: 45 }

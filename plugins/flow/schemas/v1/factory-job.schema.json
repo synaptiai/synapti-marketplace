@@ -72,6 +72,7 @@
     "created_at": { "$ref": "#/$defs/utc" },
     "updated_at": { "$ref": "#/$defs/utc" },
     "vouch_at": { "$ref": "#/$defs/utc_or_null" },
+    "base": { "type": ["string", "null"] },
     "branch": {
       "type": ["string", "null"],
       "pattern": "^feature/issue-[1-9][0-9]*-"
@@ -158,9 +159,160 @@
         "mode": { "type": "string" }
       }
     },
-    "lease_grace": { "$ref": "#/$defs/utc_or_null" }
+    "lease_grace": { "$ref": "#/$defs/utc_or_null" },
+    "vouch_event_id": {
+      "description": "The id of the issue event that added the queue label, the vouch the job was created from.",
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "write_seq": {
+      "description": "The largest k used in this job's intent ids issue-N-j<seq>-<row>-<k>; the next intent takes one more than the larger of this and the k of every item in the outbox folder.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "revouched_replies": {
+      "description": "Untrusted comment replies a trusted person vouched for: comment id to the sha256 of the comment body at that moment. The keys are comment ids; the writer checks them, since this validator has no propertyNames.",
+      "type": ["object", "null"],
+      "additionalProperties": { "$ref": "#/$defs/sha256" }
+    },
+    "intake_inputs": {
+      "description": "The comment ids and needs-info answers the intake judge's accepted result rested on.",
+      "type": ["object", "null"],
+      "required": ["comments", "answers"],
+      "additionalProperties": false,
+      "properties": {
+        "comments": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
+        "answers": { "type": "array", "items": { "$ref": "#/$defs/question_id" } }
+      }
+    },
+    "intake": {
+      "description": "What the intake judge accepted the issue with.",
+      "type": ["object", "null"],
+      "required": ["risk", "surfaces", "scope"],
+      "additionalProperties": false,
+      "properties": {
+        "risk": { "type": "string" },
+        "surfaces": { "type": "array", "items": { "type": "string" } },
+        "scope": { "type": "string" }
+      }
+    },
+    "needs_info": {
+      "description": "The current needs-info round and every earlier round of the job, in order. Replaced only when the intake judge asks again.",
+      "type": ["object", "null"],
+      "required": ["asked_at", "questions", "round", "earlier"],
+      "additionalProperties": false,
+      "properties": {
+        "asked_at": { "$ref": "#/$defs/utc" },
+        "questions": { "type": "array", "items": { "$ref": "#/$defs/question_id" } },
+        "round": { "type": "integer", "minimum": 1 },
+        "earlier": { "type": "array", "items": { "$ref": "#/$defs/needs_info_round" } }
+      }
+    },
+    "commands_seen": {
+      "description": "Ids of the /flow-factory comment commands already read for this job.",
+      "type": ["array", "null"],
+      "items": { "type": "integer", "minimum": 1 }
+    },
+    "pending_keys": {
+      "description": "The tier keys that resolved to confirm when the job parked with reason tier_confirm.",
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/tier_key" }
+    },
+    "pending_intent": {
+      "description": "The blocking write the job waits on in waiting_operator: its outbox item id, kind and tier keys.",
+      "type": ["object", "null"],
+      "required": ["id", "kind", "key"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/intent_id" },
+        "kind": {
+          "type": "string",
+          "enum": ["comment", "label_add", "label_remove", "assign_label", "pr_close"]
+        },
+        "key": { "type": "array", "items": { "$ref": "#/$defs/tier_key" } }
+      }
+    },
+    "held_result": {
+      "description": "The event the job parked on, stored as a pending event without raised_at, replayed once the pending intent is released.",
+      "type": ["object", "null"],
+      "required": ["event", "args", "channel", "caller", "facts"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "args": {
+          "description": "The event's arguments; their keys depend on the event.",
+          "type": "object"
+        },
+        "channel": {
+          "type": "string",
+          "pattern": "^(terminal|launcher|session:.+|comment:[0-9]+)$"
+        },
+        "caller": {
+          "type": "object",
+          "required": ["pid", "start", "ancestry"],
+          "additionalProperties": false,
+          "properties": {
+            "pid": { "type": "integer", "minimum": 1 },
+            "start": { "type": "string" },
+            "ancestry": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        "facts": {
+          "description": "The facts the raising process computed, by name.",
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        }
+      }
+    },
+    "confirmed_intent": {
+      "description": "The id of the pending intent a release ran or found, kept until the held event is replayed.",
+      "type": ["string", "null"],
+      "pattern": "^issue-[0-9]+-j[0-9]+-[0-9a-z]+-[0-9]+$"
+    },
+    "sync_seen": {
+      "description": "The sha256 of the sync result the last pass that evaluated github_change saw.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "priority_high": {
+      "description": "Whether the issue carried the priority label at the last completed sync.",
+      "type": ["boolean", "null"]
+    },
+    "labels_set": {
+      "description": "Label names the engine added to the issue and has not removed.",
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    }
   },
   "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "question_id": {
+      "type": "string",
+      "pattern": "^NI-[0-9]+$"
+    },
+    "intent_id": {
+      "description": "A job's intent id, issue-N-j<seq>-<row>-<k>; the outbox item schema's job_intent_id.",
+      "type": "string",
+      "pattern": "^issue-[0-9]+-j[0-9]+-[0-9a-z]+-[0-9]+$"
+    },
+    "tier_key": {
+      "description": "The keys of tiers in the settings schema.",
+      "type": "string",
+      "enum": ["push", "prCreate", "issueAssign", "issueCreate", "issueUpdate", "merge", "release"]
+    },
+    "needs_info_round": {
+      "type": "object",
+      "required": ["asked_at", "questions", "round"],
+      "additionalProperties": false,
+      "properties": {
+        "asked_at": { "$ref": "#/$defs/utc" },
+        "questions": { "type": "array", "items": { "$ref": "#/$defs/question_id" } },
+        "round": { "type": "integer", "minimum": 1 }
+      }
+    },
     "utc": {
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"

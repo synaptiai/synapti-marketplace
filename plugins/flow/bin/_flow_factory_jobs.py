@@ -71,6 +71,7 @@ JOB_SCHEMA = os.path.join(ff.PLUGIN_ROOT, "schemas", "v1", "factory-job.schema.j
 DIRECTIVE_SCHEMA = os.path.join(ff.PLUGIN_ROOT, "schemas", "v1", "factory-directive.schema.json")
 JOB_FOLDER = re.compile(r"^issue-([1-9][0-9]*)$")
 EVENT_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+COMMENT_CHANNEL = re.compile(r"^comment:([0-9]+)$")
 PENDING_NAME = re.compile(r"^[0-9]{20}-[a-z][a-z0-9_]*\.json$")
 CENT = Decimal("0.01")
 MIN_ALLOWANCE = Decimal("0.50")
@@ -334,13 +335,26 @@ def append_event(paths, n, line):
         raise Refused(f"events_unwritable job=issue-{n} {e.summary}")
 
 
-def store_pending(paths, n, event, args, channel, caller, facts):
+def store_pending(paths, n, event, args, channel, caller, facts, comment=None):
     """Write J/pending/<time_ns, 20 digits>-<event>.json, validated against
-    the pending_event shape; return its file name. Never replaces a file."""
+    the pending_event shape; return its file name. Never replaces a file.
+    comment is the {id, author, permission, created_at} of the /flow-factory
+    comment an event came from: required on a comment:<id> channel, with
+    that id, and refused on any other channel (the schema cannot say so)."""
     if not isinstance(event, str) or not EVENT_NAME.match(event):
         raise Refused(f"event_invalid {event!r}")
-    record = _jsonable({"event": event, "args": args, "channel": channel, "caller": caller, "facts": facts,
-                        "raised_at": ff.utc_now()})
+    m = COMMENT_CHANNEL.match(channel) if isinstance(channel, str) else None
+    if m:
+        cid = comment.get("id") if isinstance(comment, dict) else None
+        if type(cid) is not int or cid != int(m.group(1)):
+            raise Refused(f"pending_invalid {channel} needs its comment object with id {m.group(1)}")
+    elif comment is not None:
+        raise Refused(f"pending_invalid a comment object on channel {channel!r}")
+    record = {"event": event, "args": args, "channel": channel, "caller": caller, "facts": facts,
+              "raised_at": ff.utc_now()}
+    if comment is not None:
+        record["comment"] = comment
+    record = _jsonable(record)
     errors = schema.validate(record, DIRECTIVE_SCHEMA, "pending_event")
     if errors:
         raise Refused(f"pending_invalid {errors[0]}")

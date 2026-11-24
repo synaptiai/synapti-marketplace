@@ -50,6 +50,15 @@
           ],
           "default": "journal"
         },
+        "issueUpdate": {
+          "description": "Writes to an existing issue or pull request: gh issue comment, gh pr comment, gh pr review, gh issue edit and gh pr edit with label, body, title or reviewer flags, gh pr ready (and --undo), gh pr close, gh issue close, gh issue reopen, gh label create; gh api writes to issue and pull request comments, reviews, review replies, labels, requested reviewers, PATCH pulls/{n} and issues/{n}, and PUT issues/{n}/labels; and the GraphQL mutations that do the same (addComment, updateIssueComment, addPullRequestReview, submitPullRequestReview, addPullRequestReviewComment, addPullRequestReviewThreadReply, addLabelsToLabelable, removeLabelsFromLabelable, markPullRequestReadyForReview, convertPullRequestToDraft, closePullRequest, updatePullRequest, requestReviews, updateIssue, closeIssue, reopenIssue). A command that also assigns counts under issueAssign as well.",
+          "enum": [
+            "autonomous",
+            "journal",
+            "confirm"
+          ],
+          "default": "journal"
+        },
         "issueCreate": {
           "description": "gh issue create (or gh issue new), gh api POST to .../issues, and the GraphQL mutation createIssue.",
           "enum": [
@@ -428,7 +437,7 @@
             "off"
           ],
           "default": "block",
-          "description": "TaskCompleted hook posture (hooks/scripts/verify-task-completion.sh). 'block': refuse to mark a task complete while the working tree changed in this session after the last passing quality-command run (exit 2 with the changed paths). 'warn': same check, stderr warning, completion allowed. 'off': no check. A run passes only with exit code 0, not masked by a trailing `|| true`, not recorded from PostToolUseFailure, and not found by System One to have run no test or skipped every test (site quality.tests-ran, off by default). Changes are detected two ways: file_change entries from the PostToolUse Edit|Write|NotebookEdit hook (log-file-changes.sh), and a sha256 digest of the working tree contents (a git tree id built in a temporary index: every tracked and untracked file with its mode, HEAD excluded) that record-quality-run.sh (PostToolUse and PostToolUseFailure, Bash) stores with each run and the gate recomputes \u2014 so edits made through Bash (sed -i, heredocs, git apply) and checkouts count too, while committing edits a passing run already tested does not. The session ledger lives under <state dir> (~/.claude/flow-state, or a FLOW_STATE_DIR you set outside the repository)/sessions/<session_id>/ and is pruned by session-end-state.sh (`flow-quality-ledger.sh prune`, 14 days)."
+          "description": "TaskCompleted hook posture (hooks/scripts/verify-task-completion.sh). 'block': refuse to mark a task complete while the working tree changed in this session after the last passing quality-command run (exit 2 with the changed paths). 'warn': same check, stderr warning, completion allowed. 'off': no check. In a factory worker session (FLOW_FACTORY_DIRECTIVE set and not empty), block acts as warn; off stays off. A run passes only with exit code 0, not masked by a trailing `|| true`, not recorded from PostToolUseFailure, and not found by System One to have run no test or skipped every test (site quality.tests-ran, off by default). Changes are detected two ways: file_change entries from the PostToolUse Edit|Write|NotebookEdit hook (log-file-changes.sh), and a sha256 digest of the working tree contents (a git tree id built in a temporary index: every tracked and untracked file with its mode, HEAD excluded) that record-quality-run.sh (PostToolUse and PostToolUseFailure, Bash) stores with each run and the gate recomputes \u2014 so edits made through Bash (sed -i, heredocs, git apply) and checkouts count too, while committing edits a passing run already tested does not. The session ledger lives under <state dir> (~/.claude/flow-state, or a FLOW_STATE_DIR you set outside the repository)/sessions/<session_id>/ and is pruned by session-end-state.sh (`flow-quality-ledger.sh prune`, 14 days)."
         },
         "qualityCommandPatterns": {
           "type": "array",
@@ -830,6 +839,56 @@
               "default": 3,
               "description": "Review rounds a job may take before it parks for a person (round_limit = round + maxRounds)."
             },
+            "labels": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The issue labels the engine adds, removes or reads.",
+              "properties": {
+                "inProgress": { "type": "string", "minLength": 1, "default": "flow:in-progress", "description": "Added with the assignment when a job leaves intake for prepare." },
+                "needsInfo": { "type": "string", "minLength": 1, "default": "flow:needs-info", "description": "Set while a job waits in needs_info." },
+                "needsHuman": { "type": "string", "minLength": 1, "default": "flow:needs-human", "description": "Set while a job waits in needs_human." },
+                "ready": { "type": "string", "minLength": 1, "default": "flow:ready", "description": "Set while a job's pull request is ready for a person." },
+                "specReview": { "type": "string", "minLength": 1, "default": "flow:spec-review", "description": "Set while a job's spec waits for approval." },
+                "priorityHigh": { "type": "string", "minLength": 1, "default": "flow:priority-high", "description": "Read only: a job whose issue carries it goes ahead of the others in the queue." }
+              }
+            },
+            "trustedPermission": {
+              "type": "string",
+              "enum": ["write", "maintain", "admin"],
+              "default": "write",
+              "description": "The least repository role whose issue edits, replies and /flow-factory comment commands the engine trusts. triage and read are refused here, and the engine never takes a bar below write."
+            },
+            "trustedBots": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "default": [],
+              "description": "Bot logins whose repository role is checked like a person's; every other bot is untrusted whatever its role."
+            },
+            "intake": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The intake stage.",
+              "properties": {
+                "maxRounds": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 3,
+                  "description": "Needs-info rounds a job may take before it parks for a person."
+                }
+              }
+            },
+            "judges": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The models of the factory's judges.",
+              "properties": {
+                "intakeModel": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The intake judge's model, an alias or a full model id. Not set by default: the model the platform probe recorded is used."
+                }
+              }
+            },
             "worker": {
               "type": "object",
               "additionalProperties": false,
@@ -1102,6 +1161,19 @@
                             "TaskGet"
                           ],
                           "description": "The tools the worker may use in this stage (--allowedTools)."
+                        }
+                      }
+                    },
+                    "intake": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "description": "The intake judge's limit. The judge runs with no tools and no budget key, so only the timeout is set here.",
+                      "properties": {
+                        "timeoutSeconds": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 1800,
+                          "description": "How long one intake judge run may take; the launcher passes it to flow-judge.sh --judge intake as --timeout-seconds."
                         }
                       }
                     }

@@ -1,3 +1,0 @@
-context --mode
-question get p2-question
-await p2-await --max-seconds 100

@@ -1,0 +1,26 @@
+{
+  "id": "probe-p9-2",
+  "job": null,
+  "row": null,
+  "state_at_write": null,
+  "ref": null,
+  "kind": "comment",
+  "blocking": false,
+  "key": [
+    "issueUpdate"
+  ],
+  "argv": [
+    "gh",
+    "issue",
+    "comment",
+    "999999",
+    "--repo",
+    "flow-e2e/scratch",
+    "--body-file",
+    "-"
+  ],
+  "body_file": "probe-p9-2.body.md",
+  "sha256": "3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a",
+  "status": "recorded",
+  "effect": null
+}

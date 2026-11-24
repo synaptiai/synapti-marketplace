@@ -12,6 +12,10 @@
 # Ways it can be wrong, written down before the checks:
 #   EN1  a row is never driven: an id below the table's full count (its rows
 #        plus creation row 1) has no passing scenario
+#   EN1b a row that runs a 1b handler lands in its target without the
+#        handler's effect: the answer, the re-vouch in the line's fields, the
+#        status note, the dropped intent, baseline_pending in the fields, the
+#        PR close item, the sent intent or the needs-human notice
 #   EN2  a stay row or a self-move is "covered" by its end state alone; so
 #        each scenario asserts the transition line of the pass that applied
 #        the witness's event, whose event is the witness's event (the first
@@ -117,6 +121,57 @@ en_scenario_start() {
   EN_F=$(fe_factory_dir)
 }
 
+# en_world <seed.world json> <issue> — the gh stand-in's world for the issue
+# (plan 2.7): labelled by a triager before the vouch, and, by the witness's
+# flags, an outsider's body edit, a trusted and an untrusted NI-1 reply, a
+# close by an outsider, a label removal by a maintainer, an open blocker, and
+# the assignment and label of the pending intent already on the issue.
+en_world() {
+  local w="$1" n="$2" body="The service needs a port setting."
+  fe_world_new flow-e2e-engine flow-e2e/scratch
+  fe_gh --version 'gh version 2.101.0 (2026-09-15)'
+  if [ "$(jq -r .blocker_open <<<"$w")" = true ]; then
+    body="$body
+Blocked by #3"
+    fe_world_issue 3 "A blocker" "Still open."
+  fi
+  fe_world_issue "$n" "Add a port setting" "$body"
+  fe_world_label "$n" flow:factory triager triage 2026-11-15T23:00:00Z
+  if [ "$(jq -r .untrusted_edit <<<"$w")" = true ]; then
+    fe_world_perm outsider read
+    fe_world_edit "issue:$n" outsider 2026-11-16T01:00:00Z
+  fi
+  [ "$(jq -r .trusted_reply <<<"$w")" = true ] && fe_world_comment "$n" 201 maintainer write 2026-11-16T01:00:00Z "NI-1: use port 8080"
+  [ "$(jq -r .untrusted_reply <<<"$w")" = true ] && fe_world_comment "$n" 202 outsider read 2026-11-16T01:10:00Z "NI-1: use port 9090"
+  [ "$(jq -r .untrusted_close <<<"$w")" = true ] && fe_world_close "$n" outsider read 2026-11-16T01:20:00Z
+  [ "$(jq -r .cancel <<<"$w")" = true ] && fe_world_label "$n" flow:factory maintainer write 2026-11-16T01:30:00Z unlabeled
+  if [ "$(jq -r .observed <<<"$w")" = true ]; then
+    jq --arg n "$n" '.issues[$n].assignees = ["flow-e2e-engine"] | .issues[$n].labels += ["flow:in-progress"]' "$FE_WORLD" > "$FE_WORLD.t" \
+      && mv "$FE_WORLD.t" "$FE_WORLD"
+  fi
+  return 0
+}
+
+# en_intent <kind> <issue> — record the job's pending intent through the
+# GitHub writes module under the job lock, as row 40 does, and set job.json
+# pending_intent.
+en_intent() {
+  fe_py "import _flow_factory_jobs as jobs, _flow_factory_github as G
+p = jobs.resolve()
+kind, n = '$1', $2
+with jobs.job_lock(p, n, timeout=5):
+    job = jobs.read_job(p, n)
+    if kind == 'assign_label':
+        argv, key, body = G.literal_assign_label('flow-e2e/scratch', n, 'flow-e2e-engine', 'flow:in-progress'), ['issueAssign', 'issueUpdate'], None
+    else:
+        argv, key, body = G.literal_comment('flow-e2e/scratch', n), ['issueUpdate'], 'A notice for the head before the push.'
+    iid = G.record_job_intent(p, job, '40', kind, argv, body, key, True, state='waiting_operator', repo='flow-e2e/scratch')
+    job['pending_intent'] = {'id': iid, 'kind': kind, 'key': key}
+    jobs.write_job(p, job)
+print('intent=' + iid)"
+  printf 'pending intent: %s\n' "$E2E_OUT" | _e2e_art
+}
+
 # en_seed <witness json> — seed the witness's job (and what its facts need)
 # into F, and write its seam fixture to $E2E_DIR/fixture.json. Expects
 # en_scenario_start to have run.
@@ -134,6 +189,26 @@ en_seed() {
       "$jobfile" > "$jobfile.t" && mv "$jobfile.t" "$jobfile"
   fi
   fe_job "$n" "$s" "d.update(json.load(open('$jobfile')))"
+  if [ "$(jq -r '.seed.world // empty' <<<"$w")" != "" ]; then
+    en_world "$(jq -c .seed.world <<<"$w")" "$n"
+  fi
+  if [ "$(jq -c '.seed.tiers // {}' <<<"$w")" != "{}" ]; then
+    e2e_user_settings "$(jq -c --argjson t "$(jq -c .seed.tiers <<<"$w")" '.tiers = ((.tiers // {}) + $t)' "$E2E_HOME/.claude/settings.flow.json")"
+  fi
+  if [ "$(jq -r '.seed.pending_intent // empty' <<<"$w")" != "" ]; then
+    en_intent "$(jq -r .seed.pending_intent.kind <<<"$w")" "$n"
+  fi
+  if [ "$(jq -r '.seed.question // empty' <<<"$w")" != "" ]; then
+    mkdir -p "$j/questions"
+    jq -n --arg k "issue-$n-j1" '{job: $k, id: "NI-1", text: "Which port?", round: 1}' > "$j/questions/NI-1.json"
+  fi
+  if [ "$(jq -r '.seed.issue_md // false' <<<"$w")" = true ]; then
+    mkdir -p "$j/in-copies"
+    printf '<<<UNTRUSTED_ISSUE_TITLE>>>\n> Add a port setting\n<<<END_UNTRUSTED_ISSUE_TITLE>>>\n\nOther comments: none\n' > "$j/in-copies/issue.md"
+  fi
+  if [ "$(jq -r '.seed.judge_launch // empty' <<<"$w")" != "" ]; then
+    fe_judge_says "$(jq -c .seed.judge_launch <<<"$w")"
+  fi
   if [ "$(jq -r .seed.slot <<<"$w")" = other_job ]; then
     fe_job 99 needs_human "d['holds_slot'] = True; d['reason'] = 'attempts_exhausted'; d['blocked_stage'] = 'build'"
   fi
@@ -159,7 +234,8 @@ en_seed() {
     jq -n --arg d "$did" --argjson r "$(jq -c .seed.result <<<"$w")" '{directive: $d, outcome: $r.outcome,
       written_at: "2026-11-16T00:00:00Z", event: $r.event, session_id: null, num_turns: null,
       api_error_status: null, is_error: null, permission_denials: null, terminal_reason: null,
-      charged_usd: null, charge_basis: null, total_cost_usd: null, since_last_usd: null}' > "$j/results/$did.json"
+      charged_usd: null, charge_basis: null, total_cost_usd: null, since_last_usd: null}
+      + (if $r.judge then {judge: $r.judge} else {} end)' > "$j/results/$did.json"
   fi
   if [ "$(jq -r .seed.lease <<<"$w")" = true ]; then
     pid=$(en_dead_pid)
@@ -210,6 +286,68 @@ en_expect_witness() {
   e2e_expect_equal 0 "$got" "SEAM_MISSING lines for the witness pair"
 }
 
+# en_expect_effects <witness json> <pass id> — the 1b caller and job handler
+# effects of the witness's row, read from the row's effect texts in the table
+# (plan B14 test plan: each of the rows that run a 1b handler asserts its
+# handler's effect: the outbox item, the field in the line's fields, or the
+# answer). Only a row that applied is checked.
+en_expect_effects() {
+  local w="$1" p="$2" n id e line effects j item
+  n=$(jq -r .issue <<<"$w"); id=$(jq -r .id <<<"$w"); e=$(jq -r .event <<<"$w")
+  j="$EN_F/jobs/issue-$n"
+  line=$(en_line "$n" "$p" "$e")
+  [ -n "$line" ] || return 0
+  effects=$(jq -c --arg id "$id" '[.rows[] | select(.id == $id) | .effects[]] | .[0:]' "$EN_TABLE")
+  # Source: T:8a, 9a, 44v, 44u, 44w, 44x, 44q ("record the answer"), and
+  # journal wave 3 for row 44: the stored answer's qid and text (witness
+  # PERSON_ARGS) are in the answers file.
+  if jq -e 'any(.[]; test("^record the answer($| in the job)"))' <<<"$effects" >/dev/null || [ "$id" = 44 ]; then
+    e2e_expect_equal '[{"qid":"NI-1","text":"use port 8080"}]' "$(jq -c 'map({qid, text})' "$j/answers.json" 2>/dev/null)" "row $id: the answer in answers.json"
+  fi
+  # Source: T:8 ("record the answer comment ids in events.jsonl").
+  if jq -e 'any(.[]; test("^record the answer comment ids"))' <<<"$effects" >/dev/null; then
+    e2e_expect_equal 1 "$(jq -c 'select(.type == "answer_comments")' "$j/events.jsonl" | grep -c .)" "row $id: one answer_comments line"
+  fi
+  # Source: T:8r, 9r, 44c, 44d, 47, 44r ("re-vouch"): vouch_at = now, carried
+  # in the line's fields (plan 2.2).
+  if jq -e 'any(.[]; test("^re-vouch"))' <<<"$effects" >/dev/null; then
+    e2e_expect_equal "moved $(en_job "$n" .vouch_at)" "$(jq -r 'if .fields.vouch_at == "2026-11-16T00:00:00Z" or .fields.vouch_at == null then "kept" else "moved" end + " " + (.fields.vouch_at // "none")' <<<"$line")" "row $id: vouch_at moved, in the line's fields"
+  fi
+  # Source: the rows whose refusal text plan B13's table hands to refuse_note
+  # (8t, 44t, 41n, 44u, 44z, 45z, 45v, 45w): a status note recorded in the
+  # outbox for the row.
+  if case " 8t 44t 41n 44u 44z 45z 45v 45w " in *" $id "*) true ;; *) false ;; esac; then
+    e2e_expect_equal 1 "$(cat "$j/outbox/"*.json 2>/dev/null | jq -r --arg r "$id" 'select(.row == $r and .kind == "comment") | .id' | grep -c .)" "row $id: one status note in the outbox"
+  fi
+  # Source: T:50, 51w, 51bw, 52wp, 53uw ("drop the pending intent"), plan 2.2
+  # "Dropped items": the seeded pending intent gets an intent_dropped line
+  # and its item is dropped.
+  if jq -e 'any(.[]; test("drop the pending intent"))' <<<"$effects" >/dev/null && [ "$(jq -r '.seed.pending_intent // empty' <<<"$w")" != "" ]; then
+    item="issue-$n-j1-40-1"
+    e2e_expect_equal "1 dropped" "$(jq -c --arg i "$item" 'select(.type == "intent_dropped" and .id == $i)' "$j/events.jsonl" | grep -c .) $(jq -r .status "$j/outbox/$item.json" 2>/dev/null)" "row $id: the pending intent dropped"
+  fi
+  # Source: the rows with "set baseline_pending" (B13 baseline handler): the
+  # line's fields carry baseline_pending true.
+  if jq -e 'any(.[]; . == "set baseline_pending")' <<<"$effects" >/dev/null; then
+    e2e_expect_equal true "$(jq -r '.fields.baseline_pending' <<<"$line")" "row $id: baseline_pending in the line's fields"
+  fi
+  # Source: T:19, 42, 48, 53, 53b ("close ... PR through the outbox"): one
+  # pr_close item when the job has a PR, none without.
+  if jq -e 'any(.[]; test("PR through the outbox"))' <<<"$effects" >/dev/null; then
+    e2e_expect_equal "$(if [ "$(jq -r '.seed.job.pr // empty' <<<"$w")" != "" ]; then echo 1; else echo 0; fi)" "$(cat "$j/outbox/"*.json 2>/dev/null | jq -r --arg r "$id" 'select(.row == $r and .kind == "pr_close") | .id' | grep -c .)" "row $id: pr_close items"
+  fi
+  # Source: T:41, 41e, 41k (run, or record the observed effect of, the
+  # pending intent; plan 2.2: the item becomes sent).
+  case "$id" in 41|41e|41k)
+    e2e_expect_equal sent "$(jq -r .status "$j/outbox/issue-$n-j1-40-1.json" 2>/dev/null)" "row $id: the pending intent's item is sent" ;;
+  esac
+  # Source: plan B14 step 8: on entry to needs_human, one needs-human notice
+  # recorded for the row.
+  if [ "$(jq -r '.expect.to // empty' <<<"$w")" = needs_human ]; then
+    e2e_expect_equal 1 "$(cat "$j/outbox/"*.json 2>/dev/null | jq -r --arg r "$id" 'select(.row == $r and .kind == "comment" and .state_at_write == "needs_human") | .id' | grep -c .)" "row $id: one needs-human notice"
+  fi
+}
+
 EN_FAILS_BEFORE=0
 en_mark() { EN_FAILS_BEFORE=$FLOW_TEST_FAIL; }
 en_passed() { [ "$FLOW_TEST_FAIL" = "$EN_FAILS_BEFORE" ]; }
@@ -254,7 +392,17 @@ while IFS= read -r EN_W; do
   fe_e "$E2E_DIR/fixture.json" next --executor headless
   e2e_expect_equal 0 "$E2E_RC" "next exit status ($(printf '%s' "$E2E_OUT$E2E_ERR" | tr '\n' ' ' | cut -c1-300))"
   en_expect_witness "$EN_W" "$(en_pass)"
-  if [ "$EN_WL" = true ]; then
+  en_expect_effects "$EN_W" "$(en_pass)"
+  EN_JL=$(jq -r '.seed.judge_launch // empty' <<<"$EN_W")
+  if [ -n "$EN_JL" ]; then
+    # Plan B14 step 11: row 66i launches the intake judge for real; its
+    # result holds the judge reply.
+    EN_D=$(en_job 7 .directive)
+    e2e_expect_equal "judge intake" "$(jq -r '"\(.kind) \(.stage)"' "$EN_F/jobs/issue-7/directives/$EN_D.json" 2>/dev/null)" "a judge directive was created"
+    fe_wait_for 45 "[ -f '$EN_F/jobs/issue-7/results/$EN_D.json' ]"
+    e2e_expect_equal ACCEPT "$(jq -r '.judge.decision' "$EN_F/jobs/issue-7/results/$EN_D.json" 2>/dev/null)" "the result holds the judge reply"
+    e2e_expect_equal 1 "$(en_launches)" "claude launches (the judge)"
+  elif [ "$EN_WL" = true ]; then
     EN_D=$(en_job 7 .directive)
     e2e_expect_equal 1 "$(jq -r '"\(.kind == "worker")"' "$EN_F/jobs/issue-7/directives/$EN_D.json" 2>/dev/null | grep -c true)" "a worker directive was created"
     fe_wait_for 45 "[ -f '$EN_F/jobs/issue-7/results/$EN_D.json' ]"
@@ -281,21 +429,32 @@ fi
 
 # ---------------------------------------------------------------- EN9 (row 1)
 if en_run EN1 || en_run EN9; then
-_flow_test_begin "creation row 1: created under E with the conditions, fenced in the shipped engine (EN9)"
+_flow_test_begin "creation row 1: created when the conditions hold, through E and through the shipped wrapper (EN9, AC1)"
 en_mark
+# en9_world <label actor> <role> — a world with issue 9 open and labelled
+# flow:factory at 2026-11-16T10:00:00Z by the actor.
+en9_world() {
+  fe_world_new flow-e2e-engine flow-e2e/scratch
+  fe_gh --version 'gh version 2.101.0 (2026-09-15)'
+  fe_world_issue 9 "Issue nine" "Do the thing."
+  fe_world_label 9 flow:factory "$1" "$2" 2026-11-16T10:00:00Z
+}
 EN_ISSUES_KEY='api_--paginate_--slurp_repos_flow-e2e_scratch_issues?labels=flow:factory&state=open&per_page=100'
 # gh api --paginate --slurp prints a list of pages.
 EN_ISSUE9='[[{"number": 9, "state": "open", "labels": [{"name": "flow:factory"}], "updated_at": "2026-11-16T10:00:00Z"}]]'
 fe_new en9a-row-1-created
-# Source: amendment C.1 and plan T13 row 1 (job issue-9-j1 in queued,
-# vouch_at the issue's updated_at, a created event with row 1).
-e2e_describe "an open issue 9 labelled flow:factory and no job; seam creation_allowed true"
+# Source: T:creation row 1 (an open issue with the queue label, labelled by
+# triage access or higher, no open job, no non-factory closing PR by write
+# access -> queued); plan 2.2 (vouch_at and vouch_event_id from the label
+# event, base from the repository's default_branch, B14 step 2); plan 5.3
+# Fact inputs (creation_allowed from B4's creation_conditions, no seam).
+e2e_describe "an open issue 9 labelled flow:factory by triager (triage) at 10:00 and no job; the ordinary seam, which gives no creation input"
 en_scenario_start
-fe_gh "$EN_ISSUES_KEY" "$EN_ISSUE9"
-printf '%s\n' '{"unbuilt": {"*": {"creation_allowed": true}}}' > "$E2E_DIR/fixture.json"
-fe_e "$E2E_DIR/fixture.json" next --executor headless
+en9_world triager triage
+fe_e ordinary.json next --executor headless
 e2e_expect_equal 0 "$E2E_RC" "next exit status ($E2E_ERR)"
-e2e_expect_equal "issue-9-j1 queued 2026-11-16T10:00:00Z" "$(en_job 9 '"\(.key) \(.state) \(.vouch_at)"')" "job issue-9-j1 key, state, vouch_at"
+e2e_expect_equal "issue-9-j1 queued 2026-11-16T10:00:00Z main" "$(en_job 9 '"\(.key) \(.state) \(.vouch_at) \(.base)"')" "job issue-9-j1 key, state, vouch_at, base"
+e2e_expect_equal "$(jq -r '.events["9"][0].id' "$FE_WORLD")" "$(en_job 9 .vouch_event_id)" "vouch_event_id is the label event's id"
 e2e_expect_equal "created 1 queued" "$(jq -r 'select(.type == "created") | "\(.type) \(.row) \(.to)"' "$EN_F/jobs/issue-9/events.jsonl" 2>/dev/null)" "the created event"
 fe_art_state 9
 
@@ -320,27 +479,32 @@ fe_e ordinary.json next --executor headless
 e2e_expect_equal 1 "$(grep -cF 'api --paginate --slurp repos/flow-e2e/scratch/issues?labels=my%20label%26x&state=open&per_page=100' "$E2E_BIN/fe-gh-calls.log" 2>/dev/null)" "the issues call with the label encoded"
 
 fe_new en9b-row-1-not-allowed
-# Source: plan T13 row 1 (with creation_allowed false there is no job).
-e2e_describe "the same issue; seam creation_allowed false"
+# Source: T:creation row 1 (the label actor needs triage access or higher;
+# a non-factory PR closing the issue by write access blocks queueing).
+e2e_describe "the same issue labelled by reader (read access); then labelled by triager with an open PR 40 closing #9 by maintainer (write) from a non-factory branch"
 en_scenario_start
-fe_gh "$EN_ISSUES_KEY" "$EN_ISSUE9"
-printf '%s\n' '{"unbuilt": {"*": {"creation_allowed": false}}}' > "$E2E_DIR/fixture.json"
-fe_e "$E2E_DIR/fixture.json" next --executor headless
+e2e_user_settings "$(jq -c '.flow.factory.syncIntervalSeconds = 0' "$E2E_HOME/.claude/settings.flow.json")"
+en9_world reader read
+fe_e ordinary.json next --executor headless
 e2e_expect_equal 0 "$E2E_RC" "next exit status ($E2E_ERR)"
-e2e_expect_equal no "$([ -e "$EN_F/jobs/issue-9" ] && echo yes || echo no)" "a job folder for issue 9"
+e2e_expect_equal no "$([ -e "$EN_F/jobs/issue-9" ] && echo yes || echo no)" "a job folder for issue 9 (label by read access)"
+en9_world triager triage
+fe_world_pull 40 fix-nine maintainer write "Closes #9"
+fe_e ordinary.json next --executor headless
+e2e_expect_equal 0 "$E2E_RC" "next exit status with the PR ($E2E_ERR)"
+e2e_expect_equal no "$([ -e "$EN_F/jobs/issue-9" ] && echo yes || echo no)" "a job folder for issue 9 (a closing PR by write access)"
 
-fe_new en9c-row-1-fenced
-# Source: plan 2.11 fence (creation row 1 is fenced through creation_allowed,
-# phase 1b); T11 (outside E a fenced creation leaves no job folder, only the
-# BLOCKED_UNBUILT status line).
-e2e_describe "the same issue through the shipped wrapper, enabled"
+fe_new en9c-row-1-shipped
+# Source: plan 1.3 (1b makes creation_allowed built, so the shipped engine
+# creates the job; outside E no seam is read); T:creation row 1.
+e2e_describe "the issue labelled by triager, through the shipped wrapper, enabled"
 en_scenario_start
-fe_gh "$EN_ISSUES_KEY" "$EN_ISSUE9"
+en9_world triager triage
 e2e_run_bin bin/flow-factory.sh next --executor headless
 e2e_expect_equal 0 "$E2E_RC" "next exit status ($E2E_ERR)"
-e2e_expect_line '{"status":"BLOCKED_UNBUILT job=issue-9-j1 state=none event=issue_labelled fact=creation_allowed phase=1b"}'
-e2e_expect_equal no "$([ -e "$EN_F/jobs/issue-9" ] && echo yes || echo no)" "a job folder for issue 9"
-en_passed && EN_COVERED="$EN_COVERED 1"
+e2e_expect_equal "issue-9-j1 queued" "$(en_job 9 '"\(.key) \(.state)"')" "job issue-9-j1 created by the shipped engine"
+e2e_expect_no_out "BLOCKED_UNBUILT job=issue-9-j1"
+en_passed && EN_COVERED="${EN_COVERED:-} 1"
 fi
 
 # ---------------------------------------------------------------- EN1 count
@@ -374,14 +538,19 @@ en_gen row 21f open_pr
 EN_W=$(cat "$E2E_ROOT/witness-row.out")
 en_scenario_start
 en_seed "$EN_W"
-jq -c '.derived_inputs = {"confirm_keys": ["push", "PR create or edit"], "prepush_fails": true}' "$E2E_DIR/fixture.json" > "$E2E_DIR/fixture.t" \
+# Plan B14 step 0: the confirm input comes from the tier keys (push and
+# prCreate at confirm in the user settings), the pre-push input from the seam.
+e2e_user_settings "$(jq -c '.tiers = ((.tiers // {}) + {"push": "confirm", "prCreate": "confirm"})' "$E2E_HOME/.claude/settings.flow.json")"
+jq -c '.derived_inputs = {"prepush_fails": true}' "$E2E_DIR/fixture.json" > "$E2E_DIR/fixture.t" \
   && mv "$E2E_DIR/fixture.t" "$E2E_DIR/fixture.json"
 fe_e "$E2E_DIR/fixture.json" next --executor headless
 e2e_expect_equal 0 "$E2E_RC" "next exit status ($E2E_ERR)"
 EN_L=$(en_line 7 "$(en_pass)" stage_succeeded)
 e2e_expect_equal "21f needs_human" "$(jq -r '"\(.row) \(.to)"' <<<"${EN_L:-{\}}")" "row and target"
 e2e_expect_equal needs_human "$(en_job 7 .state)" "job.json state"
-e2e_expect_equal 0 "$(find "$EN_F/jobs/issue-7/outbox" -type f 2>/dev/null | wc -l | tr -d ' ')" "outbox items (no push intent)"
+# Plan B14 step 8: entering needs_human records the needs-human notice and
+# the label; nothing else, and no push intent.
+e2e_expect_equal "comment label_add" "$(cat "$EN_F/jobs/issue-7/outbox/"*.json 2>/dev/null | jq -rs 'map(.kind) | sort | join(" ")')" "outbox items (the two notices, no push intent)"
 fe_art_state 7
 fi
 
@@ -392,13 +561,16 @@ fe_new en5-pending-across-move
 # Source: T:conventions.event_order (a change seen in the same pass as a move
 # is applied in a later pass, in the job's new state); e2e_tests L30; the
 # table's expectation cancel_signal_cancels.
-e2e_describe "needs_spec_approval with a pending person_approve_spec and pending_changes [cancel_signal]; seam cancel_signal true; two passes"
+e2e_describe "needs_spec_approval with a pending person_approve_spec and pending_changes [cancel_signal]; a world where a maintainer removed the queue label after the vouch, so cancel_signal is true (plan B14 step 0: from the issue reads, not the seam); two passes"
 en_gen rows
 EN_W=$(grep '^{' "$E2E_ROOT/witness-rows.out" | jq -c 'select(.event == "person_approve_spec" and .expect.stay != true)' | head -n 1)
 EN_TO=$(jq -r .expect.to <<<"$EN_W")
 en_scenario_start
-en_seed "$(jq -c '.seed.job.pending_changes = ["cancel_signal"]' <<<"$EN_W")"
-jq -c '.unbuilt["issue-7-j1"].cancel_signal = true | .default_unbuilt = false' "$E2E_DIR/fixture.json" > "$E2E_DIR/fixture.t" \
+en_seed "$(jq -c '.seed.job.pending_changes = ["cancel_signal"] | .seed.job.vouch_at = "2026-11-16T00:00:00Z"
+  | .seed.world = {"cancel": true, "untrusted_edit": false, "trusted_reply": false, "untrusted_reply": false,
+                   "untrusted_close": false, "blocker_open": false, "observed": false}' <<<"$EN_W")"
+e2e_user_settings "$(jq -c '.flow.factory.syncIntervalSeconds = 0' "$E2E_HOME/.claude/settings.flow.json")"
+jq -c '.default_unbuilt = false' "$E2E_DIR/fixture.json" > "$E2E_DIR/fixture.t" \
   && mv "$E2E_DIR/fixture.t" "$E2E_DIR/fixture.json"
 fe_e "$E2E_DIR/fixture.json" next --executor headless
 e2e_expect_equal 0 "$E2E_RC" "pass 1 exit status ($E2E_ERR)"

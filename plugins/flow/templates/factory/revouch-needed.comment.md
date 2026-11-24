@@ -1,0 +1,1 @@
+Comment {comment} names a question id, but its author does not have write access, so it does not count as an answer yet. It counts once someone with triage access or higher comments `/flow-factory retry`.

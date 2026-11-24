@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# [flow] factory-state-guard.sh — PreToolUse hook for Write, Edit and
+# NotebookEdit: the flow factory's engine is the only writer under its
+# directory <main checkout>/<runtime dir>/factory, so a session's write there
+# is denied (design person_channels, "The factory directory").
+#
+# Which directory:
+#   - FLOW_FACTORY_MAIN set (a worker session, whose cwd is its job clone):
+#     <FLOW_FACTORY_MAIN>/<runtime dir>/factory.
+#   - Otherwise the main checkout of the payload's cwd (the parent of the
+#     common git directory, so a linked worktree finds it), and its
+#     <runtime dir>/factory.
+# With FLOW_FACTORY_MAIN unset and no factory directory there, the hook exits
+# at once and allows the write. It also allows the write when the directory
+# cannot be resolved (FLOW_FACTORY_MAIN naming no folder, an unreadable
+# runtime directory): tier-gate.sh and the engine's own checks remain.
+#
+# The path is tool_input.file_path, or tool_input.notebook_path for
+# NotebookEdit. A relative path is read against the payload's cwd. It is read
+# three ways: with `.` and `..` applied to the text; that text resolved the
+# way the kernel resolves it; and the path as given resolved that way, which
+# follows each symbolic link before the `..` after it is applied (L/../x with
+# L a link to the factory's jobs folder is the factory's x). Past a part that
+# does not exist yet, `.` and `..` are applied to the text. So /var and
+# /private/var, a `..`, a link into the factory and a link followed by `..`
+# all reach the same place, and the write is denied when any reading is under
+# the factory.
+#
+# The comparison is by spelling (the built and the resolved paths) and by
+# identity: when the target, or a folder above it, is the factory directory
+# itself (the same device and inode), the write is denied, so another case
+# of a name on a volume that ignores case reaches it too.
+#
+# Without jq the path cannot be read: the write is denied when the payload
+# text names the factory directory, absolutely (its built, physical or
+# /private spelling) or relative to the repository top (`<runtime
+# dir>/factory`), followed by `/` or the end of the string, and allowed
+# otherwise (`.flow/factory2` is another folder). The text is read in one
+# case, with `\/` read as `/` and `//` and `/./` collapsed, so
+# `.flow//factory`, `.flow/./factory`, `.FLOW/Factory` and `.flow\/factory`
+# are denied. The match also denies a write naming another repository's
+# `<runtime dir>/factory`, or another case of it on a volume that keeps case.
+# What still passes without jq is the residual recorded in the decision
+# journal (wave 4, "What the text match does not cover"): `x/../factory` and
+# `factory/x` from inside the runtime directory, and a link to the factory
+# directory under another name. A JSON \u escape in the path also passes.
+#
+# Output: nothing (allow), or one PreToolUse deny. Exit 0 always.
+
+set -uo pipefail
+unset CDPATH
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-${SCRIPT_DIR}/../..}"
+
+INPUT=$(cat 2>/dev/null) || INPUT=""
+
+HAVE_JQ=0
+command -v jq >/dev/null 2>&1 && HAVE_JQ=1
+
+CWD=""
+if [ "$HAVE_JQ" = 1 ]; then
+  CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty | strings' 2>/dev/null) || CWD=""
+fi
+[ -n "$CWD" ] && [ -d "$CWD" ] || CWD="$PWD"
+
+# The main checkout.
+if [ -n "${FLOW_FACTORY_MAIN:-}" ]; then
+  MAIN="$FLOW_FACTORY_MAIN"
+else
+  COMMON=$(git -C "$CWD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
+  MAIN=$(dirname -- "$COMMON") || exit 0
+fi
+case "$MAIN" in /*) ;; *) exit 0 ;; esac
+[ -d "$MAIN" ] || exit 0
+RT=$(cd "$MAIN" 2>/dev/null && env -u PYTHONPATH "$PLUGIN_ROOT/bin/flow-runtime-dir.sh" 2>/dev/null) || exit 0
+[ -n "$RT" ] || exit 0
+FDIR="$MAIN/$RT/factory"
+[ -d "$FDIR" ] || exit 0
+FDIR_P=$(cd -P "$FDIR" 2>/dev/null && pwd -P) || exit 0
+
+deny() {
+  local r="$1" b='\' q='"'
+  r=${r//"$b"/"$b$b"}
+  r=${r//"$q"/"$b$q"}
+  r=$(printf '%s' "$r" | LC_ALL=C tr '\000-\037' ' ')
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$r"
+  exit 0
+}
+
+REASON_TAIL="is under the flow factory's directory $FDIR, which only the factory's engine (bin/flow-factory.sh) writes. Change factory state through flow-factory.sh in a terminal."
+
+# macOS reaches /var, /tmp and /etc both as themselves and under /private.
+FDIR_ALT=""
+case "$FDIR_P" in /private/*) FDIR_ALT="${FDIR_P#/private}" ;; /var/*|/tmp/*|/etc/*) FDIR_ALT="/private$FDIR_P" ;; esac
+
+if [ "$HAVE_JQ" = 0 ]; then
+  # The text and the names in one case, with JSON's \/ read as /, and //
+  # and /./ collapsed until none is left.
+  lower() { printf '%s' "$1" | LC_ALL=C tr 'A-Z' 'a-z'; }
+  TEXT=$(lower "$INPUT") || TEXT="$INPUT"
+  TEXT=${TEXT//'\/'/\/}
+  while :; do
+    case "$TEXT" in
+      *//*) TEXT=${TEXT//\/\//\/} ;;
+      */./*) TEXT=${TEXT//\/.\//\/} ;;
+      *) break ;;
+    esac
+  done
+  for S in "$FDIR" "$FDIR_P" ${FDIR_ALT:+"$FDIR_ALT"}; do
+    SL=$(lower "$S") || SL="$S"
+    case "$TEXT" in *"$SL/"*|*"$SL\""*) deny "This write names a path that $REASON_TAIL" ;; esac
+  done
+  RTL=$(lower "$RT") || RTL="$RT"
+  case "$TEXT" in
+    *"$RTL/factory/"*|*"$RTL/factory\""*) deny "This write names a path that $REASON_TAIL" ;;
+  esac
+  exit 0
+fi
+
+TARGET=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty | strings' 2>/dev/null) || TARGET=""
+[ -n "$TARGET" ] || exit 0
+SHOWN="$TARGET"
+case "$TARGET" in /*) ;; *) TARGET="$CWD/$TARGET" ;; esac
+
+# Apply . and .. to the text.
+norm() {
+  local IFS=/ part out=()
+  set -f
+  for part in $1; do
+    case "$part" in
+      ''|.) ;;
+      ..) [ "${#out[@]}" -gt 0 ] && unset 'out[${#out[@]}-1]' ;;
+      *) out+=("$part") ;;
+    esac
+  done
+  set +f
+  local s=""
+  for part in ${out[@]+"${out[@]}"}; do s="$s/$part"; done
+  printf '%s' "${s:-/}"
+}
+
+# physical <absolute path> — the path as the kernel resolves it: the parts are
+# taken from the left, a symbolic link is followed as soon as it is reached
+# (its target is put in front of the parts still to take, read from the
+# link's folder when relative, up to 40 links), and a `..` then removes the
+# last part of where that led. Past a part that does not exist, `.` and `..`
+# are applied to the text, as for folders a write would create.
+physical() {
+  local todo="$1" cur="" part next l n=0
+  while :; do
+    while [ "${todo#/}" != "$todo" ]; do todo=${todo#/}; done
+    [ -n "$todo" ] || break
+    part=${todo%%/*}
+    case "$todo" in */*) todo=${todo#*/} ;; *) todo="" ;; esac
+    case "$part" in
+      .) ;;
+      ..) cur=${cur%/*} ;;
+      *)
+        next="$cur/$part"
+        if [ "$n" -lt 40 ] && [ -L "$next" ] && l=$(readlink "$next"); then
+          n=$((n + 1))
+          case "$l" in /*) cur="" ;; esac
+          todo="$l/$todo"
+        else
+          cur="$next"
+        fi
+        ;;
+    esac
+  done
+  printf '%s' "${cur:-/}"
+}
+
+# in_fdir <path> — the path, or a folder above it, is the factory directory
+# itself: the same device and inode (bash's -ef).
+in_fdir() {
+  local p="$1"
+  while [ -n "$p" ] && [ "$p" != / ]; do
+    if [ -e "$p" ] && [ "$p" -ef "$FDIR" ]; then return 0; fi
+    p="${p%/*}"
+  done
+  return 1
+}
+
+# Three readings, each denied when it reaches the factory: the text with `.`
+# and `..` applied (a caller that cleans the path before writing), the kernel's
+# reading of that text, and the kernel's reading of the path as given.
+T_NORM=$(norm "$TARGET")
+T_NPHYS=$(physical "$T_NORM")
+T_PHYS=$(physical "$TARGET")
+for T in "$T_NORM" "$T_NPHYS" "$T_PHYS"; do
+  case "$T" in
+    "$FDIR"|"$FDIR"/*|"$FDIR_P"|"$FDIR_P"/*) deny "$SHOWN $REASON_TAIL" ;;
+  esac
+  if [ -n "$FDIR_ALT" ]; then
+    case "$T" in "$FDIR_ALT"|"$FDIR_ALT"/*) deny "$SHOWN $REASON_TAIL" ;; esac
+  fi
+  in_fdir "$T" && deny "$SHOWN $REASON_TAIL"
+done
+exit 0

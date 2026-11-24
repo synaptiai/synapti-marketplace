@@ -7,6 +7,7 @@
 # flow command block may call it, so with no factory variable set it prints
 # FACTORY_MODE=off and exits 0 without starting Python or reading the probe
 # record. An ordinary flow run therefore works on a machine that has neither.
+# `usage` is answered in shell the same way: it prints the subcommand groups.
 #
 # `probe` runs bin/_flow_factory.py with a Python 3.14 or later that imports
 # yaml, found by resolve_python below; it is the only subcommand that runs
@@ -93,6 +94,18 @@ fi
 if [ "${1:-}" = context ] && [ "${2:-}" = --mode ] && [ "$#" -eq 2 ] \
    && [ -z "${FLOW_FACTORY_JOB:-}" ] && [ -z "${FLOW_FACTORY_DIRECTIVE:-}" ]; then
   printf '%s\n' "FACTORY_MODE=off"
+  exit 0
+fi
+
+# `usage` is answered here too, without Python or a record. The Person group
+# is written out in shell because Python is not started; the wrapper test
+# compares it with _flow_factory_caller.PERSON, and the tier-gate test with
+# tier-gate's always-ask list, so the three stay equal (plan 2.3, B12).
+if [ "${1:-}" = usage ] && [ "$#" -eq 1 ]; then
+  printf '%s\n' "usage: flow-factory.sh <subcommand> [arguments]" \
+    "Person: answer approve-spec confirm feedback rework retry reject cancel rebuild" \
+    "Engine: next status probe" \
+    "Worker: context await report"
   exit 0
 fi
 

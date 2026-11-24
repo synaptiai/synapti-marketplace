@@ -1,0 +1,29 @@
+{
+  "id": "issue-5-j1-note-3",
+  "job": "issue-5-j1",
+  "row": null,
+  "state_at_write": "spec",
+  "ref": 812,
+  "kind": "comment",
+  "blocking": false,
+  "key": [
+    "issueUpdate"
+  ],
+  "argv": [
+    "gh",
+    "issue",
+    "comment",
+    "5",
+    "--repo",
+    "flow-e2e/scratch",
+    "--body-file",
+    "-"
+  ],
+  "body_file": "issue-5-j1-note-3.body.md",
+  "sha256": "3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a",
+  "status": "sent",
+  "effect": {
+    "comment_id": 913,
+    "pr": 4
+  }
+}

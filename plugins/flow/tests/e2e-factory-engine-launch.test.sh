@@ -33,9 +33,10 @@
 #   LA19 a plugin inside the repository is used
 #   LA20 the allowance is a fixed $0.50, not twice the dearest turn (A.7)
 #   LA21 the dearest turn is the last turn, the sum, or the charged cost
-#   LA22 a malformed or unknown directive id, a judge or directive kind, a
-#        missing claude, or a missing or symlinked io directory launches
-#        anyway, or claims the directive
+#   LA22 a malformed or unknown directive id, a judge of a stage other than
+#        intake, an engine directive, a missing claude, or a missing or
+#        symlinked io directory launches anyway, or claims the directive; an
+#        intake judge directive (session_id null) is refused (plan B11)
 #   LA23 a launcher that fails leaves no result, so the engine waits on the
 #        directive for ever, or a run that started is not charged
 #   LA25 a launcher report retried after a failure part way (store_pending
@@ -772,6 +773,36 @@ e2e_expect_equal kind_not_built "$(la_jq "$LA_J/directives/$LA_ID.json" .not_sta
 e2e_expect_equal null "$(la_jq "$LA_J/directives/$LA_ID.json" .started_at)" "started_at"
 e2e_expect_equal 1 "$(jq -c 'select(.type == "launch_not_started" and .reason == "kind_not_built")' "$LA_J/events.jsonl" | wc -l | tr -d ' ')" "launch_not_started events"
 e2e_expect_equal 0 "$(la_launches)" "claude launches"
+
+fe_new la22b-directive-kind-not-built
+e2e_describe "the job's current directive is an engine directive (kind directive), which phase 1b does not launch"
+la_seed "" "d['kind'] = 'directive'; d['session_id'] = None; d['prompt_template'] = None; d['timeout_seconds'] = None; d['allowed_tools'] = None"
+la_plugin 'RUN: true'
+fe_worker_says "worker-result=$LA_SUCCESS"
+la_launch
+e2e_expect_line "FACTORY_REFUSED=kind_not_built directive=$LA_ID kind=directive"
+e2e_expect_equal 5 "$E2E_RC" "launch exit status"
+e2e_expect_equal 0 "$(la_launches)" "claude launches"
+
+fe_new la22b-intake-judge-launches
+e2e_describe "plan B11 step 2 and R93: an intake judge directive (kind judge, stage intake, session_id null as create_directive writes every judge directive) is launched, not refused with kind_not_built or directive_unknown; the judge reply comes from the stand-in (fe_judge_says)"
+e2e_repo main
+fe_record
+fe_enable
+fe_job 7 intake "d['directive'] = 'issue-7-j1-intake-1'; d['worktree'] = None; d['io_dir'] = None"
+fe_directive issue-7-j1-intake-1 "d['kind'] = 'judge'; d['session_id'] = None; d['prompt_template'] = None; d['timeout_seconds'] = None; d['allowed_tools'] = None"
+LA_F=$(fe_factory_dir)
+LA_J="$LA_F/jobs/issue-7"
+mkdir -p "$LA_J/in-copies"
+printf '%s\n' '<<<UNTRUSTED_ISSUE_TITLE>>>' '> Add a port setting' '<<<END_UNTRUSTED_ISSUE_TITLE>>>' > "$LA_J/in-copies/issue.md"
+fe_judge_says '{"decision":"REJECT","risk":"high","surfaces":[],"scope":"none","proposed_criteria":[],"questions":[],"reason":"no"}'
+la_launch issue-7-j1-intake-1
+e2e_expect_line "LAUNCHED directive=issue-7-j1-intake-1"
+e2e_expect_equal 0 "$E2E_RC" "launch exit status"
+la_wait issue-7-j1-intake-1
+e2e_expect_equal 1 "$(la_launches)" "claude launches"
+e2e_expect_equal 0 "$(grep -c 'kind_not_built\|directive_unknown' "$LA_J/events.jsonl")" "refusal events"
+e2e_expect_equal null "$(la_jq "$LA_J/directives/issue-7-j1-intake-1.json" .session_id)" "directive session_id"
 
 fe_new la22c-claude-missing
 e2e_describe "no claude on the PATH launch runs with"

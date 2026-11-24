@@ -1,2 +1,0 @@
-SessionEnd hook [${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end-learn.sh] failed: Hook cancelled
-SessionEnd hook [${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end-state.sh] failed: Hook cancelled

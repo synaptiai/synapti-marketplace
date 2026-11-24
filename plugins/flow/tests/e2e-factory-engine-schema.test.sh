@@ -22,6 +22,19 @@
 #      list from the directive id pattern
 #   S9 a property whose name is a keyword the validator lacks (format) is
 #      refused as if it were that keyword
+#   S10 a shape copied into a second schema drifts from its first copy: the
+#      job's held event from the stored event, the job's pending intent from
+#      the outbox item, a tier key list from the settings schema's tiers
+#   S11 a phase 1b settings key is missing from settings.json or schema.json,
+#      has another default, or takes a value the plan refuses (a tier value
+#      outside the three, a trust bar below write, zero intake rounds, a
+#      budget or tools key on the intake stage)
+#
+# The stdlib validator has no propertyNames, patternProperties, minItems or
+# if/then, so three rules of plan 2.2 and 5.3 are not in the schemas and are
+# checked by the code that writes the record: the comment id keys of
+# revouched_replies, a comment object on every comment-channel event, and the
+# intake judge's non-empty criteria (ACCEPT) and questions (NEEDS_INFO).
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -49,7 +62,8 @@ mode = sys.argv[2]
 SHAPES = {"job": ("factory-job.schema.json", None), "directive": ("factory-directive.schema.json", None),
           "lease": ("factory-directive.schema.json", "lease"), "result": ("factory-directive.schema.json", "result"),
           "pending_event": ("factory-directive.schema.json", "pending_event"),
-          "pending_report": ("factory-directive.schema.json", "pending_report")}
+          "pending_report": ("factory-directive.schema.json", "pending_report"),
+          "outbox": ("factory-outbox.schema.json", None)}
 if mode == "fixtures":
     fix, schemas = sys.argv[3], sys.argv[4]
     for name in sorted(os.listdir(fix)):
@@ -87,7 +101,8 @@ mode = sys.argv[1]
 SHAPES = {"job": ("factory-job.schema.json", None), "directive": ("factory-directive.schema.json", None),
           "lease": ("factory-directive.schema.json", "lease"), "result": ("factory-directive.schema.json", "result"),
           "pending_event": ("factory-directive.schema.json", "pending_event"),
-          "pending_report": ("factory-directive.schema.json", "pending_report")}
+          "pending_report": ("factory-directive.schema.json", "pending_report"),
+          "outbox": ("factory-outbox.schema.json", None)}
 def schema_for(path, d):
     with open(path, encoding="utf-8") as f:
         s = json.load(f)
@@ -164,8 +179,8 @@ FS_BAD=""; FS_INVALID=""
 for f in $(cd "$FS_FIX" && LC_ALL=C ls); do
   case "$f" in
     expected-errors.txt) ;;
-    job-valid-*.json|directive-valid-*.json|lease-valid-*.json|result-valid-*.json|pending_event-valid-*.json|pending_report-valid-*.json) ;;
-    job-invalid-*.json|directive-invalid-*.json|lease-invalid-*.json|result-invalid-*.json|pending_event-invalid-*.json|pending_report-invalid-*.json)
+    job-valid-*.json|directive-valid-*.json|lease-valid-*.json|result-valid-*.json|pending_event-valid-*.json|pending_report-valid-*.json|outbox-valid-*.json) ;;
+    job-invalid-*.json|directive-invalid-*.json|lease-invalid-*.json|result-invalid-*.json|pending_event-invalid-*.json|pending_report-invalid-*.json|outbox-invalid-*.json)
       FS_INVALID="$FS_INVALID$f"$'\n' ;;
     *) FS_BAD="$FS_BAD $f" ;;
   esac
@@ -178,7 +193,7 @@ e2e_expect_equal "$(printf '%s' "$FS_INVALID")" "$(grep -v '^#' "$FS_FIX/expecte
 # Without jsonschema the stdlib verdicts are still checked against the
 # fixture names and the expected error paths; only the reference column and
 # the keyword scenario need it.
-for FS_SHAPE in job directive lease result pending_event pending_report; do
+for FS_SHAPE in job directive lease result pending_event pending_report outbox; do
   _flow_test_begin "factory schema: $FS_SHAPE fixtures, stdlib validator against jsonschema (S1, S2, S4, S5, S7)"
   _fs_agree "$FS_SHAPE"
 done
@@ -312,11 +327,11 @@ cd "$REPO_ROOT" || exit 1
 printf 'load: %s\n' "$FS_OUT" >> "$E2E_ARTIFACT"
 e2e_expect_equal "SchemaUnsupported(uniqueItems)" "$FS_OUT" "load result"
 
-_flow_test_begin "factory schema: both shipped schemas load under the validator's keyword subset (S3)"
+_flow_test_begin "factory schema: the shipped schemas load under the validator's keyword subset (S3)"
 e2e_new fs-shipped-load
-e2e_describe "the job and directive schemas use only keywords the stdlib validator implements"
+e2e_describe "the job, directive and outbox item schemas use only keywords the stdlib validator implements"
 cd "$E2E_DIR" || exit 1
-for FS_S in factory-job.schema.json factory-directive.schema.json; do
+for FS_S in factory-job.schema.json factory-directive.schema.json factory-outbox.schema.json; do
   FS_OUT=$(_fs_stdlib load "$FS_SCHEMAS/$FS_S" 2>&1)
   printf '%s: %s\n' "$FS_S" "$FS_OUT" >> "$E2E_ARTIFACT"
   e2e_expect_equal "ok" "$FS_OUT" "load of $FS_S"
@@ -345,3 +360,122 @@ e2e_expect_equal "$FS_ID_STAGES" "$FS_STAGES" "job stage enum"
 e2e_expect_equal "$FS_ID_STAGES" "$FS_DSTAGES" "directive stage enum"
 e2e_expect_equal "$(jq -r '.properties.directive.pattern' "$FS_JOB")" "$(jq -r '."$defs".directive_id.pattern' "$FS_DIR_SCHEMA")" \
   "the job's directive pattern is the directive schema's"
+
+_flow_test_begin "factory schema: the shapes the job, directive and outbox schemas share are equal (S10)"
+e2e_new fs-shared-shapes
+e2e_describe "the job's held event uses the stored event's event, channel, caller and facts; the job's pending intent uses the outbox item's kinds and job intent id; every tier key list is the settings schema's tiers keys; the outbox item's state list is the job's; the job's intake object has the judge's risk, surfaces and scope"
+FS_JOB="$FS_SCHEMAS/factory-job.schema.json"
+FS_DIR_SCHEMA="$FS_SCHEMAS/factory-directive.schema.json"
+FS_OUT_SCHEMA="$FS_SCHEMAS/factory-outbox.schema.json"
+FS_TIER_KEYS=$(jq -c '.properties.tiers.properties | keys | sort' "$E2E_PLUGIN_DIR/schema.json")
+printf 'settings schema tier keys: %s\n' "$FS_TIER_KEYS" >> "$E2E_ARTIFACT"
+# Source: plan 2.5 adds issueUpdate beside the six keys the settings schema had at 3ae1d7e0.
+e2e_expect_equal '["issueAssign","issueCreate","issueUpdate","merge","prCreate","push","release"]' "$FS_TIER_KEYS" "the settings schema's tier keys"
+e2e_expect_equal "$FS_TIER_KEYS" "$(jq -c '."$defs".tier_key.enum | sort' "$FS_JOB")" "job tier keys"
+e2e_expect_equal '{"$ref":"#/$defs/tier_key"}' "$(jq -c '.properties.pending_keys.items' "$FS_JOB")" "job pending_keys items"
+e2e_expect_equal '{"$ref":"#/$defs/tier_key"}' "$(jq -c '.properties.pending_intent.properties.key.items' "$FS_JOB")" "job pending_intent.key items"
+e2e_expect_equal "$FS_TIER_KEYS" "$(jq -c '."$defs".tier_key.enum | sort' "$FS_OUT_SCHEMA")" "outbox key items"
+# Source: plan 2.2 outbox kinds; Q11 leaves the push and PR kinds to phase 1e.
+e2e_expect_equal '["comment","label_add","label_remove","assign_label","pr_close"]' "$(jq -c '.properties.kind.enum' "$FS_OUT_SCHEMA")" "outbox kinds"
+e2e_expect_equal "$(jq -c '.properties.kind.enum' "$FS_OUT_SCHEMA")" "$(jq -c '.properties.pending_intent.properties.kind.enum' "$FS_JOB")" \
+  "job pending_intent.kind is the outbox item's kind"
+# Source: plan 2.2, the intent id pattern issue-N-j<seq>-<row>-<k>.
+e2e_expect_equal '^issue-[0-9]+-j[0-9]+-[0-9a-z]+-[0-9]+$' "$(jq -r '."$defs".job_intent_id.pattern' "$FS_OUT_SCHEMA")" "the outbox job intent id pattern"
+e2e_expect_equal "$(jq -r '."$defs".job_intent_id.pattern' "$FS_OUT_SCHEMA")" "$(jq -r '."$defs".intent_id.pattern' "$FS_JOB")" \
+  "the job's intent id pattern is the outbox item's job intent id"
+e2e_expect_equal "$(jq -r '."$defs".intent_id.pattern' "$FS_JOB")" "$(jq -r '.properties.confirmed_intent.pattern' "$FS_JOB")" \
+  "job confirmed_intent uses the intent id pattern"
+e2e_expect_equal '{"$ref":"#/$defs/intent_id"}' "$(jq -c '.properties.pending_intent.properties.id' "$FS_JOB")" "job pending_intent.id"
+e2e_expect_equal "$(jq -c '."$defs".state.enum' "$FS_JOB")" "$(jq -c '[.properties.state_at_write.enum[] | select(. != null)]' "$FS_OUT_SCHEMA")" \
+  "outbox state_at_write lists the job states"
+for FS_PART in event channel caller facts; do
+  e2e_expect_equal "$(jq -c --arg k "$FS_PART" '."$defs".pending_event.properties[$k]' "$FS_DIR_SCHEMA")" \
+    "$(jq -c --arg k "$FS_PART" '.properties.held_result.properties[$k]' "$FS_JOB")" "job held_result.$FS_PART is the stored event's"
+done
+# Source: plan 2.2, the widened channel pattern.
+e2e_expect_equal '^(terminal|launcher|session:.+|comment:[0-9]+)$' "$(jq -r '."$defs".pending_event.properties.channel.pattern' "$FS_DIR_SCHEMA")" "the stored event's channel pattern"
+e2e_expect_equal "$(jq -c '."$defs".judge.properties | {risk, surfaces, scope}' "$FS_DIR_SCHEMA")" "$(jq -c '.properties.intake.properties' "$FS_JOB")" \
+  "job intake holds the judge's risk, surfaces and scope"
+
+if [ "$FS_HAVE_JSONSCHEMA" = 1 ]; then
+  _flow_test_begin "factory schema: the phase 1b settings keys, their defaults and the values schema.json refuses (S11)"
+  e2e_new fs-settings-1b
+  e2e_describe "settings.json validates against schema.json; tiers.issueUpdate, flow.factory.labels, trustedPermission, trustedBots, intake.maxRounds and worker.stages.intake.timeoutSeconds have plan 2.5's defaults and judges.intakeModel none; schema.json refuses issueUpdate ask, trustedPermission triage or read, intake.maxRounds 0, a budget or tools key on the intake stage, an empty label and an unknown labels key"
+  cat > "$E2E_DIR/settings-check.py" <<'PY'
+import copy, json, sys
+sys.path[:] = [p for p in sys.path if p not in ("", ".")]
+import jsonschema
+P = sys.argv[1]
+schema = json.load(open(P + "/schema.json"))
+settings = json.load(open(P + "/settings.json"))
+V = jsonschema.Draft7Validator(schema)
+def check(label, doc):
+    print("%s %s" % (label, "invalid" if list(V.iter_errors(doc)) else "valid"))
+check("shipped", settings)
+f = settings["flow"]["factory"]
+print("issueUpdate", settings["tiers"].get("issueUpdate"))
+print("labels", json.dumps(f.get("labels"), sort_keys=True))
+print("trustedPermission", f.get("trustedPermission"))
+print("trustedBots", json.dumps(f.get("trustedBots")))
+print("intake", json.dumps(f.get("intake"), sort_keys=True))
+print("intake stage", json.dumps(f["worker"]["stages"].get("intake"), sort_keys=True))
+print("judges", json.dumps(f.get("judges")))
+def tiers(d):
+    return d["tiers"]
+def fac(d):
+    return d["flow"]["factory"]
+for label, edit in (
+        ("issueUpdate ask", lambda d: tiers(d).update(issueUpdate="ask")),
+        ("issueUpdate confirm", lambda d: tiers(d).update(issueUpdate="confirm")),
+        ("trustedPermission triage", lambda d: fac(d).update(trustedPermission="triage")),
+        ("trustedPermission read", lambda d: fac(d).update(trustedPermission="read")),
+        ("trustedPermission maintain", lambda d: fac(d).update(trustedPermission="maintain")),
+        ("trustedPermission admin", lambda d: fac(d).update(trustedPermission="admin")),
+        ("trustedBots one", lambda d: fac(d).update(trustedBots=["release-app[bot]"])),
+        ("trustedBots empty name", lambda d: fac(d).update(trustedBots=[""])),
+        ("maxRounds 0", lambda d: fac(d)["intake"].update(maxRounds=0)),
+        ("maxRounds 1", lambda d: fac(d)["intake"].update(maxRounds=1)),
+        ("intake unknown key", lambda d: fac(d)["intake"].update(maxQuestions=2)),
+        ("stage intake budget", lambda d: fac(d)["worker"]["stages"]["intake"].update(maxBudgetUsd=1)),
+        ("stage intake tools", lambda d: fac(d)["worker"]["stages"]["intake"].update(allowedTools=["Read"])),
+        ("stage intake timeout 0", lambda d: fac(d)["worker"]["stages"]["intake"].update(timeoutSeconds=0)),
+        ("stage intake timeout 600", lambda d: fac(d)["worker"]["stages"]["intake"].update(timeoutSeconds=600)),
+        ("intakeModel full id", lambda d: fac(d).update(judges={"intakeModel": "claude-sonnet-4-6"})),
+        ("intakeModel empty", lambda d: fac(d).update(judges={"intakeModel": ""})),
+        ("judges unknown key", lambda d: fac(d).update(judges={"specModel": "haiku"})),
+        ("label empty", lambda d: fac(d)["labels"].update(ready="")),
+        ("labels unknown key", lambda d: fac(d)["labels"].update(blocked="flow:blocked"))):
+    d = copy.deepcopy(settings)
+    try:
+        edit(d)
+    except (KeyError, AttributeError) as e:
+        print("%s no-key %s" % (label, e))
+        continue
+    check(label, d)
+PY
+  cd "$E2E_DIR" || exit 1
+  FS_SET_OUT=$(python3 "$E2E_DIR/settings-check.py" "$E2E_PLUGIN_DIR" 2>&1)
+  FS_SET_RC=$?
+  cd "$REPO_ROOT" || exit 1
+  printf '%s\n' "$FS_SET_OUT" >> "$E2E_ARTIFACT"
+  e2e_expect_equal 0 "$FS_SET_RC" "settings check exit status"
+  # Source of every expected line: plan 2.5 (types and defaults) and B1 step 4
+  # (the intake stage holds timeoutSeconds only, and intakeModel has no default).
+  for FS_LINE in "shipped valid" "issueUpdate journal" \
+      'labels {"inProgress": "flow:in-progress", "needsHuman": "flow:needs-human", "needsInfo": "flow:needs-info", "priorityHigh": "flow:priority-high", "ready": "flow:ready", "specReview": "flow:spec-review"}' \
+      "trustedPermission write" "trustedBots []" 'intake {"maxRounds": 3}' 'intake stage {"timeoutSeconds": 1800}' "judges null" \
+      "issueUpdate ask invalid" "issueUpdate confirm valid" "trustedPermission triage invalid" "trustedPermission read invalid" \
+      "trustedPermission maintain valid" "trustedPermission admin valid" "trustedBots one valid" "trustedBots empty name invalid" \
+      "maxRounds 0 invalid" "maxRounds 1 valid" "intake unknown key invalid" "stage intake budget invalid" "stage intake tools invalid" \
+      "stage intake timeout 0 invalid" "stage intake timeout 600 valid" "intakeModel full id valid" "intakeModel empty invalid" \
+      "judges unknown key invalid" "label empty invalid" "labels unknown key invalid"; do
+    if printf '%s\n' "$FS_SET_OUT" | grep -qxF -- "$FS_LINE"; then
+      _e2e_result pass "settings line: $FS_LINE"
+    else
+      _e2e_result fail "settings line: $FS_LINE"
+    fi
+  done
+else
+  _flow_test_begin "factory schema: the phase 1b settings keys, their defaults and the values schema.json refuses (S11)"
+  _flow_assert_pass "SKIP: python3 has no jsonschema; CI installs it from plugins/flow/requirements.txt"
+fi

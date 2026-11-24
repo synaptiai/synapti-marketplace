@@ -5,7 +5,8 @@
 Each entry below describes the change against 3.17.0.
 
 The flow factory is off by default and is not yet usable: it has a job engine
-but no runner, no GitHub writes and no worker sandbox. It stays off unless
+but no runner and no worker sandbox, and in this release the engine starts no
+judge or worker. It stays off unless
 `flow.factory.enabled` is `true` in your user settings; a repository's own
 settings cannot turn it on.
 
@@ -32,9 +33,20 @@ settings cannot turn it on.
   and `rebuild` exits 4 with `PERSON_ONLY_REFUSED`.
 - The `flow.factory.*` settings: `enabled`, `label`, `concurrency`,
   `maxOpenJobs`, `leaseSeconds`, `heartbeatSeconds`, `nextBudgetSeconds`,
-  `syncIntervalSeconds`, `maxRounds`, and under `worker` the `model`,
-  `extraEnv`, `mcpConfig` and each stage's `maxBudgetUsd`, `timeoutSeconds`
-  and `allowedTools`.
+  `syncIntervalSeconds`, `maxRounds`, `intake.maxRounds`, the label names
+  `labels.inProgress`, `labels.needsInfo`, `labels.needsHuman`,
+  `labels.priorityHigh`, `labels.specReview` and `labels.ready` (the last two
+  not read yet), `trustedPermission` and `trustedBots`,
+  `judges.intakeModel` (the intake judge's model; when it is not set, the
+  model the platform probe recorded, and with neither the launch is refused
+  with `model_unknown`), and under `worker` the `model`, `extraEnv`,
+  `mcpConfig` and each stage's `maxBudgetUsd`, `timeoutSeconds` and
+  `allowedTools` (the intake stage has `timeoutSeconds` only, which the
+  launcher passes to the intake judge).
+- `next` adds the `flow:needs-info` or `flow:needs-human` label (the names
+  `labels.needsInfo` and `labels.needsHuman` set) to the issue when its job
+  enters needs_info or needs_human, and removes it when the job leaves. Both
+  writes follow `tiers.issueUpdate`.
 - `schemas/v1/factory-job.schema.json` and
   `schemas/v1/factory-directive.schema.json` for job and directive files.
 - The engine checks the phase 0 probe record before it acts. With no record,
@@ -44,6 +56,36 @@ settings cannot turn it on.
 
 ### Changed
 
+- A new tier setting, `tiers.issueUpdate` (default `journal`), covers writes
+  to an issue or pull request that already exists: comments, reviews,
+  labels, closing an issue or pull request, reopening an issue, marking a
+  pull request ready, and edits of its body, title or reviewers, by gh
+  command, `gh api` or GraphQL (#355). Before, these ran with no tier
+  setting. `/flow:review` and `/flow:address` post this way, so their
+  reviews, comments and replies now write a breadcrumb by default; set to
+  `confirm`, they ask, and are refused in `claude -p` (eval runs and
+  triggers). A command that assigns and labels counts under both
+  `issueAssign` and `issueUpdate`.
+- In a repository where the flow factory runs, `tier-gate.sh` applies the
+  factory's own rules (#355). It asks before a person subcommand of
+  `flow-factory.sh` in the default permission mode and denies it in any
+  other mode, or when it is not the whole command; it lets a worker run only
+  `context --mode` and `await`; and it denies commands that name the factory
+  folder by its absolute path and, while the factory is enabled, comments
+  that name `/flow-factory`. A program running as you can still post such a
+  comment with your GitHub token, and the engine counts it as yours; a later release
+  is planned to add a worker sandbox that would keep the token from a
+  worker's shell commands, and it would not cover other programs running as
+  you. The factory's
+  engine resolves each tier key as the strictest of four sources rather than
+  the first, and counts a base branch it cannot fetch as `confirm`.
+  `references/three-tier-safety.md` describes both.
+- In a factory worker session (`FLOW_FACTORY_DIRECTIVE` set and not
+  empty), `verify-task-completion.sh` treats
+  `testing.taskCompletionGate: block`, the default, as `warn`: it prints the
+  warning and lets the completion through (#355). It keeps no count and
+  writes nothing. `off` still checks nothing, and outside a worker `block`
+  refuses as before.
 - `flow-factory.sh` subcommands other than `wait`, `run`, `question`,
   `runner` and `await` no longer exit 5 with `FACTORY_REFUSED=not_built`.
   With no probe record the wrapper prints

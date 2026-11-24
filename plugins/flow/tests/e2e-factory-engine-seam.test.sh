@@ -85,8 +85,10 @@ se_fixture() {
 
 # The stand-in next module (on a plugin copy) for E4 to E6. It shows which
 # seam the engine module sees, which _flow_factory file and entry script run,
-# the real choose() for a queued job on sync_tick (it reads dependency_open,
-# unbuilt, and slot_free, built), and the real choose_creation(); with
+# the real choose() for a build job on question_stored (it reads only
+# interactive_presence, which phase 1c builds; phase 1b made dependency_open
+# and creation_allowed built, plan 3.3 "The fence test"), and the real
+# choose_creation() with a creation_allowed callable that returns false; with
 # argument `refuse` it raises _flow_factory.Refused, which only the one
 # loaded copy of _flow_factory that main catches turns into exit 5.
 SE_NEXT='import json, os, sys
@@ -108,9 +110,9 @@ def cmd_next(a):
     print("flow_factory=" + os.path.realpath(sys.modules["_flow_factory"].__file__))
     print("entry=" + os.path.basename(sys.modules["__main__"].__file__))
     t = T.load_table()
-    job = {"key": "issue-7-j1", "issue": 7, "state": "queued", "attempt": 0, "holds_slot": False}
-    print("decision=" + show(T.choose(t, job, "sync_tick", T.Context(built={"slot_free": lambda: True}))))
-    print("creation=" + show(T.choose_creation(t, "issue-7-j1", T.Context())))
+    job = {"key": "issue-7-j1", "issue": 7, "state": "build", "attempt": 0, "holds_slot": True}
+    print("decision=" + show(T.choose(t, job, "question_stored", T.Context(confirm_writes=lambda w: []))))
+    print("creation=" + show(T.choose_creation(t, "issue-7-j1", T.Context(built={"creation_allowed": lambda: False}))))
     return 0'
 
 # se_next_copy — a plugin copy whose bin/_flow_factory_next.py is SE_NEXT,
@@ -161,6 +163,19 @@ fe_e "$(se_fixture unknown '{"unbuilt":{"*":{"no_such_fact":true}}}')" wait
 e2e_expect_equal "2 SEAM_REFUSED=no_such_fact provider=unknown_key" "$E2E_RC $E2E_OUT" "an unknown fact under unbuilt"
 fe_e "$(se_fixture built-input '{"built_inputs":{"tree_dirty":true}}')" wait
 e2e_expect_equal "2 SEAM_REFUSED=tree_dirty provider=built" "$E2E_RC $E2E_OUT" "a built fact outside the two under built_inputs"
+# R12 and R29 (plan B14 step 0): a 1b fact under unbuilt is built now, and
+# the confirm input of blocking_write_confirm comes from the tier resolver,
+# never from derived_inputs.confirm_keys (plan B13 step 3).
+fe_e "$(se_fixture r12 '{"unbuilt":{"*":{"dependency_open":false}}}')" wait
+e2e_expect_equal "2 SEAM_REFUSED=dependency_open provider=built" "$E2E_RC $E2E_OUT" "a 1b fact under unbuilt (R12)"
+fe_e "$(se_fixture r12-creation '{"unbuilt":{"issue-8-j1":{"creation_allowed":true}}}')" wait
+e2e_expect_equal "2 SEAM_REFUSED=creation_allowed provider=built" "$E2E_RC $E2E_OUT" "creation_allowed under unbuilt (R12)"
+fe_e "$(se_fixture r29 '{"derived_inputs":{"confirm_keys":["push"]}}')" wait
+e2e_expect_equal "2 SEAM_REFUSED=blocking_write_confirm provider=derived" "$E2E_RC $E2E_OUT" "derived_inputs.confirm_keys (R29)"
+fe_e "$(se_fixture r93 '{"bodies":{"judge:intake":"judge_accept"}}')" wait
+e2e_expect_equal "2 SEAM_REFUSED=bodies:judge:intake provider=built" "$E2E_RC $E2E_OUT" "a seam body for the intake judge (R93, B14 step 11)"
+fe_e "$(se_fixture prepush '{"derived_inputs":{"prepush_fails":true}}')" wait
+e2e_expect_equal "5 FACTORY_REFUSED=not_built" "$E2E_RC $E2E_OUT" "derived_inputs.prepush_fails stays (1e)"
 # Control: the two built inputs a seam may give are accepted, and main runs.
 fe_e "$(se_fixture allowed '{"built_inputs":{"group_gone":true,"unvouched_session_action":false}}')" wait
 e2e_expect_equal "5 FACTORY_REFUSED=not_built" "$E2E_RC $E2E_OUT" "group_gone and unvouched_session_action under built_inputs"
@@ -216,8 +231,8 @@ e2e_expect_line "entry=engine_under_test.py"
 
 _flow_test_begin "factory seam: the fixture's values reach the real choose() through the real dispatch, and only under E (E4, E6)"
 fe_new se-choose
-# Source of the expected values: the shipped seam/ordinary.json for the seam line; the docs checker (check_transitions.Checker.top_rows over dependency_open false, slot_free true, both derived facts false) for the row; plan 2.11 (outside a seam a pair reading an unbuilt fact is Blocked; creation row 1 is fenced through creation_allowed, phase 1b; under default_unbuilt false creation_allowed is false).
-e2e_describe "with ordinary.json the stand-in next module sees exactly that seam, and choose for a queued job on sync_tick returns the row the docs checker picks; the direct form, without E, sees no seam and is Blocked on dependency_open"
+# Source of the expected values: the shipped seam/ordinary.json for the seam line; the docs checker (check_transitions.Checker.top_rows over interactive_presence false, both derived facts false) for the row; plan 2.11 (outside a seam a pair reading an unbuilt fact is Blocked); plan 3.3 "The fence test" (re-pointed to a 1c fact, since 1b builds dependency_open and creation_allowed); plan 5.3 Fact inputs (creation_allowed is read from its callable with or without a seam, so a callable returning false gives NoMove).
+e2e_describe "with ordinary.json the stand-in next module sees exactly that seam, and choose for a build job on question_stored returns the row the docs checker picks; the direct form, without E, sees no seam and is Blocked on interactive_presence, phase 1c; creation with a false creation_allowed callable is NoMove in both"
 e2e_repo main
 fe_py "import sys, json, copy
 sys.dont_write_bytecode = True
@@ -226,11 +241,10 @@ import check_transitions as ct
 data = json.load(open('$E2E_PLUGIN_DIR/references/factory-transitions.json'))
 c = ct.Checker(copy.deepcopy(data))
 assert c.schema(), c.errors
-c.nonterm = ['queued']
+c.nonterm = ['build']
 c.coverage()
-rows, facts, deps = c.pair_info[('queued', 'sync_tick')]
+rows, facts, deps = c.pair_info[('build', 'question_stored')]
 a = dict((f, False) for f in facts)
-a['slot_free'] = True
 top = c.top_rows(rows, a)
 assert len(top) == 1, top
 print('Winner row=%s to=%s' % (top[0]['id'], top[0].get('to')))
@@ -250,25 +264,24 @@ fe_direct next --executor headless
 e2e_expect_equal "0" "$E2E_RC" "exit status of the direct form"
 e2e_expect_line "seam=null"
 e2e_expect_line "entry=_flow_factory.py"
-e2e_expect_line "decision=Blocked fact=dependency_open phase=1b missing=False"
-e2e_expect_line "creation=Blocked fact=creation_allowed phase=1b missing=False"
+e2e_expect_line "decision=Blocked fact=interactive_presence phase=1c missing=False"
+e2e_expect_line "creation=NoMove"
 e2e_expect_err_lacks "SEAM_MISSING"
 
 _flow_test_begin "factory seam: an unbuilt fact the fixture gives no value for prints SEAM_MISSING to stderr (E5)"
 fe_new se-missing
-# Source of the expected values: plan 2.11 seam item 1 (without default_unbuilt an unnamed unbuilt fact the pair reads makes the pair Blocked under E too, and E writes SEAM_MISSING=<fact> state=<s> event=<e> to stderr); creation row 1's event is issue_labelled and it has no from state (transitions.json creation).
-e2e_describe "an empty fixture: choose for queued on sync_tick is Blocked with missing true and stderr has the SEAM_MISSING line for dependency_open; choose_creation gives the line for creation_allowed with state=none; a fixture naming dependency_open for this job only gives no SEAM_MISSING line for that pair"
+# Source of the expected values: plan 2.11 seam item 1 (without default_unbuilt an unnamed unbuilt fact the pair reads makes the pair Blocked under E too, and E writes SEAM_MISSING=<fact> state=<s> event=<e> to stderr); plan 3.3 "The fence test" (a 1c fact, since 1b builds dependency_open and creation_allowed); plan 5.3 Fact inputs (creation is decided by its callable, so it never reads the seam).
+e2e_describe "an empty fixture: choose for build on question_stored is Blocked with missing true and stderr has the SEAM_MISSING line for interactive_presence; creation reads no seam; a fixture naming interactive_presence for this job only (and held_question for another job) gives no SEAM_MISSING line"
 e2e_repo main
 se_next_copy
 fe_e "$(se_fixture empty '{}')" next --executor headless
 e2e_expect_equal "0" "$E2E_RC" "exit status"
 e2e_expect_line "seam={}"
-e2e_expect_line "decision=Blocked fact=dependency_open phase=1b missing=True"
-e2e_expect_line "creation=Blocked fact=creation_allowed phase=1b missing=True"
-e2e_expect_equal "SEAM_MISSING=dependency_open state=queued event=sync_tick
-SEAM_MISSING=creation_allowed state=none event=issue_labelled" "$E2E_ERR" "the whole of stderr"
-fe_e "$(se_fixture job-only '{"unbuilt":{"issue-7-j1":{"dependency_open":false},"issue-8-j1":{"creation_allowed":true}}}')" next --executor headless
+e2e_expect_line "decision=Blocked fact=interactive_presence phase=1c missing=True"
+e2e_expect_line "creation=NoMove"
+e2e_expect_equal "SEAM_MISSING=interactive_presence state=build event=question_stored" "$E2E_ERR" "the whole of stderr"
+fe_e "$(se_fixture job-only '{"unbuilt":{"issue-7-j1":{"interactive_presence":false},"issue-8-j1":{"held_question":true}}}')" next --executor headless
 e2e_expect_equal "0" "$E2E_RC" "exit status with a per-job fixture"
-e2e_expect_no_line "decision=Blocked fact=dependency_open phase=1b missing=True"
-e2e_expect_line "creation=Blocked fact=creation_allowed phase=1b missing=True"
-e2e_expect_equal "SEAM_MISSING=creation_allowed state=none event=issue_labelled" "$E2E_ERR" "stderr with dependency_open given for issue-7-j1 only"
+e2e_expect_no_line "decision=Blocked fact=interactive_presence phase=1c missing=True"
+e2e_expect_line "creation=NoMove"
+e2e_expect_equal "" "$E2E_ERR" "stderr with interactive_presence given for issue-7-j1"

@@ -359,7 +359,7 @@ TESTS (not part of what a user runs)
 | `PostToolUseFailure` (Bash) | `record-quality-run` | All current | Documented event ("after a tool call fails"): records the failed run (`failed: true`, exit code from the `Exit code N` line of `error`) so a failing test run reaches the ledger; deduped with PostToolUse on `tool_use_id` |
 | `Stop` | `flow-goal-stop`, `reply-style-check` | All current | Documented event. `flow-goal-stop` ships in `warn` mode: the reason says plainly that the stop was ALLOWED; `block` and `evaluator-loop` modes are opt-in and execute verification commands only for goals in the user-local trust ledger, with the user's `PYTHONPATH` and `PYTHONSAFEPATH`, not the ones Flow hardens for its own Python. `reply-style-check` runs only when `replyStyle.enabled` is true and never blocks |
 | `SessionEnd` | `session-end-learn`, `session-end-state` | All current | Documented event |
-| `TaskCompleted` | `verify-task-completion` | **v2.1.33+** | Documented event (`task_id`, `task_subject`, `task_description`, `teammate_name`, `team_name`). Exit 2 blocks completion while files changed after the last passing quality run; `testing.taskCompletionGate` selects `block\|warn\|off` |
+| `TaskCompleted` | `verify-task-completion` | **v2.1.33+** | Documented event (`task_id`, `task_subject`, `task_description`, `teammate_name`, `team_name`). Exit 2 blocks completion while files changed after the last passing quality run; `testing.taskCompletionGate` selects `block\|warn\|off`. In a factory worker session (`FLOW_FACTORY_DIRECTIVE` set and not empty), `block` acts as `warn`; `off` stays off |
 | `TeammateIdle` | `nudge-idle-teammate` | **v2.1.33+** | Payload fields treated as best-effort |
 
 `TaskCompleted` and `TeammateIdle` were introduced alongside agent-team support in Claude Code v2.1.33. The TaskCompleted payload is documented (https://code.claude.com/docs/en/hooks) and `verify-task-completion.sh` reads the documented `task_subject` / `task_description` fields, falling back to the legacy `.task.subject` shape. `TeammateIdle` fields (`.teammate.id`, `.idle_seconds`) remain best-effort: the hook exits 0 silently when they are absent. The `v2.1.33+` floor only matters for installs running an older Claude Code build.
@@ -467,7 +467,7 @@ Three-tier action classification:
 | Tier | Actions | Behavior |
 |------|---------|----------|
 | **Tier 1** (Autonomous) | Commits, branches, edits | Execute without asking |
-| **Tier 2** (Journal) | Push, PR creation, issue creation, issue assignment | By default, execute and write one breadcrumb to the git-ignored auto-log trail. Each is a `tiers.*` setting (`push`, `prCreate`, `issueCreate`, `issueAssign`) that also takes `autonomous` or `confirm` |
+| **Tier 2** (Journal) | Push, PR creation, issue creation, issue assignment, and comments, reviews, labels, closing and edits on an existing issue or PR | By default, execute and write one breadcrumb to the git-ignored auto-log trail. Each is a `tiers.*` setting (`push`, `prCreate`, `issueCreate`, `issueAssign`, `issueUpdate`) that also takes `autonomous` or `confirm` |
 | **Tier 3** (Confirm) | Merge, release, pushing or deleting a tag | Always ask; `tiers.merge` and `tiers.release` cannot go below `confirm` |
 
 Four checks apply these settings. Each covers what the one before it does not:
@@ -564,7 +564,7 @@ Example project settings in `.claude/settings.flow.json` (`tiers` is applied to 
 {
   "agentTeams": false,
   "agentTeamModel": "sonnet",
-  "tiers": { "push": "journal", "prCreate": "journal", "issueAssign": "journal", "issueCreate": "journal", "merge": "confirm", "release": "confirm" },
+  "tiers": { "push": "journal", "prCreate": "journal", "issueAssign": "journal", "issueUpdate": "journal", "issueCreate": "journal", "merge": "confirm", "release": "confirm" },
   "conventions": { "commitTypes": ["feat", "fix", "docs", "..."] },
   "merge": { "strategy": "squash", "deleteBranch": true },
   "lsp": { "enabled": true, "timeout": 5000, "diagnosticsAsQuality": true },

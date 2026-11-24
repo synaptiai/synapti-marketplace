@@ -23,6 +23,15 @@
 #                    arguments to claude-launches.log as claude_platform.py
 #                    does. This mode runs no Python, so a scenario can remove
 #                    the recorded interpreter while it sleeps.
+#   judge-result     when present and --output-format json is among the
+#                    arguments (a judge started by bin/flow-judge.sh; a worker
+#                    asks for stream-json): append one line to
+#                    claude-launches.log (the arguments, the multi-line
+#                    system prompt joined into that one line), print line n
+#                    of the file unchanged for launch n (nothing when the file
+#                    has fewer lines), and exit 0. Checked before
+#                    worker-result. tests/lib/factory-e2e.sh fe_judge_says and
+#                    fe_judge_raw write it.
 here=$(cd "$(dirname "$0")" && pwd)
 
 if [ "${1:-}" = --version ] && [ "$#" -eq 1 ]; then
@@ -45,6 +54,21 @@ printf '%s\n' "$@" > "$here/claude-argv-$n.txt"
 env -0 | tr '\0' '\n' > "$here/claude-env-$n.txt"
 printf '%s\n' "$$" > "$here/claude-pid-$n"
 cat > "$here/claude-stdin-$n.txt"
+
+judge=""
+if [ -f "$here/judge-result" ]; then
+  prev=""
+  for a in "$@"; do
+    [ "$prev" = --output-format ] && [ "$a" = json ] && judge=1
+    prev="$a"
+  done
+fi
+if [ -n "$judge" ]; then
+  printf '%s\n' "$*" | tr '\n' ' ' >> "$here/claude-launches.log"
+  printf '\n' >> "$here/claude-launches.log"
+  sed -n "${n}p" "$here/judge-result"
+  exit 0
+fi
 
 if [ ! -f "$here/worker-result" ]; then
   exec python3 -I "$here/claude_platform.py" "$@" < "$here/claude-stdin-$n.txt"

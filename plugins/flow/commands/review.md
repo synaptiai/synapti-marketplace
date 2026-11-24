@@ -2432,6 +2432,6 @@ End with what was done, what was verified and how (the command and what it print
 | Multi-agent dispatch (Path B: 5 agents + holdout, 4 agents on someone else's pull request) or paired-reviewer dispatch (Path A: 12 invocations, 10 on someone else's pull request, plus up to 10 challenge prompts, 8 without the test-runner facet) | 1 | Autonomous; Tasks tracked |
 | Holdout validation (skill, parallel) | 1 | Autonomous |
 | Self-review fix-forward (when reviewing own PR) | 1 | File edits + commits autonomous; push is Tier 2 and follows `tiers.push` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |
-| `gh pr review --comment / --request-changes / --approve` | 2 | Runs without asking; no tier setting covers it |
-| `gh pr comment` (self-review `FLOW_RESOLUTION_CYCLE` marker) | 2 | Runs without asking; no tier setting covers it |
+| `gh pr review --comment / --request-changes / --approve` | 2 | Follows `tiers.issueUpdate` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks, which `claude -p` refuses) |
+| `gh pr comment` (self-review `FLOW_RESOLUTION_CYCLE` marker) | 2 | Follows `tiers.issueUpdate` (default `journal`; `confirm` asks, which `claude -p` refuses) |
 | Follow-up issue creation (cosmetic P3 in untouched files, external PR review only) | 2 | Follows `tiers.issueCreate` (default journal: run and write one breadcrumb to the git-ignored auto-log trail; autonomous runs; confirm asks) |

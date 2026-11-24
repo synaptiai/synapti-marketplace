@@ -26,6 +26,11 @@ call runs is refused, with the same reason, when the call reaches that file.
 --step answer writes answer.json beside the hold the session file names,
 through answer.json.tmp, and refuses a link at either name the same way.
 
+Every probe mode but --verify-record, --export and --step await first prints
+one warning line when the engine's tiers.issueUpdate resolves to confirm
+(probe_warning), or, when origin's default branch cannot be read and no other
+source gives confirm, a line saying the project setting was not checked.
+
 `probe --verify-record <file>` checks a probe record:
 
   - it validates against schemas/v1/factory-probes.schema.json;
@@ -258,19 +263,27 @@ leave and their stream-json events:
     is deferred to phase 1d.
   - P2: the 9 person subcommands in 8 wrapped forms (plain, env -u, bash -c,
     timeout N, nohup, sh -c, python3 <copy>/bin/_flow_factory.py, a path
-    held in a variable) and the worker forms (context --mode, question get,
-    await) run in one worker. In the copy, tier-gate.sh runs inside a
-    recording hook, a stand-in deny rule sits beside it, Stop, SessionEnd and
-    TaskCompleted each get a recording hook, and bin/flow-factory.sh and
+    held in a variable) and the two worker forms (context --mode, await) run
+    in one worker whose environment names FLOW_FACTORY_JOB and
+    FLOW_FACTORY_DIRECTIVE, so tier-gate's own worker rule applies. In the
+    copy, tier-gate.sh, flow-goal-stop.sh (Stop) and
+    verify-task-completion.sh (TaskCompleted) each run inside a recording
+    hook, SessionEnd gets a recording hook of its own, its settings.json
+    sets flow.goals.stopHookEnforcement to block, and bin/flow-factory.sh and
     bin/_flow_factory.py are canaries that log their arguments. A form
-    counts as denied only when a hook refused that exact command and no
-    canary ran; a form never run is not counted. All 72 denied is deferred to
-    phase 1b, since the rule that fired is a stand-in; any form let through
-    is no-go and named. AskUserQuestion must be absent from the init event's
-    tools, and the worker must create no .claude file under a config-loading
-    path (the others it creates are listed for the allowlist). Stop's caps
-    and TaskCompleted's refusals are deferred to phase 1b, SessionEnd's
-    writes to the per-job state dir to phase 1c.
+    counts as denied only when tier-gate refused that exact command and no
+    canary ran; a form never run is not counted. All 72 denied is go; any
+    form let through is no-go and named. The worker's worktree has an active
+    goal committed on main whose one criterion has no verification command,
+    which the Stop hook blocks on, and five committed files the worker
+    edits, marking a task completed after each, before it stops; the hooks
+    keep their state under the probe area (FLOW_STATE_DIR). stop_caps and
+    task_completed_refusals are counted from the recorder's log
+    (p2_stop_caps, p2_task_completed_refusals). AskUserQuestion must be
+    absent from the init event's tools, and the worker must create no
+    .claude file under a config-loading path (the others it creates are
+    listed for the allowlist). SessionEnd's writes to the per-job state dir
+    are deferred to phase 1c.
   - P4: a scratch project that enables flow from the marketplace runs once
     without --plugin-dir, which must show the project's flow loading (else a
     second flow could not have shown, and the probe is not_run), and once
@@ -413,8 +426,21 @@ that session, `--step` wait, woke, p14, wait-question, answer and record:
     --step woke gives that mode; a session whose inputs give another mode,
     or change mode on the way, records them not_run naming the mode reported
     first, the input it was last reported from, and the mode it changed to.
-    tier-gate's handling of each mode is deferred to phase 1b, the
-    executor's parts to phase 1c. A session in one mode keeps the other
+    The setup also records a probe intent (probe-p9-<n>, an item in the P9
+    probe folder's outbox that nothing ever runs) and makes a copy of flow
+    whose tier-gate runs inside the recording hook, logging to the session's
+    tier-gate.jsonl, with its own engine; the capture plugin also records,
+    for each Bash PostToolUse and PostToolUseFailure, whether the engine
+    answered (INTENT_PROBE or FACTORY_REFUSED in the hook input). The
+    session runs confirm <probe intent> and approve-spec, each as the whole
+    command. tier_gate_by_mode is go when, in default mode, tier-gate asked
+    for each with a reason showing its arguments (the intent's sha256; the
+    spec hash and "spec file: none recorded") and the engine then answered,
+    and, in auto mode, tier-gate denied each and the engine never answered;
+    each session keeps its mode's finding in the interactive state with the
+    claude version it ran on, and the part is not_run until both modes are
+    recorded on the claude version of the session that records it. The executor's parts are
+    deferred to phase 1c. A session in one mode keeps the other
     mode's parts. Its output names P14's result, or lists P14 under running
     while the p14 step's worker has not ended; that step writes its own
     entry when it does. A p14 step whose process ended without writing its
@@ -4421,7 +4447,7 @@ STEPS_PROMPT = ("Do the steps below, in order, and nothing else. `RUN: <command>
 # (budget limit in USD, turn limit, time limit in seconds) of each run.
 P1_RUN = (1.0, 30, 900)
 P1_WRITE_RUN = (0.25, 8, 300)
-P2_RUN = (4.0, 90, 1200)
+P2_RUN = (1.5, 120, 1200)
 P4_RUN = (0.10, 1, 300)
 P5_FIRST = (0.50, 12, 300)
 P5_TURNS = (0.50, 2, 300)
@@ -4451,6 +4477,11 @@ P1_FALLBACKS = {
 }
 RUN_FALLBACK = P1_FALLBACKS["runs"]
 P2_FALLBACK = "warn-only hooks; the engine refusal stays; residual risk"
+# Design probes P2 fallback: factory-mode warn behaviour for the hooks.
+P2_FALLBACKS = {
+    "stop_caps": "flow-goal-stop.sh warns instead of blocking in a factory worker",
+    "task_completed_refusals": "verify-task-completion.sh warns instead of refusing in a factory worker",
+}
 P4_FALLBACK = "a --settings override, else refuse such repositories"
 P5_FALLBACKS = {
     "session_id": "every relaunch is fresh: a new --session-id and the first-launch prompt, after the engine "
@@ -4791,15 +4822,23 @@ elif [ $# -gt 0 ]; then
   out=$(printf '%s' "$input" | "$@"); rc=$?
 fi
 decision=none
+event=$(printf '%s' "$input" | {jq} -r '.hook_event_name // empty' 2>/dev/null)
 if [ "$rc" = 2 ]; then
   decision=deny
 else
   d=$(printf '%s' "$out" | {jq} -r '.hookSpecificOutput.permissionDecision // empty' 2>/dev/null)
+  # A Stop hook decides with a top-level decision, block or approve.
+  if [ -z "$d" ] && [ "$event" = Stop ]; then
+    d=$(printf '%s' "$out" | {jq} -r 'if .decision == "block" or .decision == "approve" then .decision else empty end' 2>/dev/null)
+  fi
   [ -n "$d" ] && decision=$d
 fi
-printf '%s' "$input" | {jq} -c --arg label "$label" --arg rc "$rc" --arg decision "$decision" \\
+# Only a tier-gate entry carries the reason its hook gave, or null.
+reason=$(printf '%s' "$out" | {jq} -c '.hookSpecificOutput.permissionDecisionReason // null' 2>/dev/null)
+case "$reason" in '"'*) ;; *) reason=null ;; esac
+printf '%s' "$input" | {jq} -c --arg label "$label" --arg rc "$rc" --arg decision "$decision" --argjson reason "$reason" \\
   '{{event: .hook_event_name, label: $label, command: (.tool_input.command // null),
-    rc: ($rc | tonumber), decision: $decision}}' \\
+    rc: ($rc | tonumber), decision: $decision}} + (if $label == "tier-gate" then {{reason: $reason}} else {{}} end)' \\
   >> {log}
 [ -n "$out" ] && printf '%s\\n' "$out"
 if [ -n "$err" ]; then
@@ -4807,19 +4846,6 @@ if [ -n "$err" ]; then
   rm -f "$err"
 fi
 exit "$rc"
-"""
-
-STANDIN_DENY = """#!/bin/bash
-# [flow] Factory probe stand-in for the deny rule tier-gate gains in phase 1b:
-# it refuses any command that names the factory engine together with one of
-# its person subcommands, whatever wraps it.
-cmd=$({jq} -r '.tool_input.command // empty')
-if printf '%s' "$cmd" | grep -Eq 'flow-factory\\.sh|_flow_factory\\.py' \\
-   && printf '%s' "$cmd" | grep -Eq '(^|[^A-Za-z0-9_-])({words})([^A-Za-z0-9_-]|$)'; then
-  {jq} -cn '{{hookSpecificOutput: {{hookEventName: "PreToolUse", permissionDecision: "deny",
-    permissionDecisionReason: "a person subcommand of flow-factory.sh (factory probe stand-in rule)"}}}}'
-fi
-exit 0
 """
 
 CANARY = """#!/bin/bash
@@ -4859,26 +4885,43 @@ def p2_forms(ff, timeout_name):
                        "var": f"FF={q(ff)}; \"$FF\" {sub} {tok}"}[key]
             forms[tok] = {"kind": "person", "subcommand": sub, "form": name, "command": command,
                           "ran_as": f"{sub} {tok}"}
-    for tok, args in (("p2-context", "context --mode"), ("p2-question", "question get p2-question"),
-                      ("p2-await", "await p2-await --max-seconds 100")):
+    # The two worker forms of design probes P2 (R51: question get is not one).
+    for tok, args in (("p2-context", "context --mode"), ("p2-await", "await p2-await --max-seconds 100")):
         forms[tok] = {"kind": "worker", "subcommand": args.split()[0], "form": args, "command": f"{q(ff)} {args}",
                       "ran_as": args}
     return forms
 
 
+def wrap_hook(hooks, event, script, label, matcher=None):
+    """Run the plugin hook <script> for event inside the recording hook,
+    under label, in its own place in hooks.json. matcher, when given, is the
+    entry's matcher. Refused when the plugin has no such hook."""
+    root = "${CLAUDE_PLUGIN_ROOT}/hooks/scripts"
+    found = False
+    for entry in hooks.get(event, []):
+        if matcher is not None and entry.get("matcher") != matcher:
+            continue
+        for h in entry.get("hooks", []):
+            if h.get("command", "").endswith(f"/hooks/scripts/{script}"):
+                h["command"] = f'"{root}/factory-probe-hook.sh" {label} "{root}/{script}"'
+                found = True
+    if not found:
+        raise Refused(f"hook_not_in_hooks (the plugin's hooks.json has no {script} for {event})")
+
+
 def p2_copy(area, ev, tools):
-    """The plugin copy P2's worker loads: tier-gate.sh runs inside the
-    recording hook, the stand-in deny rule is added beside it, Stop,
-    SessionEnd and TaskCompleted each get a recording hook, and
-    bin/flow-factory.sh and bin/_flow_factory.py are canaries. The plugin's
-    own files are not touched."""
+    """The plugin copy P2's worker loads: tier-gate.sh (Bash), flow-goal-stop.sh
+    (Stop) and verify-task-completion.sh (TaskCompleted) run inside the
+    recording hook, labelled tier-gate, goal-stop and task-completed;
+    SessionEnd gets a recording hook of its own; settings.json sets
+    flow.goals.stopHookEnforcement to block (the default, warn, never
+    blocks); and bin/flow-factory.sh and bin/_flow_factory.py are canaries.
+    The plugin's own files are not touched."""
     copy = copy_plugin(os.path.join(area, "plugin"))
     q = shlex.quote
     scripts = os.path.join(copy, "hooks", "scripts")
     hook_log, ran_log = os.path.join(ev, "hooks.jsonl"), os.path.join(ev, "ran.log")
     write_exec(os.path.join(scripts, "factory-probe-hook.sh"), PROBE_HOOK.format(jq=q(tools["jq"]), log=q(hook_log)))
-    write_exec(os.path.join(scripts, "factory-probe-standin-deny.sh"),
-               STANDIN_DENY.format(jq=q(tools["jq"]), words="|".join(PERSON_SUBCOMMANDS)))
     write_exec(os.path.join(copy, "bin", "flow-factory.sh"), CANARY.format(log=q(ran_log)))
     with open(os.path.join(copy, "bin", "_flow_factory.py"), "w", encoding="utf-8") as f:
         f.write(PY_CANARY.format(log=repr(ran_log)))
@@ -4886,29 +4929,145 @@ def p2_copy(area, ev, tools):
     with open(conf_path, encoding="utf-8") as f:
         conf = json.load(f)
     hooks = conf.setdefault("hooks", {})
-    root = "${CLAUDE_PLUGIN_ROOT}/hooks/scripts"
-    recorder = f'"{root}/factory-probe-hook.sh"'
-    found = False
-    for entry in hooks.get("PreToolUse", []):
-        if entry.get("matcher") != "Bash":
-            continue
-        for h in entry.get("hooks", []):
-            if h.get("command", "").endswith("/hooks/scripts/tier-gate.sh"):
-                h["command"] = f'{recorder} tier-gate "{root}/tier-gate.sh"'
-                found = True
-        if found:
-            entry["hooks"].append({"type": "command",
-                                   "command": f'{recorder} standin-deny "{root}/factory-probe-standin-deny.sh"'})
-            break
-    if not found:
-        raise Refused("tier_gate_not_in_hooks (the plugin's hooks.json has no tier-gate.sh for Bash)")
-    for event in ("Stop", "SessionEnd", "TaskCompleted"):
-        entry = {"hooks": [{"type": "command", "command": f"{recorder} event"}]}
-        if event != "Stop":
-            entry["matcher"] = ""
-        hooks.setdefault(event, []).append(entry)
+    wrap_hook(hooks, "PreToolUse", "tier-gate.sh", "tier-gate", matcher="Bash")
+    wrap_hook(hooks, "Stop", "flow-goal-stop.sh", "goal-stop")
+    wrap_hook(hooks, "TaskCompleted", "verify-task-completion.sh", "task-completed")
+    hooks.setdefault("SessionEnd", []).append(
+        {"matcher": "", "hooks": [{"type": "command",
+                                   "command": '"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/factory-probe-hook.sh" event'}]})
     write_json(conf_path, conf)
+    settings_path = os.path.join(copy, "settings.json")
+    with open(settings_path, encoding="utf-8") as f:
+        settings = json.load(f)
+    settings.setdefault("flow", {}).setdefault("goals", {})["stopHookEnforcement"] = "block"
+    write_json(settings_path, settings)
     return copy, hook_log, ran_log
+
+
+# P2's worker: an active goal its Stop hook blocks on without trust (a
+# criterion with no verification command), committed on main, and five files
+# it edits, each holding the word STEPS_PROMPT's EDIT step changes.
+P2_GOAL_PATH = ".flow/goals/factory-probe-p2.goal.yaml"
+P2_GOAL = """apiVersion: flow.synapti.ai/v1
+kind: FlowGoal
+metadata:
+  id: factory-probe-p2
+  created_at: '2026-11-20T00:00:00Z'
+scope:
+  repo: flow-factory-probe/scratch
+  branch: main
+objective:
+  outcome: The factory probe P2 worker's Stop hook blocks on this goal.
+  acceptance_criteria:
+    - id: AC1
+      text: The probe never records evidence for this criterion.
+      status: pending
+evaluator:
+  type: deterministic
+lifecycle:
+  status: active
+"""
+P2_EDIT_FILES = tuple(f"factory-probe-p2-{i}.txt" for i in range(1, 6))
+# The worker's environment names the factory variables tier-gate's worker
+# rule reads; neither is read for anything else in the probe.
+P2_JOB = "issue-0-j1"
+# What B16's warn fallback would add to a hook: the variable it is keyed on.
+FACTORY_FALLBACK_MARK = "FLOW_FACTORY_DIRECTIVE"
+
+
+def p2_setup(area, ev, tools):
+    """P2's plugin copy (p2_copy), its worktree <area>/work with the goal and
+    the five files committed on main, and the worker's environment: the two
+    factory variables and FLOW_STATE_DIR=<area>/state, where the Stop hook's
+    block counter and the quality ledger are kept instead of the person's own
+    state folder."""
+    copy, hook_log, ran_log = p2_copy(area, ev, tools)
+    files = [(P2_GOAL_PATH, P2_GOAL)] + [(name, "original\n") for name in P2_EDIT_FILES]
+    work = scratch_worktree(tools["git"], os.path.join(area, "work"), files)
+    state = os.path.join(area, "state")
+    os.makedirs(state, mode=0o700)
+    env = {"FLOW_FACTORY_JOB": P2_JOB, "FLOW_FACTORY_DIRECTIVE": os.path.join(area, "directive.json"),
+           "FLOW_STATE_DIR": state}
+    return {"copy": copy, "hook_log": hook_log, "ran_log": ran_log, "work": work, "state": state, "env": env}
+
+
+def p2_fallback(copy, script):
+    """Whether the copy's hook script has the factory warn fallback, read as
+    its text naming the variable that fallback is keyed on."""
+    try:
+        with open(os.path.join(copy, "hooks", "scripts", script), encoding="utf-8") as f:
+            return FACTORY_FALLBACK_MARK in f.read()
+    except OSError:
+        return False
+
+
+def p2_cap(copy, work, worker_env):
+    """flow.goals.failAfterStuckTurns as the copy's Stop hook reads it in the
+    worktree: through the copy's cascade, in the worker's environment (the
+    cleaned launch environment plus worker_env, P2's factory variables), 3
+    for anything but a positive whole number. The engine's own environment
+    is not used: a variable it has and the worker does not, such as
+    FLOW_USER_SETTINGS, would give a cap the hook never uses."""
+    env = dict(launch_env(), **worker_env)
+    env["CLAUDE_PLUGIN_ROOT"] = copy
+    rc, out, _ = run_cmd([os.path.join(copy, "bin", "cascade-resolve.sh"), "--default", "3",
+                          ".flow.goals.failAfterStuckTurns // empty"], work, env)
+    value = out.strip() if rc == 0 else ""
+    return int(value) if value.isdigit() and int(value) > 0 else 3
+
+
+def p2_run_limit(run):
+    """The limit that ended the run, in words, or None when none did."""
+    if run.get("outcome") == "timeout":
+        return "timeout"
+    subtype = (run.get("result_event") or {}).get("subtype") if run.get("outcome") == "error" else None
+    return {"error_max_turns": "turn limit", "error_max_budget_usd": "cost limit"}.get(subtype)
+
+
+def p2_stop_caps(entries, limit, cap, fallback):
+    """stop_caps from the recorder's log: blocks are the Stop entries labelled
+    goal-stop with decision block, and an approve is one with decision
+    approve. limit is p2_run_limit's word for the run, cap the Stop hook's
+    block cap, fallback whether the copy's flow-goal-stop.sh has the factory
+    warn fallback."""
+    stops = [e for e in entries if e.get("event") == "Stop" and e.get("label") == "goal-stop"]
+    blocks = sum(1 for e in stops if e.get("decision") == "block")
+    last = stops[-1].get("decision") if stops else None
+    if blocks > cap:
+        return part("no-go", f"the Stop hook blocked {blocks} times, over its cap of {cap}")
+    if limit and last == "block":
+        return part("not_run", f"the run ended by its {limit} after the Stop hook's block {blocks}, so it measured "
+                               "the limit, not the hook")
+    if 1 <= blocks <= cap and last == "approve":
+        return part("go", f"the Stop hook blocked {blocks} times, within its cap of {cap}, then let the stop "
+                          "through")
+    if blocks == 0 and not fallback:
+        return part("not_run", f"the Stop hook blocked no stop ({len(stops)} logged), so the mode was not block or "
+                               "the worker never tried to stop")
+    if blocks == 0 and last == "approve":
+        return part("go", "the Stop hook's factory warn fallback let every stop through")
+    return part("no-go", f"the session ended with the Stop hook's block {blocks} as its last stop" if last == "block"
+                else f"the Stop hook blocked {blocks} times and logged no stop it let through")
+
+
+def p2_task_completed_refusals(entries, fallback):
+    """task_completed_refusals from the recorder's log: the TaskCompleted
+    entries labelled task-completed, and those that exited 2. fallback is
+    whether the copy's verify-task-completion.sh has the factory warn
+    fallback."""
+    done = [e for e in entries if e.get("event") == "TaskCompleted" and e.get("label") == "task-completed"]
+    refusals = sum(1 for e in done if e.get("rc") == 2)
+    if len(done) < 4:
+        return part("not_run", f"only {len(done)} task completions were logged, too few to tell a cap from too few "
+                               "tries")
+    if refusals == 0 and not fallback:
+        return part("not_run", f"no_refusal: none of {len(done)} task completions was refused, so the gate never "
+                               "fired")
+    if refusals == 0:
+        return part("go", f"the TaskCompleted hook's factory warn fallback refused none of {len(done)} completions")
+    if refusals <= 3:
+        return part("go", f"the TaskCompleted hook refused {refusals} of {len(done)} completions, at most 3")
+    return part("no-go", f"the TaskCompleted hook refused {refusals} of {len(done)} completions, more than 3")
 
 
 def read_lines(path):
@@ -4922,14 +5081,20 @@ def read_lines(path):
 def probe_p2(ctx, ev_rel):
     ev = os.path.join(ctx.fdir, ev_rel)
     area = probe_area("P2")
-    copy, hook_log, ran_log = p2_copy(area, ev, ctx.tools)
+    setup = p2_setup(area, ev, ctx.tools)
+    copy, hook_log, ran_log, work = setup["copy"], setup["hook_log"], setup["ran_log"], setup["work"]
     ff = os.path.join(copy, "bin", "flow-factory.sh")
     forms = p2_forms(ff, os.path.basename(ctx.tools["timeout"]))
-    work = scratch_worktree(ctx.tools["git"], os.path.join(area, "work"))
-    prompt = STEPS_PROMPT + "\n\n" + "\n".join(f"RUN: {f['command']}" for f in forms.values()) \
-        + "\nTASK: factory probe P2\n"
+    # The edits and completions come before the stop sequence, so a run cut
+    # short by a limit has made them.
+    edits = "".join(f"EDIT: {name}\nTASK: factory probe P2 step {i}\n" for i, name in enumerate(P2_EDIT_FILES, 1))
+    prompt = (STEPS_PROMPT + " Do not run any test, lint or other quality command.\n\n"
+              + "\n".join(f"RUN: {f['command']}" for f in forms.values()) + "\n" + edits
+              + "\nAfter the last step, end your turn. Each time ending your turn is refused, end it again at once, "
+                "without doing anything else.\n")
     run = ctx.launch("P2", ev, "run", prompt, P2_RUN, extra_args=["--plugin-dir", copy], workdir=work,
-                     allowed_tools="Bash,TaskCreate,TaskUpdate,TaskList,TaskGet,TodoWrite")
+                     allowed_tools="Bash,Read,Edit,TaskCreate,TaskUpdate,TaskList,TaskGet,TodoWrite",
+                     extra_env=setup["env"])
     entries = []
     for ln in read_lines(hook_log):
         try:
@@ -4944,7 +5109,9 @@ def probe_p2(ctx, ev_rel):
     for f in forms.values():
         f["hooks"] = by_command.get(f["command"], {})
         f["ran"] = any(line == f["ran_as"] for line in ran)
-        f["denied"] = any(d in ("deny", "ask") for d in f["hooks"].values())
+        # Only tier-gate's own decision counts; -p has no one to ask, so an
+        # ask refuses the call too.
+        f["denied"] = f["hooks"].get("tier-gate") in ("deny", "ask")
         f["attempted"] = bool(f["hooks"]) or f["ran"]
 
     def label(f):
@@ -4970,10 +5137,13 @@ def probe_p2(ctx, ev_rel):
         parts["person_forms_denied"] = part("no-go", "let through: " + ", ".join(leaked))
     elif not denied:
         parts["person_forms_denied"] = part("not_run", failed or "the worker ran no person form")
+    elif len(denied) < len(person):
+        parts["person_forms_denied"] = part(
+            "not_run", f"tier-gate refused {len(denied)} of {len(person)} person forms and none ran; the worker did "
+                       "not run the others")
     else:
         parts["person_forms_denied"] = part(
-            "deferred", f"the stand-in deny refused {len(denied)} of {len(person)} person forms and none ran; "
-                        "tier-gate's own deny rule is built in phase 1b", deferred_to=ISSUE_1B)
+            "go", f"tier-gate refused {len(denied)} of {len(person)} person forms and none ran")
     workers = [f for f in forms.values() if f["kind"] == "worker" and f["attempted"]]
     refused = [label(f) for f in workers if f["denied"] or not f["ran"]]
     if refused:
@@ -4984,7 +5154,11 @@ def probe_p2(ctx, ev_rel):
         parts["worker_forms_allowed"] = part("go", "allowed and ran: " + ", ".join(label(f) for f in workers))
     if failed:
         parts["run"] = run_part([(None, run)])
-    events = {e.get("event") for e in entries if e.get("label") == "event"}
+    # Which events fired: the recorder logs each Stop and TaskCompleted with
+    # the hook it wraps, and SessionEnd with no hook.
+    events = {e.get("event") for e in entries
+              if (e.get("event"), e.get("label")) in (("Stop", "goal-stop"), ("TaskCompleted", "task-completed"),
+                                                      ("SessionEnd", "event"))}
     completed_task = any(name in ("TaskUpdate", "TodoWrite") and "completed" in json.dumps(inp)
                          for name, inp, _ in tool_uses(run["events"]))
     for name, key in (("Stop", "stop_hook"), ("SessionEnd", "session_end_hook"),
@@ -5026,19 +5200,26 @@ def probe_p2(ctx, ev_rel):
                                                      + ", ".join(claude_files))
     else:
         parts["claude_files_allowlist"] = part("go", "the worker created no .claude file")
-    parts["stop_caps"] = part("deferred", "Stop ending within its caps needs the factory-mode Stop hook, which "
-                                          "phase 0 does not have", deferred_to=ISSUE_1B)
+    cap = p2_cap(copy, work, setup["env"])
+    stop_fallback = p2_fallback(copy, "flow-goal-stop.sh")
+    task_fallback = p2_fallback(copy, "verify-task-completion.sh")
+    if not run_started(run):
+        parts["stop_caps"] = part("not_run", f"{failed}, so the worker never tried to stop")
+        parts["task_completed_refusals"] = part("not_run", f"{failed}, so the worker completed no task")
+    else:
+        parts["stop_caps"] = p2_stop_caps(entries, p2_run_limit(run), cap, stop_fallback)
+        parts["task_completed_refusals"] = p2_task_completed_refusals(entries, task_fallback)
     parts["session_end_writes"] = part("deferred", "SessionEnd writing only to the per-job state dir needs that "
-                                                   "dir, which phase 0 does not have", deferred_to=ISSUE_1C)
-    parts["task_completed_refusals"] = part("deferred", "TaskCompleted refusing at most 3 times per stage needs "
-                                                        "the factory's stages, which phase 0 does not have",
-                                            deferred_to=ISSUE_1B)
+                                                   "dir, which phase 1c builds", deferred_to=ISSUE_1C)
     write_json(os.path.join(ev, "facts.json"), {
         "plugin_copy": copy, "outcome": run["outcome"], "init_tools": tools, "claude_files": claude_files,
+        "worktree": work, "state_dir": setup["state"], "stop_cap": cap,
+        "fallbacks": {"stop": stop_fallback, "task_completed": task_fallback},
         "forms": {t: {k: v for k, v in f.items() if k != "attempted"} for t, f in forms.items()}})
+    deferred = sorted({v["deferred_to"] for v in parts.values() if v["result"] == "deferred" and v.get("deferred_to")})
     return finish(parts, ev_rel, ctx.spent.get("P2", 0), run["github_writes"],
-                  lambda k: RUN_FALLBACK if k == "run" else P2_FALLBACK,
-                  stand_in=True, deferred_to=ISSUE_1B)
+                  lambda k: RUN_FALLBACK if k == "run" else P2_FALLBACKS.get(k, P2_FALLBACK),
+                  deferred_to=deferred[0] if deferred else None)
 
 
 # P1
@@ -6549,10 +6730,19 @@ def github_write_probes(args):
 INTERACTIVE_STATE = "interactive.json"
 TASK_NOTIFICATION = "<task-notification>"
 CAPTURE_PLUGIN = "flow-factory-probe"
+# The words the engine's answer to a person command starts with when it ran
+# and refused: a probe intent's confirm, and any FACTORY_REFUSED line.
+ENGINE_ANSWERS = ("INTENT_PROBE", "FACTORY_REFUSED")
+# The approve-spec call P9's sessions make, for a job no factory has.
+P9_APPROVE = ("approve-spec", "issue-999999-j1", "--spec-hash", "0123456789ab")
 P9_FALLBACKS = {
     "hook_mode": "No permission mode in the hook input: tier-gate denies the always-ask subcommands in every "
                  "session, and people confirm in a terminal.",
     "background_wake": "No wake: the /loop prompt.",
+    # tier_gate_by_mode: the design's terminal fallback for the always-ask
+    # subcommands.
+    "tier_gate_by": "tier-gate denies the always-ask subcommands in every session, and people confirm in a "
+                    "terminal.",
 }
 P14_FALLBACK = ("Holding is off. The interactive executor asks as soon as the worker stores the question and stops, "
                 "and the answer is applied with --resume and --fork-session. The executor still confirms writes in "
@@ -6627,9 +6817,19 @@ def capture_hook(log):
     """The probe plugin's hook: append what P9 reads from one hook input. It
     never blocks the tool call it sees, whatever goes wrong."""
     try:
-        d = json.loads(sys.stdin.read() or "{}")
+        raw = sys.stdin.read()
+        d = json.loads(raw or "{}")
         d = d if isinstance(d, dict) else {}
         ti = d.get("tool_input") if isinstance(d.get("tool_input"), dict) else {}
+        if d.get("hook_event_name") in ("PostToolUse", "PostToolUseFailure"):
+            # Whether the engine answered the call: its output is in
+            # tool_response, or in error for a call that exited non-zero
+            # (Claude Code 2.1.299), so the whole input is searched. No
+            # permission_mode: these entries say what ran, not the mode.
+            engine = next((w for w in ENGINE_ANSWERS if w in raw), None)
+            append_jsonl(log, {"event": d.get("hook_event_name"), "tool": d.get("tool_name"),
+                               "command": ti.get("command"), "at": time.time(), "engine": engine})
+            return 0
         entry = {"event": d.get("hook_event_name"), "permission_mode": d.get("permission_mode"),
                  "tool": d.get("tool_name"), "command": ti.get("command"),
                  "run_in_background": bool(ti.get("run_in_background")), "at": time.time()}
@@ -6644,12 +6844,32 @@ def capture_hook(log):
     return 0
 
 
+def p9_flow_copy(folder, log, jq):
+    """<folder>/flow: a copy of this flow whose Bash tier-gate runs inside the
+    recording hook, logging to log. Its engine files are the real ones, so a
+    confirm ask runs status --intent from the copy and a yes reaches the
+    engine."""
+    copy = copy_plugin(os.path.join(folder, "flow"))
+    write_exec(os.path.join(copy, "hooks", "scripts", "factory-probe-hook.sh"),
+               PROBE_HOOK.format(jq=shlex.quote(jq), log=shlex.quote(log)))
+    conf_path = os.path.join(copy, "hooks", "hooks.json")
+    with open(conf_path, encoding="utf-8") as f:
+        conf = json.load(f)
+    wrap_hook(conf.setdefault("hooks", {}), "PreToolUse", "tier-gate.sh", "tier-gate", matcher="Bash")
+    write_json(conf_path, conf)
+    return copy
+
+
 def interactive_setup(args):
-    """Make the capture plugin and print the steps for the person's session,
-    which runs on PROBE_MODEL unless --model names another. Records nothing."""
+    """Make the capture plugin, the probe intent and the logged flow copy, and
+    print the steps for the person's session, which runs on PROBE_MODEL
+    unless --model names another. Records nothing."""
+    import _flow_factory_github as gw
+    jq = find_tools()["jq"]
     fdir = factory_dir()
     ev_rel = new_evidence_dir(fdir, "P9")
-    plugin = os.path.join(probe_area("P9"), "plugin")
+    folder = probe_area("P9")
+    plugin = os.path.join(folder, "plugin")
     q = shlex.quote
     hook = (f"{q(os.path.realpath(sys.executable))} -E {q(os.path.realpath(__file__))} capture-hook "
             f"--log {q(os.path.join(fdir, ev_rel, 'hooks.jsonl'))}")
@@ -6657,33 +6877,42 @@ def interactive_setup(args):
     os.makedirs(os.path.join(plugin, "hooks"))
     write_json(os.path.join(plugin, ".claude-plugin", "plugin.json"), {
         "name": CAPTURE_PLUGIN, "version": "0.0.0",
-        "description": "Factory probe P9: records each PreToolUse and UserPromptSubmit hook input."})
+        "description": "Factory probe P9: records each PreToolUse, PostToolUse, PostToolUseFailure and "
+                       "UserPromptSubmit hook input."})
     write_json(os.path.join(plugin, "hooks", "hooks.json"), {"hooks": {
         "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": hook}]}],
+        "PostToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": hook}]}],
+        "PostToolUseFailure": [{"matcher": "Bash", "hooks": [{"type": "command", "command": hook}]}],
         "UserPromptSubmit": [{"hooks": [{"type": "command", "command": hook}]}]}})
+    flow = p9_flow_copy(folder, os.path.join(fdir, ev_rel, "tier-gate.jsonl"), jq)
+    # The probe intent: a comment literal that is never run, its record in
+    # the P9 probe folder's events.jsonl.
+    n = int(os.path.basename(folder).rsplit("-", 1)[1])
+    intent = gw.record_probe_intent(folder, n, gw.literal_comment("flow-factory-probe/scratch", 1),
+                                    "Factory probe P9: a comment no one posts.")
     state = interactive_state(fdir, required=False)
-    state.update(mode=args.mode, evidence=ev_rel, plugin=plugin)
+    state.update(mode=args.mode, evidence=ev_rel, plugin=plugin, intent=intent)
     write_json(os.path.join(fdir, INTERACTIVE_STATE), state)
     ff = q(os.path.join(BIN_DIR, "flow-factory.sh"))
-    # The p14 step and the next setup run on the model this setup was given.
     model = f" --model {q(args.model)}" if args.model else ""
+    asked = "tier-gate asks you and shows the command's arguments: answer yes" if args.mode == "default" \
+        else "tier-gate denies it and nothing asks you"
     steps = (
         f"Start a Claude Code session in this repository with: claude --plugin-dir {q(plugin)} "
-        f"--permission-mode {args.mode} --model {q(args.model or PROBE_MODEL)}",
+        f"--plugin-dir {q(flow)} --permission-mode {args.mode} --model {q(args.model or PROBE_MODEL)}",
         f"In it, ask Claude to run this with the Bash tool's run_in_background, then to wait without running "
         f"anything else: {ff} probe --interactive --step wait --seconds 30",
         f"Type nothing. When the session wakes on its own, Claude runs: {ff} probe --interactive --step woke",
-        f"Once, in either session: Claude runs with run_in_background {ff} probe --interactive --step p14{model} "
-        f"(a stand-in worker with a ${P14_BUDGET_USD:g} budget limit), then with run_in_background {ff} probe "
-        f"--interactive --step wait-question",
-        f"When wait-question exits, Claude asks you the question with AskUserQuestion and runs: {ff} probe "
-        f"--interactive --step answer --text <your answer>",
+        f"Claude runs this with the Bash tool, as the whole command ({asked}): {ff} confirm {intent}",
+        f"Claude runs this with the Bash tool, as the whole command ({asked}): {ff} {' '.join(P9_APPROVE)}",
         f"Claude runs: {ff} probe --interactive --step record",
         f"Repeat from step 1 after {ff} probe --interactive --mode "
         f"{'auto' if args.mode == 'default' else 'default'}{model}",
     )
     print(f"INTERACTIVE_MODE={args.mode}")
     print(f"INTERACTIVE_PLUGIN={plugin}")
+    print(f"INTERACTIVE_FLOW={flow}")
+    print(f"INTERACTIVE_INTENT={intent}")
     for i, text in enumerate(steps, 1):
         print(f"INTERACTIVE_STEP={i} {text}")
     print("INTERACTIVE_RECORD=none")
@@ -6792,6 +7021,102 @@ def p9_parts(mode, hooks, session):
     return parts
 
 
+def p9_commands(intent):
+    """{name: pattern} for the two person commands a P9 session runs,
+    matched in a command's text after the script name."""
+    return {"confirm": re.compile(r"flow-factory\.sh['\"]?\s+confirm\s+" + re.escape(intent) + r"(\s|$)"),
+            "approve-spec": re.compile(r"flow-factory\.sh['\"]?\s+" + r"\s+".join(map(re.escape, P9_APPROVE))
+                                       + r"(\s|$)")}
+
+
+def p9_intent_sha(folder, intent):
+    """The sha256 of the probe intent's intent_recorded line in the P9 probe
+    folder's events.jsonl, the value status --intent prints, or None."""
+    lines = [e for e in read_jsonl(os.path.join(folder, "events.jsonl"))
+             if e.get("type") == "intent_recorded" and e.get("id") == intent]
+    sha = lines[-1].get("sha256") if lines else None
+    return sha if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{64}", sha) else None
+
+
+def p9_tier_gate(mode, gate, hooks, intent, sha):
+    """One session's finding for tier_gate_by_mode, as a part: per command,
+    the last tier-gate.jsonl entry naming it, and whether a PostToolUse or
+    PostToolUseFailure capture of it has the engine's answer (such an entry
+    only follows a call that ran). Default mode: ask, a reason showing the
+    arguments, then the engine's answer. Auto mode: deny, and no answer."""
+    shows = {"confirm": [sha] if sha and intent else None,
+             "approve-spec": ["0123456789ab", "spec file: none recorded"]}
+    said, results = [], []
+    for name, pattern in p9_commands(intent or "probe-p9-unknown").items():
+        entries = [e for e in gate if e.get("label") == "tier-gate" and pattern.search(str(e.get("command") or ""))]
+        ran = any(h.get("event") in ("PostToolUse", "PostToolUseFailure") and h.get("engine")
+                  and pattern.search(str(h.get("command") or "")) for h in hooks)
+        if not entries:
+            results.append("not_run")
+            said.append(f"{name}: tier-gate logged no decision for it")
+            continue
+        if shows[name] is None:
+            results.append("not_run")
+            said.append(f"{name}: the probe intent's record cannot be read, so what the ask must show is unknown")
+            continue
+        decision, reason = entries[-1].get("decision"), entries[-1].get("reason")
+        if mode == "default":
+            missing = [w for w in shows[name] if not (isinstance(reason, str) and w in reason)]
+            if decision != "ask":
+                results.append("no-go")
+                said.append(f"{name}: tier-gate decided {decision}, not ask")
+            elif missing:
+                results.append("no-go")
+                said.append(f"{name}: tier-gate asked without showing " + " and ".join(missing))
+            elif not ran:
+                results.append("no-go")
+                said.append(f"{name}: tier-gate asked, but the engine never answered the call")
+            else:
+                results.append("go")
+                said.append(f"{name}: tier-gate asked showing its arguments, and the engine answered after the yes")
+        elif decision == "deny" and not ran:
+            results.append("go")
+            said.append(f"{name}: tier-gate denied it and it did not run")
+        else:
+            results.append("no-go")
+            said.append(f"{name}: tier-gate decided {decision}" + (" and the engine answered the call" if ran else ""))
+    result = "no-go" if "no-go" in results else "not_run" if "not_run" in results else "go"
+    return part(result, f"{mode} mode: " + "; ".join(said))
+
+
+def p9_tier_gate_part(found, claude):
+    """tier_gate_by_mode over both modes' findings ({mode: part with the
+    claude_version it was made on}): no-go when one is, not_run while a mode
+    is missing or not_run, else go. A finding made on another claude than
+    claude, the version this session runs, counts as missing: tier-gate's
+    answer under one version says nothing about another. Each mode's
+    finding names the evidence folder of the session that made it, when it
+    has one, since the part's own evidence field names only the last
+    session's folder."""
+    said, results = [], []
+    for m in ("default", "auto"):
+        f = found.get(m)
+        ev = f.get("evidence") if isinstance(f, dict) else None
+        # A finding kept before folders were stored has none, and is said
+        # as it was.
+        ev = ev if isinstance(ev, str) and ev else None
+        if f is None:
+            said.append(f"{m} mode: no session recorded yet")
+            results.append("not_run")
+        elif f.get("claude_version") != claude:
+            said.append(f"{m} mode: its session" + (f" in {ev}" if ev else "")
+                        + f" was recorded on claude {f.get('claude_version') or 'unknown'}, "
+                        f"not {claude}, so it counts only once that mode is run again on {claude}")
+            results.append("not_run")
+        else:
+            head = f"{m} mode: "
+            body = f["reason"][len(head):] if f["reason"].startswith(head) else f["reason"]
+            said.append((f"{m} mode, in {ev}: " if ev else head) + body)
+            results.append(f["result"])
+    result = "no-go" if "no-go" in results else "not_run" if "not_run" in results else "go"
+    return part(result, "; ".join(said))
+
+
 def interactive_record(args):
     """--step record: P9 from the current session's captures, merged with
     the parts other sessions recorded; and P14 not_run when the session's
@@ -6803,9 +7128,11 @@ def interactive_record(args):
     ev = os.path.join(fdir, state["evidence"])
     new = p9_parts(state["mode"], read_jsonl(os.path.join(ev, "hooks.jsonl")),
                    read_jsonl(os.path.join(ev, "session.jsonl")))
-    new["tier_gate_by_mode"] = part("deferred", "tier-gate's ask in default mode and deny in auto mode on the "
-                                                "factory's person subcommands are built in phase 1b",
-                                    deferred_to=ISSUE_1B)
+    folder = os.path.dirname(state.get("plugin") or "")
+    intent = state.get("intent") if isinstance(state.get("intent"), str) else ""
+    found = p9_tier_gate(state["mode"], read_jsonl(os.path.join(ev, "tier-gate.jsonl")),
+                         read_jsonl(os.path.join(ev, "hooks.jsonl")), intent,
+                         p9_intent_sha(folder, intent) if intent else None)
     new["executor"] = part("deferred", "a detached directive outliving its Bash call, and next, wait, question, "
                                        "status and answer run by the interactive executor, need phase 1c",
                            deferred_to=ISSUE_1C)
@@ -6815,6 +7142,17 @@ def interactive_record(args):
         check_schema(record)
         bind_cap(args, record)
         now = interactive_state(fdir, required=False)
+        # Each session keeps its own mode's finding beside the other mode's,
+        # in the interactive state, with the claude version it was made on: a
+        # part holds only a result and a reason.
+        kept = now.get("tier_gate") if isinstance(now.get("tier_gate"), dict) else {}
+        kept = {m: v for m, v in kept.items() if m in ("default", "auto") and isinstance(v, dict)
+                and v.get("result") in ("go", "no-go", "not_run") and isinstance(v.get("reason"), str)}
+        kept[state["mode"]] = dict(found, claude_version=keyed["claude_version"],
+                                   evidence=state["evidence"].replace(os.sep, "/"))
+        now["tier_gate"] = kept
+        write_json(os.path.join(fdir, INTERACTIVE_STATE), now)
+        new["tier_gate_by_mode"] = p9_tier_gate_part(kept, keyed["claude_version"])
         marker = now.get("p14")
         older = ((record.get("probes") or {}).get("P14") or {}).get("evidence")
         dead = None
@@ -8012,6 +8350,47 @@ bound: a one-turn run has reported $0.148 against a $0.10 limit, so
 spent_usd can pass the cap by what the last run spent past its limit."""
 
 
+ISSUE_UPDATE_CONFIRM = ("WARN tiers.issueUpdate=confirm: the engine's comments and labels wait in the outbox as "
+                        "PENDING_CONFIRM until confirmed in a terminal or the key changes")
+
+
+def probe_warning():
+    """The line every probe run prints before its output when the engine's
+    tiers.issueUpdate is confirm, or when the project setting cannot be read
+    because origin's default branch does not resolve; None otherwise. The
+    engine resolves the key as the strictest of four sources; the project
+    file is read at refs/remotes/origin/<b>, <b> being the branch
+    refs/remotes/origin/HEAD names, and nothing is fetched. A project file
+    that cannot be read counts as confirm, as it does for the engine."""
+    import _flow_factory_tiers as ft
+    try:
+        main = main_checkout()
+        fdir = factory_dir()
+    except Refused:
+        # The probe run refuses on the same checkout itself.
+        return None
+    ref, shown = None, "refs/remotes/origin/HEAD"
+    # Plain git with no configuration of the person's: the engine's git keeps
+    # its configuration in the factory directory, which this read leaves
+    # alone.
+    git = which_real("git")
+    rc, out = (run_cmd([git, "symbolic-ref", "-q", shown], main, isolated_git_env())[:2] if git else (None, ""))
+    target = (out or "").strip() if rc == 0 else ""
+    prefix = "refs/remotes/origin/"
+    if target.startswith(prefix) and ft._branch_ok(target[len(prefix):]):
+        ref = shown = target
+    tiers = ft.resolver(main, ref, fdir)
+    problem = tiers.base_problem or ""
+    if not problem or problem.startswith("project_unreadable"):
+        return ISSUE_UPDATE_CONFIRM if tiers("issueUpdate") == "confirm" else None
+    # No commit to read the project file at: the other three sources decide.
+    tiers.sources["project"] = {}
+    if tiers("issueUpdate") == "confirm":
+        return ISSUE_UPDATE_CONFIRM
+    return (f"WARN tiers.issueUpdate: base ref unresolved ({shown}); run git remote set-head origin --auto to "
+            "check the project setting")
+
+
 def main(argv):
     if argv[:1] == ["gh-stub"]:
         gs = argparse.ArgumentParser(prog="_flow_factory.py gh-stub")
@@ -8148,6 +8527,18 @@ def main(argv):
         except Refused as r:
             print(f"FACTORY_REFUSED={r}")
             return 5
+    # Every probe run but the stand-in worker's await (made from its own
+    # scratch repository) and --export, which only copies the record.
+    if not args.export and not (args.interactive and args.step == "await"):
+        # factory_dir() moves to the main checkout; a relative --prompt-file
+        # is still read from where the probe was started.
+        here = os.getcwd()
+        try:
+            warning = probe_warning()
+        finally:
+            os.chdir(here)
+        if warning:
+            print(warning, flush=True)
     stop_on_signals()
     run = None
     if args.skip:

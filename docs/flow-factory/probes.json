@@ -34,7 +34,7 @@
     },
     "interactive": {
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.330 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
@@ -45,7 +45,7 @@
         "timeout_version": "timeout (GNU coreutils) 9.12",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-15T21:57:54Z"
+      "ran_at": "2026-11-22T21:41:03Z"
     },
     "platform": {
       "keyed_on": {
@@ -59,7 +59,7 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-17T00:23:57Z"
+      "ran_at": "2026-11-22T16:56:59Z"
     }
   },
   "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
@@ -1155,15 +1155,15 @@
     "P2": {
       "group": "platform",
       "result": "deferred",
-      "reason": "person_forms_denied: the stand-in deny refused 72 of 72 person forms and none ran; tier-gate's own deny rule is built in phase 1b; session_end_writes: SessionEnd writing only to the per-job state dir needs that dir, which phase 0 does not have; stop_caps: Stop ending within its caps needs the factory-mode Stop hook, which phase 0 does not have; task_completed_refusals: TaskCompleted refusing at most 3 times per stage needs the factory's stages, which phase 0 does not have",
-      "stand_in": true,
-      "evidence": "docs/flow-factory/evidence/P2-4",
-      "cost_usd": 0.677245,
+      "reason": "session_end_writes: SessionEnd writing only to the per-job state dir needs that dir, which phase 1c builds",
+      "stand_in": false,
+      "evidence": "docs/flow-factory/evidence/P2-6",
+      "cost_usd": 0.889023,
       "github_writes": [],
       "parts": {
         "coverage": {
           "result": "go",
-          "reason": "the worker ran all 75 commands",
+          "reason": "the worker ran all 74 commands",
           "keyed_on": {
             "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
@@ -1175,12 +1175,12 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "tier_gate_fires": {
           "result": "go",
-          "reason": "tier-gate fired on all 75 commands the worker ran",
+          "reason": "tier-gate fired on all 74 commands the worker ran",
           "keyed_on": {
             "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
@@ -1192,13 +1192,12 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "person_forms_denied": {
-          "result": "deferred",
-          "reason": "the stand-in deny refused 72 of 72 person forms and none ran; tier-gate's own deny rule is built in phase 1b",
-          "deferred_to": "synaptiai/synapti-marketplace#355",
+          "result": "go",
+          "reason": "tier-gate refused 72 of 72 person forms and none ran",
           "keyed_on": {
             "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
@@ -1210,12 +1209,12 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "worker_forms_allowed": {
           "result": "go",
-          "reason": "allowed and ran: context --mode, question get p2-question, await p2-await --max-seconds 100",
+          "reason": "allowed and ran: context --mode, await p2-await --max-seconds 100",
           "keyed_on": {
             "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
@@ -1227,8 +1226,8 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "stop_hook": {
           "result": "go",
@@ -1244,8 +1243,8 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "session_end_hook": {
           "result": "go",
@@ -1261,8 +1260,8 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "task_completed_hook": {
           "result": "go",
@@ -1278,8 +1277,8 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "ask_user_question_absent": {
           "result": "go",
@@ -1295,8 +1294,8 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "claude_files_allowlist": {
           "result": "go",
@@ -1312,13 +1311,12 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "stop_caps": {
-          "result": "deferred",
-          "reason": "Stop ending within its caps needs the factory-mode Stop hook, which phase 0 does not have",
-          "deferred_to": "synaptiai/synapti-marketplace#355",
+          "result": "go",
+          "reason": "the Stop hook blocked 3 times, within its cap of 3, then let the stop through",
           "keyed_on": {
             "claude_version": "2.1.326 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
@@ -1330,12 +1328,29 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
+        },
+        "task_completed_refusals": {
+          "result": "go",
+          "reason": "the TaskCompleted hook's factory warn fallback refused none of 5 completions",
+          "keyed_on": {
+            "claude_version": "2.1.326 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "jq_version": "jq-1.7.1-apple",
+            "timeout_version": "timeout (GNU coreutils) 9.12",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "model": "claude-opus-5-5"
+          },
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         },
         "session_end_writes": {
           "result": "deferred",
-          "reason": "SessionEnd writing only to the per-job state dir needs that dir, which phase 0 does not have",
+          "reason": "SessionEnd writing only to the per-job state dir needs that dir, which phase 1c builds",
           "deferred_to": "synaptiai/synapti-marketplace#356",
           "keyed_on": {
             "claude_version": "2.1.326 (Claude Code)",
@@ -1348,29 +1363,11 @@
             "interpreter_version": "3.14.7",
             "model": "claude-opus-5-5"
           },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
-        },
-        "task_completed_refusals": {
-          "result": "deferred",
-          "reason": "TaskCompleted refusing at most 3 times per stage needs the factory's stages, which phase 0 does not have",
-          "deferred_to": "synaptiai/synapti-marketplace#355",
-          "keyed_on": {
-            "claude_version": "2.1.326 (Claude Code)",
-            "gh_version": "gh version 2.101.0 (2026-09-15)",
-            "git_version": "git version 2.55.0",
-            "jq_version": "jq-1.7.1-apple",
-            "timeout_version": "timeout (GNU coreutils) 9.12",
-            "timeout_path": "/opt/homebrew/bin/timeout",
-            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
-            "interpreter_version": "3.14.7",
-            "model": "claude-opus-5-5"
-          },
-          "ran_at": "2026-11-17T00:21:55Z",
-          "evidence": "docs/flow-factory/evidence/P2-4"
+          "ran_at": "2026-11-22T16:56:59Z",
+          "evidence": "docs/flow-factory/evidence/P2-6"
         }
       },
-      "deferred_to": "synaptiai/synapti-marketplace#355",
+      "deferred_to": "synaptiai/synapti-marketplace#356",
       "keyed_on": {
         "claude_version": "2.1.326 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
@@ -1382,7 +1379,7 @@
         "interpreter_version": "3.14.7",
         "model": "claude-opus-5-5"
       },
-      "ran_at": "2026-11-17T00:21:55Z"
+      "ran_at": "2026-11-22T16:56:59Z"
     },
     "P3": {
       "group": "environment",
@@ -2015,51 +2012,17 @@
     "P9": {
       "group": "interactive",
       "result": "deferred",
-      "reason": "executor: a detached directive outliving its Bash call, and next, wait, question, status and answer run by the interactive executor, need phase 1c; tier_gate_by_mode: tier-gate's ask in default mode and deny in auto mode on the factory's person subcommands are built in phase 1b",
+      "reason": "executor: a detached directive outliving its Bash call, and next, wait, question, status and answer run by the interactive executor, need phase 1c",
       "stand_in": false,
-      "evidence": "docs/flow-factory/evidence/P9-6",
+      "evidence": "docs/flow-factory/evidence/P9-8",
       "cost_usd": 0,
       "github_writes": [],
       "parts": {
-        "hook_mode_auto": {
-          "result": "go",
-          "reason": "every PreToolUse hook input (2) carries permission_mode: auto",
-          "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
-            "gh_version": "gh version 2.101.0 (2026-09-15)",
-            "git_version": "git version 2.55.0",
-            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
-            "interpreter_version": "3.14.7",
-            "jq_version": "jq-1.7.1-apple",
-            "permission_modes": "auto,default",
-            "timeout_path": "/opt/homebrew/bin/timeout",
-            "timeout_version": "timeout (GNU coreutils) 9.12"
-          },
-          "ran_at": "2026-11-15T21:56:34Z",
-          "evidence": "docs/flow-factory/evidence/P9-5"
-        },
-        "background_wake_auto": {
-          "result": "go",
-          "reason": "the session ran --step woke 3 s after the background wait ended, with no prompt from the person in between (1 task notification(s))",
-          "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
-            "gh_version": "gh version 2.101.0 (2026-09-15)",
-            "git_version": "git version 2.55.0",
-            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
-            "interpreter_version": "3.14.7",
-            "jq_version": "jq-1.7.1-apple",
-            "permission_modes": "auto,default",
-            "timeout_path": "/opt/homebrew/bin/timeout",
-            "timeout_version": "timeout (GNU coreutils) 9.12"
-          },
-          "ran_at": "2026-11-15T21:56:34Z",
-          "evidence": "docs/flow-factory/evidence/P9-5"
-        },
         "hook_mode_default": {
           "result": "go",
-          "reason": "every PreToolUse hook input (2) carries permission_mode: default",
+          "reason": "every PreToolUse hook input (5) carries permission_mode: default",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.330 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
@@ -2069,14 +2032,14 @@
             "timeout_path": "/opt/homebrew/bin/timeout",
             "timeout_version": "timeout (GNU coreutils) 9.12"
           },
-          "ran_at": "2026-11-15T21:57:54Z",
-          "evidence": "docs/flow-factory/evidence/P9-6"
+          "ran_at": "2026-11-22T21:38:44Z",
+          "evidence": "docs/flow-factory/evidence/P9-7"
         },
         "background_wake_default": {
           "result": "go",
-          "reason": "the session ran --step woke 8 s after the background wait ended, with no prompt from the person in between (1 task notification(s))",
+          "reason": "the session ran --step woke 521 s after the background wait ended, with no prompt from the person in between (1 task notification(s))",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.330 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
@@ -2086,15 +2049,14 @@
             "timeout_path": "/opt/homebrew/bin/timeout",
             "timeout_version": "timeout (GNU coreutils) 9.12"
           },
-          "ran_at": "2026-11-15T21:57:54Z",
-          "evidence": "docs/flow-factory/evidence/P9-6"
+          "ran_at": "2026-11-22T21:38:44Z",
+          "evidence": "docs/flow-factory/evidence/P9-7"
         },
-        "tier_gate_by_mode": {
-          "result": "deferred",
-          "reason": "tier-gate's ask in default mode and deny in auto mode on the factory's person subcommands are built in phase 1b",
-          "deferred_to": "synaptiai/synapti-marketplace#355",
+        "hook_mode_auto": {
+          "result": "go",
+          "reason": "every PreToolUse hook input (5) carries permission_mode: auto",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.330 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
@@ -2104,15 +2066,32 @@
             "timeout_path": "/opt/homebrew/bin/timeout",
             "timeout_version": "timeout (GNU coreutils) 9.12"
           },
-          "ran_at": "2026-11-15T21:57:54Z",
-          "evidence": "docs/flow-factory/evidence/P9-6"
+          "ran_at": "2026-11-22T21:41:03Z",
+          "evidence": "docs/flow-factory/evidence/P9-8"
+        },
+        "background_wake_auto": {
+          "result": "go",
+          "reason": "the session ran --step woke 5 s after the background wait ended, with no prompt from the person in between (1 task notification(s))",
+          "keyed_on": {
+            "claude_version": "2.1.330 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12"
+          },
+          "ran_at": "2026-11-22T21:41:03Z",
+          "evidence": "docs/flow-factory/evidence/P9-8"
         },
         "executor": {
           "result": "deferred",
           "reason": "a detached directive outliving its Bash call, and next, wait, question, status and answer run by the interactive executor, need phase 1c",
           "deferred_to": "synaptiai/synapti-marketplace#356",
           "keyed_on": {
-            "claude_version": "2.1.325 (Claude Code)",
+            "claude_version": "2.1.330 (Claude Code)",
             "gh_version": "gh version 2.101.0 (2026-09-15)",
             "git_version": "git version 2.55.0",
             "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
@@ -2122,18 +2101,37 @@
             "timeout_path": "/opt/homebrew/bin/timeout",
             "timeout_version": "timeout (GNU coreutils) 9.12"
           },
-          "ran_at": "2026-11-15T21:57:54Z",
-          "evidence": "docs/flow-factory/evidence/P9-6"
+          "ran_at": "2026-11-22T21:41:03Z",
+          "evidence": "docs/flow-factory/evidence/P9-8"
+        },
+        "tier_gate_by_mode": {
+          "result": "go",
+          "reason": "default mode: confirm: tier-gate asked showing its arguments, and the engine answered after the yes; approve-spec: tier-gate asked showing its arguments, and the engine answered after the yes; auto mode: confirm: tier-gate denied it and it did not run; approve-spec: tier-gate denied it and it did not run",
+          "keyed_on": {
+            "claude_version": "2.1.330 (Claude Code)",
+            "gh_version": "gh version 2.101.0 (2026-09-15)",
+            "git_version": "git version 2.55.0",
+            "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
+            "interpreter_version": "3.14.7",
+            "jq_version": "jq-1.7.1-apple",
+            "permission_modes": "auto,default",
+            "timeout_path": "/opt/homebrew/bin/timeout",
+            "timeout_version": "timeout (GNU coreutils) 9.12"
+          },
+          "ran_at": "2026-11-22T21:41:03Z",
+          "evidence": "docs/flow-factory/evidence/P9-8"
         }
       },
       "evidence_history": [
         "docs/flow-factory/evidence/P9-3",
         "docs/flow-factory/evidence/P9-4",
-        "docs/flow-factory/evidence/P9-5"
+        "docs/flow-factory/evidence/P9-5",
+        "docs/flow-factory/evidence/P9-6",
+        "docs/flow-factory/evidence/P9-7"
       ],
-      "deferred_to": "synaptiai/synapti-marketplace#355",
+      "deferred_to": "synaptiai/synapti-marketplace#356",
       "keyed_on": {
-        "claude_version": "2.1.325 (Claude Code)",
+        "claude_version": "2.1.330 (Claude Code)",
         "gh_version": "gh version 2.101.0 (2026-09-15)",
         "git_version": "git version 2.55.0",
         "interpreter": "~/.local/share/uv/python/cpython-3.14.7-macos-aarch64-none/bin/python3.14",
@@ -2143,11 +2141,11 @@
         "timeout_path": "/opt/homebrew/bin/timeout",
         "timeout_version": "timeout (GNU coreutils) 9.12"
       },
-      "ran_at": "2026-11-15T21:57:54Z"
+      "ran_at": "2026-11-22T21:41:03Z"
     }
   },
   "spend": {
-    "cap_usd": 25,
-    "spent_usd": 21.10506
+    "cap_usd": 30,
+    "spent_usd": 23.062913
   }
 }

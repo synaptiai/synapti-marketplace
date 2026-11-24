@@ -1,0 +1,26 @@
+{
+  "id": "issue-7-j1-4-2",
+  "job": "issue-7-j1",
+  "row": "4",
+  "state_at_write": "needs_info",
+  "ref": null,
+  "kind": "comment",
+  "blocking": false,
+  "key": [
+    "issueUpdate"
+  ],
+  "argv": [
+    "gh",
+    "issue",
+    "comment",
+    "7",
+    "--repo",
+    "flow-e2e/scratch",
+    "--body-file",
+    "-"
+  ],
+  "body_file": "/tmp/issue-7-j1-4-2.body.md",
+  "sha256": "3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a3b7e0c9a",
+  "status": "recorded",
+  "effect": null
+}

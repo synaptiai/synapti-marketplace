@@ -41,6 +41,13 @@
 #   W9 a gh or git alias, a gh api call (REST or GraphQL from a file) or a
 #      push with --follow-tags, push.followTags, GIT_CONFIG_* or a mirror
 #      remote is not seen as the action it is
+#   W41 an ask about a write to an existing issue or pull request
+#      (tiers.issueUpdate confirm) is approved, and the gh wrapper refuses it
+#      because the gate's record has no count for issueUpdate; or one that
+#      both assigns and labels is approved and then refused for one key
+#   W42 a write to an existing issue or pull request (gh, gh api REST or a
+#      GraphQL mutation, gh label create among them) run from a script is not
+#      read by the wrapper as tiers.issueUpdate under one of its three values
 
 { [ -n "${REPO_ROOT:-}" ] && declare -F _flow_assert_fail >/dev/null \
     && source "$REPO_ROOT/plugins/flow/tests/lib/e2e.sh"; } || {
@@ -696,10 +703,12 @@ e2e_expect_equal 0 "$(grep -c 'notes y' "$E2E_DIR/gh-calls.log")" "the other rep
 #       once, and its second pass is refused
 #   W37 a chained command the rtk hook rewrote word by word loses its record
 
-_tr_setup tr-api-untiered "W34: gh api POST to a comment endpoint, from a script, runs: it is no tier action"
+_tr_setup tr-api-untiered "W34: gh api POST to a comment endpoint, from a script, with the default journal tier: it is tiers.issueUpdate, not a merge, so it runs, with the wrapper's breadcrumb"
 _tr_call "printf 'gh api -X POST repos/o/r/issues/5/comments -f body=hi\n' > m.sh; bash m.sh"
 e2e_expect_equal 0 "$E2E_RC" "exit status"
 e2e_expect_equal 1 "$(grep -c 'issues/5/comments' "$E2E_DIR/gh-calls.log")" "gh ran it"
+e2e_expect_equal 1 "$(_tr_trail | grep -c 'tiers\.issueUpdate (journal, runtime)')" "the wrapper's issueUpdate breadcrumb"
+e2e_expect_equal 0 "$(_tr_trail | grep -cE 'tiers\.(merge|release)')" "breadcrumbs of a merge or a release"
 _tr_gh_case "W34: gh api DELETE on a release, in a script" "printf 'gh api -X DELETE repos/o/r/releases/1\n' > m.sh; bash m.sh" "releases/1"
 _tr_setup tr-api-release-approved "W34: an approved gh api release runs"
 _tr_call 'gh api repos/o/r/releases -f tag_name=v9'
@@ -764,3 +773,161 @@ _e2e_exec env TR_ENV="$E2E_DIR/env.sh" TR_FAKE="$E2E_DIR/fakegh" \
   bash -c 'PATH="$TR_FAKE:$PATH"; . "$TR_ENV"; gh pr merge 5 --squash'
 e2e_expect_equal 0 "$(grep -c 'pr merge 5' "$E2E_DIR/gh-calls.log")" "the merge did not run"
 e2e_expect_err "could not tie the approval to it"
+
+# --- tiers.issueUpdate (W41, W42) --------------------------------------------------
+
+_tr_setup tr-issueupdate-approved "W41: tiers.issueUpdate confirm: the gate asks about gh issue comment and, once approved, the gh wrapper runs it; the same command in a script is refused and gh does not run it" '{"tiers":{"issueUpdate":"confirm"}}'
+_tr_call 'gh issue comment 5 --body hi'
+e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_equal 1 "$(grep -c 'issue comment 5 --body hi' "$E2E_DIR/gh-calls.log")" "gh ran the approved comment"
+_tr_call "printf 'gh issue comment 6 --body hi\n' > m.sh; bash m.sh"
+e2e_expect_equal 0 "$TR_ASKED" "the gate did not ask"
+e2e_expect_equal 1 "$E2E_RC" "exit status"
+e2e_expect_err "(tiers.issueUpdate) needs your confirmation"
+e2e_expect_equal 0 "$(grep -c 'issue comment 6' "$E2E_DIR/gh-calls.log")" "gh did not run the unasked comment"
+
+_tr_setup tr-issueupdate-both-keys "W41: tiers.issueAssign and tiers.issueUpdate confirm: gh issue edit that assigns and labels asks once and, once approved, runs; the same edit in a script is refused" '{"tiers":{"issueAssign":"confirm","issueUpdate":"confirm"}}'
+_tr_call 'gh issue edit 5 --add-assignee me --add-label x'
+e2e_expect_equal 1 "$TR_ASKED" "the gate asked"
+e2e_expect_equal 0 "$E2E_RC" "exit status"
+e2e_expect_equal 1 "$(grep -c 'issue edit 5 --add-assignee me --add-label x' "$E2E_DIR/gh-calls.log")" "gh ran the approved edit"
+_tr_call "printf 'gh issue edit 6 --add-label x --add-assignee me\n' > m.sh; bash m.sh"
+e2e_expect_equal 1 "$E2E_RC" "exit status"
+e2e_expect_equal 0 "$(grep -c 'issue edit 6' "$E2E_DIR/gh-calls.log")" "gh did not run the unasked edit"
+
+_tr_setup tr-issueupdate-label-only "W42: tiers.issueUpdate confirm and issueAssign journal: gh issue edit --add-label in a script is refused naming tiers.issueUpdate; --add-assignee alone in a script runs" '{"tiers":{"issueAssign":"journal","issueUpdate":"confirm"}}'
+_tr_call "printf 'gh issue edit 6 --add-label x\n' > m.sh; bash m.sh"
+e2e_expect_equal 1 "$E2E_RC" "exit status for the label"
+e2e_expect_err "(tiers.issueUpdate) needs your confirmation"
+_tr_call "printf 'gh issue edit 6 --add-assignee me\n' > m.sh; bash m.sh"
+e2e_expect_equal 0 "$E2E_RC" "exit status for the assignee"
+
+# Every issueUpdate form, as e2e-tier-gate.test.sh lists them, from a script.
+TR_IU_GQL="addComment updateIssueComment addPullRequestReview submitPullRequestReview addPullRequestReviewComment addPullRequestReviewThreadReply addLabelsToLabelable removeLabelsFromLabelable markPullRequestReadyForReview convertPullRequestToDraft closePullRequest updatePullRequest requestReviews updateIssue closeIssue reopenIssue"
+_tr_iu_forms() {
+  local m
+  cat <<'EOF'
+gh issue comment 5 --body hi
+gh pr comment 7 --body hi
+gh pr review 7 --approve
+gh issue edit 5 --add-label bug
+gh issue edit 5 --remove-label bug
+gh issue edit 5 --body x
+gh issue edit 5 --title x
+gh issue edit 5 --body-file b.md
+gh issue edit 5 -t x
+gh pr edit 7 --add-label bug
+gh pr edit 7 --remove-label bug
+gh pr edit 7 -b x
+gh pr edit 7 --title=x
+gh pr edit 7 --add-reviewer octocat
+gh pr edit 7 --remove-reviewer octocat
+gh pr ready 7
+gh pr ready 7 --undo
+gh pr close 7
+gh label create triaged
+gh issue close 5
+gh issue reopen 5
+gh api -X POST repos/o/r/issues/5/comments -f body=hi
+gh api -X PATCH repos/o/r/issues/comments/9 -f body=x
+gh api -X DELETE repos/o/r/issues/comments/9
+gh api repos/o/r/pulls/7/reviews -f event=APPROVE
+gh api -X POST repos/o/r/pulls/7/comments -f body=x
+gh api -X POST repos/o/r/pulls/7/comments/9/replies -f body=x
+gh api -X PATCH repos/o/r/pulls/comments/9 -f body=x
+gh api -X DELETE repos/o/r/pulls/comments/9
+gh api -X POST repos/o/r/issues/5/labels -f labels[]=bug
+gh api -X DELETE repos/o/r/issues/5/labels
+gh api -X PATCH repos/o/r/pulls/7 -f state=closed
+gh api -X PATCH repos/o/r/pulls/7 -f body=x
+gh api -X PATCH /repos/o/r/pulls/7 -f title=x
+gh api -X POST repos/o/r/pulls/7/requested_reviewers -f reviewers[]=octocat
+gh api -X PATCH repos/o/r/issues/5 -f state=closed
+gh api -X PUT repos/o/r/issues/5/labels -f labels[]=bug
+gh api -X DELETE repos/o/r/issues/5/labels/bug
+gh api -X DELETE repos/o/r/issues/5/labels/bug/
+gh api --method DELETE /repos/o/r/issues/5/labels/needs%20review
+gh api -X DELETE repos/o/r/issues/5/labels/area%2Fflow
+gh api -X DELETE 'repos/o/r/issues/5/labels/bug?per_page=1'
+gh api -X DELETE https://api.github.com/repos/o/r/issues/5/labels/bug
+gh api -X DELETE 'repos/{owner}/{repo}/issues/5/labels/bug'
+gh api -X DELETE repos/o/r/issues/5/labels/issues%2F6%2Fcomments
+gh api -X DELETE repos/o/r/issues/5/labels/merges
+gh api -X DELETE repos/o/r/issues/5/labels/releases
+EOF
+  for m in $TR_IU_GQL; do
+    printf "gh api graphql -f query='mutation { %s(input: {}) { clientMutationId } }'\n" "$m"
+  done
+}
+TR_IU_N=$(_tr_iu_forms | grep -c .)
+for TR_IU_V in confirm journal autonomous; do
+  _tr_setup "tr-issueupdate-forms-$TR_IU_V" "W42: tiers.issueUpdate $TR_IU_V: each of the $TR_IU_N issueUpdate forms, run from a script the gate does not read: confirm refuses each and gh does not run it; journal runs each with one wrapper breadcrumb; autonomous runs each with none" "{\"tiers\":{\"issueUpdate\":\"$TR_IU_V\"}}"
+  while IFS= read -r TR_C; do
+    [ -n "$TR_C" ] || continue
+    printf '%s\n' "$TR_C" > "$E2E_REPO/m.sh"
+    TR_BEFORE=$(grep -c . "$E2E_DIR/gh-calls.log")
+    _tr_call 'bash m.sh'
+    TR_AFTER=$(grep -c . "$E2E_DIR/gh-calls.log")
+    case "$TR_IU_V" in
+      confirm)
+        e2e_expect_equal 1 "$E2E_RC" "exit status for: $TR_C"
+        e2e_expect_err "(tiers.issueUpdate) needs your confirmation"
+        e2e_expect_equal "$TR_BEFORE" "$TR_AFTER" "gh did not run: $TR_C" ;;
+      *)
+        e2e_expect_equal 0 "$E2E_RC" "exit status for: $TR_C"
+        e2e_expect_equal $((TR_BEFORE + 1)) "$TR_AFTER" "gh ran: $TR_C" ;;
+    esac
+  done <<EOF
+$(_tr_iu_forms)
+EOF
+  case "$TR_IU_V" in
+    journal) e2e_expect_equal "$TR_IU_N" "$(_tr_trail | grep -c 'tiers\.issueUpdate (journal, runtime)')" "wrapper breadcrumbs, one per form" ;;
+    *) e2e_expect_equal 0 "$(_tr_trail | grep -c 'auto-log')" "wrapper breadcrumbs" ;;
+  esac
+  e2e_expect_equal 0 "$(_tr_trail | grep -cE 'tiers\.(merge|release|push|prCreate|issueAssign|issueCreate)')" "breadcrumbs of other keys"
+done
+
+_tr_setup tr-issueupdate-not-forms "W42: tiers.issueUpdate confirm: reads and the edits the design does not list (a pull request's base, --remove-assignee, --milestone, a label list, a read of comments) run from a script" '{"tiers":{"issueUpdate":"confirm"}}'
+for TR_C in \
+  'gh issue edit 5 --remove-assignee me' \
+  'gh issue edit 5 --milestone v1' \
+  'gh pr edit 7 --base main' \
+  'gh api -X PATCH repos/o/r/pulls/7 -f base=main' \
+  'gh api repos/o/r/issues/5/comments' \
+  'gh label list' \
+  'gh pr view 7'; do
+  printf '%s\n' "$TR_C" > "$E2E_REPO/m.sh"
+  _tr_call 'bash m.sh'
+  e2e_expect_equal 0 "$E2E_RC" "exit status for: $TR_C"
+done
+
+_tr_setup tr-issueupdate-refs-releases "W42 refs: tiers.issueUpdate, issueAssign, issueCreate and prCreate confirm, run from a script: a path under git/refs/ is a branch ref even when its last parts read like an issue's labels, comments or assignees, the issue itself, or the issue or pull request lists, and runs; a path under releases/ is a release, and is refused naming tiers.release only. The gate decides the same (tg-issueupdate-refs-releases)" '{"tiers":{"issueUpdate":"confirm","issueAssign":"confirm","issueCreate":"confirm","prCreate":"confirm"}}'
+for TR_C in \
+  'gh api -X DELETE repos/o/r/git/refs/heads/issues/5/labels' \
+  'gh api -X DELETE repos/o/r/git/refs/heads/issues/5/labels/bug' \
+  'gh api -X PATCH repos/o/r/git/refs/heads/issues/5 -f sha=abc' \
+  'gh api -X POST repos/o/r/git/refs/heads/issues/5/comments -f body=x' \
+  'gh api -X POST repos/o/r/git/refs/heads/issues -f sha=abc' \
+  'gh api -X POST repos/o/r/git/refs/heads/issues/5/assignees -f sha=abc' \
+  'gh api -X POST repos/o/r/git/refs/heads/pulls -f sha=abc'; do
+  printf '%s\n' "$TR_C" > "$E2E_REPO/m.sh"
+  TR_BEFORE=$(grep -c . "$E2E_DIR/gh-calls.log")
+  _tr_call 'bash m.sh'
+  e2e_expect_equal 0 "$E2E_RC" "exit status for: $TR_C"
+  e2e_expect_equal $((TR_BEFORE + 1)) "$(grep -c . "$E2E_DIR/gh-calls.log")" "gh ran: $TR_C"
+done
+# The second path ends like one label removed by name, so it pins that
+# the label match skips a path under releases/ as well as one under git/refs/.
+for TR_C in \
+  'gh api -X DELETE repos/o/r/releases/1/issues/5/labels' \
+  'gh api -X DELETE repos/o/r/releases/1/issues/5/labels/bug'; do
+  printf '%s\n' "$TR_C" > "$E2E_REPO/m.sh"
+  TR_BEFORE=$(grep -c . "$E2E_DIR/gh-calls.log")
+  _tr_call 'bash m.sh'
+  e2e_expect_equal 1 "$E2E_RC" "exit status for: $TR_C"
+  e2e_expect_err "(tiers.release) needs your confirmation"
+  e2e_expect_equal 0 "$(printf '%s' "$E2E_ERR" | grep -c issueUpdate)" "tiers.issueUpdate named for: $TR_C"
+  e2e_expect_equal "$TR_BEFORE" "$(grep -c . "$E2E_DIR/gh-calls.log")" "gh did not run: $TR_C"
+done
+e2e_expect_equal 0 "$(_tr_trail | grep -c 'auto-log')" "wrapper breadcrumbs"

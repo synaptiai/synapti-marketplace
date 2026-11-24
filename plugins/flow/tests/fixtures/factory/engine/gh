@@ -12,8 +12,15 @@
 #   hang <seconds>          sleep that long (the stub's own pid sleeps)
 #   fail <rc> <stderr text> print the text on stderr and exit rc
 #   anything else           printed as it is
-# With no fixture, `gh --version` prints gh version 2.101.0 (2026-09-15) and
-# the creation scan of flow-e2e/scratch prints []; any other call is logged to
+# With no fixture and a world file named by FE_WORLD, gh_world.py beside the
+# stub answers (its docstring has the world's layout and the calls it knows),
+# run by the interpreter fe-gh-python beside the stub names; it exits 86 to
+# ask for die_after_post, and the stub then kills its own parent ($PPID, the
+# process that ran gh) with SIGKILL. FE_WORLD naming no file exits 98.
+# With no fixture and no world, `gh --version` prints gh version 2.101.0
+# (2026-09-15), the creation scan of flow-e2e/scratch prints [], `gh api user`
+# names the login flow-e2e-engine, and `gh api repos/<owner>/<name>` names
+# that repository with default branch main; any other call is logged to
 # fe-gh-unhandled.log and exits 99.
 #
 # Every call is appended to fe-gh-calls.log, and the stub's pid to fe-gh-pids
@@ -42,6 +49,37 @@ if [ -f "$fixture" ]; then
   esac
   cat "$fixture"
   exit 0
+fi
+
+if [ -n "${FE_WORLD:-}" ]; then
+  if [ ! -f "$FE_WORLD" ]; then
+    printf 'factory gh stub: FE_WORLD names no file: %s\n' "$FE_WORLD" >&2
+    exit 98
+  fi
+  py=$(cat "$here/fe-gh-python" 2>/dev/null)
+  [ -n "$py" ] || py=python3
+  "$py" -I "$here/gh_world.py" "$FE_WORLD" "$@"
+  rc=$?
+  if [ "$rc" = 86 ]; then
+    # die_after_post: the write is stored; the caller dies before it can
+    # record that it was sent.
+    [ "$PPID" -gt 1 ] && kill -KILL "$PPID"
+    exit 137
+  fi
+  exit "$rc"
+fi
+
+if [ "$#" = 2 ] && [ "$1" = api ]; then
+  case "$2" in
+    user)
+      printf '%s\n' '{"login":"flow-e2e-engine","type":"User"}'
+      exit 0 ;;
+    repos/*/*/*|repos/*/*\?*) ;;
+    repos/?*/?*)
+      printf '{"full_name":"%s","name":"%s","owner":{"login":"%s"},"default_branch":"main"}\n' \
+        "${2#repos/}" "${2##*/}" "$(printf '%s' "${2#repos/}" | cut -d/ -f1)"
+      exit 0 ;;
+  esac
 fi
 
 case "$key" in

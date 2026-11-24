@@ -1082,3 +1082,379 @@ OUT=$(cd "$D" && env -u CLAUDE_PROJECT_DIR -u CLAUDE_CONFIG_DIR /bin/bash "$HELP
 assert_equal "" "$OUT" "unset: nothing printed"
 OUT=$(cd "$D" && /bin/bash "$HELPER" --user-env PATH 2>&1); RC=$?
 assert_exit 2 "$RC" "any other variable is refused"
+
+# --- --repo-settings-ref <ref>: the project file read from a commit ----------
+# The flag reads the project file as it is in a commit, never from the
+# working tree. Ways it can be wrong, written before the code: the
+# working-tree project file is read instead of the one at the ref; the local
+# file stops winning (the cascade's order must not change); an unknown ref
+# reads as "no project file" instead of failing; a ref that looks like an
+# option reaches git as one; a ref with no file is an error instead of
+# reading as no project file; the flag is silently combined with
+# --no-repo-settings, which reads no project file at all; the commit's entry
+# is read whatever it is (a symbolic link read as its target's text, a
+# directory read as no file) instead of only a regular file; a .claude at the
+# ref that is a symbolic link or a file (so git lists no project file under
+# it) reads as no project file; a blob git cannot
+# read is skipped, so the project file's values silently drop out.
+_rsr_repo() {
+  local d="$SCRATCH_ROOT/rsr-$1"
+  mkdir -p "$d/.claude" "$d/home/.claude" "$d/plugins/flow"
+  (
+    cd "$d" && git init -q . && git checkout -q -b main 2>/dev/null
+    printf '{"tiers": {"issueAssign": "journal", "push": "journal"}}\n' > plugins/flow/settings.json
+    printf '{"tiers": {"issueAssign": "confirm"}}\n' > .claude/settings.flow.json
+    git add .claude/settings.flow.json plugins/flow/settings.json
+    git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m base
+  ) >/dev/null 2>&1
+  printf '%s' "$d"
+}
+
+_flow_test_begin "--repo-settings-ref: the project file is read at the ref, not from the working tree"
+D=$(_rsr_repo committed)
+printf '{"tiers": {"issueAssign": "autonomous"}}\n' > "$D/.claude/settings.flow.json"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_equal "confirm" "$OUT" "the committed value, not the working file's autonomous"
+assert_exit 0 "$RC" "exit 0"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" '.tiers.issueAssign' 2>/dev/null)
+assert_equal "autonomous" "$OUT" "without the flag the working file is read, as before"
+mkdir -p "$D/sub"
+OUT=$(cd "$D/sub" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+assert_equal "confirm" "$OUT" "from a subdirectory the same file at the ref is read"
+
+_flow_test_begin "--repo-settings-ref: the local file still wins, and the user file and plugin default still follow"
+D=$(_rsr_repo order)
+printf '{"tiers": {"issueAssign": "autonomous"}}\n' > "$D/.claude/settings.flow.local.json"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+assert_equal "autonomous" "$OUT" "the local file is first, as in the cascade"
+printf '{"tiers": {"push": "confirm"}}\n' > "$D/home/.claude/settings.flow.json"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.push' 2>/dev/null)
+assert_equal "confirm" "$OUT" "a key the ref's file lacks comes from the user file"
+
+_flow_test_begin "--repo-settings-ref: an unknown ref exits 3 with ref_unresolved"
+D=$(_rsr_repo unknown)
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref refs/remotes/origin/nope '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 3 "$RC" "exit 3"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "ref_unresolved" "$(cat "$D/err")" "stderr names ref_unresolved"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref nope '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 3 "$RC" "a --default does not hide an unknown ref"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref "--since=2020-01-01" '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 3 "$RC" "a ref that looks like an option is an unknown ref"
+OUT=$(cd "$SCRATCH_ROOT" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 3 "$RC" "outside a repository no ref resolves"
+
+_flow_test_begin "--repo-settings-ref: a ref with no project file reads as no project file"
+D=$(_rsr_repo nofile)
+(
+  cd "$D" && git checkout -q -b other && git rm -q .claude/settings.flow.json \
+    && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m drop && git checkout -q main
+) >/dev/null 2>&1
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref other '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "journal" "$OUT" "the plugin default, though the working tree's file says confirm"
+assert_exit 0 "$RC" "exit 0"
+assert_equal "" "$(cat "$D/err")" "and no warning"
+
+_flow_test_begin "--repo-settings-ref: refused with --no-repo-settings and without a value"
+D=$(_rsr_repo combos)
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --no-repo-settings --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 2 "$RC" "the two flags together exit 2"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref 2>/dev/null)
+RC=$?
+assert_exit 2 "$RC" "the flag with no value exits 2"
+
+_flow_test_begin "--repo-settings-ref: an entry at the ref that is not a regular file is refused"
+# The link's target text is JSON that would win (autonomous over the
+# plugin's journal), so reading it as its target shows as autonomous, exit 0.
+D=$(_rsr_repo link)
+(
+  cd "$D" && git rm -q .claude/settings.flow.json && mkdir -p .claude \
+    && ln -s '{"tiers": {"issueAssign": "autonomous"}}' .claude/settings.flow.json \
+    && git add .claude/settings.flow.json \
+    && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m link
+) >/dev/null 2>&1
+assert_equal "120000" "$(cd "$D" && git ls-tree main -- .claude/settings.flow.json | cut -c1-6)" "the ref holds a symbolic link"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a symbolic link at the ref exits 2"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "main:.claude/settings.flow.json is not a regular file" "$(cat "$D/err")" "stderr names the entry"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 2 "$RC" "a --default does not hide it"
+assert_equal "" "$OUT" "and prints nothing"
+D=$(_rsr_repo dir)
+(
+  cd "$D" && git rm -q .claude/settings.flow.json && mkdir -p .claude/settings.flow.json \
+    && printf '{}\n' > .claude/settings.flow.json/x && git add .claude/settings.flow.json/x \
+    && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m dir
+) >/dev/null 2>&1
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a directory at the ref exits 2"
+assert_contains "not a regular file" "$(cat "$D/err")" "stderr names it"
+
+_flow_test_begin "--repo-settings-ref: a .claude at the ref that is not a directory is refused"
+# The commit's .claude is a symbolic link to a directory whose file sets
+# confirm. git stores no .claude/settings.flow.json path for it, so reading
+# it as "no project file" shows as the plugin's journal, exit 0.
+D=$(_rsr_repo parentlink)
+(
+  cd "$D" && git rm -q .claude/settings.flow.json && rm -rf .claude && mkdir real \
+    && printf '{"tiers": {"issueAssign": "confirm"}}\n' > real/settings.flow.json \
+    && ln -s real .claude && git add .claude real/settings.flow.json \
+    && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m parentlink
+) >/dev/null 2>&1
+assert_equal "120000" "$(cd "$D" && git ls-tree main -- .claude | cut -c1-6)" "the ref's .claude is a symbolic link"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a symbolic link .claude at the ref exits 2"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "main:.claude is not a directory" "$(cat "$D/err")" "stderr names .claude"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>/dev/null)
+RC=$?
+assert_exit 2 "$RC" "a --default does not hide it"
+# A regular file named .claude at the ref is refused the same way.
+D=$(_rsr_repo parentfile)
+(
+  cd "$D" && git rm -q .claude/settings.flow.json && rm -rf .claude && printf 'x\n' > .claude \
+    && git add .claude && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m parentfile
+) >/dev/null 2>&1
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a regular file .claude at the ref exits 2"
+assert_contains "main:.claude is not a directory" "$(cat "$D/err")" "stderr names .claude"
+
+_flow_test_begin "--repo-settings-ref: a project file git cannot read at the ref is refused, not skipped"
+# The working tree's file is gone too, so only the ref could give confirm;
+# skipping the source shows as the plugin's journal, exit 0.
+D=$(_rsr_repo noblob)
+BLOB=$(cd "$D" && git rev-parse main:.claude/settings.flow.json)
+rm -f "$D/.git/objects/${BLOB:0:2}/${BLOB:2}" "$D/.claude/settings.flow.json"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a missing blob exits 2, whatever --default says"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "cannot read main:.claude/settings.flow.json" "$(cat "$D/err")" "stderr names the file"
+
+# _rsr_retree <dir> <keep> <path>... — commit main with issueAssign confirm at
+# each <path>, keeping the exact .claude/settings.flow.json when <keep> is 1.
+# The paths reach git through its index alone: on a file system that ignores
+# case, git add can record a case-variant name under the name already tracked.
+_rsr_retree() {
+  local d="$1" keep="$2"; shift 2
+  (
+    cd "$d" || exit 1
+    blob=$(printf '{"tiers": {"issueAssign": "confirm"}}\n' | git hash-object -w --stdin) || exit 1
+    [ "$keep" = 1 ] || git rm -q --cached .claude/settings.flow.json || exit 1
+    for p in "$@"; do git update-index --add --cacheinfo "100644,$blob,$p" || exit 1; done
+    git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m retree
+  ) >/dev/null 2>&1
+}
+
+_flow_test_begin "--repo-settings-ref: a project file named only by case or Unicode folding is refused"
+# A checkout on a file system that ignores case (macOS by default) finds each
+# of these as .claude/settings.flow.json, whose confirm then applies; git
+# lists them under their own names, so reading the commit as having no
+# project file shows as the plugin's journal, exit 0. The long s (ſ) folds
+# to s on APFS (probed 2026-11-19).
+for P in .Claude/settings.flow.json .claude/Settings.flow.json .claude/ſettings.flow.json; do
+  D=$(_rsr_repo "case-$(printf '%s' "$P" | cksum | cut -d' ' -f1)")
+  _rsr_retree "$D" 0 "$P"
+  LS=$(cd "$D" && git ls-tree -r -z --name-only main | tr '\000' '\n')
+  assert_equal "$P" "$(printf '%s\n' "$LS" | grep -Fx -- "$P")" "main holds $P under that name"
+  assert_equal "" "$(printf '%s\n' "$LS" | grep -Fx -- .claude/settings.flow.json)" "and nothing under the exact name"
+  OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+  RC=$?
+  assert_exit 2 "$RC" "$P at the ref exits 2"
+  assert_equal "" "$OUT" "nothing on stdout for $P"
+  assert_contains "case-insensitive file system" "$(cat "$D/err")" "stderr says why for $P"
+done
+# The exact file beside a case variant: which one a checkout finds is up to
+# the file system, so the commit is refused.
+D=$(_rsr_repo case-both)
+_rsr_retree "$D" 1 .CLAUDE/settings.flow.json
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "the exact file beside .CLAUDE/settings.flow.json exits 2"
+assert_contains "case-insensitive file system" "$(cat "$D/err")" "stderr says why"
+
+_flow_test_begin "--repo-settings-ref: names that are not ASCII and fold to nothing on the path are read past"
+D=$(_rsr_repo case-unrelated)
+_rsr_retree "$D" 1 café.txt .claude/naïve.json
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "confirm" "$OUT" "the project file's value"
+assert_exit 0 "$RC" "exit 0"
+assert_equal "" "$(cat "$D/err")" "and no warning"
+# With no python3 to compare them, such names refuse the commit: they could
+# fold to the expected name.
+NOPY="$SCRATCH_ROOT/nopy-bin"; mkdir -p "$NOPY"
+for b in bash sh env git jq mktemp tr cut rm cat readlink dirname basename uname grep head; do
+  T=$(command -v "$b" 2>/dev/null) && ln -sf "$T" "$NOPY/$b"
+done
+OUT=$(cd "$D" && PATH="$NOPY" HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$NOPY/bash" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "without python3 a name that is not ASCII exits 2"
+assert_contains "no Python interpreter is installed to compare it" "$(cat "$D/err")" "stderr names what is missing"
+# The same with the only such name at the top (café.txt), and none under
+# .claude: a top-level name is compared with .claude.
+D=$(_rsr_repo case-top-only)
+_rsr_retree "$D" 1 café.txt
+OUT=$(cd "$D" && PATH="$NOPY" HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$NOPY/bash" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "without python3 a top-level name that is not ASCII exits 2"
+assert_contains "no Python interpreter is installed to compare it" "$(cat "$D/err")" "stderr names what is missing for a top-level name"
+
+# --- --repo-settings-ref: the paths a checkout writes ------------------------
+# The commit's project file is the one a checkout of it writes, so it is read
+# from the list of paths git read-tree builds for the commit (the list a
+# checkout writes from), not by walking its trees by name. Ways it can be
+# wrong, written before the code: a tree entry whose own name holds a slash
+# ('.claude/settings.flow.json' as one name at the top) is checked out as the
+# project file but read as no file; two '.claude' entries in one tree are
+# merged by a checkout but read as only the last one, so a file in the first
+# is missed, and a case variant in the first is missed too; a tree git
+# refuses to read ('..' as a name) is read as no project file instead of
+# refused; building the list runs the repository's post-index-change hook;
+# the temporary index is left behind. Each tree below is written with
+# hash-object --literally, which takes what git fsck warns about or refuses
+# (fullPathname, duplicateEntries); probed with git 2.55.0 on 2026-11-19:
+# read-tree and a real checkout of such a commit give the same file.
+
+# _rsr_rawtree <dir> (<mode> <name> <id>)... — write a tree object with
+# exactly these entries, in this order, and print its id.
+_rsr_rawtree() {
+  local d="$1"; shift
+  (
+    cd "$d" || exit 1
+    while [ $# -ge 3 ]; do
+      printf '%s %s\0' "$1" "$2"
+      printf "$(printf '%s' "$3" | sed 's/../\\x&/g')"
+      shift 3
+    done | git hash-object -w -t tree --literally --stdin
+  )
+}
+# _rsr_rawcommit <dir> <tree> — make main a commit of <tree>.
+_rsr_rawcommit() {
+  (
+    cd "$1" || exit 1
+    c=$(git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit-tree -p main -m raw "$2") || exit 1
+    git update-ref refs/heads/main "$c"
+  ) >/dev/null 2>&1
+}
+# _rsr_blob <dir> <value> — a project file blob setting issueAssign to <value>.
+_rsr_blob() { printf '{"tiers": {"issueAssign": "%s"}}\n' "$2" | (cd "$1" && git hash-object -w --stdin); }
+
+_flow_test_begin "--repo-settings-ref: a top-level entry named '.claude/settings.flow.json' is read as the project file"
+# A checkout writes it at .claude/settings.flow.json, whose confirm then
+# applies; reading the commit as having no project file shows as the
+# plugin's journal, exit 0.
+D=$(_rsr_repo raw-slash)
+_rsr_rawcommit "$D" "$(_rsr_rawtree "$D" 100644 .claude/settings.flow.json "$(_rsr_blob "$D" confirm)")"
+assert_equal ".claude/settings.flow.json" "$(cd "$D" && git ls-tree --name-only main)" "main's top tree holds one entry with a slash in its name"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "confirm" "$OUT" "the value a checkout writes"
+assert_exit 0 "$RC" "exit 0"
+assert_equal "" "$(cat "$D/err")" "and no warning"
+
+_flow_test_begin "--repo-settings-ref: two '.claude' trees in one tree are read as a checkout merges them"
+# The first .claude holds the project file (confirm), the second only
+# other.json. A checkout writes both; reading only the last tree shows as
+# the plugin's journal, exit 0.
+D=$(_rsr_repo raw-dup)
+T1=$(_rsr_rawtree "$D" 100644 settings.flow.json "$(_rsr_blob "$D" confirm)")
+T2=$(_rsr_rawtree "$D" 100644 other.json "$(_rsr_blob "$D" autonomous)")
+_rsr_rawcommit "$D" "$(_rsr_rawtree "$D" 40000 .claude "$T1" 40000 .claude "$T2")"
+assert_equal "2" "$(cd "$D" && git ls-tree main | grep -c '	\.claude$')" "main's top tree holds .claude twice"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "confirm" "$OUT" "the file in the first .claude"
+assert_exit 0 "$RC" "exit 0"
+# The first .claude holds Settings.flow.json instead: a case variant, refused.
+D=$(_rsr_repo raw-dup-case)
+T1=$(_rsr_rawtree "$D" 100644 Settings.flow.json "$(_rsr_blob "$D" confirm)")
+T2=$(_rsr_rawtree "$D" 100644 other.json "$(_rsr_blob "$D" autonomous)")
+_rsr_rawcommit "$D" "$(_rsr_rawtree "$D" 40000 .claude "$T1" 40000 .claude "$T2")"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a case variant in the first of two .claude trees exits 2"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "case-insensitive file system" "$(cat "$D/err")" "stderr says why"
+
+_flow_test_begin "--repo-settings-ref: a commit git read-tree refuses is refused"
+# '..' and '.git' as names: read-tree (and so a checkout) refuses the tree.
+# Reading the commit as having no project file shows as journal, exit 0.
+for N in .. .git; do
+  D=$(_rsr_repo "raw-bad-$(printf '%s' "$N" | cksum | cut -d' ' -f1)")
+  _rsr_rawcommit "$D" "$(_rsr_rawtree "$D" 100644 "$N" "$(_rsr_blob "$D" autonomous)")"
+  assert_equal "$N" "$(cd "$D" && git ls-tree --name-only main)" "main's top tree holds $N"
+  OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+  RC=$?
+  assert_exit 2 "$RC" "a tree holding $N exits 2"
+  assert_equal "" "$OUT" "nothing on stdout for $N"
+  assert_contains "git read-tree failed" "$(cat "$D/err")" "stderr says why for $N"
+  assert_contains "invalid path" "$(cat "$D/err")" "stderr carries git's own reason for $N"
+done
+
+_flow_test_begin "--repo-settings-ref: a relative TMPDIR from a subdirectory still reads the commit"
+# mktemp makes a relative TMPDIR's folder under the caller's directory, while
+# git -C reads GIT_INDEX_FILE from the repository top. A valid commit must not
+# be refused as one a checkout refuses.
+D=$(_rsr_repo rel-tmp)
+mkdir -p "$D/sub/rel"
+OUT=$(cd "$D/sub" && TMPDIR=rel HOME="$D/home" CLAUDE_PLUGIN_ROOT="$D/plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "confirm" "$OUT" "the committed value"
+assert_exit 0 "$RC" "exit 0"
+assert_equal "" "$(ls -A "$D/sub/rel")" "nothing is left in the relative TMPDIR"
+
+_flow_test_begin "--repo-settings-ref: a .Claude that is not a directory is refused"
+# A symbolic link named .Claude to a directory whose file sets confirm: a
+# checkout on a file system that ignores case finds .claude/settings.flow.json
+# through it. git lists nothing under it, so reading the commit as having no
+# project file shows as the plugin's journal, exit 0.
+D=$(_rsr_repo raw-case-link)
+TD=$(_rsr_rawtree "$D" 100644 settings.flow.json "$(_rsr_blob "$D" confirm)")
+TL=$(cd "$D" && printf 'real' | git hash-object -w --stdin)
+_rsr_rawcommit "$D" "$(_rsr_rawtree "$D" 120000 .Claude "$TL" 40000 real "$TD")"
+assert_equal "120000" "$(cd "$D" && git ls-tree main -- .Claude | cut -c1-6)" "main's .Claude is a symbolic link"
+OUT=$(cd "$D" && HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --default journal --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a symbolic link .Claude at the ref exits 2"
+assert_equal "" "$OUT" "nothing on stdout"
+assert_contains "case-insensitive file system" "$(cat "$D/err")" "stderr says why"
+
+_flow_test_begin "--repo-settings-ref: the repository's index and hooks are left alone, and no temporary file is left"
+# The list of paths is built in a temporary index: built in the repository's
+# own, it would replace what the user has staged. A post-index-change hook
+# runs when git writes an index, the temporary one included; ls-tree never
+# ran it, and reading a settings file must not run the repository's
+# programs.
+D=$(_rsr_repo raw-hook)
+mkdir -p "$D/tmp"
+printf 'staged\n' > "$D/staged.txt"
+(cd "$D" && git add staged.txt)
+cp "$D/.git/index" "$D/index-before"
+printf '#!/bin/sh\ntouch "%s/hook-ran"\n' "$D" > "$D/.git/hooks/post-index-change"
+chmod +x "$D/.git/hooks/post-index-change"
+OUT=$(cd "$D" && TMPDIR="$D/tmp" HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_equal "confirm" "$OUT" "the committed value"
+assert_exit 0 "$RC" "exit 0"
+assert_equal "no" "$([ -e "$D/hook-ran" ] && echo yes || echo no)" "the post-index-change hook did not run"
+assert_equal "same" "$(cmp -s "$D/index-before" "$D/.git/index" && echo same || echo changed)" "the repository's index is unchanged"
+assert_equal "" "$(ls -A "$D/tmp")" "nothing is left in TMPDIR after a read"
+_rsr_retree "$D" 1 .CLAUDE/settings.flow.json
+OUT=$(cd "$D" && TMPDIR="$D/tmp" HOME="$D/home" CLAUDE_PLUGIN_ROOT="plugins/flow" "$HELPER" --repo-settings-ref main '.tiers.issueAssign' 2>"$D/err")
+RC=$?
+assert_exit 2 "$RC" "a case variant exits 2"
+assert_equal "" "$(ls -A "$D/tmp")" "nothing is left in TMPDIR after a refusal"

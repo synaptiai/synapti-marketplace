@@ -87,6 +87,11 @@ unset REVIEW_TREE REVIEW_RUN_PR_COMMANDS
 # same PATH they see outside a session; a suite about the wrappers sets them
 # up itself.
 unset FLOW_TIER_DIR FLOW_TIER_CALL
+# Run inside a factory worker, these name the worker's job. tier-gate.sh,
+# verify-task-completion.sh and the factory scripts read them, so a suite
+# that runs one of those directly would test a factory worker instead of an
+# ordinary session. A scenario that needs one sets it itself.
+unset FLOW_FACTORY_JOB FLOW_FACTORY_DIRECTIVE FLOW_FACTORY_IO FLOW_FACTORY_MAIN
 _flow_path=""
 _flow_ifs=$IFS
 IFS=:

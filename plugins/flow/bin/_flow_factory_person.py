@@ -1,5 +1,5 @@
 """[flow] The factory's person subcommands, rebuild, status and context --mode
-(plan 1a T12; design person_channels, factory_mode_in_commands).
+(plan 1a T12, 1b B12; design person_channels, factory_mode_in_commands).
 
   cmd_person(sub, argv)   answer, approve-spec, confirm, feedback, rework,
                           retry, reject, cancel: look the job up, check that
@@ -7,10 +7,27 @@
                           the person's confirmation (exit 4), then store the
                           event in J/pending for the next pass to apply
   cmd_rebuild(argv)       rebuild <job>: row 68, applied here; job.json is
-                          rebuilt from events.jsonl, the directive files and
-                          the clone, the old bytes kept in job.json.bak
-  cmd_status(argv)        status [--brief|--json]
+                          rebuilt from events.jsonl and the directive files,
+                          the old bytes kept in job.json.bak
+  cmd_status(argv)        status [--brief|--json], status --intent <id>
   cmd_context(argv)       context --mode: FACTORY_MODE=off|on|invalid
+
+An outbox intent (plan 1b 2.2) is shown and checked through the write
+module's check: its argv and body are hashed and compared with the
+intent_recorded line in the events file beside it, never with the item's own
+sha256 field, and its status is read from the events lines. status --intent
+prints the INTENT line and the literal and body in <<<UNTRUSTED_INTENT>>>
+fences, every shown line starting "> ", every control character but tab
+shown as \\xNN and every format character (Cf), U+2028 and U+2029 as
+\\u{xxxx} (_show; status's text status lines are shown the same way).
+confirm <intent> shows the same on the terminal with its prompt (on stdout
+for the probe intent, which is refused without one), then acts by the job's
+state (plan 2.3): it releases a waiting_operator park on its pending intent
+(INTENT_NOT_PENDING for any other item of the job), or, for a notice waiting
+for a confirm outside waiting_operator, appends the intent_confirmed line and
+only then saves the item confirmed (Q16). A probe-p9-<n> id is looked up only
+in the P9 probe folder the interactive state names, and confirm refuses it
+with INTENT_PROBE before the session check.
 
 The worker refusal (PERSON_ONLY_REFUSED, exit 4) has already run in
 _flow_factory.py's early check before any of these, and main has applied the
@@ -46,8 +63,10 @@ import json
 import re
 import select
 import shlex
+import stat
 import tempfile
 import time
+import unicodedata
 from decimal import Decimal
 
 _BIN_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -58,7 +77,7 @@ import _flow_factory as ff
 from _flow_factory import Refused
 import _flow_factory_jobs as jobs
 import _flow_factory_caller as fcaller
-import _flow_factory_git as fgit
+import _flow_factory_github as fgh
 import _flow_factory_schema as fschema
 import _flow_factory_staleness as staleness
 import _flow_factory_table as ftable
@@ -76,6 +95,17 @@ ITEM_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 HEX = re.compile(r"^[0-9a-f]{12,64}$")
 PASS_ID = re.compile(r"^p([0-9]+)$")
 WORKER_VARS = ("FLOW_FACTORY_JOB", "FLOW_FACTORY_DIRECTIVE")
+PROBE_ID = re.compile(r"^probe-p9-([0-9]+)$")
+NI_ID = re.compile(r"^NI-[0-9]+$")
+# The states whose person_answer rows take a needs-info answer (qid NI-<k>
+# and its text): 8a and 9a in needs_info, 44v, 44u, 44w, 44x and 44q in
+# needs_human (plan 5.3 Context answer; Inferred over plan 2.3's "needs_info
+# only", which would leave rows 44v-44q no terminal answer).
+NI_STATES = ("needs_info", "needs_human")
+SHA = re.compile(r"^[0-9a-f]{40}$")
+FENCE, END_FENCE = "<<<UNTRUSTED_INTENT>>>", "<<<END_UNTRUSTED_INTENT>>>"
+# The outbox statuses status counts as not yet sent (plan 2.3).
+UNSENT = ("recorded", "pending_confirm", "confirmed")
 
 
 class _Usage(Exception):
@@ -155,25 +185,157 @@ def _read_item(path):
     return data if isinstance(data, dict) else None
 
 
-def _lookup_item(paths, folder, item, refusal):
-    """The job that J/<folder>/<item>.json names in its job field: answer's
-    question (J/questions) and confirm's intent (J/outbox)."""
+def _real_folder(path):
+    """True when path is a folder and not a symbolic link to one. This
+    module reads J/outbox, J/questions and J/directives only through this
+    check and treats a linked folder as absent, as plan 2.2's lookup rule
+    treats a linked J/outbox (journal wave 3)."""
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def _lookup_items(paths, folder, item):
+    """[(n, job)] of every job whose J/<folder>/<item>.json names it in its
+    job field, by issue number. A J/<folder> that is a symbolic link is not
+    read, as the drain does not read a linked J/outbox (journal wave 2,
+    OUTBOX_UNREADABLE reason=symlink): its items are not found. A job folder
+    that is a symbolic link is refused by read_job (job_unreadable)."""
     if not ITEM_ID.match(item):
-        raise Refused(refusal)
+        return []
     pattern = os.path.join(glob.escape(paths.fdir), "jobs", "issue-*", folder, glob.escape(item) + ".json")
-    for path in sorted(glob.glob(pattern)):
+    out = []
+    for path in glob.glob(pattern):
+        if not _real_folder(os.path.dirname(path)):
+            continue
         data = _read_item(path)
         key = data.get("job") if data else None
         m = JOB_KEY.match(key) if isinstance(key, str) else None
         if not m or os.path.basename(os.path.dirname(os.path.dirname(path))) != f"issue-{m.group(1)}":
             continue
         try:
-            return _lookup_job(paths, key)
+            out.append(_lookup_job(paths, key))
         except Refused as r:
             if str(r).startswith("job_unknown"):
                 continue
             raise
-    raise Refused(refusal)
+    return sorted(out, key=lambda x: x[0])
+
+
+def _lookup_item(paths, folder, item, refusal):
+    """The job that J/<folder>/<item>.json names in its job field: answer's
+    question (J/questions) and confirm's intent (J/outbox). A question id
+    that two jobs hold is refused with QUESTION_AMBIGUOUS (plan 2.3; the
+    factory-wide NI-<k> counter prevents it unless a file was made by
+    hand)."""
+    found = _lookup_items(paths, folder, item)
+    if not found:
+        raise Refused(refusal)
+    if folder == "questions" and len(found) > 1:
+        raise _Ambiguous(f"QUESTION_AMBIGUOUS={item} jobs={','.join(job['key'] for _n, job in found)}")
+    return found[0]
+
+
+class _Ambiguous(Exception):
+    pass
+
+
+class _Intent(object):
+    """Where an outbox intent lives: its item file, the events file that
+    records it, and its job (n and the job dict), or n None for the probe
+    intent."""
+
+    def __init__(self, iid, path, events, n=None, job=None):
+        self.iid, self.path, self.events, self.n, self.job = iid, path, events, n, job
+
+    @property
+    def label(self):
+        return "probe" if self.n is None else self.job["key"]
+
+
+def _probe_folder(fdir, number):
+    """The P9 probe folder F/<INTERACTIVE_STATE>'s plugin path names, when
+    its name is P9-<number> and it is a folder, not a symbolic link; else
+    None (plan 2.2 lookup rule)."""
+    state = ff.interactive_state(fdir, required=False)
+    plugin = state.get("plugin")
+    if not isinstance(plugin, str) or not os.path.isabs(plugin):
+        return None
+    folder = os.path.dirname(os.path.normpath(plugin))
+    if os.path.basename(folder) != f"P9-{number}":
+        return None
+    for path in (folder, os.path.join(folder, "outbox")):
+        try:
+            if not stat.S_ISDIR(os.lstat(path).st_mode):
+                return None
+        except OSError:
+            return None
+    return folder
+
+
+def _find_intent(paths, iid):
+    """The _Intent for an id, by the lookup rule of plan 2.2: a
+    probe-p9-<n> id only in the P9 probe folder, never in a job's outbox;
+    every other id in J/outbox of every job. Raises Refused(intent_unknown
+    intent=<id>)."""
+    unknown = Refused(f"intent_unknown intent={iid}")
+    m = PROBE_ID.match(iid)
+    if m:
+        folder = _probe_folder(paths.fdir, m.group(1))
+        path = os.path.join(folder, "outbox", iid + ".json") if folder else None
+        if path is None or not os.path.lexists(path):
+            raise unknown
+        return _Intent(iid, path, os.path.join(folder, "events.jsonl"))
+    n, job = _lookup_item(paths, "outbox", iid, str(unknown))
+    jdir = jobs.job_dir(paths, n)
+    return _Intent(iid, os.path.join(jdir, "outbox", iid + ".json"), os.path.join(jdir, "events.jsonl"), n, job)
+
+
+def _check_intent(where):
+    """(IntentChanged or None, item, recorded sha256, body bytes, history)
+    for an intent, through the write module's check (its hash and fields
+    against the intent_recorded line, its status against the events lines).
+    An item that does not read, or whose own id is not the one asked for,
+    is changed (field=id for the latter)."""
+    iid = where.iid
+    item = fgh._read_json(where.path)
+    if item is None or item.get("id") != iid:
+        h = fgh._history(where.events, iid)
+        rec = h["rec"].get("sha256") if h["rec"] and isinstance(h["rec"].get("sha256"), str) else None
+        return fgh.IntentChanged(iid, rec, None, field=None if item is None else "id"), item, rec, None, h
+    changed, body, h = fgh._checked(where.events, item)
+    return changed, item, (h["rec"] or {}).get("sha256"), body, h
+
+
+def _show(text):
+    """text with every control character but tab shown as \\xNN, and every
+    format character (Unicode category Cf: the bidi controls, zero-width
+    characters, the byte order mark) and the line and paragraph separators
+    U+2028 and U+2029 shown as \\u{xxxx}, so a carriage return, an escape
+    sequence, a reordering or an unseen character cannot hide or redraw
+    what a person is asked to approve."""
+    out = []
+    for c in text:
+        o = ord(c)
+        if (o < 32 and c != "\t") or 127 <= o < 160:
+            out.append("\\x%02x" % o)
+        elif unicodedata.category(c) == "Cf" or c in "\u2028\u2029":
+            out.append("\\u{%04x}" % o)
+        else:
+            out.append(c)
+    return "".join(out)
+
+
+def intent_block(where, item, recorded, body):
+    """The INTENT line, then the literal (one argv element per line) and the
+    body, each inside <<<UNTRUSTED_INTENT>>> fences, every shown line
+    starting "> " so none can close a fence (plan 2.3)."""
+    out = [f"INTENT id={where.iid} job={where.label} key={','.join(item['key'])} sha256={recorded}", FENCE]
+    out += ["> " + _show(a) for a in item["argv"]] + [END_FENCE, FENCE]
+    if body:
+        out += ["> " + _show(x) for x in body.decode("utf-8", "backslashreplace").split("\n")]
+    return out + [END_FENCE]
 
 
 def _occurs(table, event, state):
@@ -217,10 +379,12 @@ def _read_typed(fd, seconds):
     return got.splitlines()[0].decode("utf-8", "replace") if got.splitlines() else ""
 
 
-def confirm(sub, argv, job, session_ok=False):
+def confirm(sub, argv, job, session_ok=False, shown=()):
     """The channel the person confirmed on ("terminal", or "session:<id>" for
     answer --choice from a session), or None after printing
-    PERSON_CONFIRM_REQUIRED. Holds no lock."""
+    PERSON_CONFIRM_REQUIRED. The shown lines (confirm's literal, body and
+    hashes) are written to the terminal just before the prompt, where the
+    person reads it, so stdout keeps one outcome line. Holds no lock."""
     required = _required_line(sub, argv)
     try:
         inside = fcaller.in_session()
@@ -242,8 +406,9 @@ def confirm(sub, argv, job, session_ok=False):
         print(required)
         return None
     try:
-        shown = " ".join(shlex.quote(x) for x in ["flow-factory.sh", sub] + list(argv))
-        os.write(fd, (f"job {job['key']} state={job['state']}\ncommand: {shown}\n{PROMPT}").encode("utf-8"))
+        command = " ".join(shlex.quote(x) for x in ["flow-factory.sh", sub] + list(argv))
+        text = "".join(line + "\n" for line in shown)
+        os.write(fd, (f"{text}job {job['key']} state={job['state']}\ncommand: {command}\n{PROMPT}").encode("utf-8"))
         typed = _read_typed(fd, TTY_WAIT_SECONDS)
         if typed is None:
             # End the prompt line on the terminal, not on stdout: a refusal
@@ -264,10 +429,17 @@ def confirm(sub, argv, job, session_ok=False):
 def _person_args(sub, argv):
     """(job argument or None, item kind and id or None, event args)."""
     if sub == "answer":
-        (qid,), o = _parse(argv, ["qid"], {"choice": "int", "text": "text"}, required=("choice",))
-        args = {"qid": qid, "choice": o["choice"]}
-        if "text" in o:
-            args["text"] = o["text"]
+        # A needs-info question (NI-<k>) is answered by its text; --choice is
+        # not required (plan 2.3, 7.2 item 8), and --text is (Inferred: rows
+        # 8a, 9a and 44v-44q take the qid and the text, plan 5.3 Context).
+        (qid,), o = _parse(argv, ["qid"], {"choice": "int", "text": "text"})
+        need = "text" if NI_ID.match(qid) else "choice"
+        if need not in o:
+            raise _Usage(f"--{need} is required")
+        args = {"qid": qid}
+        for name in ("choice", "text"):
+            if name in o:
+                args[name] = o[name]
         return None, ("questions", qid), args
     if sub == "approve-spec":
         (job,), o = _parse(argv, ["job"], {"spec-hash": "text", "head": "text"}, required=("spec-hash",))
@@ -300,13 +472,20 @@ def cmd_person(sub, argv):
         return _usage(sub, str(u))
     paths = jobs.resolve(create=False)
     table = ftable.load_table()
+    if sub == "confirm":
+        return _cmd_confirm(argv, args["intent"], paths, table)
+    ni = sub == "answer" and bool(NI_ID.match(args["qid"]))
     if item is not None:
         folder, ident = item
         what = "question_unknown qid" if folder == "questions" else "intent_unknown intent"
-        n, job = _lookup_item(paths, folder, ident, f"{what}={ident}")
+        try:
+            n, job = _lookup_item(paths, folder, ident, f"{what}={ident}")
+        except _Ambiguous as a:
+            print(str(a))
+            return 3
     else:
         n, job = _lookup_job(paths, job_arg)
-    if not _occurs(table, event, job["state"]):
+    if not _occurs(table, event, job["state"]) or (ni and job["state"] not in NI_STATES):
         print(f"EVENT_REFUSED={event} state={job['state']}")
         return 3
     channel = confirm(sub, argv, job, session_ok=(sub == "answer" and "text" not in args))
@@ -319,11 +498,100 @@ def cmd_person(sub, argv):
             raise Refused(f"job_unreadable job={again.folder}")
         if not isinstance(again, dict) or again.get("key") != job["key"]:
             raise Refused(f"job_unknown job={job['key']}")
-        if not _occurs(table, event, again["state"]):
+        if not _occurs(table, event, again["state"]) or (ni and again["state"] not in NI_STATES):
             print(f"EVENT_REFUSED={event} state={again['state']}")
             return 3
         jobs.store_pending(paths, n, event, args, channel, caller, {"unvouched_session_action": False})
     print(f"RAISED {event} job={job['key']}")
+    return 0
+
+
+def _confirm_case(table, job, iid, item, h):
+    """What confirm <iid> does in the job's state (plan 2.3, in this order):
+    "release" (person_confirm: the job waits on this pending intent, or is
+    parked tier_confirm with none), "not_pending" (it waits on another
+    intent, R68), "notice" (a notice the drain made wait for a confirm, read
+    from the events lines, in a state that is not terminal, Q16), else
+    None."""
+    state = job.get("state")
+    pending = job.get("pending_intent")
+    if state == "waiting_operator" and isinstance(pending, dict) and pending.get("id"):
+        return "release" if pending["id"] == iid else "not_pending"
+    if state == "waiting_operator" and job.get("reason") == "tier_confirm" and not pending:
+        return "release"
+    if table.kind(state) != "terminal" and item.get("blocking") is False and h["parked"] \
+            and not (h["confirmed"] or h["sent"] or h["dropped"]):
+        return "notice"
+    return None
+
+
+def _confirm_refusal(case, iid, job):
+    if case == "not_pending":
+        return f"INTENT_NOT_PENDING={iid} pending={job['pending_intent']['id']}"
+    return f"EVENT_REFUSED=person_confirm state={job.get('state')}"
+
+
+def _cmd_confirm(argv, iid, paths, table):
+    """confirm <intent> (plan 2.3): look the intent up (a probe id only in
+    the P9 probe folder), refuse INTENT_CHANGED before anything is shown or
+    asked, print the literal, the body and both hashes and refuse a probe
+    intent with INTENT_PROBE before the session check, refuse by the job's
+    state (_confirm_case) before the prompt, then show the literal, the body
+    and both hashes on the terminal with the prompt and act once the job key
+    is typed back. Every check runs again under the job lock before anything
+    is written."""
+    where = _find_intent(paths, iid)
+    changed, item, recorded, body, h = _check_intent(where)
+    if changed is not None:
+        print(changed.line)
+        return 3
+    shown = intent_block(where, item, recorded, body)
+    shown.append(f"SHA256 recorded={recorded} current={fgh.intent_digest(item['argv'], body)}")
+    if where.n is None:
+        # No prompt follows: the probe intent is shown on stdout and refused.
+        for line in shown:
+            print(line)
+        print(f"INTENT_PROBE={iid}")
+        return 3
+    n, job = where.n, where.job
+    case = _confirm_case(table, job, iid, item, h)
+    if case not in ("release", "notice"):
+        print(_confirm_refusal(case, iid, job))
+        return 3
+    channel = confirm("confirm", argv, job, shown=shown)
+    if channel is None:
+        return 4
+    caller = _caller()
+    with jobs.job_lock(paths, n):
+        again = jobs.read_job(paths, n)
+        if isinstance(again, jobs.Unreadable):
+            raise Refused(f"job_unreadable job={again.folder}")
+        if not isinstance(again, dict) or again.get("key") != job["key"]:
+            raise Refused(f"job_unknown job={job['key']}")
+        # J/outbox may have been swapped for a link while the prompt waited;
+        # the save below would follow it out of the job folder.
+        if not _real_folder(os.path.dirname(where.path)):
+            raise Refused(f"intent_unknown intent={iid}")
+        changed, item, _rec, _body, h = _check_intent(_Intent(iid, where.path, where.events, n, again))
+        if changed is not None:
+            print(changed.line)
+            return 3
+        now = _confirm_case(table, again, iid, item, h)
+        if now != case:
+            print(_confirm_refusal(now, iid, again))
+            return 3
+        if case == "notice":
+            # The events line is the record (journal wave 2): it is appended
+            # before the item is saved, so a process that dies between the
+            # two leaves a line the drain acts on, never a confirmed item with
+            # no line, which check_item refuses.
+            jobs.append_event(paths, n, {"type": "intent_confirmed", "job": again["key"], "time": ff.utc_now(),
+                                         "id": iid})
+            fgh._save(where.path, dict(item, status="confirmed"))
+        else:
+            jobs.store_pending(paths, n, "person_confirm", {"intent": iid}, channel, caller,
+                               {"unvouched_session_action": False})
+    print(f"CONFIRMED intent={iid} job={job['key']}" if case == "notice" else f"RAISED person_confirm job={job['key']}")
     return 0
 
 
@@ -401,9 +669,13 @@ class _Replayed(object):
 
 
 def _directives(jdir, key):
-    """[(stage, k, created_in_pass number or -1)] of J/directives/<key>-<stage>-<k>.json."""
+    """[(stage, k, created_in_pass number or -1)] of J/directives/<key>-<stage>-<k>.json.
+    A J/directives that is a symbolic link is read as empty: next's launch
+    refuses that folder, so nothing behind it is the job's."""
     pat = re.compile(r"^" + re.escape(key) + r"-([a-z_]+)-([1-9][0-9]*)\.json$")
     out = []
+    if not _real_folder(os.path.join(jdir, "directives")):
+        return out
     try:
         names = os.listdir(os.path.join(jdir, "directives"))
     except OSError:
@@ -420,7 +692,48 @@ def _directives(jdir, key):
 
 # The events.jsonl line types whose list replaces a job.json field in rebuild
 # (written by the next pass: _flow_factory_next module docstring).
-LOGGED_LISTS = {"orphan_group": "orphan_groups", "snapshot": "snapshots", "pending_changes": "pending_changes"}
+LOGGED_LISTS = {"orphan_group": "orphan_groups", "snapshot": "snapshots", "pending_changes": "pending_changes",
+                "commands_seen": "commands_seen", "labels_set": "labels_set"}
+# The job.json fields a transition or replayed line's fields object may set
+# in rebuild (plan 2.2 "How rebuild restores the 1b fields"): the 1b fields a
+# handler sets from the sync or the clock. A line naming any other field
+# (state, key, cost) changes nothing (Inferred: only the writers of these
+# fields put them in a line).
+REPLAYED_FIELDS = ("vouch_at", "vouch_event_id", "base", "revouched_replies", "baseline_digest", "baseline_pending",
+                   "intake_inputs", "intake", "needs_info", "pending_keys", "pending_intent", "held_result",
+                   "confirmed_intent")
+
+
+def _apply_fields(job, line):
+    fields = line.get("fields")
+    if isinstance(fields, dict):
+        for name, value in fields.items():
+            if name in REPLAYED_FIELDS:
+                job[name] = copy.deepcopy(value)
+
+
+def _write_seq(jdir, key, lines):
+    """The largest k of the job's intent ids issue-N-j<seq>-<row>-<k>, from
+    its intent_recorded lines and its J/outbox item names, or None (plan
+    2.2 write_seq). The items of a J/outbox that is a symbolic link do not
+    count: the drain does not read that folder (OUTBOX_UNREADABLE)."""
+    name = re.compile("^" + re.escape(key) + r"-[0-9a-z]+-([0-9]+)$")
+    ks = []
+    for line in lines:
+        m = name.match(line.get("id") or "") if line.get("type") == "intent_recorded" else None
+        if m and isinstance(line.get("id"), str):
+            ks.append(int(m.group(1)))
+    files = []
+    if _real_folder(os.path.join(jdir, "outbox")):
+        try:
+            files = os.listdir(os.path.join(jdir, "outbox"))
+        except OSError:
+            pass
+    for f in files:
+        m = name.match(f[:-len(".json")]) if f.endswith(".json") else None
+        if m:
+            ks.append(int(m.group(1)))
+    return max(ks) if ks else None
 
 
 def rebuild_job(paths, table, n, lines, now):
@@ -443,7 +756,14 @@ def rebuild_job(paths, table, n, lines, now):
       directive the newest of them (the live engine never clears it).
     - relaunch is kept only when no directive was made at or after the pass
       that set it; lease_grace is null.
-    - head_sha is the clone's HEAD when the clone exists."""
+    - Each transition line's fields object is applied after that line's
+      handlers, and each replayed line's (REPLAYED_FIELDS only), so the 1b
+      values a handler took from the sync or the clock come back as written
+      and a replayed line clears held_result and confirmed_intent;
+      commands_seen and labels_set are LOGGED_LISTS too.
+    - write_seq is the largest k of the job's intent ids (_write_seq).
+    - head_sha is the last pushed line's sha or pr_recorded line's head
+      (with its pr), else null; never the clone's HEAD (carry item 1)."""
     job, first = _start(n, lines)
     key = job["key"]
     setting_ctx = ftable.Context(setting=jobs.setting)
@@ -452,6 +772,7 @@ def rebuild_job(paths, table, n, lines, now):
     runs, total, by_stage, dearest = [], Decimal(0), {}, Decimal(0)
     totals = dict(job.get("last_session_total") or {})
     sessions = dict(job.get("sessions") or {})
+    head = None
     for line in lines[first:]:
         kind = line.get("type")
         if kind == "transition":
@@ -470,12 +791,21 @@ def rebuild_job(paths, table, n, lines, now):
                 if name in ("relaunch_fresh", "relaunch_resume"):
                     relaunch_pass = _pass_no(line.get("pass"))
                 ftable._run_job_handler(name, e, job, before, _Replayed(line.get("row")), setting_ctx)
+            _apply_fields(job, line)
             if isinstance(line.get("attempt"), int) and not isinstance(line.get("attempt"), bool):
                 job["attempt"] = line["attempt"]
             pending = job.get("pending_changes")
             if isinstance(pending, list) and row is not None:
                 cleared = set(f for f, v in row.get("guard", {}).items() if v is True)
                 job["pending_changes"] = [f for f in pending if f not in cleared]
+        elif kind == "replayed":
+            _apply_fields(job, line)
+        elif kind == "pushed" and isinstance(line.get("sha"), str) and SHA.match(line["sha"]):
+            head = line["sha"]
+        elif kind == "pr_recorded" and isinstance(line.get("head"), str) and SHA.match(line["head"]):
+            head = line["head"]
+            if isinstance(line.get("pr"), int) and not isinstance(line["pr"], bool) and line["pr"] > 0:
+                job["pr"] = line["pr"]
         elif kind in LOGGED_LISTS:
             field = LOGGED_LISTS[kind]
             if isinstance(line.get(field), list):
@@ -515,15 +845,13 @@ def rebuild_job(paths, table, n, lines, now):
     if job.get("relaunch") is not None and relaunch_pass is not None and any(p >= relaunch_pass for _s, _k, p in made):
         job["relaunch"] = None
     job["lease_grace"] = None
-    wt = job.get("worktree")
-    if isinstance(wt, str) and os.path.isdir(wt):
-        try:
-            rc, out, _err = fgit.git(paths.fdir, ["rev-parse", "--verify", "-q", "HEAD^{commit}"], wt, clone=wt,
-                                     copy_dir=os.path.join(jdir, "clone-config"))
-            if rc == 0 and out.strip():
-                job["head_sha"] = out.strip()
-        except fgit.CloneConfigChanged:
-            pass
+    # Carry item 1 (amendments.md:79): the head the engine itself pushed or
+    # recorded with the PR, never the clone's HEAD, which may hold a commit
+    # nobody pushed.
+    job["head_sha"] = head
+    seq = _write_seq(jdir, key, lines)
+    if seq is not None:
+        job["write_seq"] = seq
     job["updated_at"] = now
     return job
 
@@ -571,6 +899,13 @@ def cmd_rebuild(argv):
     table = ftable.load_table()
     jdir = jobs.job_dir(paths, n)
     events_path = os.path.join(jdir, "events.jsonl")
+    # As read_job, before the log is read or the person asked: F/jobs reached
+    # through a symbolic link is refused (factory_dir_refused), and a job
+    # folder that is one is unreadable, the line the other person
+    # subcommands give and the one status's UNREADABLE line leads to.
+    jobs._check_dir(paths, os.path.dirname(jdir))
+    if os.path.islink(jdir):
+        raise Refused(f"job_unreadable job=issue-{n}")
     if not os.path.isdir(jdir) or not (os.path.lexists(events_path) or os.path.lexists(os.path.join(jdir, "job.json"))):
         raise Refused(f"job_unknown job={job_arg}")
     lines = _read_events(events_path) if os.path.lexists(events_path) else []
@@ -653,7 +988,11 @@ def _engine_lines(paths, table, found, state):
             continue
         key, st = job["key"], job["state"]
         jdir = jobs.job_dir(paths, n)
-        if table.states.get(st, {}).get("run_by") == "worker" and not fnext.directive_open(paths, n, job.get("directive")):
+        # A directive behind a J/directives that is a symbolic link is not
+        # running: next's launch refuses that folder.
+        if table.states.get(st, {}).get("run_by") == "worker" and not (
+                _real_folder(os.path.join(jdir, "directives"))
+                and fnext.directive_open(paths, n, job.get("directive"))):
             line = jobs.worker_budget_paused(key, st, jobs.setting(f"flow.factory.worker.stages.{st}.maxBudgetUsd"),
                                              job)
             if line:
@@ -684,17 +1023,55 @@ def _engine_lines(paths, table, found, state):
                 elif c.get("file"):
                     f = c["file"]
                     groups["clone"].append(jobs.clone_changed_line(key, job.get("worktree"), jdir, f, c.get("key")))
-        try:
-            items = [x for x in os.listdir(os.path.join(jdir, "outbox")) if x.endswith(".json")]
-        except OSError:
-            items = []
-        if items:
-            groups["outbox"].append(f"OUTBOX_PENDING job={key} items={len(items)}")
-            outbox.append({"job": key, "items": len(items)})
+        pending = job.get("pending_intent")
+        if st == "waiting_operator" and isinstance(pending, dict) and isinstance(pending.get("id"), str):
+            keys = ",".join(k for k in pending.get("key") or [] if isinstance(k, str))
+            groups["outbox"].append(f"PENDING_INTENT job={key} intent={pending['id']} kind={pending.get('kind')} "
+                                    f"keys={keys}")
+        unsent = 0
+        for iid, kind, status in _outbox_items(jdir):
+            if status == "pending_confirm":
+                groups["outbox"].append(f"PENDING_CONFIRM job={key} intent={iid} kind={kind}")
+            unsent += status in UNSENT
+        if unsent:
+            groups["outbox"].append(f"OUTBOX_PENDING job={key} items={unsent}")
+            outbox.append({"job": key, "items": unsent})
     git = ff.which_real("git")
     if not (ff.gh_default_repo(git) if git else None):
         groups["sync"].append(f"PAUSED sync_repo_unknown next: run gh repo set-default in {paths.main}")
     return groups, orphans, outbox
+
+
+def _outbox_items(jdir):
+    """[(id, kind, status)] of the job's outbox items, by id, where the
+    status is what the events file says (journal wave 2: the line, not the
+    item, is the record): sent with a write_recorded line, dropped with an
+    intent_dropped line, confirmed or pending_confirm with that line after
+    the last intent_recorded line, else recorded. An item that does not
+    read, is not named by its own id, or has no intent_recorded line is
+    left out: nothing can run it. So is every item of a J/outbox that is a
+    symbolic link, which the drain refuses (OUTBOX_UNREADABLE)."""
+    outbox = os.path.join(jdir, "outbox")
+    events = os.path.join(jdir, "events.jsonl")
+    if not _real_folder(outbox):
+        return []
+    try:
+        names = sorted(x for x in os.listdir(outbox) if x.endswith(".json"))
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        item = fgh._read_json(os.path.join(outbox, name))
+        iid = name[:-len(".json")]
+        if item is None or item.get("id") != iid:
+            continue
+        h = fgh._history(events, iid)
+        if h["rec"] is None:
+            continue
+        status = ("sent" if h["sent"] else "dropped" if h["dropped"] else "confirmed" if h["confirmed"]
+                  else "pending_confirm" if h["parked"] else "recorded")
+        out.append((iid, h["rec"].get("kind"), status))
+    return out
 
 
 def _job_line(job):
@@ -703,7 +1080,35 @@ def _job_line(job):
             f"slot={'yes' if job.get('holds_slot') is True else 'no'}")
 
 
+def cmd_status_intent(argv):
+    """status --intent <id> (plan 2.3): read only. 0 with the INTENT line,
+    the literal and the body; 3 INTENT_UNKNOWN=<id>; 3 INTENT_CHANGED=<id>
+    recorded=<hex> current=<hex>[ field=<name>]."""
+    if len(argv) != 1 or argv[0].startswith("--"):
+        return _usage("status", "--intent takes one intent id")
+    iid = argv[0]
+    paths = _status_paths()
+    try:
+        where = _find_intent(paths, iid)
+    except Refused as r:
+        if not str(r).startswith("intent_unknown"):
+            raise
+        print(f"INTENT_UNKNOWN={iid}")
+        return 3
+    changed, item, recorded, body, _h = _check_intent(where)
+    if changed is not None:
+        print(changed.line)
+        return 3
+    for line in intent_block(where, item, recorded, body):
+        print(line)
+    return 0
+
+
 def cmd_status(argv):
+    if argv[:1] == ["--intent"]:
+        return cmd_status_intent(argv[1:])
+    if argv[:1] and argv[0].startswith("--intent="):
+        return cmd_status_intent([argv[0][len("--intent="):]] + list(argv[1:]))
     mode = None
     for a in argv:
         if a in ("--brief", "--json") and mode is None:
@@ -741,10 +1146,13 @@ def cmd_status(argv):
                "paused_until": until if isinstance(until, str) and until > ff.utc_now() else None}
         print(json.dumps(out, sort_keys=True))
         return 0
+    # The status lines carry text the engine read from a worker's clone (a
+    # nested repository's path); they are shown by the rule status --intent
+    # uses.
     for job in readable:
         print(_job_line(job))
     for line in lines:
-        print(line)
+        print(_show(line))
     return 0
 
 
@@ -781,7 +1189,8 @@ def _context_check():
     top = ff.git_out(git, here, ["rev-parse", "--show-toplevel"])
     if not top or os.path.realpath(top[0]) != os.path.realpath(wt):
         return "toplevel"
-    lease = _read_item(os.path.join(jobs.job_dir(paths, n), "directives", did + ".lease.json"))
+    ddir = os.path.join(jobs.job_dir(paths, n), "directives")
+    lease = _read_item(os.path.join(ddir, did + ".lease.json")) if _real_folder(ddir) else None
     if not lease or lease.get("directive") != did or lease.get("revoked_at") is not None:
         return "lease"
     child, child_start = lease.get("child_pid"), lease.get("child_start")

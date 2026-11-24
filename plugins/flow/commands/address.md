@@ -1491,8 +1491,8 @@ End with what was done, what was verified and how (the command and what it print
 | File edits (fix per feedback item) | 1 | Autonomous |
 | Commits (`fix:` and `improve:` Boy Scout) | 1 | Autonomous, logged by hook |
 | Push | 2 | Follows `tiers.push` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks) |
-| Post resolution comment | 2 | Runs without asking; no tier setting, no breadcrumb |
-| Inline replies to review comments | 2 | Runs without asking; no tier setting, no breadcrumb |
-| Update PR body (review cycle history) | 2 | Runs without asking; no tier setting, no breadcrumb |
-| Re-request review | 2 | Runs without asking; no tier setting, no breadcrumb |
+| Post resolution comment | 2 | Follows `tiers.issueUpdate` (default `journal`: runs and writes one breadcrumb to the git-ignored auto-log trail; `confirm` asks, which `claude -p` refuses) |
+| Inline replies to review comments | 2 | Follows `tiers.issueUpdate` (default `journal`; `confirm` asks) |
+| Update PR body (review cycle history) | 2 | Follows `tiers.issueUpdate` (default `journal`; `confirm` asks) |
+| Re-request review | 2 | Follows `tiers.issueUpdate` (default `journal`; `confirm` asks) |
 | Follow-up issue creation (cosmetic P3 in untouched files, `minimalScope` only) | 2 | Follows `tiers.issueCreate` (default `journal`; `confirm` asks) |

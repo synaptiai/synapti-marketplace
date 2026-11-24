@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synapti.ai/schemas/flow/v1/factory-outbox.schema.json",
+  "title": "FlowFactoryOutboxItem",
+  "description": "One GitHub write the factory engine recorded before running it: <factory dir>/jobs/issue-<N>/outbox/<id>.json for a job, or <P9 probe folder>/outbox/<id>.json for the P9 probe intent. Its intent_recorded line in the events file beside it holds the sha256 a later check compares with. Items are never deleted. The engine checks it with bin/_flow_factory_schema.py, which supports only the keywords this file uses.",
+  "type": "object",
+  "required": [
+    "id", "job", "row", "state_at_write", "ref", "kind", "blocking", "key", "argv", "body_file", "sha256",
+    "status", "effect"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "The intent id, fixed before any POST and equal to the engine marker's event= value: issue-N-j<seq>-<row>-<k> for a job (<row> is the state table row, or note for a write no row makes), probe-p9-<n> for the P9 probe intent.",
+      "anyOf": [
+        { "$ref": "#/$defs/job_intent_id" },
+        { "type": "string", "pattern": "^probe-p9-[0-9]+$" }
+      ]
+    },
+    "job": {
+      "description": "The job key; null for the P9 probe intent.",
+      "type": ["string", "null"],
+      "pattern": "^issue-[1-9][0-9]*-j[1-9][0-9]*$"
+    },
+    "row": {
+      "description": "The state table row whose effect makes the write; null for a note and for the P9 probe intent.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9]+[a-z]*$"
+    },
+    "state_at_write": {
+      "description": "The state the write belongs to: the row's target state, or the job's state for a stay row and a note; null for the P9 probe intent.",
+      "type": ["string", "null"],
+      "enum": [
+        "approve", "build", "cancelled", "gate", "intake", "merged", "merging", "needs_human", "needs_info",
+        "needs_spec_approval", "open_pr", "prepare", "queued", "ready", "rejected", "resolve", "review",
+        "rework", "spec", "sync", "waiting_ci", "waiting_operator", null
+      ]
+    },
+    "ref": {
+      "description": "The comment id the write answers, or null.",
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "kind": {
+      "description": "The write's kind. assign_label is the assignment and the in-progress label as one command.",
+      "type": "string",
+      "enum": ["comment", "label_add", "label_remove", "assign_label", "pr_close"]
+    },
+    "blocking": { "type": "boolean" },
+    "key": {
+      "description": "The tier keys the write counts under.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/tier_key" }
+    },
+    "argv": {
+      "description": "The command, run without a shell.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "body_file": {
+      "description": "The body file's path relative to the outbox folder, or null when the write has no body. The path may not start with / or hold a .. segment, so it cannot name a file outside the outbox folder.",
+      "type": ["string", "null"],
+      "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$)).+$"
+    },
+    "sha256": {
+      "description": "sha256 over the argv elements and the body bytes, each followed by a NUL byte except the body.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": {
+      "description": "recorded until it runs; pending_confirm for a notice waiting on a confirm-keyed tier; confirmed once a person confirmed that notice at a terminal; sent once it ran or was found on GitHub; dropped when the state table dropped it.",
+      "type": "string",
+      "enum": ["recorded", "pending_confirm", "confirmed", "sent", "dropped"]
+    },
+    "effect": {
+      "description": "What the write left on GitHub once seen (one of comment_id, sha, pr, label), else null.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/effect", "required": ["comment_id"] },
+        { "$ref": "#/$defs/effect", "required": ["sha"] },
+        { "$ref": "#/$defs/effect", "required": ["pr"] },
+        { "$ref": "#/$defs/effect", "required": ["label"] }
+      ]
+    }
+  },
+  "$defs": {
+    "job_intent_id": {
+      "type": "string",
+      "pattern": "^issue-[0-9]+-j[0-9]+-[0-9a-z]+-[0-9]+$"
+    },
+    "tier_key": {
+      "description": "The keys of tiers in the settings schema.",
+      "type": "string",
+      "enum": ["push", "prCreate", "issueAssign", "issueCreate", "issueUpdate", "merge", "release"]
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "comment_id": { "type": "integer", "minimum": 1 },
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "pr": { "type": "integer", "minimum": 1 },
+        "label": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
