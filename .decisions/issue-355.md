@@ -287,6 +287,21 @@ artifacts:
   path: B
   findings_count: 6
   pr: 383
+- type: escalation-asked
+  captured_at: '2026-11-23T23:11:20Z'
+  question_id: q-20261123T231119Z-1105ba
+  blocking: 'yes'
+  class: permission
+  command: /flow:merge 383
+  situation:
+  - 'PR 383 (issue 355) at cc2018a0: all CI checks pass'
+  - 'Linux included; goal achieved. SEC-1 departs from plan B5 step 3 and AC6: a command
+    posted after the engine''s last read but before its notice now co'
+- type: escalation-resolved
+  captured_at: '2026-11-24T06:45:47Z'
+  question_id: q-20261123T231119Z-1105ba
+  escalation_field: options
+  outcome: user chose squash-merge keeping SEC-1
 ---
 
 ## Specification
